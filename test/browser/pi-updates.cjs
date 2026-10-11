@@ -84,6 +84,8 @@ async function run(browser, base, width, language) {
     assert.equal(await page.locator('#updates-pivane a[href$=".sha256"]').count(), 0);
     await page.locator('#updates-agent-guide summary').click();
     const prompt = await page.locator('#updates-agent-prompt').inputValue();
+    assert.ok((await page.locator('#updates-pivane h4').textContent()).includes('白泽灵台'));
+    assert.ok(prompt.includes('白泽灵台') && !prompt.includes('Pivane'));
     assert.ok(prompt.includes('AGENT_GUIDE.md') && prompt.includes('INSTALL_RECOVERY.md'));
     assert.ok(prompt.includes(english ? 'independent Agent' : '独立 Agent'));
     assert.ok(prompt.includes(english ? 'explicit approval' : '明确确认'));

@@ -1,8 +1,10 @@
 <div align="center">
 
-<img src="public/brand/logo-192.png" alt="Pivane logo" width="96" height="96">
+<img src="public/brand/logo-192.png" alt="白泽灵台 logo" width="96" height="96">
 
-# Pivane
+# 白泽灵台
+
+中英文界面均使用“白泽灵台”；技术标识与发布地址仍使用 `pivane`。本次名称变更尚未发布。
 
 **自托管的 AI 编程 Agent 网页工作台，电脑、平板、手机都能接着用。**
 
@@ -19,14 +21,14 @@
 
 [下载](https://github.com/YogurtJ/pivane/releases/latest) · [安装](docs/INSTALL_RECOVERY.md) · [用户指南](docs/USER_GUIDE.md) · [变更记录](CHANGELOG.md) · [反馈问题](https://github.com/YogurtJ/pivane/issues)
 
-<img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/hero-zh.webp" alt="电脑上的 Pivane：项目与线程、已完成的编程任务及其代码差异" width="100%">
+<img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/hero-zh.webp" alt="电脑上的白泽灵台：项目与线程、已完成的编程任务及其代码差异" width="100%">
 
 </div>
 
-## 为什么选择 Pivane
+## 为什么选择白泽灵台
 
-- **直接使用 Pi 自己的运行时。** Pivane 运行 Pi 的原生运行时，直接读写 Pi 自己的会话文件。流式回复、工具调用、文件差异、Shell 命令、任务引导和上下文压缩都可以使用，界面在任何屏幕上都便于阅读。
-- **在电脑上开始，在手机上查看进度。** 会话保存在你的服务器上。在另一台设备上打开同一个线程时，仍由同一个 Agent 进程提供服务。Pivane 可以添加到手机主屏幕，回复完成时会通知你。
+- **直接使用 Pi 自己的运行时。** 白泽灵台运行 Pi 的原生运行时，直接读写 Pi 自己的会话文件。流式回复、工具调用、文件差异、Shell 命令、任务引导和上下文压缩都可以使用，界面在任何屏幕上都便于阅读。
+- **在电脑上开始，在手机上查看进度。** 会话保存在你的服务器上。在另一台设备上打开同一个线程时，仍由同一个 Agent 进程提供服务。白泽灵台可以添加到手机主屏幕，回复完成时会通知你。
 - **在一个工作台里同时运行多个 Agent。** 你可以使用子 Agent、Agent 自己创建的任务线程、线程间消息、侧聊和按 cron 运行的定时任务，并实时查看每个 Agent 正在做什么。
 - **模型、Key 和机器都由你掌控。** Pi 支持的供应商都可以使用，包括 Anthropic、OpenAI、Google Gemini、GitHub Copilot、OpenRouter、DeepSeek、通义千问、Kimi、MiniMax、xAI 和 Mistral。可以用 API Key 或 OAuth 登录，也可以添加自己的 OpenAI 兼容服务。凭据和历史都保存在你自己的机器上。
 - **扩展方式和 Pi 一样。** Pi 的 Packages、Skills、提示词模板和 MCP 服务器都可以在浏览器里安装。也可以让内置的扩展助手帮你查找和配置。
@@ -36,7 +38,7 @@
 
 Agent 会先列出计划，再读取和修改文件、运行测试并汇报结果。任务完成后，整个过程会收成一行摘要，需要时随时可以展开查看。
 
-<p align="center"><img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/demo-zh.gif" alt="Pivane 中运行的编程任务：计划、工具调用、测试和最终总结" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/demo-zh.gif" alt="白泽灵台中运行的编程任务：计划、工具调用、测试和最终总结" width="100%"></p>
 
 <sub>截图和录屏使用的是合成的演示项目。</sub>
 
@@ -90,7 +92,7 @@ Agent 会先列出计划，再读取和修改文件、运行测试并汇报结�
 
 ### 多媒体实验室与语音
 
-<img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/media-zh.webp" alt="Pivane 聊天中的媒体生成卡片：可编辑参数和完成的合成演示图片" width="100%">
+<img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/media-zh.webp" alt="白泽灵台聊天中的媒体生成卡片：可编辑参数和完成的合成演示图片" width="100%">
 
 - 可以接入图像、视频、语音合成和语音转写服务。预设包括 OpenAI、Google Gemini、火山方舟（Seedream 和 Seedance）和阿里云百炼，其他兼容的 HTTP API 可以手动添加。
 - Agent 会在聊天或实验室里根据自然语言描述起草可编辑的参数。每次生成都要你确认后才会执行；忙时排队，刷新后恢复同一状态。模型支持时，还可以附上参考图片或视频。
@@ -99,13 +101,13 @@ Agent 会先列出计划，再读取和修改文件、运行测试并汇报结�
 
 ### 日常使用
 
-<img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/mobile-zh.webp" alt="手机上的 Pivane：任务结果、深色模式下的公式和模型选择" width="100%">
+<img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/mobile-zh.webp" alt="手机上的白泽灵台：任务结果、深色模式下的公式和模型选择" width="100%">
 
-- 布局会适应电脑、平板和手机屏幕，Pivane 也可以添加到手机主屏幕。
+- 布局会适应电脑、平板和手机屏幕，白泽灵台也可以添加到手机主屏幕。
 - 提供页面通知和提示音，并可选开启 Web Push 后台提醒。
 - 用量统计按日期、供应商、模型、项目和会话汇总 token 和估算费用。
 - 提供浅色和深色主题，可以调整字号，界面可选英文或简体中文。
-- 工作台用访问 Token 保护。Pivane 作为后台服务运行，并提供桌面入口。它会检查新版本，并生成升级提示词，你可以交给部署机器上的 Agent 执行。
+- 工作台用访问 Token 保护。白泽灵台作为后台服务运行，并提供桌面入口。它会检查新版本，并生成升级提示词，你可以交给部署机器上的 Agent 执行。
 
 ## 快速开始
 
@@ -125,23 +127,23 @@ npm start
 
 打开 <http://127.0.0.1:11408>，检查 **设置 → 供应商与模型**，选择一个项目文件夹，然后开始新聊天。
 
-日常使用时，请按[安装指南](docs/INSTALL_RECOVERY.md)（另有 [macOS](docs/MACOS.md) 和 [Windows](docs/WINDOWS.md) 版本）把数据放在应用目录之外，然后运行 `node scripts/install-service.cjs`。这样 Pivane 会在后台运行，并在你登录时自动启动；在 macOS 和 Windows 上还会添加桌面入口。
+日常使用时，请按[安装指南](docs/INSTALL_RECOVERY.md)（另有 [macOS](docs/MACOS.md) 和 [Windows](docs/WINDOWS.md) 版本）把数据放在应用目录之外，然后运行 `node scripts/install-service.cjs`。这样白泽灵台会在后台运行，并在你登录时自动启动；在 macOS 和 Windows 上还会添加桌面入口。
 
-> **已经在用 Pi CLI？** Pivane 默认使用同一个 Pi 身份，你的模型、登录、设置和会话都能直接使用。请不要同时从 CLI 和网页写入同一个会话。详见[已有 Pi 接入](docs/PI_CLI.md)。
+> **已经在用 Pi CLI？** 白泽灵台默认使用同一个 Pi 身份，你的模型、登录、设置和会话都能直接使用。请不要同时从 CLI 和网页写入同一个会话。详见[已有 Pi 接入](docs/PI_CLI.md)。
 >
 > **想让 Agent 帮你部署？** 把这个仓库和[用户 Agent 操作指南](docs/AGENT_GUIDE.md)交给你的编程 Agent。指南涵盖安装、配置、升级和排障。
 
 ## 支持平台
 
-Pivane 可以**直接在 Linux、macOS 和 Windows 上运行**，不需要 WSL 或 Docker。它足够轻量，可以部署在树莓派上，并且可以用任何现代浏览器访问。
+白泽灵台可以**直接在 Linux、macOS 和 Windows 上运行**，不需要 WSL 或 Docker。它足够轻量，可以部署在树莓派上，并且可以用任何现代浏览器访问。
 
-Pivane 默认只监听本机。如果要从手机或其他电脑访问，请先开启访问 Token，然后通过局域网、Tailscale 等 VPN，或 HTTPS 反向代理连接。详见[网络与访问](docs/ACCESS_CONTROL.md)。
+白泽灵台默认只监听本机。如果要从手机或其他电脑访问，请先开启访问 Token，然后通过局域网、Tailscale 等 VPN，或 HTTPS 反向代理连接。详见[网络与访问](docs/ACCESS_CONTROL.md)。
 
 ## 工作原理
 
 ```mermaid
 flowchart LR
-    B["浏览器<br/>电脑 · 平板 · 手机"] <-->|HTTP + WebSocket| S["Pivane 服务<br/>Node.js"]
+    B["浏览器<br/>电脑 · 平板 · 手机"] <-->|HTTP + WebSocket| S["白泽灵台服务<br/>Node.js"]
     S <-->|RPC| W["Pi Agent worker<br/>每个打开的线程一个"]
     W --> D[("Pi 会话与配置<br/>原生 JSONL")]
     W --> P["你的项目文件夹"]
@@ -152,11 +154,11 @@ flowchart LR
 - Node.js 服务（Express 和 WebSocket）提供纯 JavaScript 前端，不需要构建步骤。
 - 每个持久线程只由一个 Pi worker 进程提供服务，打开这个线程的所有浏览器都连接到同一个 worker。
 - Pi 的 SessionManager 和 JSONL 文件是每段对话唯一的记录。用量统计保存在单独的账本里，不保存消息内容。
-- 每个 Pivane 版本都内置一个经过测试的 Pi 版本，Pi 随 Pivane 一起升级。
+- 每个白泽灵台版本都内置一个经过测试的 Pi 版本，Pi 随白泽灵台一起升级。
 
 ## 安全模型
 
-- Pivane 面向**个人、单用户**的实例。拿到访问 Token 的人共用同一个实例，没有单独的用户账户。
+- 白泽灵台面向**个人、单用户**的实例。拿到访问 Token 的人共用同一个实例，没有单独的用户账户。
 - 项目根目录限制了可以浏览的文件夹，但它**不是沙箱**。Agent、Shell、Packages 和扩展都以服务器用户的权限运行，请只安装你信任的扩展。
 - 媒体生成和其他付费操作都要你明确确认后才会执行。失败或结果不确定的请求不会自动重试。
 
@@ -183,10 +185,10 @@ flowchart LR
 
 ## 参与贡献
 
-欢迎在 [Issues](https://github.com/YogurtJ/pivane/issues) 提交问题报告、建议和 PR。报告问题时，请写明 Pivane 版本和最短的复现步骤；日志和截图请先去除凭据和私人内容。
+欢迎在 [Issues](https://github.com/YogurtJ/pivane/issues) 提交问题报告、建议和 PR。报告问题时，请写明白泽灵台版本和最短的复现步骤；日志和截图请先去除凭据和私人内容。
 
 搭建开发环境时，先运行 `node scripts/install.cjs`，再用 `npm test` 和 `npm run check` 检查改动。请先阅读[贡献指南](CONTRIBUTING.md)和[开发文档](docs/development/README.md)。编程 Agent 还应阅读 [AGENTS.md](AGENTS.md)。
 
 ## 许可证
 
-Pivane 使用 [ISC 许可证](LICENSE)。Pi、Font Awesome、KaTeX、Mermaid 等内置组件保留各自的许可证，详见[第三方声明](THIRD_PARTY_NOTICES.md)。
+白泽灵台使用 [ISC 许可证](LICENSE)。Pi、Font Awesome、KaTeX、Mermaid 等内置组件保留各自的许可证，详见[第三方声明](THIRD_PARTY_NOTICES.md)。

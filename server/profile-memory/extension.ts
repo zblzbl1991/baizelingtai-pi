@@ -78,12 +78,12 @@ export async function registerProfileMemory(pi: ExtensionAPI): Promise<void> {
                 const wrapped = { ...tool,
                     parameters: creates ? { ...tool.parameters, properties: { ...tool.parameters.properties,
                         comparisonToken: Type.String({ maxLength: 1024,
-                            description: 'Pivane token returned with existing candidates on the first create attempt. Pass it with unchanged create arguments only after comparing those entries and deciding this information is independently new.' }) } } : tool.parameters,
+                            description: '白泽灵台 token returned with existing candidates on the first create attempt. Pass it with unchanged create arguments only after comparing those entries and deciding this information is independently new.' }) } } : tool.parameters,
                     description: tool.name === 'session_search'
                         ? `${tool.description}\n\nProject filters use the full canonical cwd. Results cover only indexed, verified native sessions; backfill may be partial.`
                         : knowledge && ['memory_replace', 'memory_remove'].includes(tool.name)
                             ? `${tool.description}\n\nFor profile MEMORY/USER, old_text must exactly match one complete active memory entry. A knowledge receipt confirms the result; do not retry uncertain writes without checking the receipt.`
-                            : creates ? `${tool.description}\n\nPivane create calls first return existing candidates without saving. Compare them, then use an existing-entry update or submit unchanged create arguments with the returned comparisonToken. This internal comparison needs no additional user approval.` : tool.description,
+                            : creates ? `${tool.description}\n\n白泽灵台 create calls first return existing candidates without saving. Compare them, then use an existing-entry update or submit unchanged create arguments with the returned comparisonToken. This internal comparison needs no additional user approval.` : tool.description,
                     promptGuidelines: tool.name === 'skill_manage' ? [
                         ...(tool.promptGuidelines || []).filter((guideline: string) => guideline !==
                             'Use the skill_manage tool after completing complex tasks that required trial and error or multiple tool calls.'),

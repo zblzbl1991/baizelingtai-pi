@@ -64,6 +64,7 @@ async function run(browser, viewport) {
  const appendButton = page.getByRole('button',{name:'追加到草稿',exact:true}); await appendButton.focus();
  control.revision++; control.extension.title='Status update'; event({type:'gateway_controls',controls:control});
  await page.waitForFunction(()=>document.title.includes('Status update'));
+ assert.equal(await page.title(),'Status update · 白泽灵台');
  assert.equal(await appendButton.evaluate(e=>document.activeElement===e),true,'unrelated extension status must preserve draft action focus');
  rejectAck=true;
  await page.getByRole('button',{name:'追加到草稿',exact:true}).click();await page.waitForFunction(()=>document.getElementById('pi-input').value.includes('EXTENSION_TEXT'));
@@ -95,4 +96,4 @@ async function run(browser, viewport) {
  assert.deepEqual(errors,[]);assert.equal(requests.filter(r=>r.method&&r.method!=='GET').length,0);
  await context.close(); console.log(`PASS ${viewport.width}: live snapshot/event fence, tool recovery, draft acknowledgement failure, body search/preview, config/restart, no model requests/errors/overflow`);
 }
-(async()=>{const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox']});try{for(const viewport of [{width:1440,height:1000},{width:393,height:852},{width:320,height:740}])await run(browser,viewport);}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+(async()=>{const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH || '/usr/bin/chromium',headless:true,args:['--no-sandbox']});try{for(const viewport of [{width:1440,height:1000},{width:393,height:852},{width:320,height:740}])await run(browser,viewport);}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

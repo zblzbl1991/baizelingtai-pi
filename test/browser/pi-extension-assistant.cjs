@@ -81,7 +81,7 @@ async function run(browser, base, width, locale, noProject = false) {
     assert.equal(await page.locator('#extensions-learned').count(), 0, 'learned skills belong to assistant profiles');
     assert.equal(await page.locator('.extensions-card').count(), 6);
     await page.locator('#extension-pi-subagents [data-installation="installed"]').waitFor();
-    assert.match(await page.locator('#extension-pi-subagents [data-installation]').textContent(), /Pivane.*0\.74\.0/);
+    assert.match(await page.locator('#extension-pi-subagents [data-installation]').textContent(), /白泽灵台.*0\.74\.0/);
     assert.equal(await page.locator('#extension-pi-web-access [data-installation="installed"]').count(), 1);
     assert.equal(await page.locator('#extension-pi-hermes-memory [data-installation="configured"]').count(), 1);
     memoryAdapterInstalled = true; await page.locator('#extensions-refresh').click();

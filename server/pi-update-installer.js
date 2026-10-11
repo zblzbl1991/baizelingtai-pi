@@ -72,7 +72,7 @@ async function stagePi({ root, directory, version, env = process.env, signal, ru
     copy(root, directory);
     const manifestPath = path.join(directory, 'package.json');
     const manifest = JSON.parse(readSafe(manifestPath));
-    if (manifest.pivaneCompatibility?.piVersion && manifest.pivaneCompatibility.piVersion !== version) throw new Error('This Pivane release is bound to its reviewed Pi version; update Pivane and its adapter together');
+    if (manifest.pivaneCompatibility?.piVersion && manifest.pivaneCompatibility.piVersion !== version) throw new Error('This 白泽灵台 release is bound to its reviewed Pi version; update 白泽灵台 and its adapter together');
     const baselinePi = manifest.pivaneManaged?.baselinePi || manifest.dependencies[PI_PACKAGES[0]];
     for (const name of Object.keys(manifest.dependencies)) if (name.startsWith('@earendil-works/')) manifest.dependencies[name] = version;
     const overrides = manifest.overrides?.['@earendil-works/pi-server'];

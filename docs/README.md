@@ -1,4 +1,4 @@
-# Pivane 文档
+# 白泽灵台文档
 
 [项目首页](../README.zh-CN.md) · English: [project overview](../README.md) · [installation](en/INSTALL.md) · [user guide](en/USER_GUIDE.md)。详细功能和开发文档目前主要为中文。
 
@@ -9,7 +9,7 @@
 | 第一次使用的用户 | [用户指南](USER_GUIDE.md) |
 | 要安装、升级或恢复实例的管理员 | [安装与恢复](INSTALL_RECOVERY.md)，再按平台读 [macOS](MACOS.md) / [Windows](WINDOWS.md) |
 | 协助用户安装、配置或排障的 Agent | [用户 Agent 操作指南](AGENT_GUIDE.md) |
-| 修改 Pivane 源码的开发者或 Agent | [开发文档](development/README.md) 与根目录 [AGENTS.md](../AGENTS.md) |
+| 修改白泽灵台源码的开发者或 Agent | [开发文档](development/README.md) 与根目录 [AGENTS.md](../AGENTS.md) |
 
 当前正式版为 **1.7.0**（Pi 1.1.0），见 [1.7.0 版本说明](releases/1.7.0.md)；下载包、校验文件和精确验收摘要以 [GitHub Releases](https://github.com/YogurtJ/pivane/releases/tag/v1.7.0) 为准。新增独立成果库与批量管理，改进多目录浏览和媒体参考素材，修复局域网 HTTP、Codemode 大量文本输出、侧栏阅读位置及公式／中文加粗兼容。三平台准确归档验收见[平台验证范围](RELEASE_INSTALL_VALIDATION.md)。旧 MCP 适配器配置须显式审查与迁移；公开发布不表示运行实例已切换。完整变化见 [CHANGELOG](../CHANGELOG.md)。
 

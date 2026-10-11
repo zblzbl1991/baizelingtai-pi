@@ -93,7 +93,7 @@ class PiNotificationService {
         this.lastTest.set(id, Date.now());
         const data = this.read(); const device = data?.devices.find(d => d.id === id && this.access.validIdentity(d.identity) && d.identity.tag === identity.tag);
         if (!device) throw fail('请先启用本设备通知');
-        if (!await this.deliver(device, { title: 'Pivane 测试通知', body: '本设备已连接系统通知。', id: randomUUID() }, data.vapid)) throw fail('推送未成功提交，请检查网络与订阅后重新启用');
+        if (!await this.deliver(device, { title: '白泽灵台测试通知', body: '本设备已连接系统通知。', id: randomUUID() }, data.vapid)) throw fail('推送未成功提交，请检查网络与订阅后重新启用');
         return { accepted: true };
     }
     async notify(event) {
@@ -104,7 +104,7 @@ class PiNotificationService {
         try {
             this.store.resolveProject(event.cwd);
             const data = this.read(); if (!data) return;
-            const payload = { id: event.completionId, title: 'Pivane',
+            const payload = { id: event.completionId, title: '白泽灵台',
                 body: event.kind === 'waiting' ? '任务正在等待你的确认。' : event.kind === 'error' ? '任务未成功完成，请打开工作台查看。' : '新的回复已完成，点击查看。' };
             // Bounded fanout, independent of model/worker lifetime.
             for (let i = 0; i < data.devices.length; i += 4) {

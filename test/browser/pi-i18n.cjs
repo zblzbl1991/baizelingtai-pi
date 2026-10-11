@@ -66,6 +66,9 @@ async function run(browser, base, width, language) {
     await page.waitForFunction(() => !document.getElementById('pi-input').disabled);
     const english = language.startsWith('en');
     assert.equal(await page.locator('html').getAttribute('lang'), english ? 'en' : 'zh-CN');
+    assert.equal(await page.title(), '白泽灵台');
+    assert.equal(await page.locator('.logo-brand h2').textContent(), '白泽灵台');
+    assert.equal(await page.locator('.workspace-login-brand span').textContent(), '白泽灵台');
     assert.equal(await page.locator('#workspace-settings-toggle').getAttribute('title'), english ? 'Workspace settings' : '工作台设置');
     const transcript = await page.locator('#pi-transcript-content').innerText();
     assert.ok(transcript.includes('保存') && transcript.includes('设置') && transcript.includes('原始代码：保存'));

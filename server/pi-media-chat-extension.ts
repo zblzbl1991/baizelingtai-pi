@@ -6,7 +6,7 @@ import { realpath } from 'node:fs/promises';
 import { readVerifiedFile } from './pi-file-bytes.js';
 import { fileScope } from './pi-file-scope.js';
 
-// Chat is the main media entry: the Agent prepares one request, Pivane shows a
+// Chat is the main media entry: the Agent prepares one request, 白泽灵台 shows a
 // confirmation card in the conversation and the user starts the paid generation
 // there. These tools only read the model catalog and validate a plan through the
 // planning-only internal credential; they cannot create or execute a ticket.
@@ -20,11 +20,11 @@ async function internal(path: string, options: RequestInit = {}) {
     const response = await fetch(new URL(path, origin), { ...options, redirect: 'error',
         headers: { ...options.headers, Authorization: `Bearer ${process.env.PI_WORKSPACE_INTERNAL_TOKEN}` } });
     const data: any = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(data?.error || `Pivane HTTP ${response.status}`);
+    if (!response.ok) throw new Error(data?.error || `白泽灵台 HTTP ${response.status}`);
     return data;
 }
 
-// Reference attachments: the Agent names an image instead of copying base64. Pivane
+// Reference attachments: the Agent names an image instead of copying base64. 白泽灵台
 // stores the bytes once (content-addressed) and the card shows a thumbnail so the
 // user sees exactly which image is sent before confirming.
 const REFERENCE_HELP = 'For image/video parameters (reference image, image to edit, first frame) pass a reference string, never base64: '
@@ -141,7 +141,7 @@ export function registerMediaChat(pi: ExtensionAPI) {
         if (!enabled(ctx)) return;
         pi.registerTool({
             name: 'media_models', label: 'Media models',
-            description: 'List the image, video and speech (TTS) models the user configured in Pivane, with each model\'s parameters, defaults and requirements. Read this before media_generate.',
+            description: 'List the image, video and speech (TTS) models the user configured in 白泽灵台, with each model\'s parameters, defaults and requirements. Read this before media_generate.',
             promptSnippet: 'List configured image, video and speech generation models',
             parameters: Type.Object({ kind: Type.Optional(StringEnum(KINDS)) }),
             execute: async (_id, input, signal) => {
@@ -177,7 +177,7 @@ export function registerMediaChat(pi: ExtensionAPI) {
         });
         pi.registerTool({
             name: 'media_generate', label: 'Generate media',
-            description: 'Prepare one image, video or speech generation with a configured model (ids from media_models), including image editing / image-to-image with a reference image. Pivane validates the parameters and shows the user a card in this chat; nothing is generated or charged until the user confirms that card. The user can edit parameters and regenerate in the card. ' + REFERENCE_HELP,
+            description: 'Prepare one image, video or speech generation with a configured model (ids from media_models), including image editing / image-to-image with a reference image. 白泽灵台 validates the parameters and shows the user a card in this chat; nothing is generated or charged until the user confirms that card. The user can edit parameters and regenerate in the card. ' + REFERENCE_HELP,
             promptSnippet: 'Generate images, videos or speech; the user confirms a card in this chat',
             promptGuidelines: [
                 'When the user asks for an image, video or spoken audio, call media_models, then media_generate with that model\'s declared parameters. Keep a model the user named. One call per output; several calls may be made together. Call it directly (not inside codemode) so the card appears.',
@@ -191,7 +191,7 @@ export function registerMediaChat(pi: ExtensionAPI) {
                 parameters: Type.Record(Type.String(), Type.Unknown())
             }),
             execute: async (_id, input, signal, _update, ctx) => {
-                if (!enabled(ctx)) throw new Error('A persistent managed Pivane thread is required');
+                if (!enabled(ctx)) throw new Error('A persistent managed 白泽灵台 thread is required');
                 let model: any;
                 for (const kind of KINDS) {
                     const catalog = await internal(`/api/media-agent/capabilities/${kind}`, { signal });

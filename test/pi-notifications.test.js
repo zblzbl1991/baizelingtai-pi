@@ -32,6 +32,7 @@ test('subscriptions persist privately, completion deduplicates, revocation stops
     const event = { cwd: '/project', sessionId: 'id', completionId: 'one', text: 'PRIVATE CHAT' };
     await service.notify(event); await service.notify(event);
     assert.equal(sent.length, 1); assert.ok(!JSON.stringify(sent).includes('PRIVATE CHAT'));
+    assert.equal(sent[0].title, '白泽灵台');
     await service.notify({ ...event, cwd: '/outside', completionId: 'outside' }); assert.equal(sent.length, 1);
     revoke(); await service.notify({ ...event, completionId: 'two' }); assert.equal(sent.length, 1);
     assert.equal(service.status({ subscription: s }, identity).enabled, false);

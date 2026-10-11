@@ -94,7 +94,7 @@ class ManagedLauncher {
                 clearTimeout(timer);
                 if (this.child === child) this.child = null;
                 if (!ready) reject(new Error('Service exited before becoming ready'));
-                else if (!this.closed && !this.operation) { console.error('Pivane child exited; launcher will not replay tasks'); void this.close().finally(() => process.exit(code || 1)); }
+                else if (!this.closed && !this.operation) { console.error('白泽灵台 child exited; launcher will not replay tasks'); void this.close().finally(() => process.exit(code || 1)); }
             });
         });
     }
@@ -119,7 +119,7 @@ class ManagedLauncher {
         // Reserve before awaiting installation, shutdown or backup work.
         this.operation = Promise.resolve().then(async () => {
             job.fromVersion = message.action === 'application' ? JSON.parse(readSafe(path.join(this.releasePath(previous), 'package.json'))).version : JSON.parse(readSafe(require('node:fs').realpathSync.native(path.join(this.releasePath(previous), 'node_modules/@earendil-works/pi-coding-agent/package.json')))).version;
-            this.log(job, 'system', message.action === 'update' ? `Updating Pivane's Pi: ${job.fromVersion} -> ${message.version}` : `Pivane operation: ${message.action}`);
+            this.log(job, 'system', message.action === 'update' ? `Updating 白泽灵台's Pi: ${job.fromVersion} -> ${message.version}` : `白泽灵台 operation: ${message.action}`);
             this.save(); this.send({ type: 'maintenance-accepted', id: message.id });
             let next = previous;
             if (message.action === 'update' || message.action === 'application') {
@@ -153,7 +153,7 @@ class ManagedLauncher {
             this.state.active = next;
             job.phase = 'succeeded'; job.finishedAt = new Date().toISOString(); job.exitCode = 0;
             job.installedVersion = message.action === 'application' ? message.release.version : message.action === 'update' ? message.version : job.fromVersion;
-            this.log(job, 'system', `Completed. Running ${message.action === 'application' ? 'Pivane' : 'Pi'} ${job.installedVersion}.`); this.save();
+            this.log(job, 'system', `Completed. Running ${message.action === 'application' ? '白泽灵台' : 'Pi'} ${job.installedVersion}.`); this.save();
         }).catch(async error => {
             const failedPhase = job.phase;
             job.exitCode = Number.isInteger(error?.exitCode) ? error.exitCode : null;
@@ -167,7 +167,7 @@ class ManagedLauncher {
                     try { await this.stopChild(); } catch { /* The process has exited; record failure, do not reuse it. */ }
                 }
                 if (!this.child) {
-                    try { await this.boot(previous); } catch { console.error('Pivane recovery startup failed; use the retained installation and backup'); }
+                    try { await this.boot(previous); } catch { console.error('白泽灵台 recovery startup failed; use the retained installation and backup'); }
                 }
             }
         }).finally(() => {

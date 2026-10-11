@@ -83,7 +83,7 @@
                 : active ? t('{0} 个运行中', active) : runs.length ? t('{0} 个已结束', runs.length) : t('后台工作进行中');
             const keepBadge = this.root.querySelector('.sa-runs-keep');
             keepBadge.hidden = !keep; keepBadge.querySelector('span').textContent = t('会话保持中');
-            keepBadge.title = t('后台子 Agent 未结束，Pivane 会保留此会话，以便结果返回后主 Agent 自动继续。');
+            keepBadge.title = t('后台子 Agent 未结束，白泽灵台会保留此会话，以便结果返回后主 Agent 自动继续。');
             if (!this.root.open) return;
             this.list.replaceChildren(...runs.map(run => this.card(run)));
             if (!runs.length) this.list.append(el('p', 'sa-runs-empty', t('后台工作尚未提供运行详情。')));

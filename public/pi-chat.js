@@ -3084,7 +3084,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 root.append(actions);
             }
             const hint = document.createElement('p'); hint.className = 'pi-empty-hint';
-            hint.textContent = state.session ? translateUi('点选后填入输入框，修改后再发送。') : state.cwd ? '' : translateUi('目录位于部署 Pivane 的服务器，不是当前浏览器所在设备。');
+            hint.textContent = state.session ? translateUi('点选后填入输入框，修改后再发送。') : state.cwd ? '' : translateUi('目录位于部署白泽灵台的服务器，不是当前浏览器所在设备。');
             if (hint.textContent) root.append(hint);
         }
         elements.transcript.replaceChildren(root);

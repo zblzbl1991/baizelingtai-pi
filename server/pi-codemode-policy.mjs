@@ -11,7 +11,7 @@ function codemodeModelRegistry(registry) {
         getModelOfType: registry.getModelOfType.bind(registry),
         classify: registry.classify.bind(registry),
         generateImages() {
-            throw new Error('models.generateImages() is blocked in Pivane codemode. Use the Pivane media planning and confirmation workflow; image generation requires a user-confirmed media execution ticket.');
+            throw new Error('models.generateImages() is blocked in 白泽灵台 codemode. Use the 白泽灵台 media planning and confirmation workflow; image generation requires a user-confirmed media execution ticket.');
         },
     }));
 }

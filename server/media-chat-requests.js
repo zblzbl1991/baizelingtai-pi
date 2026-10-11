@@ -68,11 +68,11 @@ class MediaChatRequests {
             for (const attempt of entry.attempts) {
                 if (attempt.status === 'running') {
                     // The process stopped while a paid request was in flight: its outcome is unknown.
-                    Object.assign(attempt, { status: 'uncertain', error: 'Pivane restarted while this request was running; check the gallery before generating again', finishedAt: at });
+                    Object.assign(attempt, { status: 'uncertain', error: '白泽灵台 restarted while this request was running; check the gallery before generating again', finishedAt: at });
                     interrupted = true;
                 } else if (attempt.status === 'queued') {
                     // Queued requests were never sent; the queue itself lives in memory.
-                    Object.assign(attempt, { status: 'failed', error: 'Pivane restarted before this request started; nothing was submitted', finishedAt: at });
+                    Object.assign(attempt, { status: 'failed', error: '白泽灵台 restarted before this request started; nothing was submitted', finishedAt: at });
                     interrupted = true;
                 }
                 delete attempt.ticket;

@@ -2,7 +2,7 @@
   "name": "@pivane/media-workbench",
   "version": "1.1.0",
   "private": true,
-  "description": "Official Pi extension and skill adapters for Pivane media planning",
+  "description": "Official Pi extension and skill adapters for 白泽灵台 media planning",
   "keywords": ["pi-package"],
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

@@ -155,7 +155,7 @@ class PiResourceService {
             const ctx = await this.context(input.cwd, input.scope);
             if (ctx.revision !== input.expectedRevision) throw fail('配置已变化，请刷新', 409);
             if (obsoleteMcpAdapter(input.source, input.scope === 'project' ? path.join(ctx.cwd, '.pi') : ctx.agentDir) && input.action !== 'remove') throw fail('当前 Pi 已原生内置 MCP；请配置原生 mcp.json，不要安装旧适配器');
-            if (identify(input.source, input.scope === 'project' ? path.join(ctx.cwd, '.pi') : ctx.agentDir)) throw fail('此组件由 Pivane 管理，请随 Pivane 更新；资源开关可单独设置');
+            if (identify(input.source, input.scope === 'project' ? path.join(ctx.cwd, '.pi') : ctx.agentDir)) throw fail('此组件由白泽灵台管理，请随白泽灵台更新；资源开关可单独设置');
             if (input.scope === 'project' && !ctx.trust.effective) throw fail('请先信任项目');
             const wantedScope = input.scope === 'project' ? 'project' : 'user';
             const matches = ctx.manager.listConfiguredPackages().filter(p => p.source === input.source);

@@ -162,14 +162,14 @@ function mountUpdateRoutes(router, service = new UpdateService(), hooks = {}) {
                 const channel = req.body.channel || (service.appVersion.includes('-') ? 'preview' : 'stable');
                 service.snapshot(channel);
                 const candidate = await service.pivane(channel);
-                if (candidate.status !== 'available' || !candidate.downloadUrl || !candidate.checksumUrl) throw Object.assign(new Error('此渠道没有可安装的 Pivane 新版本'), { status: 409 });
+                if (candidate.status !== 'available' || !candidate.downloadUrl || !candidate.checksumUrl) throw Object.assign(new Error('此渠道没有可安装的白泽灵台新版本'), { status: 409 });
                 const bytes = await require('./pi-application-installer').download(candidate.checksumUrl, { env: service.env, maxBytes: 1024 });
                 const match = /^([a-f0-9]{64})  (pivane-[^\r\n]+\.tar\.gz)\r?\n?$/.exec(bytes.toString());
                 if (!match || match[2] !== `pivane-${candidate.version}.tar.gz`) throw Error('Invalid release checksum');
                 version = candidate.version; release = { version, sha256: match[1] };
             }
             if (action === 'update') {
-                if (require('../package.json').pivaneCompatibility?.piVersion) throw Object.assign(new Error('当前 Pivane 与已验证 Pi 版本绑定，请一起更新 Pivane 及原生适配，不单独升级 Pi'), { status: 409 });
+                if (require('../package.json').pivaneCompatibility?.piVersion) throw Object.assign(new Error('当前白泽灵台与已验证 Pi 版本绑定，请一起更新白泽灵台及原生适配，不单独升级 Pi'), { status: 409 });
                 const upstream = await service.pi(); version = upstream.version;
                 if (compareVersions(service.piVersion, version) !== -1) throw Object.assign(new Error('没有高于当前版本的 Pi 正式版'), { status: 409 });
             }

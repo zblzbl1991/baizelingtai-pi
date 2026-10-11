@@ -79,7 +79,7 @@
             }
         }
         const bundled = inventory.packages.find(item => item.managedBy === 'pivane' && item.name === entry.id && item.installed);
-        if (bundled) return { state: 'installed', label: text('Pivane 内置', 'Bundled with Pivane') + ' · ' + bundled.version };
+        if (bundled) return { state: 'installed', label: text('白泽灵台内置', 'Bundled with 白泽灵台') + ' · ' + bundled.version };
         const matches = inventory.packages.filter(item => identity(item.source) === entry.source || identity(item.source) === `github:${repositories[entry.id]}`);
         const installed = matches.filter(item => item.installed === true);
         if (installed.length) {
@@ -129,11 +129,11 @@
             '请帮我配置 Pi 0.99.1 原生 MCP。先检查全局或受信项目的 mcp.json、连接和工具暴露策略；不要安装 pi-mcp-adapter，不要展示凭据。使用 Pi 原生 MCP/Codemode 接口，写配置和授权前说明方案并等我确认。',
             'Help configure native Pi 0.99.1 MCP. Inspect global or trusted-project mcp.json, connections and tool exposure. Do not install pi-mcp-adapter or display credentials. Use native MCP/Codemode; explain the plan and wait for confirmation before configuration changes or sign-in.');
         if (entry && ['pi-subagents', 'pi-hermes-memory'].includes(entry.id)) need = text(
-            `请帮我配置 Pivane 内置的 ${entry.name}。该组件随 Pivane 安装和更新，请先检查当前版本、资源开关、身份与会话加载状态，再调整配置，不要另行安装或修改上游源码。`,
-            `Help me configure ${entry.name}, bundled with Pivane. Check its version, resource toggles, profile and actual session loading before adjusting settings. It updates with Pivane; do not install another copy or modify upstream source.`);
+            `请帮我配置白泽灵台内置的 ${entry.name}。该组件随白泽灵台安装和更新，请先检查当前版本、资源开关、身份与会话加载状态，再调整配置，不要另行安装或修改上游源码。`,
+            `Help me configure ${entry.name}, bundled with 白泽灵台. Check its version, resource toggles, profile and actual session loading before adjusting settings. It updates with 白泽灵台; do not install another copy or modify upstream source.`);
         if (entry?.id === 'pi-hermes-memory' && inventory?.profileMemoryInstalled) need += text(
-            '\nPivane 已安装独立的档案记忆适配组件。请先检查助手身份和实际加载状态；不要另行全局启用上游默认扩展，以免扩大历史索引范围。',
-            '\nPivane already has the separate profile memory adapter installed. Inspect assistant profiles and actual loading first; do not additionally enable the upstream default extension globally, which would broaden history indexing.');
+            '\n白泽灵台已安装独立的档案记忆适配组件。请先检查助手身份和实际加载状态；不要另行全局启用上游默认扩展，以免扩大历史索引范围。',
+            '\n白泽灵台 already has the separate profile memory adapter installed. Inspect assistant profiles and actual loading first; do not additionally enable the upstream default extension globally, which would broaden history indexing.');
         window.dispatchEvent(new CustomEvent('pi:extension-assistant', { detail: { need, scope: document.getElementById('extensions-scope')?.value || 'global' } }));
     }
     function mountExplore(root) {
@@ -223,7 +223,7 @@
         const panel = node('section', null, { class: 'workspace-settings-panel', 'data-settings-panel': 'extensions' });
         const featured = node('section', null, { id: 'extensions-featured' });
         const intro = node('div', null, { class: 'extensions-intro' });
-        intro.append(node('h3', text('为你的工作添一种能力', 'Add a capability to your work')), node('p', text('发现适合你的工具与技能，按需配置到 Pivane。', 'Discover tools and skills for your work, and configure them when you need them.')),
+        intro.append(node('h3', text('为你的工作添一种能力', 'Add a capability to your work')), node('p', text('发现适合你的工具与技能，按需配置到白泽灵台。', 'Discover tools and skills for your work, and configure them when you need them.')),
             button(text('添加自定义', 'Add custom'), () => assistant(), { class: 'settings-primary-button', 'data-extension-configure': '', disabled: '' }));
         const search = node('input', null, { type: 'search', id: 'extensions-search', placeholder: text('搜索名称、用途或作者', 'Search names, uses, or authors'), 'aria-label': text('搜索精选扩展', 'Search featured extensions') });
         const toolbar = node('div', null, { class: 'extensions-inventory-toolbar' });

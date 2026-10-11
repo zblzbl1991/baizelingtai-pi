@@ -1,8 +1,10 @@
 <div align="center">
 
-<img src="public/brand/logo-192.png" alt="Pivane logo" width="96" height="96">
+<img src="public/brand/logo-192.png" alt="白泽灵台 logo" width="96" height="96">
 
-# Pivane
+# 白泽灵台
+
+The display name is 白泽灵台 in both interface languages. Technical identifiers and release URLs remain `pivane`; this source change is not yet released.
 
 **A self-hosted web workspace for AI coding agents, usable from any screen.**
 
@@ -19,14 +21,14 @@ Subagents, scheduled tasks, MCP, long-term memory, rich file previews and a buil
 
 [Download](https://github.com/YogurtJ/pivane/releases/latest) · [Install](docs/en/INSTALL.md) · [User guide](docs/en/USER_GUIDE.md) · [Changelog](CHANGELOG.md) · [Report an issue](https://github.com/YogurtJ/pivane/issues)
 
-<img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/hero-en.webp" alt="Pivane on the desktop: projects and threads, a finished coding task and its diff" width="100%">
+<img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/hero-en.webp" alt="白泽灵台 on the desktop: projects and threads, a finished coding task and its diff" width="100%">
 
 </div>
 
-## Why Pivane
+## Why 白泽灵台
 
-- **Uses Pi's own runtime.** Pivane runs Pi's native runtime and reads and writes Pi's own session files. You get streaming replies, tool calls, file diffs, shell commands, steering and context compaction in a UI that is easy to read on any screen.
-- **Start on your desktop and check in from your phone.** Sessions are stored on your server. When you open a thread on another device, the same agent process serves it. You can add Pivane to your home screen and get notified when a reply finishes.
+- **Uses Pi's own runtime.** 白泽灵台 runs Pi's native runtime and reads and writes Pi's own session files. You get streaming replies, tool calls, file diffs, shell commands, steering and context compaction in a UI that is easy to read on any screen.
+- **Start on your desktop and check in from your phone.** Sessions are stored on your server. When you open a thread on another device, the same agent process serves it. You can add 白泽灵台 to your home screen and get notified when a reply finishes.
 - **Run many agents from one workspace.** You can use subagents, task threads that agents create for themselves, messages between threads, side chats and cron-scheduled tasks. A live view shows what each one is doing.
 - **Your models, your keys, your machine.** You can use any provider Pi supports, including Anthropic, OpenAI, Google Gemini, GitHub Copilot, OpenRouter, DeepSeek, Qwen, Kimi, MiniMax, xAI and Mistral. Sign in with an API key or OAuth, or add your own OpenAI-compatible endpoint. Credentials and history stay on your machine.
 - **Extends the same way Pi does.** Pi packages, skills, prompt templates and MCP servers can be installed from the browser. You can also ask the built-in extension assistant to find and set them up for you.
@@ -36,7 +38,7 @@ Subagents, scheduled tasks, MCP, long-term memory, rich file previews and a buil
 
 The agent plans the task, reads and edits files, runs the tests and reports back. When it finishes, the whole process folds into a one-line summary that you can expand at any time.
 
-<p align="center"><img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/demo-en.gif" alt="A coding task running in Pivane: plan, tool calls, tests and the final summary" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/demo-en.gif" alt="A coding task running in 白泽灵台: plan, tool calls, tests and the final summary" width="100%"></p>
 
 <sub>Screenshots and recordings use a synthetic demo project.</sub>
 
@@ -90,7 +92,7 @@ The agent plans the task, reads and edits files, runs the tests and reports back
 
 ### Media lab and voice
 
-<img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/media-en.webp" alt="A media generation card in Pivane chat, with editable parameters and a completed synthetic image" width="100%">
+<img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/media-en.webp" alt="A media generation card in 白泽灵台 chat, with editable parameters and a completed synthetic image" width="100%">
 
 - You can add image, video, text-to-speech and speech-to-text services. Presets cover OpenAI, Google Gemini, Volcengine Ark (Seedream and Seedance) and Alibaba Cloud Model Studio, and any compatible HTTP API can be added manually.
 - An agent drafts editable parameters from a plain-language request in chat or the lab. Each generation runs only after you confirm it; busy requests queue, and the same status returns after a refresh. Reference images or videos can be attached when the model supports them.
@@ -99,13 +101,13 @@ The agent plans the task, reads and edits files, runs the tests and reports back
 
 ### Everyday use
 
-<img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/mobile-en.webp" alt="Pivane on phones: task results, dark mode with math, and the model picker" width="100%">
+<img src="https://raw.githubusercontent.com/YogurtJ/pivane/main/docs/assets/readme/mobile-en.webp" alt="白泽灵台 on phones: task results, dark mode with math, and the model picker" width="100%">
 
-- Layouts adapt to desktop, tablet and phone screens, and Pivane can be installed to your home screen.
+- Layouts adapt to desktop, tablet and phone screens, and 白泽灵台 can be installed to your home screen.
 - In-page notifications and sounds are available, with optional Web Push for background alerts.
 - A usage dashboard breaks down tokens and estimated cost by day, provider, model, project and session.
 - Light and dark color themes, adjustable font sizes, and an English or Simplified Chinese interface are available.
-- An access token protects the workspace. Pivane runs as a background service with a desktop shortcut. It checks for new releases and gives you an upgrade prompt to hand to an agent on the host.
+- An access token protects the workspace. 白泽灵台 runs as a background service with a desktop shortcut. It checks for new releases and gives you an upgrade prompt to hand to an agent on the host.
 
 ## Quick start
 
@@ -125,23 +127,23 @@ npm start
 
 Open <http://127.0.0.1:11408>, check **Settings → Providers and models**, pick a project folder and start a new chat.
 
-For everyday use, follow the [installation guide](docs/en/INSTALL.md) to keep your data outside the app directory, then run `node scripts/install-service.cjs`. This keeps Pivane running in the background and starts it when you log in. On macOS and Windows, it also adds a desktop shortcut.
+For everyday use, follow the [installation guide](docs/en/INSTALL.md) to keep your data outside the app directory, then run `node scripts/install-service.cjs`. This keeps 白泽灵台 running in the background and starts it when you log in. On macOS and Windows, it also adds a desktop shortcut.
 
-> **Already using Pi CLI?** Pivane uses the same Pi identity by default, so your models, logins, settings and sessions are available right away. Avoid writing to the same session from the CLI and the browser at the same time. See [existing Pi users](docs/en/INSTALL.md#existing-pi-cli-users).
+> **Already using Pi CLI?** 白泽灵台 uses the same Pi identity by default, so your models, logins, settings and sessions are available right away. Avoid writing to the same session from the CLI and the browser at the same time. See [existing Pi users](docs/en/INSTALL.md#existing-pi-cli-users).
 >
 > **Want an agent to set it up?** Give your coding agent this repository and the [agent operations guide](docs/AGENT_GUIDE.md). It covers installation, configuration, upgrades and troubleshooting.
 
 ## Platforms
 
-Pivane runs **natively on Linux, macOS and Windows** (no WSL or Docker required). It is light enough to host on a Raspberry Pi, and you can use it from any modern browser.
+白泽灵台 runs **natively on Linux, macOS and Windows** (no WSL or Docker required). It is light enough to host on a Raspberry Pi, and you can use it from any modern browser.
 
-Pivane listens on localhost by default. To reach it from your phone or another computer, turn on the access token, then connect over your LAN, a VPN such as Tailscale, or an HTTPS reverse proxy. See [Network & access](docs/en/USER_GUIDE.md#network--access).
+白泽灵台 listens on localhost by default. To reach it from your phone or another computer, turn on the access token, then connect over your LAN, a VPN such as Tailscale, or an HTTPS reverse proxy. See [Network & access](docs/en/USER_GUIDE.md#network--access).
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    B["Browsers<br/>desktop · tablet · phone"] <-->|HTTP + WebSocket| S["Pivane server<br/>Node.js"]
+    B["Browsers<br/>desktop · tablet · phone"] <-->|HTTP + WebSocket| S["白泽灵台 server<br/>Node.js"]
     S <-->|RPC| W["Pi agent workers<br/>one per open thread"]
     W --> D[("Pi sessions and settings<br/>native JSONL")]
     W --> P["Your project folders"]
@@ -152,13 +154,13 @@ flowchart LR
 - A Node.js server (Express and WebSocket) serves a plain JavaScript frontend, so there is no build step.
 - Each persistent thread is served by exactly one Pi worker process, and every browser that opens the thread connects to that worker.
 - Pi's SessionManager and JSONL files are the only record of each conversation. Usage statistics are kept in a separate ledger that stores no message content.
-- Each Pivane release bundles a tested version of Pi, which is upgraded together with Pivane.
+- Each 白泽灵台 release bundles a tested version of Pi, which is upgraded together with 白泽灵台.
 
 ## Security model
 
-- Pivane is meant for **personal, single-user** instances. Everyone who has the access token shares the same instance, and there are no separate user accounts.
+- 白泽灵台 is meant for **personal, single-user** instances. Everyone who has the access token shares the same instance, and there are no separate user accounts.
 - Project roots limit which folders you can browse, but they are **not a sandbox**. The agent, shell, packages and extensions all run with the permissions of the server's user account, so install only extensions you trust.
-- Media generation and other paid actions run only after you explicitly confirm them. Pivane never retries failed or uncertain requests automatically.
+- Media generation and other paid actions run only after you explicitly confirm them. 白泽灵台 never retries failed or uncertain requests automatically.
 
 ## FAQ
 
@@ -183,10 +185,10 @@ flowchart LR
 
 ## Contributing
 
-Bug reports, ideas and pull requests are welcome in [Issues](https://github.com/YogurtJ/pivane/issues). When reporting a problem, include your Pivane version and the shortest steps that reproduce it. Remove credentials and private content from logs and screenshots first.
+Bug reports, ideas and pull requests are welcome in [Issues](https://github.com/YogurtJ/pivane/issues). When reporting a problem, include your 白泽灵台 version and the shortest steps that reproduce it. Remove credentials and private content from logs and screenshots first.
 
 To set up a development environment, run `node scripts/install.cjs`, then check your changes with `npm test` and `npm run check`. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [development docs](docs/development/README.md) first. Coding agents should also read [AGENTS.md](AGENTS.md).
 
 ## License
 
-Pivane is released under the [ISC License](LICENSE). Pi, Font Awesome, KaTeX, Mermaid and other bundled components keep their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).
+白泽灵台 is released under the [ISC License](LICENSE). Pi, Font Awesome, KaTeX, Mermaid and other bundled components keep their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).

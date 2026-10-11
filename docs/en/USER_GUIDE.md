@@ -1,8 +1,8 @@
-# Pivane user guide
+# 白泽灵台 user guide
 
 [简体中文](../USER_GUIDE.md) · [Install](INSTALL.md) · [Documentation](../README.md)
 
-Pivane runs on your computer or server. Other devices can use its browser interface, but project paths, Shell commands and Agent tools use the **server's filesystem and OS permissions**.
+白泽灵台 runs on your computer or server. Other devices can use its browser interface, but project paths, Shell commands and Agent tools use the **server's filesystem and OS permissions**.
 
 ## Start your first session
 
@@ -35,7 +35,7 @@ Channels supporting Fast or Ultrafast show a separate Speed control with cost mu
 
 Ask the main Agent explicitly to delegate. The **Subagents** chip above the composer shows status, models, tools and usage. Steer sends guidance, Stop requests cancellation, and Continue is offered for eligible runs. Actual availability depends on the run's state. Check uncertain outcomes before repeating an action.
 
-Subagents ship with Pivane. Global/project defaults and role overrides are saved in Models & capabilities; an override does not create a role definition. Saving leaves active tasks unchanged, and an idle runtime reopen applies new settings. See [bundled capabilities](../BUNDLED_CAPABILITIES.md).
+Subagents ship with 白泽灵台. Global/project defaults and role overrides are saved in Models & capabilities; an override does not create a role definition. Saving leaves active tasks unchanged, and an idle runtime reopen applies new settings. See [bundled capabilities](../BUNDLED_CAPABILITIES.md).
 
 **Session kept open** means background work is still active. Closing the page does not stop it; maintenance also waits. Use the run's Stop control when needed. Result notices and requests can be expanded from their compact rows.
 
@@ -103,7 +103,7 @@ Open **Extensions** on desktop or **More → Extensions** on phones:
 
 Installed does not mean loaded in the current conversation. Reload idle resources and verify them after setup. Untrusted projects cannot receive project writes. Legacy MCP adapter migration requires stopped backups; see [MCP](../MCP.md) and [native resources](../NATIVE_SETTINGS.md).
 
-Use **Add → Add capabilities…** for setup or troubleshooting. Package operations use web confirmation, and tools run on the deployment machine. Computer-use extensions do not directly control the phone viewing Pivane. Third-party resources need their own dependencies and permissions.
+Use **Add → Add capabilities…** for setup or troubleshooting. Package operations use web confirmation, and tools run on the deployment machine. Computer-use extensions do not directly control the phone viewing 白泽灵台. Third-party resources need their own dependencies and permissions.
 
 ## Scheduled tasks
 
@@ -185,7 +185,7 @@ The picker is limited by server `PI_PROJECT_ROOTS` and OS permissions. Projects 
 
 ## Versions and updates
 
-**Settings → Versions and updates** checks Pivane and Pi versions without installing them. Copy the independent-Agent prompt to a separate Agent on the host to inspect compatibility, backups and an update plan. An Agent inside the service must not directly stop the service hosting its own conversation. Pi and Pivane are upgraded together. See [updates](../UPDATES.md).
+**Settings → Versions and updates** checks 白泽灵台 and Pi versions without installing them. Copy the independent-Agent prompt to a separate Agent on the host to inspect compatibility, backups and an update plan. An Agent inside the service must not directly stop the service hosting its own conversation. Pi and 白泽灵台 are upgraded together. See [updates](../UPDATES.md).
 
 ## Settings, usage and notifications
 

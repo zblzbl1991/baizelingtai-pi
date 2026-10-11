@@ -19,7 +19,7 @@
         let snapshot = null, profiles = [], projects = [], selected = '', draft = null, dirty = false, busy = false, visible = false, epoch = 0, query = '', filterProfile = '';
         let runRequest = null, previewEpoch = 0, projectsRequested = false;
         const header = node('header', 'cron-header'), heading = node('div');
-        heading.append(node('span', 'cron-eyebrow', 'PIVANE'), node('h1', '', t('定时任务')), node('p', '', t('让日常安排，准时回到对话里。')));
+        heading.append(node('span', 'cron-eyebrow', '白泽灵台'), node('h1', '', t('定时任务')), node('p', '', t('让日常安排，准时回到对话里。')));
         const actions = node('div', 'cron-actions');
         const button = (label, icon, action, cls = '') => {
             const b = node('button', `cron-button ${cls}`); b.type = 'button';

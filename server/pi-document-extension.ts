@@ -27,7 +27,7 @@ export function registerDocuments(pi: ExtensionAPI) {
                 columns: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 }))
             }),
             execute: async (_id, raw, signal, _update, context) => {
-                if (!enabled(context)) throw new Error('A persistent managed Pivane thread is required');
+                if (!enabled(context)) throw new Error('A persistent managed 白泽灵台 thread is required');
                 signal?.throwIfAborted();
                 const sessionFile = context.sessionManager.getSessionFile(), sessionId = context.sessionManager.getSessionId();
                 const input = Object.fromEntries(Object.entries(raw).filter(([key, value]) => key === 'id' || value != null && value !== ''));
