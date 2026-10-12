@@ -11,7 +11,22 @@ const { createApplication } = require('../desktop-launcher-fixture.cjs');
 
 async function main() {
     assert.equal(process.platform, 'win32', 'native Windows required');
-    const fixture = createApplication(), { root, env } = fixture;
+    let fixture;
+    if (process.argv[2] === '--portable-root') {
+        const root = fs.realpathSync.native(process.argv[3]);
+        assert.equal(fs.existsSync(path.join(root, '.pivane-portable-validation')), true, 'only the independent archive validator may supply a portable root');
+        assert.equal(fs.existsSync(path.join(root, 'pivane-portable.json')), true);
+        const base = path.dirname(root), scratch = path.join(base, 'browser-only'); fs.mkdirSync(scratch);
+        const env = require('../../scripts/package-windows-portable.cjs').portableEnvironment(root, scratch);
+        const system = path.join(process.env.SystemRoot, 'System32');
+        env.PATH = [system, path.join(system, 'WindowsPowerShell/v1.0')].join(';');
+        Object.assign(env, { PORT: '0', HOST: '127.0.0.1', PI_CODING_AGENT_DIR: path.join(root, 'data/agent'),
+            PI_MEDIA_DATA_DIR: path.join(root, 'data/media'), PI_MEDIA_CONFIG_DIR: path.join(root, 'data/media-lab'),
+            PI_WEB_DEFERRED_FILE: path.join(root, 'data/pivane-deferred-messages.json'), PI_PROJECT_ROOTS: base });
+        fs.writeFileSync(path.join(root, '.pivane-launcher-test'), 'independent portable validation\n');
+        fixture = { root, env, base, portable: true };
+    } else fixture = createApplication();
+    const { root, env } = fixture;
     const evidence = process.env.PIVANE_DESKTOP_EVIDENCE || fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-tray-evidence-'));
     fs.mkdirSync(evidence, { recursive: true });
     env.PIVANE_DESKTOP_SMOKE_ROOT = root;
@@ -92,6 +107,6 @@ async function main() {
         // Exercise the real menu's shutdown and retain failed fixtures for diagnosis.
         await exited;
     }
-    fs.rmSync(fixture.base, { recursive: true, force: true });
+    if (!fixture.portable) fs.rmSync(fixture.base, { recursive: true, force: true });
 }
 main().catch(error => { console.error(error.stack); process.exitCode = 1; });

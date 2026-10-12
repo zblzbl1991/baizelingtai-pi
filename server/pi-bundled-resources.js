@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { catalog, packagePath } = require('./pi-bundled-capabilities');
+const { runtimeShellPath } = require('./pi-runtime-shell');
 const TYPES = ['extensions', 'skills', 'prompts', 'themes'];
 const sourceOf = value => typeof value === 'string' ? value : value?.source;
 function obsoleteMcpAdapter(source, base) {
@@ -85,6 +86,7 @@ function defaultToolSelection(settings) {
 }
 function settingsView(settings, cwd, agentDir) {
     return new Proxy(settings, { get(target, prop) {
+        if (prop === 'getShellPath') return () => runtimeShellPath(target.getShellPath());
         if (prop === 'getDefaultTools') return () => defaultToolSelection(target);
         if (prop === 'getGlobalSettings') return () => projectSettings(target.getGlobalSettings(), agentDir, { global: true });
         if (prop === 'getProjectSettings') return () => projectSettings(target.getProjectSettings(), path.join(cwd, '.pi'));

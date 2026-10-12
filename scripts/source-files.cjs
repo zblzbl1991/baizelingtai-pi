@@ -51,7 +51,7 @@ function distributionFiles(root) {
         ...require('./vendor-files.cjs').vendorFiles(root),
         'native/pi-win32-fd.c', 'native/pi-win32-x64-fd.node', 'native/win32-x64-manifest.json',
         'native/pi-darwin-fd.c', 'native/pi-darwin-fd.node', 'native/darwin-fd-manifest.json',
-        'package.json', 'package-lock.json', 'LICENSE', 'server.js', '.env.example', '.gitignore',
+        'package.json', 'package-lock.json', 'LICENSE', 'server.js', '.env.example', '.gitignore', 'scripts/windows-portable-assets.json',
         '白泽灵台.exe', '启动白泽灵台.vbs', '启动白泽灵台.cmd',
         'native/pivane-desktop-launcher.cs', 'native/pivane-desktop-launcher.manifest', 'native/pivane-desktop-launcher-build.json',
         'public/vendor/mermaid-11.17.2.min.js', 'public/vendor/mermaid-LICENSE.txt',

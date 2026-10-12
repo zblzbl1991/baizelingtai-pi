@@ -114,7 +114,7 @@ try {
     # Prepend bundled tools and real Git Bash, avoiding the Windows WSL bash shim.
     $toolPaths = @()
     foreach ($base in @($AppRoot, (Split-Path $AppRoot -Parent))) {
-        foreach ($relative in @('tools\rg', 'tools\git\bin', 'tools\git\usr\bin')) {
+        foreach ($relative in @('tools\rg', 'tools\fd', 'tools\git\bin', 'tools\git\usr\bin')) {
             $candidate = Join-Path $base $relative
             if (Test-Path -LiteralPath $candidate -PathType Container) { $toolPaths += $candidate }
         }

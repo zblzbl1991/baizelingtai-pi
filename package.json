@@ -18,6 +18,7 @@
     "check:docs": "node scripts/check-docs.cjs",
     "pack:trial": "node scripts/package-trial.cjs",
     "pack:release": "node scripts/package-trial.cjs --release",
+    "pack:windows": "node scripts/package-windows-portable.cjs",
     "access:reset": "node scripts/access-reset.cjs"
   },
   "overrides": {

@@ -16,11 +16,11 @@ Windows 托盘启动器的交互设计参考 [dsh-tray-launcher](https://github.
 
 ## 通过npm安装的直接依赖
 
-发布归档不包含node_modules。npm ci按package-lock.json取得以下依赖及其传递依赖，安装目录保留各自的许可证。下表列出本候选版本直接依赖的声明，不把传递依赖归为同一种许可。
+源码发布归档不包含node_modules。npm ci按package-lock.json取得以下依赖及其传递依赖，安装目录保留各自的许可证。Windows 便携 ZIP 包含锁定安装的依赖并完整保留包内许可证。下表列出本候选版本直接依赖的声明，不把传递依赖归为同一种许可。
 
 | 依赖 | 版本 | 声明的许可证 |
 |---|---|---|
-| @earendil-works/pi-ai、pi-coding-agent、pi-server、pi-tui、pi-agent-core（及原生 pi-mcp / pi-codemode） | 0.99.1 | MIT |
+| @earendil-works/pi-ai、pi-coding-agent、pi-server、pi-tui、pi-agent-core（及原生 pi-mcp / pi-codemode） | 1.1.0 | MIT |
 | @highlightjs/cdn-assets | 11.11.1 | BSD-3-Clause |
 | cors | 2.8.6 | MIT |
 | dompurify | 3.4.16 | MPL-2.0 OR Apache-2.0 |
@@ -44,5 +44,7 @@ Windows 托盘启动器的交互设计参考 [dsh-tray-launcher](https://github.
 ## 平台与外部服务
 
 随包macOS/Windows原生文件系统组件为项目自有代码，使用ISC；构建输入及哈希记录在native目录。Node.js、操作系统、Bash、ripgrep与浏览器由用户另行安装，不随本源码包分发。
+
+Windows 便携版另含官方 Node.js（含 npm）、PortableGit（含 Bash）、ripgrep 和 fd；具体版本及官方来源由 [运行环境清单](scripts/windows-portable-assets.json) 锁定。保留 `runtime/LICENSE`、`tools/git/LICENSE.txt` 和 Git 组件许可文件、`tools/rg/COPYING` / `LICENSE-MIT` / `UNLICENSE`、`tools/fd/LICENSE-MIT` / `LICENSE-APACHE`，包内 `PORTABLE_NOTICES.txt` 记录官方来源、校验和及 Git 源码/构建入口。操作系统与浏览器仍由用户提供。
 
 模型权重、GPU服务和用户的供应商账户不包含在发布包内，其许可及服务条款由相应提供者规定。可选在线字体由浏览器从Google Fonts加载，访问失败时使用系统字体。

@@ -50,6 +50,7 @@ test('release inventory includes its own discovery and checking tools and exclud
     for (const file of ['scripts/source-files.cjs', 'scripts/check-syntax.cjs', 'scripts/run-tests.cjs',
         'server/pi-update-installer.js', 'test/source-files.test.js', 'pi-packages/media-workbench/skills/media-workbench/SKILL.md',
         'scripts/desktop-tray.ps1', 'scripts/start-desktop.cjs', 'server/pivane-desktop-launcher.js',
+        'scripts/package-windows-portable.cjs', 'scripts/windows-portable-assets.json',
         '白泽灵台.exe', 'native/pivane-desktop-launcher.cs', 'native/pivane-desktop-launcher-build.json',
         '启动白泽灵台.vbs', '启动白泽灵台.cmd']) assert.ok(files.includes(file), file);
     assert.equal(new Set(files).size, files.length);

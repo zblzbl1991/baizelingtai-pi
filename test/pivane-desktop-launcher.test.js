@@ -30,6 +30,24 @@ test('desktop startup keeps existing identity, data and alias precedence without
     assert.throws(() => desktopEnvironment(root, { PI_MEDIA_DATA_DIR: 'relative' }), /absolute/);
 });
 
+test('portable defaults are local, follow the current directory, and preserve explicit configuration', { skip: process.platform !== 'win32' }, t => {
+    const root = fixture(t);
+    fs.writeFileSync(path.join(root, 'pivane-portable.json'), JSON.stringify({ version: 1, platform: 'win32', arch: 'x64' }));
+    const env = desktopEnvironment(root, {});
+    assert.equal(env.PI_CODING_AGENT_DIR, path.join(root, 'data/agent'));
+    assert.equal(env.PI_MEDIA_DATA_DIR, path.join(root, 'data/media'));
+    assert.equal(env.PI_MEDIA_CONFIG_DIR, path.join(root, 'data/media-lab'));
+    assert.equal(env.PI_WEB_DEFERRED_FILE, path.join(root, 'data/pivane-deferred-messages.json'));
+    assert.equal(env.HOST, '127.0.0.1');
+    assert.equal(fs.existsSync(path.join(root, 'data')), false, 'resolution never copies or creates user data');
+    const explicit = { PI_CODING_AGENT_DIR: path.join(root, 'own-agent'), PI_MEDIA_DATA_DIR: root, HOST: '::1' };
+    assert.equal(desktopEnvironment(root, explicit).PI_CODING_AGENT_DIR, explicit.PI_CODING_AGENT_DIR);
+    assert.equal(desktopEnvironment(root, explicit).PI_MEDIA_DATA_DIR, root);
+    assert.equal(desktopEnvironment(root, explicit).HOST, '::1');
+    fs.writeFileSync(path.join(root, 'pivane-portable.json'), '{"version":2}');
+    assert.throws(() => desktopEnvironment(root, {}), /Unsupported portable/);
+});
+
 test('browser URL maps wildcard bindings to loopback and validates ports', () => {
     assert.equal(browserUrl('0.0.0.0', 11408), 'http://127.0.0.1:11408/');
     assert.equal(browserUrl('::', 11408), 'http://127.0.0.1:11408/');

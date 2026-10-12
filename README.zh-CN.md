@@ -129,6 +129,8 @@ npm start
 
 Windows 完成依赖安装后，也可以双击 **白泽灵台.exe**，或用它创建桌面快捷方式：服务就绪后自动打开浏览器，通过托盘查看日志与正常退出。详情见[托盘启动器](docs/DESKTOP_LAUNCHER.md)。
 
+维护者可以在 Windows x64 上执行 `npm run pack:windows`，生成包含运行环境和应用依赖的便携 ZIP；接收者解压后双击 EXE 即可，详见[便携版打包与验收](docs/DESKTOP_LAUNCHER.md#windows-x64-便携版)。
+
 日常使用时，请按[安装指南](docs/INSTALL_RECOVERY.md)（另有 [macOS](docs/MACOS.md) 和 [Windows](docs/WINDOWS.md) 版本）把数据放在应用目录之外，然后运行 `node scripts/install-service.cjs`。这样白泽灵台会在后台运行，并在你登录时自动启动；在 macOS 和 Windows 上还会添加桌面入口。
 
 > **已经在用 Pi CLI？** 白泽灵台默认使用同一个 Pi 身份，你的模型、登录、设置和会话都能直接使用。请不要同时从 CLI 和网页写入同一个会话。详见[已有 Pi 接入](docs/PI_CLI.md)。

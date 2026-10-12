@@ -43,9 +43,40 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File scripts/desktop-tra
 
 ## 随包运行环境
 
-启动器优先使用应用目录或其父目录下的 `runtime/node.exe`，其次查找系统 PATH 中的 Node。工具路径优先加入相应位置的 `tools/rg`、`tools/git/bin` 和 `tools/git/usr/bin`，随后使用常规安装的 Git Bash 与现有 PATH；还会从 PATH 上的 `git.exe` 定位装在其他盘符的 Git Bash。只修改当前进程的环境。
+### Windows x64 便携版
 
-当前源码发行脚本包含启动入口与托盘脚本，**仍不包含 Node、Git、rg 或 node_modules**。要交付免安装便携包，须另外按目标系统准备这些依赖并保留许可证；仅有启动器不代表已经生成完整便携包。
+便携 ZIP 内已包含 Node、npm、Git Bash、ripgrep、fd 和按 lockfile 安装的应用依赖。用户将完整 ZIP 解压到可写目录，双击 **白泽灵台.exe** 即可打开工作台，不用运行安装命令。首次使用仍需在“供应商与模型”中配置自己的账号；包中没有维护者认证或用户数据。
+
+便携版要求 Windows 10/11 x64、自带 Windows PowerShell 5.1、.NET Framework 4 和默认浏览器。它不注册系统服务或修改系统 PATH，也不包含模型权重、GPU 服务、Python 或其他项目自己的开发环境。
+
+默认身份位于 `data/agent`，媒体位于 `data/media`，媒体配置位于 `data/media-lab`，预约文件位于 `data/pivane-deferred-messages.json`。启动时根据当前解压目录计算绝对路径，`.env` 和显式环境配置仍优先。正常退出后备份整个目录；移动已有目录不会改写原生会话中的项目路径。使用过的目录含个人账号与数据，不要重新发给别人。
+
+维护者在 Windows x64 源码目录执行：
+
+```powershell
+node scripts/install.cjs
+npm run pack:windows
+```
+
+脚本使用统一公开源码清单生成快照，从官方地址下载固定版本的运行环境并核对 SHA256，随后用包内 Node/npm 在独立目录锁定安装生产依赖。不会复制当前 `node_modules`、`.env`、身份或运行数据。`dist/portable-cache` 缓存经校验的下载；缓存不进入交付包。构建需要网络和 Windows 自带 `tar.exe` / `curl.exe`，无须预装 7-Zip。结果为 `dist/pivane-<版本>-windows-x64-portable-<时间戳>.zip` 及同名 `.sha256`，不会覆盖已有包。
+
+`scripts/windows-portable-assets.json` 是运行环境版本、下载地址和哈希的唯一清单。更换运行环境版本须重新验证。包内 `PORTABLE_MANIFEST.json` 记录源码归档哈希和全部应用、依赖、工具文件哈希；原始第三方许可证保留，来源见 `PORTABLE_NOTICES.txt`。
+
+准确 ZIP 的独立验收入口（Playwright/Chromium 是维护者 QA 工具，不随包分发）：
+
+```powershell
+$env:PLAYWRIGHT_MODULE='C:/qa/node_modules/playwright'
+$env:CHROMIUM_PATH='C:/Program Files/Google/Chrome/Application/chrome.exe'
+node test/release/windows-portable.cjs 'C:/packages/portable.zip' '<实际SHA256>'
+```
+
+验收逐文件核对 ZIP，使用中文、空格与 `&` 路径，不安装依赖，移除系统开发工具 PATH；验证包内 SQLite/esbuild、真实 Pi worker 与 Bash、EXE/快捷方式、Chromium 桌面/手机、重复启动及正常停机。此专项通过表示该包的便携启动已验收；正式公开 Release 仍按[发布流程](development/RELEASING.md)完成完整验收。
+
+启动器优先使用应用目录或其父目录下的 `runtime/node.exe`，其次查找系统 PATH 中的 Node。工具路径优先加入相应位置的 `tools/rg`、`tools/fd`、`tools/git/bin` 和 `tools/git/usr/bin`，随后使用常规安装的 Git Bash 与现有 PATH；还会从 PATH 上的 `git.exe` 定位装在其他盘符的 Git Bash。只修改当前进程的环境。
+
+受管 Pi 的 Shell 默认通过 SDK 配置视图直接使用包内 Bash 的真实绝对路径，支持中文安装目录，避免 Windows `where` 的输出编码影响发现。用户已经配置的 `shellPath` 优先；不会改写用户设置文件或上游源码。
+
+`pack:trial` / `pack:release` 继续生成源码包，不包含 Node、Git、rg 或 node_modules；`pack:windows` 才生成上述 Windows x64 便携 ZIP。
 
 ## 实现与参考
 

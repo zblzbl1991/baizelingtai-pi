@@ -16,6 +16,19 @@ function installationId(root) {
 function desktopEnvironment(root, environment = process.env) {
     const env = { ...environment };
     loadLocalEnv(path.join(root, '.env'), env);
+    const portableFile = path.join(root, 'pivane-portable.json');
+    if (fs.existsSync(portableFile)) {
+        const portable = JSON.parse(fs.readFileSync(portableFile, 'utf8'));
+        if (portable.version !== 1 || portable.platform !== 'win32' || portable.arch !== 'x64' || process.platform !== 'win32' || process.arch !== 'x64')
+            throw Error('Unsupported portable package.');
+        // Resolve defaults on each launch so a fresh portable folder can be relocated.
+        // Explicit deployment configuration always retains ownership and precedence.
+        env.PI_CODING_AGENT_DIR ||= path.join(root, 'data/agent');
+        env.PI_MEDIA_DATA_DIR ||= path.join(root, 'data/media');
+        env.PI_MEDIA_CONFIG_DIR ||= path.join(root, 'data/media-lab');
+        env.PI_WEB_DEFERRED_FILE ||= path.join(root, 'data/pivane-deferred-messages.json');
+        env.HOST ||= '127.0.0.1';
+    }
     // Match the managed entry point; changing launch method never migrates data.
     env.PI_MEDIA_DATA_DIR ||= root;
     // Native identity owns implicit media configuration and deferred queues.

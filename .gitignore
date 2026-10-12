@@ -32,6 +32,11 @@ pivane-artifacts/
 .pi-web-*/
 .pi/
 dist/
+/data/
+/runtime/
+/tools/
+/pivane-portable.json
+/PORTABLE_MANIFEST.json
 # Private maintainer context; public development contracts remain versioned.
 /AGENTS.local.md
 /docs/local/
