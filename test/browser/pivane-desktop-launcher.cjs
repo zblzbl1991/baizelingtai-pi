@@ -15,8 +15,11 @@ async function main() {
     const evidence = process.env.PIVANE_DESKTOP_EVIDENCE || fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-tray-evidence-'));
     fs.mkdirSync(evidence, { recursive: true });
     env.PIVANE_DESKTOP_SMOKE_ROOT = root;
-    const args = ['//B', '//Nologo', path.join(root, '启动白泽灵台.vbs')];
-    const tray = spawn('wscript.exe', args, { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const executable = path.join(root, '白泽灵台.exe');
+    const shortcutBuild = spawn(executable, ['--create-shortcut', root], { env, windowsHide: true, stdio: 'ignore' });
+    assert.equal((await once(shortcutBuild, 'close'))[0], 0);
+    const shortcut = path.join(root, '白泽灵台.lnk'); assert.equal(fs.existsSync(shortcut), true);
+    const tray = spawn(executable, [], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const exited = once(tray, 'close'), events = [];
     let pending = '', errors = '', browser;
     tray.stdout.setEncoding('utf8'); tray.stdout.on('data', text => {
@@ -59,7 +62,9 @@ async function main() {
         }
         assert.deepEqual(pageErrors, []);
         // Exercise the second-click path while the first tray owns the service.
-        const second = spawn('wscript.exe', args, { env, windowsHide: true, stdio: 'ignore' });
+        env.PIVANE_DESKTOP_SHORTCUT = shortcut;
+        const shortcutScript = '$shell=New-Object -ComObject WScript.Shell; $lnk=$shell.CreateShortcut($env:PIVANE_DESKTOP_SHORTCUT); if ($lnk.TargetPath -ne $env:PIVANE_DESKTOP_SMOKE_ROOT+"\\白泽灵台.exe") { throw "Unexpected shortcut target" }; Start-Process -FilePath $env:PIVANE_DESKTOP_SHORTCUT';
+        const second = spawn('powershell.exe', ['-NoProfile', '-EncodedCommand', Buffer.from(shortcutScript, 'utf16le').toString('base64')], { env, windowsHide: true, stdio: 'ignore' });
         const [secondCode] = await once(second, 'close'); assert.equal(secondCode, 0);
         const secondOpen = path.join(root, '.pivane-runtime/desktop/smoke-open-2.json'), openDeadline = Date.now() + 30000;
         while (!fs.existsSync(secondOpen)) { assert.ok(Date.now() < openDeadline, 'duplicate entry must reach the existing tray'); await new Promise(resolve => setTimeout(resolve, 100)); }
@@ -74,7 +79,7 @@ async function main() {
         while (!fs.existsSync(resultFile)) { assert.ok(Date.now() < stoppedDeadline, 'tray must finish normal shutdown'); await new Promise(resolve => setTimeout(resolve, 100)); }
         const report = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
         assert.equal(code, 0, errors);
-        assert.equal(report.filter(event => event.type === 'browser-opened').length, 2, 'initial launch and duplicate VBS click each open exactly once');
+        assert.equal(report.filter(event => event.type === 'browser-opened').length, 2, 'EXE launch and duplicate shortcut click each open exactly once');
         assert.equal(report.filter(event => event.type === 'ready').length, 1, 'readiness is processed once even when ShellExecute pumps messages');
         assert.equal(report.filter(event => event.type === 'error').length, 0);
         assert.ok(report.some(event => event.type === 'exited' && event.exitCode === 0), 'menu stop waited for actual exit');

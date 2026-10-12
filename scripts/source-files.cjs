@@ -44,6 +44,7 @@ function verifyBundledMemory(root) {
 
 function distributionFiles(root) {
     verifyBundledMemory(root);
+    verifyDesktopLauncher(root);
     const { publicDocumentation, assertPublicPath } = require('./check-docs.cjs');
     const files = [
         ...publicDocumentation(root), 'docs/public-files.json',
@@ -51,7 +52,8 @@ function distributionFiles(root) {
         'native/pi-win32-fd.c', 'native/pi-win32-x64-fd.node', 'native/win32-x64-manifest.json',
         'native/pi-darwin-fd.c', 'native/pi-darwin-fd.node', 'native/darwin-fd-manifest.json',
         'package.json', 'package-lock.json', 'LICENSE', 'server.js', '.env.example', '.gitignore',
-        '启动白泽灵台.vbs', '启动白泽灵台.cmd',
+        '白泽灵台.exe', '启动白泽灵台.vbs', '启动白泽灵台.cmd',
+        'native/pivane-desktop-launcher.cs', 'native/pivane-desktop-launcher.manifest', 'native/pivane-desktop-launcher-build.json',
         'public/vendor/mermaid-11.17.2.min.js', 'public/vendor/mermaid-LICENSE.txt',
         'public/vendor/katex-0.18.7/katex.min.js', 'public/vendor/katex-0.18.7/katex.min.css', 'public/vendor/katex-0.18.7/LICENSE',
         'public/brand/fontawesome-6.4.0/css/all.min.css', 'public/brand/fontawesome-6.4.0/LICENSE.txt',
@@ -73,4 +75,16 @@ function distributionFiles(root) {
     return result;
 }
 
-module.exports = { sourceFiles, distributionFiles, verifyBundledMemory };
+function verifyDesktopLauncher(root) {
+    const metadata = JSON.parse(fs.readFileSync(path.join(root, 'native/pivane-desktop-launcher-build.json'), 'utf8'));
+    const hash = file => require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex');
+    if (metadata.version !== 1 || metadata.platform !== 'win32' || metadata.arch !== 'anycpu' || metadata.runtime !== '.NET Framework 4' ||
+        !/^[a-f0-9]{64}$/.test(metadata.compilerSha256 || '') ||
+        metadata.appVersion !== JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version ||
+        metadata.sourceSha256 !== hash('native/pivane-desktop-launcher.cs') ||
+        metadata.manifestSha256 !== hash('native/pivane-desktop-launcher.manifest') ||
+        metadata.iconSha256 !== hash('public/brand/favicon.ico') || metadata.binarySha256 !== hash('白泽灵台.exe')) {
+        throw Error('Desktop executable differs from its source/build manifest; rebuild on Windows.');
+    }
+}
+module.exports = { sourceFiles, distributionFiles, verifyBundledMemory, verifyDesktopLauncher };

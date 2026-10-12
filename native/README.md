@@ -1,5 +1,9 @@
 # Native filesystem boundary
 
+## Windows desktop entry
+
+`pivane-desktop-launcher.cs` builds the small `白泽灵台.exe` entry with the Windows .NET Framework compiler. It runs the existing PowerShell tray without a console and can create a native desktop shortcut through Windows Shell COM. It does not change the filesystem backends below. Rebuild on Windows with `node scripts/build-desktop-launcher.cjs`; commit the source, executable and `pivane-desktop-launcher-build.json` together. The distribution inventory verifies source, execution-level manifest, icon, binary and application version before packaging. Target execution is covered by the isolated native tray/browser smoke script.
+
 `server/pi-file-descriptor.js` supplies opened-object final paths for file preview, session text search and usage scanning. Linux retains `/proc/self/fd`. The macOS Node-API 8 bundle calls `fcntl(fd, F_GETPATH)`. The Windows x64 Node-API 8 DLL calls Node's exported libuv descriptor conversion API, then Win32 filesystem APIs. No backend substitutes the requested path for a failed descriptor lookup.
 
 Pivane's native artifacts ship with source and SHA256 build manifests, so normal installation does not compile these components. SQLite's separate platform requirements are documented under [bundled capabilities](../docs/BUNDLED_CAPABILITIES.md). The loaders check binary/source hashes; missing or mismatched modules fail closed. The Windows module is also required for private filesystem writes, so a damaged component can prevent configuration initialization.

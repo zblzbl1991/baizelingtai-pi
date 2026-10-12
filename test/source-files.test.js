@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { sourceFiles, distributionFiles, verifyBundledMemory } = require('../scripts/source-files.cjs');
+const { sourceFiles, distributionFiles, verifyBundledMemory, verifyDesktopLauncher } = require('../scripts/source-files.cjs');
 
 function fixture(t) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-source-'));
@@ -50,10 +50,27 @@ test('release inventory includes its own discovery and checking tools and exclud
     for (const file of ['scripts/source-files.cjs', 'scripts/check-syntax.cjs', 'scripts/run-tests.cjs',
         'server/pi-update-installer.js', 'test/source-files.test.js', 'pi-packages/media-workbench/skills/media-workbench/SKILL.md',
         'scripts/desktop-tray.ps1', 'scripts/start-desktop.cjs', 'server/pivane-desktop-launcher.js',
+        '白泽灵台.exe', 'native/pivane-desktop-launcher.cs', 'native/pivane-desktop-launcher-build.json',
         '启动白泽灵台.vbs', '启动白泽灵台.cmd']) assert.ok(files.includes(file), file);
     assert.equal(new Set(files).size, files.length);
     assert.equal(files.some(file => /^(?:backups|docs\/local|\.pivane-runtime|node_modules)\//.test(file)), false);
     assert.equal(files.some(file => /^public\/(?:images|audio|videos|downloads|legacy-workspace)\//.test(file)), false);
     assert.equal(files.includes('AGENTS.local.md'), false);
     assert.equal(files.includes('native/pi-win32-fd.lib'), false);
+});
+
+test('desktop binary inventory rejects changed source and incorrect build metadata', t => {
+    const root = fixture(t), original = path.resolve(__dirname, '..');
+    for (const file of ['package.json', '白泽灵台.exe', 'native/pivane-desktop-launcher.cs',
+        'native/pivane-desktop-launcher.manifest', 'native/pivane-desktop-launcher-build.json', 'public/brand/favicon.ico']) {
+        fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+        fs.copyFileSync(path.join(original, file), path.join(root, file));
+    }
+    assert.doesNotThrow(() => verifyDesktopLauncher(root));
+    fs.appendFileSync(path.join(root, 'native/pivane-desktop-launcher.cs'), '\n// synthetic change\n');
+    assert.throws(() => verifyDesktopLauncher(root), /rebuild/);
+    fs.copyFileSync(path.join(original, 'native/pivane-desktop-launcher.cs'), path.join(root, 'native/pivane-desktop-launcher.cs'));
+    const metadata = JSON.parse(fs.readFileSync(path.join(root, 'native/pivane-desktop-launcher-build.json')));
+    metadata.platform = 'synthetic'; fs.writeFileSync(path.join(root, 'native/pivane-desktop-launcher-build.json'), JSON.stringify(metadata));
+    assert.throws(() => verifyDesktopLauncher(root), /rebuild/);
 });

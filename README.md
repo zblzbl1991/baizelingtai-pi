@@ -127,7 +127,7 @@ npm start
 
 Open <http://127.0.0.1:11408>, check **Settings → Providers and models**, pick a project folder and start a new chat.
 
-On Windows, after installing dependencies, double-click **启动白泽灵台.vbs** to start the workspace and open your default browser. Use the tray menu to view logs or shut down cleanly; see the [tray launcher guide](docs/DESKTOP_LAUNCHER.md).
+On Windows, after installing dependencies, double-click **白泽灵台.exe** to start the workspace and open your default browser. It can also create a desktop shortcut. Use the tray menu to view logs or shut down cleanly; see the [tray launcher guide](docs/DESKTOP_LAUNCHER.md).
 
 For everyday use, follow the [installation guide](docs/en/INSTALL.md) to keep your data outside the app directory, then run `node scripts/install-service.cjs`. This keeps 白泽灵台 running in the background and starts it when you log in. On macOS and Windows, it also adds a desktop shortcut.
 

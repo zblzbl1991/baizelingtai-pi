@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "appVersion": "1.7.0",
+  "platform": "win32",
+  "arch": "anycpu",
+  "runtime": ".NET Framework 4",
+  "sourceSha256": "515debef7c63b0d7a1ea539d199a8aaf80aa1889b66e0aba725998e86039c20e",
+  "manifestSha256": "621e70839f47fc6c84a269c8059632ff4abbecc6da6050093b9f4b6c6ada8f03",
+  "iconSha256": "c5719c474419834c2134439892954028c95114c6b937fbd33c52d25a55085eac",
+  "compilerSha256": "46809206887326d2d24db1eff1f3064de972c3451abe766b49111450a5e08e00",
+  "binarySha256": "95086933ca1d27b3d52eed7278b6c3fc4abc789fdd1a37dc9d97b35e0eda7cd3"
+}
