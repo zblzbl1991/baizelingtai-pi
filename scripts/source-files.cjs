@@ -6,7 +6,7 @@ const path = require('node:path');
 const GROUPS = Object.freeze({
     server: { directory: 'server', extensions: ['.js', '.mjs', '.ts'] },
     public: { directory: 'public', extensions: ['.js', '.css', '.html'], excluded: ['vendor', 'brand', 'images', 'videos', 'audio', 'downloads', 'legacy-workspace'] },
-    scripts: { directory: 'scripts', extensions: ['.cjs'] },
+    scripts: { directory: 'scripts', extensions: ['.cjs', '.ps1'] },
     tests: { directory: 'test', pattern: /\.test\.js$/ },
     testSupport: { directory: 'test', extensions: ['.js', '.cjs', '.mjs', '.ts'] },
     browser: { directory: 'test/browser', extensions: ['.cjs'] },
@@ -51,6 +51,7 @@ function distributionFiles(root) {
         'native/pi-win32-fd.c', 'native/pi-win32-x64-fd.node', 'native/win32-x64-manifest.json',
         'native/pi-darwin-fd.c', 'native/pi-darwin-fd.node', 'native/darwin-fd-manifest.json',
         'package.json', 'package-lock.json', 'LICENSE', 'server.js', '.env.example', '.gitignore',
+        '启动白泽灵台.vbs', '启动白泽灵台.cmd',
         'public/vendor/mermaid-11.17.2.min.js', 'public/vendor/mermaid-LICENSE.txt',
         'public/vendor/katex-0.18.7/katex.min.js', 'public/vendor/katex-0.18.7/katex.min.css', 'public/vendor/katex-0.18.7/LICENSE',
         'public/brand/fontawesome-6.4.0/css/all.min.css', 'public/brand/fontawesome-6.4.0/LICENSE.txt',

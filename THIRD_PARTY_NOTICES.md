@@ -12,6 +12,8 @@ Pivane自身的代码使用[ISC许可证](LICENSE)。第三方软件、字体、
 
 保留库文件中的嵌入版权/许可注释。Pivane蓝色π星光品牌资源随本项目分发，不属于Font Awesome图标。
 
+Windows 托盘启动器的交互设计参考 [dsh-tray-launcher](https://github.com/fancr-code/dsh-tray-launcher)（MIT，© 2026 fancr-code）；本项目独立实现，未复制其脚本或图标素材。
+
 ## 通过npm安装的直接依赖
 
 发布归档不包含node_modules。npm ci按package-lock.json取得以下依赖及其传递依赖，安装目录保留各自的许可证。下表列出本候选版本直接依赖的声明，不把传递依赖归为同一种许可。

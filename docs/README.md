@@ -21,6 +21,7 @@
 |---|---|
 | 部署、升级、备份和恢复 | [安装与恢复](INSTALL_RECOVERY.md) · [macOS](MACOS.md) · [Windows](WINDOWS.md) |
 | 后台常驻、登录启动与桌面入口 | [后台服务](BACKGROUND_SERVICE.md) |
+| Windows 双击启动、自动打开网页与托盘正常退出 | [托盘启动器](DESKTOP_LAUNCHER.md) |
 | 给已有 Pi CLI 接入网页，共用模型与身份 | [已有 Pi 接入](PI_CLI.md) |
 | 检查版本、交给独立 Agent 辅助更新 | [版本与更新](UPDATES.md) |
 | 网络与访问、通知、日常排障 | [网络与访问](ACCESS_CONTROL.md) · [通知](NOTIFICATIONS.md) · [运维](OPERATIONS.md) |

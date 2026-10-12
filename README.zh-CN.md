@@ -127,6 +127,8 @@ npm start
 
 打开 <http://127.0.0.1:11408>，检查 **设置 → 供应商与模型**，选择一个项目文件夹，然后开始新聊天。
 
+Windows 完成依赖安装后，也可以双击 **启动白泽灵台.vbs**：服务就绪后自动打开浏览器，通过托盘查看日志与正常退出。详情见[托盘启动器](docs/DESKTOP_LAUNCHER.md)。
+
 日常使用时，请按[安装指南](docs/INSTALL_RECOVERY.md)（另有 [macOS](docs/MACOS.md) 和 [Windows](docs/WINDOWS.md) 版本）把数据放在应用目录之外，然后运行 `node scripts/install-service.cjs`。这样白泽灵台会在后台运行，并在你登录时自动启动；在 macOS 和 Windows 上还会添加桌面入口。
 
 > **已经在用 Pi CLI？** 白泽灵台默认使用同一个 Pi 身份，你的模型、登录、设置和会话都能直接使用。请不要同时从 CLI 和网页写入同一个会话。详见[已有 Pi 接入](docs/PI_CLI.md)。

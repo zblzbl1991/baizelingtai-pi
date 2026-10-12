@@ -55,7 +55,7 @@ test('managed inventory preserves legacy filters, respects trust, and saves port
     assert.deepEqual(saved.packages, legacy.packages); assert.equal(saved.sentinel, 9);
     assert.deepEqual(saved.pivaneBuiltins.subagents.extensions, ['-index.js']);
     for (const action of ['install', 'update', 'remove']) await assert.rejects(resources.packageAction({ cwd, scope: 'global', action,
-        source: packagePath(catalog[0]), confirmed: true, expectedRevision: snapshot.revision }), /Pivane/);
+        source: packagePath(catalog[0]), confirmed: true, expectedRevision: snapshot.revision }), /此组件由白泽灵台管理/);
     await resources.toggle({ cwd, scope: 'global', expectedRevision: snapshot.revision, resourceId: extension.id, confirmed: true, state: 'inherit' });
     assert.equal((await resources.snapshot(cwd)).resources.find(r => r.id === extension.id).enabled, true);
     await native.saveTrust({ cwd, expectedRevision: (await native.context(cwd)).revision, decision: true, confirmed: true });

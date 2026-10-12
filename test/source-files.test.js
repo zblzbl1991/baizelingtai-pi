@@ -48,7 +48,9 @@ test('release inventory requires the reviewed memory build even when installatio
 test('release inventory includes its own discovery and checking tools and excludes maintenance and user data', () => {
     const files = distributionFiles(path.resolve(__dirname, '..'));
     for (const file of ['scripts/source-files.cjs', 'scripts/check-syntax.cjs', 'scripts/run-tests.cjs',
-        'server/pi-update-installer.js', 'test/source-files.test.js', 'pi-packages/media-workbench/skills/media-workbench/SKILL.md']) assert.ok(files.includes(file), file);
+        'server/pi-update-installer.js', 'test/source-files.test.js', 'pi-packages/media-workbench/skills/media-workbench/SKILL.md',
+        'scripts/desktop-tray.ps1', 'scripts/start-desktop.cjs', 'server/pivane-desktop-launcher.js',
+        '启动白泽灵台.vbs', '启动白泽灵台.cmd']) assert.ok(files.includes(file), file);
     assert.equal(new Set(files).size, files.length);
     assert.equal(files.some(file => /^(?:backups|docs\/local|\.pivane-runtime|node_modules)\//.test(file)), false);
     assert.equal(files.some(file => /^public\/(?:images|audio|videos|downloads|legacy-workspace)\//.test(file)), false);

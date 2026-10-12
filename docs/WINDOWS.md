@@ -65,6 +65,8 @@ node.exe scripts/install-service.cjs
 
 ## 更新、备份与恢复
 
+希望通过双击手动启动、自动打开浏览器并在托盘管理退出时，使用 [Windows 托盘启动器](DESKTOP_LAUNCHER.md)。已有计划任务安装继续使用原入口；切换前先正常停机并卸载原服务，不同时启用两套所有者。
+
 备份前暂停预约、处理未保存草稿并等所有任务结束，按实际常驻方式正常停机并确认本实例进程退出。用用户自己的备份工具整批保存实际 Pi 身份目录、data、projects、instance.env、实际服务配置及发布包/校验文件；共享身份通常在安装目录之外，必须同时停止使用该身份的 CLI 并保存该目录，不能仅备份 BASE/data。不要只备份会话JSONL，也不要把备份放进公开下载目录。使用支持NTFS权限的备份方式；恢复后核对Agent目录的受保护DACL。
 
 升级时把新版本解压到另一个releases子目录，进入新目录执行 `node.exe scripts/install.cjs`（旧归档没有该脚本时使用 `npm.cmd ci`），复制固定的instance.env为.env，再启动新版本。旧版本必须已经停止，新旧版本不能同时打开同一身份或预约文件。数据绝对路径保持不变；不要复制旧node_modules或重建空身份。
