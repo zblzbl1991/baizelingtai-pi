@@ -62,7 +62,6 @@
             if (epoch !== statusEpoch) return;
             if (data.accessControl !== true) return false;
             access.supported = true; access.enabled = data.enabled;
-            $('workspace-access-nav').hidden = false;
             $('workspace-access-remember').closest('label').hidden = false;
             const oldToken = sessionStorage.getItem('pi.web.token');
             sessionStorage.removeItem('pi.web.token');

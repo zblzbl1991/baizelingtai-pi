@@ -303,7 +303,7 @@ limits. A saved document is not evidence of successful indexing or activation in
 
 ## Agent write-time comparison
 
-Pivane implements comparison in its own adapter and knowledge service; the
+白泽灵台 implements comparison in its own adapter and knowledge service; the
 pi-hermes-memory vendor sources and dependencies are unchanged. Native
 `memory_add` and `skill_manage(action:'create')` first return
 `details.comparisonRequired:true`, `saved:false`, related candidates and a
@@ -344,7 +344,7 @@ no saved receipt/card. Deleted-memory protection and explicit restore remain.
 
 ## Content scan
 
-Pivane's own write paths do not call the upstream `MemoryStore`/`SkillStore`
+白泽灵台's own write paths do not call the upstream `MemoryStore`/`SkillStore`
 write methods, so they carry the equivalent check themselves.
 `server/profile-memory/content-scan.js` runs on every knowledge `create`,
 `update` and `consolidate` (memory content; skill name, description and body),
@@ -514,7 +514,7 @@ requirements, child-session loading and update procedures.
 ## Legacy isolated installation
 
 The following recipe remains available for legacy installations and compatibility
-testing; ordinary Pivane installation uses the bundled path above.
+testing; ordinary 白泽灵台 installation uses the bundled path above.
 
 Use the pinned upstream tarball; its SHA256 is
 `6a1b71dfa34f40bba6372a4f71dec54cce76be4ae55923d3b83ebfc1c5920c20`

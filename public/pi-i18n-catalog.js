@@ -834,8 +834,8 @@
         "New thread"
     ],
     [
-        "导入 Pi 会话",
-        "Import Pi session"
+        "导入会话",
+        "Import session"
     ],
     [
         "删除线程",
@@ -1214,8 +1214,8 @@
         "Wait for the current task and confirmations to finish before reloading resources"
     ],
     [
-        "Pi runtime 已退出，会话记录已保留",
-        "Pi runtime exited. Session records are kept."
+        "运行实例已退出，会话记录已保留",
+        "Runtime exited; session records have been preserved"
     ],
     [
         "临时会话已销毁",
@@ -1230,12 +1230,12 @@
         "Exited"
     ],
     [
-        "Pi runtime 已退出",
-        "Pi runtime exited"
+        "运行实例已退出",
+        "Runtime exited"
     ],
     [
-        "当前没有运行中的 Pi runtime",
-        "No Pi runtime is running"
+        "当前没有运行中的会话实例",
+        "No session runtime is active"
     ],
     [
         "浏览器拒绝复制",
@@ -1258,8 +1258,8 @@
         "Stopped. Retrieved text is available in the runtime queue."
     ],
     [
-        "Pi Agent 已就绪",
-        "Pi Agent is ready"
+        "已就绪",
+        "Ready"
     ],
     [
         "Agent 运行中：引导在本轮工具后送达，后续在任务完成后送达",
@@ -1370,8 +1370,8 @@
         "Generating"
     ],
     [
-        "Pi Agent 发生错误",
-        "Pi Agent encountered an error"
+        "助手发生错误",
+        "The assistant encountered an error"
     ],
     [
         "自动重试失败",
@@ -1402,12 +1402,12 @@
         "Idle"
     ],
     [
-        "Pi Agent 已连接",
-        "Pi Agent connected"
+        "已连接",
+        "Connected"
     ],
     [
-        "Pi 正在执行",
-        "Pi is running"
+        "正在执行",
+        "Working"
     ],
     [
         "压缩中",
@@ -1566,8 +1566,8 @@
         "Switching this session's model…"
     ],
     [
-        "运行现场超过恢复预览限额，部分内容未显示；最终消息以 Pi 完成记录为准。",
-        "Live state exceeded the recovery preview limit; some content is omitted. Pi's completed records determine the final messages."
+        "运行现场超过恢复预览限额，部分内容未显示；最终消息以会话完成记录为准。",
+        "The live preview exceeds the recovery limit, so some content is hidden. Final messages follow the completed session record."
     ],
     [
         "初始化期间事件过多，请重新打开线程",
@@ -1590,8 +1590,8 @@
         "Pi Agent is not connected"
     ],
     [
-        "Pi Agent 连接失败",
-        "Pi Agent connection failed"
+        "连接失败",
+        "Connection failed"
     ],
     [
         "临时会话已结束",
@@ -1622,12 +1622,12 @@
         "Starting Pi runtime"
     ],
     [
-        "正在加载 Pi session",
-        "Loading Pi session"
+        "正在加载会话",
+        "Loading session"
     ],
     [
-        "正在启动临时 Pi runtime",
-        "Starting temporary Pi runtime"
+        "正在启动临时会话",
+        "Starting a temporary session"
     ],
     [
         "会话已删除",
@@ -1666,8 +1666,8 @@
         "Unread marker was not confirmed"
     ],
     [
-        "还没有 Pi 项目",
-        "No Pi projects yet"
+        "还没有项目",
+        "No projects yet"
     ],
     [
         "没有匹配的项目或线程",
@@ -1910,12 +1910,12 @@
         "Project"
     ],
     [
-        "正在连接 Pi Agent",
-        "Connecting to Pi Agent"
+        "正在连接",
+        "Connecting"
     ],
     [
-        "需要 Pi Web 访问令牌",
-        "A Pi Web access token is required"
+        "需要工作台访问令牌",
+        "A workspace access token is required"
     ],
     [
         "当前后端尚未启用会话导入与导出，请启用后刷新页面",
@@ -1974,8 +1974,8 @@
         "Open a temporary side chat, optionally with a question"
     ],
     [
-        "退出当前 Pi runtime",
-        "Exit the current Pi runtime"
+        "退出当前运行实例",
+        "Exit the current runtime"
     ],
     [
         "压缩上下文，可附加摘要要求",
@@ -1990,8 +1990,8 @@
         "Open prompt templates in settings"
     ],
     [
-        "打开 Pi 会话导入窗口，选择文件与目标项目",
-        "Open Pi session import and choose a file and target project"
+        "打开会话导入窗口，选择文件与目标项目",
+        "Open session import and choose a file and target project"
     ],
     [
         "打开当前线程的导出记录窗口",
@@ -2010,8 +2010,8 @@
         "Template saved. Reload the current session's resources when idle to use it."
     ],
     [
-        "$1、$2 为位置参数，$@ 表示全部参数，${1:-默认值} 为可选参数；由 Pi 原生展开。",
-        "$1 and $2 are positional arguments, $@ means all arguments, and ${1:-默认值} is an optional argument. Pi expands them natively."
+        "$1、$2 为位置参数，$@ 表示全部参数，${1:-默认值} 为可选参数；由底层引擎展开。",
+        "$1 and $2 are positional arguments, $@ means all arguments, and ${1:-default} is optional; expanded by the underlying engine."
     ],
     [
         "保存模板",
@@ -2026,8 +2026,8 @@
         "Native Markdown template"
     ],
     [
-        "当前项目 · 需 Pi 信任后加载",
-        "Current project · requires Pi trust to load"
+        "当前项目 · 信任后加载",
+        "Current project · loads when trusted"
     ],
     [
         "全局 · 与所有项目共用",
@@ -2090,8 +2090,8 @@
         "Start with common tasks"
     ],
     [
-        "与终端共用原生 prompts 目录。保存后，已打开的会话需空闲时重新加载；项目模板受 Pi trust 控制。覆盖与删除会留备份，同名模板被遮蔽时需改名。",
-        "Shares native prompts directories with the terminal. After saving, reload open sessions when idle. Project templates require Pi trust. Overwrites and deletions create backups; rename shadowed templates."
+        "与终端共用原生 prompts 目录。保存后，已打开的会话需空闲时重新加载；项目模板受项目信任控制。覆盖与删除会留备份，同名模板被遮蔽时需改名。",
+        "Uses the native prompts directory shared with the terminal. Reload open sessions when idle after saving; project templates require project trust. Overwrites and deletions leave backups; rename shadowed templates."
     ],
     [
         "模板是按需调用的任务快捷方式：在聊天输入框输入 /名称 和参数才会展开，不会自动加入每轮对话。长期项目约定放在 AGENTS.md，README 用于项目说明。",
@@ -2151,7 +2151,7 @@
     ],
     [
         "管理 Pi 原生提示词模板",
-        "Manage Pi native prompt templates"
+        "Manage native Pi prompt templates"
     ],
     [
         "命令与文件补全",
@@ -2346,8 +2346,8 @@
         "Enter a bookmark name. Use Remove bookmark to clear it."
     ],
     [
-        "书签保存在 Pi 原生会话中",
-        "Bookmarks are saved in the native Pi session"
+        "书签保存在会话记录中",
+        "Bookmarks are saved in the session record"
     ],
     [
         "已有标签较长；如需修改，请输入新的书签名",
@@ -2486,8 +2486,8 @@
         "Reloading resources…"
     ],
     [
-        "Pi 默认",
-        "Pi default"
+        "内置默认",
+        "Built-in default"
     ],
     [
         "自定义",
@@ -2642,8 +2642,8 @@
         "Trust project {0}? Its extensions and resources will be allowed to load."
     ],
     [
-        "信任后，Pi 可以加载这个项目的设置、Skills 和扩展。扩展可执行代码，请只信任熟悉的来源。",
-        "Trust lets Pi load this project's settings, Skills and extensions. Extensions can execute code; trust only familiar sources."
+        "信任后，可以加载这个项目的设置、Skills 和扩展。扩展可执行代码，请只信任熟悉的来源。",
+        "Trust allows loading this project's settings, Skills and extensions. Extensions can execute code; only trust familiar sources."
     ],
     [
         "以上为按配置推导的状态；当前运行实例的实际信任请在会话详情查看。",
@@ -2698,8 +2698,8 @@
         "Check configuration"
     ],
     [
-        "当前后端尚未启用 Pi 配置",
-        "Pi settings are unavailable on this backend"
+        "当前后端尚未启用运行配置",
+        "The backend has not enabled runtime settings"
     ],
     [
         "服务器没有可用的项目目录，请检查项目范围设置（PI_PROJECT_ROOTS）。",
@@ -2906,8 +2906,8 @@
         "Usually no changes are needed. Expand a category when necessary."
     ],
     [
-        "Pi 配置",
-        "Pi settings"
+        "运行配置",
+        "Runtime settings"
     ],
     [
         "正在读取配置…",
@@ -3050,20 +3050,20 @@
         "Deliver all"
     ],
     [
-        "询问（Pi 默认）",
-        "Ask (Pi default)"
+        "询问（内置默认）",
+        "Ask (built-in default)"
     ],
     [
         "{0} 项自定义",
         "{0} custom settings"
     ],
     [
-        "Pi 默认：{0}",
-        "Pi default: {0}"
+        "内置默认：{0}",
+        "Built-in defaults: {0}"
     ],
     [
-        "移除项目覆盖，使用全局配置或 Pi 默认。",
-        "Remove the project override and use global configuration or Pi defaults."
+        "移除项目覆盖，使用全局配置或内置默认。",
+        "Remove the project override and use global settings or built-in defaults."
     ],
     [
         "未启用任何内置工具；扩展和自定义工具仍可启用。",
@@ -3566,8 +3566,8 @@
         "Imported into {0}"
     ],
     [
-        "Pi 会话已导入为新线程",
-        "Pi session imported as a new thread"
+        "会话已导入为新线程",
+        "Session imported as a new thread"
     ],
     [
         "会话已导入，线程列表暂未刷新，请稍后刷新列表",
@@ -3598,8 +3598,8 @@
         "HTML and other Agents' session formats are not supported. Old paths in messages are kept; the selected project becomes the working directory. Prepare project files, credentials and runtime environment separately."
     ],
     [
-        "Pi 会话文件（最大 16 MiB）",
-        "Pi session file (maximum 16 MiB)"
+        "会话文件（最大 16 MiB）",
+        "Session file (maximum 16 MiB)"
     ],
     [
         "选择允许范围内已存在的项目目录",
@@ -3642,16 +3642,16 @@
         "Export is available when the session is idle, up to 64 MiB. Records may contain paths, code and private conversation content; review before sharing. Project files and runtime environment are not included."
     ],
     [
-        "仅导出当前活动分支，保留该分支上的消息、工具和摘要记录，供 Pi 导入继续。其他分支不包含在内，这不是完整会话树备份。",
-        "Exports only the active branch, including its messages, tools and summaries, for import into Pi. Other branches are excluded. This is not a full session-tree backup."
+        "仅导出当前活动分支，保留该分支上的消息、工具和摘要记录，可导入继续，兼容 Pi JSONL 格式。其他分支不包含在内，这不是完整会话树备份。",
+        "Exports only the active branch with its messages, tools and summaries; import to continue in the compatible Pi JSONL format. Other branches are excluded; this is not a full session-tree backup."
     ],
     [
         "包含会话树中已保存的历史分支、压缩前记录、思考与工具内容，以及原生导出携带的系统提示和工具定义。可离线打开；范围不限于网页当前显示的正文。",
         "Includes saved historical branches, pre-compaction records, thinking and tool content, plus system prompts and tool definitions carried by the native export. Opens offline and includes more than the web page's current reading view."
     ],
     [
-        "Pi JSONL · 当前分支，可导入继续",
-        "Pi JSONL · active branch, resumable on import"
+        "JSONL · 当前分支，可导入继续",
+        "JSONL · current branch, import to continue"
     ],
     [
         "HTML · 独立阅读",
@@ -4106,8 +4106,8 @@
         "{0}; check settings. No automatic retry was made."
     ],
     [
-        "当前运行实例已更新，并交由 Pi 保存全局默认",
-        "Current runtime updated; Pi will save the global default"
+        "当前运行实例已更新，并保存全局默认",
+        "The current runtime has been updated and global defaults saved"
     ],
     [
         "正在保存投递设置…",
@@ -4222,8 +4222,8 @@
         "Thinking"
     ],
     [
-        "Pi · 侧聊",
-        "Pi · side chat"
+        "助手 · 侧聊",
+        "Assistant · side chat"
     ],
     [
         "侧聊摘要",
@@ -4897,20 +4897,20 @@
         "Stored credentials removed; Provider is still configured through {0}"
     ],
     [
-        "移除 Pi credential store 中这个 Provider 的凭据？环境变量或 models.json 中的配置不会被删除。",
-        "Remove this Provider's credentials from the Pi credential store? Environment variables and models.json configuration will be kept."
+        "移除服务器凭据库中这个供应商的凭据？环境变量或 models.json 中的配置不会被删除。",
+        "Remove this provider's credentials from the server credential store? Environment variables and models.json settings will not be deleted."
     ],
     [
-        "凭据由 Pi 保存，现有值不会回显。请在受信网络中配置。",
-        "Pi saves credentials and never displays existing values. Configure them on a trusted network."
+        "凭据保存到服务器凭据库，现有值不会回显。请在受信网络中配置。",
+        "Credentials are saved in the server credential store. Existing values are never displayed. Configure them on a trusted network."
     ],
     [
         "设置 {0} API Key",
         "Set {0} API key"
     ],
     [
-        "API Key 已保存到 Pi credential store；重新打开 runtime 后生效",
-        "API key saved to the Pi credential store. Applies after reopening the runtime."
+        "API Key 已保存到服务器凭据库；重新打开运行实例后生效",
+        "API key saved in the server credential store; reopen the runtime to apply it"
     ],
     [
         "Thinking 配置已保存；新 runtime 生效，运行中的会话保留当前状态",
@@ -4921,8 +4921,8 @@
         "{0} support mode"
     ],
     [
-        "使用 Pi 定义",
-        "Use Pi definition"
+        "使用内置定义",
+        "Use the built-in definition"
     ],
     [
         "不支持",
@@ -4961,12 +4961,12 @@
         "Advanced: supported thinking levels and parameter mapping"
     ],
     [
-        "仅按实际服务能力修改。禁用的等级将从 Pi 选择器隐藏；映射值会传给供应商。保存能力后重新打开窗口选择默认值。",
-        "Change only to match actual service capabilities. Disabled levels are hidden from Pi's picker; mapped values go to the provider. Reopen after saving capabilities to choose the default."
+        "仅按实际服务能力修改。禁用的等级将从选择器隐藏；映射值会传给供应商。保存能力后重新打开窗口选择默认值。",
+        "Match the actual service capabilities. Disabled levels are hidden from the picker and mapped values are sent to the provider. Reopen the dialog after saving to select a default."
     ],
     [
-        "恢复 Pi 原始能力",
-        "Restore original Pi capabilities"
+        "恢复内置能力",
+        "Restore built-in capabilities"
     ],
     [
         "保存能力",
@@ -5033,12 +5033,12 @@
         "{0}. If disconnected, an unfinished login expires within 10 minutes."
     ],
     [
-        "在手机或其他电脑上授权时，localhost 回调可能无法打开；可将地址栏中的完整回调地址粘贴到下方 Pi 提供的输入框。",
-        "When authorizing on a phone or another computer, localhost callbacks may not open. Paste the full callback URL from the address bar into the input Pi provides below."
+        "在手机或其他电脑上授权时，localhost 回调可能无法打开；可将地址栏中的完整回调地址粘贴到下方输入框。",
+        "When authorizing on a phone or another computer, the localhost callback may not open. Paste the complete callback URL from the address bar into the input below."
     ],
     [
-        "按 Pi 提供的步骤完成连接，凭据由 Pi 保存。关闭此窗口会取消尚未完成的登录。",
-        "Follow Pi's steps to connect. Pi saves the credentials. Closing this dialog cancels an unfinished login."
+        "按提示完成连接，凭据保存到服务器凭据库。关闭此窗口会取消尚未完成的登录。",
+        "Follow the steps to connect. Credentials are saved in the server credential store. Closing this window cancels an unfinished sign-in."
     ],
     [
         "正在启动登录…",
@@ -5125,8 +5125,8 @@
         "No feature Agent model available"
     ],
     [
-        "跟随 Pi 默认模型",
-        "Follow Pi default model"
+        "跟随默认模型",
+        "Use the default model"
     ],
     [
         "全部 Provider",
@@ -5141,8 +5141,8 @@
         "Configured"
     ],
     [
-        "Pi 内置",
-        "Pi built-in"
+        "内置",
+        "Built-in"
     ],
     [
         "自定义配置",
@@ -5485,8 +5485,8 @@
         "Send a message at a chosen time"
     ],
     [
-        "发送消息给 Pi",
-        "Message Pi"
+        "发送消息",
+        "Send a message"
     ],
     [
         "运行中消息投递方式",
@@ -5569,8 +5569,8 @@
         "Follow-up delivery"
     ],
     [
-        "每次取出一条或全部待发消息。修改立即作用于当前运行实例，并保存 Pi 全局默认；项目覆盖仍有效，其他已启动实例不自动改变。",
-        "Take one or all pending messages at a time. Changes apply to the current runtime immediately and save Pi's global default. Project overrides still apply; other running instances are unchanged."
+        "每次取出一条或全部待发消息。修改立即作用于当前运行实例，并保存全局默认；项目覆盖仍有效，其他已启动实例不自动改变。",
+        "Take one or all pending messages at a time. Changes apply immediately to the current runtime and save global defaults; project overrides remain effective and other running instances do not change automatically."
     ],
     [
         "会话信息",
@@ -6053,8 +6053,8 @@
         "Usage statistics"
     ],
     [
-        "展开供应商，连接 Pi 内置服务或自定义服务，并管理其模型。测试会发送少量付费请求。",
-        "Expand a provider to connect a Pi built-in or custom service and manage its models. Tests send small billable requests."
+        "展开供应商，连接内置服务或自定义服务，并管理其模型。测试会发送少量付费请求。",
+        "Expand a provider to connect a built-in or custom service and manage its models. Tests send small paid requests."
     ],
     [
         "自定义 Provider",
@@ -6305,8 +6305,8 @@
         "Statistics scope and costs"
     ],
     [
-        "统计已入账的 Pi 持久会话，删除会话后仍保留用量。包含所有分支和有记录的工具／摘要用量；临时会话、侧聊、标题生成、媒体规划、模型测试及首次入账前已删除的记录不包含在内。",
-        "Includes booked Pi persistent-session usage, retained after session deletion, across all branches and recorded tool/summary usage. Excludes temporary sessions, side chats, title generation, media planning, model tests and records deleted before their first import."
+        "统计已入账的持久会话，删除会话后仍保留用量。包含所有分支和有记录的工具／摘要用量；临时会话、侧聊、标题生成、媒体规划、模型测试及首次入账前已删除的记录不包含在内。",
+        "Counts recorded persistent sessions and retains usage after deletion. Includes all branches and recorded tool/summary usage; excludes temporary sessions, side chats, title generation, media planning, model tests and records deleted before their first accounting."
     ],
     [
         "原生复制、分叉和导入中保持 ID、时间与内容相同的记录只计一次，保留首次入账的会话归属。每日累计，支持按周和自然月查看；周从周一开始，各周期只包含所选日期范围。",
@@ -7745,7 +7745,7 @@
     ["无法比较版本", "Unable to compare versions"],
     ["此渠道暂无发布", "No release in this channel"],
     ["检查失败，请稍后重试或打开官方页面。", "Check failed. Try again later or open the official page."],
-    ["查看白泽灵台和 Pi Coding Agent 的版本与更新方式。", "View versions and update options for 白泽灵台 and Pi Coding Agent."],
+    ["查看白泽灵台版本与底层引擎信息。", "View the version of 白泽灵台 and underlying engine information."],
     ["白泽灵台更新渠道", "白泽灵台 update channel"],
     ["正式版", "Stable releases"],
     ["包含预发布版", "Include prereleases"],
@@ -7808,13 +7808,13 @@
     ["使用本层内容", "Use content for this scope"],
     ["文件与继承来源", "File and inheritance"],
     ["全局内容", "Global content"],
-    ["未设置，使用 Pi 默认。", "Not configured. Using Pi defaults."],
+    ["未设置，使用内置默认。", "Not configured. Using built-in defaults."],
     ["有未保存的修改", "Unsaved changes"],
     ["已保存的文件内容；当前会话需单独核对加载状态。", "Saved file content. Check separately whether the current conversation has loaded it."],
     ["修改差异", "Changes"],
     ["恢复默认", "Restore default"],
-    ["保留 Pi 默认行为，补充回复偏好与工作习惯。", "Keep Pi's default behavior and add response preferences and working habits."],
-    ["替换 Pi 默认基础行为说明。项目上下文和 Skills 仍可能追加；工具权限由工具配置控制。", "Replace Pi's default base instructions. Project context and Skills may still be appended; tool access is controlled by tool settings."],
+    ["保留内置默认行为，补充回复偏好与工作习惯。", "Keep the built-in behavior and add response preferences and working habits."],
+    ["替换内置默认基础行为说明。项目上下文和 Skills 仍可能追加；工具权限由工具配置控制。", "Replace the built-in base instructions. Project context and Skills may still be appended; tool access is controlled by tool settings."],
     ["内容来源", "Content source"],
     ["已保存。当前会话尚未核对；空闲时可重新加载并核对。", "Saved. The current conversation has not been checked; reload and verify when idle."],
     ["已保存，但读取失败。请刷新核对，勿重复提交。", "Saved, but reading back failed. Refresh to verify; do not submit again."],
@@ -7831,14 +7831,14 @@
     ["按文件与当前信任推导的来源：{0}", "Source inferred from files and current trust: {0}"],
     ["文件来源暂时无法核对", "File sources could not be verified"],
     ["来源路径为配置推导；内容相同不代表能识别启动参数或扩展的来源。", "Paths are inferred from configuration. Matching content does not identify sources supplied by startup arguments or extensions."],
-    ["使用 Pi 默认基础提示，完整内容见提示正文。", "Using Pi's default base prompt. See Prompt text for the complete content."],
+    ["使用内置默认基础提示，完整内容见提示正文。", "Using the built-in base prompt. See Prompt text for the complete content."],
     ["没有追加指令", "No additional instructions"],
     ["编辑提示词设置", "Edit prompt settings"],
     ["项目上下文文件（{0}）", "Project context files ({0})"],
     ["实际启用工具：{0}", "Active tools: {0}"],
     ["搜索提示正文", "Search prompt text"],
     ["匹配 {0} 处（最多标记 500 处）", "{0} matches (up to 500 highlighted)"],
-    ["此处为 Pi 当前提示快照。扩展可逐轮修改提示，供应商请求改写不包含在此视图中。", "This is Pi's current prompt snapshot. Extensions can change prompts for each turn. Provider payload rewrites are not included."],
+    ["此处为当前运行实例的提示快照。扩展可逐轮修改提示，供应商请求改写不包含在此视图中。", "This is the current runtime prompt snapshot. Extensions may change it each turn; provider request rewrites are not included."],
     ["正在读取系统提示词…", "Reading the system prompt…"],
     ["已读取当前提示，但无法核对磁盘文件。", "Current prompt captured, but disk files could not be checked."],
     ["当前基础与追加内容和已保存文件一致。", "The current base and additional content match the saved files."],
@@ -7866,7 +7866,7 @@
     ,['已归档项目（{0}）', 'Archived projects ({0})']
     ,['已归档线程（{0}）', 'Archived threads ({0})']
     ,['归档状态未确认，请刷新核对', 'Archive status is unconfirmed. Refresh to verify.']
-    ,['用 Packages 扩展 Pi 的工具、Skills、提示词与主题。', 'Extend Pi with tools, skills, prompts and themes from Packages.']
+    ,["用 Packages 扩展工具、Skills、提示词与主题。", "Use Packages to extend tools, Skills, prompts and themes."]
     ,['保存配置后，在会话空闲时重新加载资源。', 'After saving, reload resources when the conversation is idle.']
     ,['配置中的资源', 'Configured resources']
     ,['已启用 / 共 {0} 项', 'Enabled / {0} total']
@@ -7953,7 +7953,7 @@
     ,['图像、视频、语音参数与模型接入方案', 'Image, video, speech parameters and model connections']
     ,['自动 · 当前线程模型', 'Auto · current thread model']
     ,['自动 · 媒体规划默认', 'Auto · planner defaults']
-    ,['自动时按服务器媒体规划配置、Pi 默认模型及可用模型选择。只生成可编辑方案，媒体执行仍需单独确认。', 'Auto uses the server planner configuration, Pi defaults and available models. It creates editable plans; media execution still needs separate confirmation.']
+    ,["自动时按服务器媒体规划配置、默认模型及可用模型选择。只生成可编辑方案，媒体执行仍需单独确认。", "Auto uses the server planner configuration, defaults and available models. It creates editable plans; media execution still needs separate confirmation."]
     ,['按用途选择辅助模型。“自动”采用各用途的默认规则。保存不会运行任务。', 'Choose a model for each auxiliary task. Auto uses that task’s defaults. Saving does not run a task.']
     ,['全部设为自动', 'Set all to Auto']
     ,['保存更改', 'Save changes']
@@ -7980,7 +7980,7 @@
     ,['当前为开发直连模式或旧后端，更新功能暂不可用；普通启动方式加载新版后端后即可使用。', 'Updates are unavailable in direct development mode or on an older backend. Normal startup with the new backend enables this feature.']
     ,['较早的输出已截断。', 'Earlier output has been truncated.']
     ,['等待命令输出…', 'Waiting for command output…']
-    ,['Pi 版本：{0} → {1}', 'Pi version: {0} → {1}']
+    ,["引擎版本：{0} → {1}", "Engine version: {0} → {1}"]
     ,['退出码：{0}', 'Exit code: {0}']
     ,['Pi 更新需要 Node 22 或 24 和默认的本地 Pi 安装', 'Pi updates require Node 22 or 24 and the default local Pi installation']
     ,['添加能力…', 'Add capabilities…']
@@ -8168,10 +8168,10 @@
     ,['移除引用', 'Remove quote']
     ,['请先移除引用，再执行命令', 'Remove quotes before running a command']
     ,['引用与问题超过侧聊长度限制，请减少选中文字', 'The quotes and question exceed the side chat limit. Select less text.']
-    ,['自动检查 Pi 更新', 'Automatically check for Pi updates']
-    ,['最多每 24 小时检查一次 Pi 正式版，只查询版本信息，不会自动下载或安装。此设置由本实例所有设备共用。', 'Check for stable Pi releases at most once every 24 hours. Only version information is queried; nothing is downloaded or installed automatically. This setting is shared by all devices using this instance.']
-    ,['Pi 更新提醒', 'Pi update reminder']
-    ,['Pi 有可用更新', 'Pi update available']
+    ,["自动检查底层引擎更新", "Automatically check for engine updates"]
+    ,["最多每 24 小时检查一次底层引擎正式版，只查询版本信息，不会自动下载或安装。此设置由本实例所有设备共用。", "Checks the engine's stable release at most once every 24 hours. Only version information is queried; nothing is downloaded or installed. Shared by all devices using this instance."]
+    ,["底层引擎更新提醒", "Engine update notification"]
+    ,["底层引擎有可用更新", "An engine update is available"]
     ,['Pi 有新版本：{0}', 'A new Pi version is available: {0}']
     ,['当前版本为 {0}，可在任务结束后更新。', 'You are running {0}. Update after your tasks finish.']
     ,['查看并更新', 'Review and update']
@@ -8379,7 +8379,7 @@
     ,['会话已不存在', 'Conversation no longer exists']
     ,['会话已有草稿或附件；未覆盖原内容', 'Conversation has a draft or attachments; existing content was not replaced']
     ,['对话', 'Conversations']
-    ,['在 Pi Agent 中打开当前线程', 'Open current thread in Pi Agent']
+    ,["在工作对话中打开当前线程", "Open current thread in Work chat"]
     ,['导航已改变；会话未打开', 'Navigation changed; conversation was not opened']
     ,['正在读取项目', 'Loading projects']
     ,['项目已切换，请重新选择临时会话', 'Project changed; choose the temporary conversation again']
@@ -8492,7 +8492,7 @@
     ,["已请求继续运行", "Continue requested"]
     ,["引导 · {0}", "Steer · {0}"]
     ,["继续 · {0}", "Continue · {0}"]
-    ,["当前 pi-subagents 版本不提供用量数据", "This pi-subagents version does not report usage"]
+    ,["当前子 Agent 扩展版本不提供用量数据", "The current subagent extension version does not provide usage data"]
     ,["主 Agent", "Main Agent"]
     ,["子 Agent 合计", "Subagent total"]
     ,["总计", "Total"]
@@ -9044,8 +9044,8 @@
     ,["已压缩 {0} 次 · 当前上下文保留 {1} 条", "Compacted {0} times · {1} messages kept in context"]
     ,["最近上下文约 {0} tokens", "Latest context about {0} tokens"]
     ,["最近模型：{0}", "Latest model: {0}"]
-    ,["pi-subagents 未报告模型，使用继承的默认模型", "pi-subagents did not report a model; the inherited default is used"]
-    ,["pi-subagents 没有报告此运行的模型信息。", "pi-subagents did not report models for this run."]
+    ,["子 Agent 扩展未报告模型，使用继承的默认模型", "The subagent extension did not report a model; using the inherited default"]
+    ,["子 Agent 扩展没有报告此运行的模型信息。", "The subagent extension did not report model information for this run."]
 ];
     rows.push(
         ['连接已断开', 'Disconnected'],
@@ -9079,8 +9079,8 @@
         ['暂无发布版本', 'No releases yet'],
         ['暂时无法检查', 'Unable to check right now'],
         ['白泽灵台发布页面', '白泽灵台 releases'],
-        ['当前 Pi 与发布包配套版本不同。', 'Running Pi differs from the version bundled with this release.'],
-        ['尚未手动检查。Pi 可能显示自动检查的结果。', 'Not checked manually yet. Pi may show an automatic check result.'],
+        ["当前引擎与发布包配套版本不同。", "The current engine differs from the version bundled with the release."],
+        ["尚未手动检查。引擎详情可能显示自动检查的结果。", "No manual check yet. Engine details may show automatic check results."],
         ['交给独立 Agent 协助更新', 'Ask an independent Agent to help update'],
         ['在部署机器上使用独立 Agent；不要让正在被更新的白泽灵台会话重启自身。先让它核对并提出计划，确认后再执行。', 'Use an independent Agent on the host machine. Do not restart 白泽灵台 from the conversation it is hosting. Ask for a plan first, then confirm execution.'],
         ['更新提示词', 'Update prompt'],
@@ -9657,6 +9657,49 @@
     rows.push(
         ['生成失败', 'Generation failed'],
         ['服务已确认生成失败或取消：{0}', 'The service confirmed generation failure or cancellation: {0}']
+    );
+    rows.push(
+        ['更新源：{0}', 'Update source: {0}'],
+        ["显示此更新源发布的 Windows 整包版本，底层引擎随整包更新。", "Shows Windows bundles published by this source. The engine is updated with the bundle."],
+        ['整包配套版本', 'Bundled version'], ['发布版本', 'Published version'],
+        ['查看更新来源', 'View update source'], ['下载 Windows ZIP', 'Download Windows ZIP'],
+        ['尚未检查此更新源。', 'This update source has not been checked yet.'],
+        ['请协助我更新部署机器上的白泽灵台 Windows 便携版。更新清单地址：{0}。先只读核对当前运行版本、该清单的目标版本、平台、配套 Pi 版本和 ZIP SHA256；保留尚未发布的修复。向我说明差异、备份和回退计划，等我明确确认后再执行。请在独立维护窗口结束任务、Shell、侧聊、预约和外部共用身份的写入，保存草稿与附件；正常停机后备份实际身份、会话、媒体、配置和项目数据。校验准确 ZIP，不运行 npm 升级 Pi，不覆盖用户 data 或移动已有项目路径。保留旧版，启动后核对版本与原有数据。不要重试结果不确定的操作；不要停止或重启承载当前会话的服务。', 'Help me update the Windows portable edition of 白泽灵台 on its host. Update manifest: {0}. First verify the current version, target version, platform, bundled Pi version and ZIP SHA256 with read-only checks; preserve unpublished fixes. Explain differences, backups and rollback, and wait for my explicit approval. In an independent maintenance window, finish tasks, Shell sessions, side chats, schedules and external writers sharing the identity, and save drafts and attachments. After normal shutdown, back up the actual identity, sessions, media, configuration and projects. Verify the exact ZIP; do not upgrade Pi with npm, overwrite user data or move existing project paths. Retain the old version and verify the version and existing data after startup. Do not retry uncertain operations, or stop or restart the service hosting this conversation.']
+    );
+    rows.push(
+        ['尚未核实', 'Not verified'],
+        ['当前应用版本：{0}', 'Current application version: {0}'],
+        ['目标应用版本：{0}', 'Target application version: {0}'],
+        ['当前 Pi 版本：{0}', 'Current Pi version: {0}'],
+        ['目标配套 Pi 版本：{0}', 'Target bundled Pi version: {0}'],
+        ['更新清单：{0}', 'Update manifest: {0}'],
+        ['Windows ZIP：{0}', 'Windows ZIP: {0}'],
+        ['以下是页面记录，实施前请重新读取清单核对。', 'These are page records. Read the manifest again and verify them before execution.'],
+        ['请使用部署机器上独立运行的 Agent 协助更新白泽灵台 Windows 便携版，以当前内网更新清单为来源。Pi、Node 和依赖随整包更新，无需查询 GitHub/npm，不单独升级 Pi，也不运行 npm install 或 npm ci。', 'Use an independent Agent on the host to update the Windows portable edition of 白泽灵台 from the current intranet update manifest. Pi, Node and dependencies are updated with the bundle. Do not query GitHub/npm, upgrade Pi separately, or run npm install or npm ci.'],
+        ['先阅读本机或目标包的 docs/AGENT_GUIDE.md、docs/DESKTOP_LAUNCHER.md、docs/UPDATES.md 和目标发布说明。只读核对实际程序目录、当前运行版本、Windows x64 平台、用户数据绝对路径、清单与 ZIP，保留尚未发布的修复。说明差异、备份范围、实施和回退计划，取得明确确认后执行；已有授权覆盖的步骤继续执行。确认后若目标版本或包哈希变化，停止并重新核对。', 'Read docs/AGENT_GUIDE.md, docs/DESKTOP_LAUNCHER.md, docs/UPDATES.md and the target release notes from the local installation or target bundle. First verify the actual application directory, running version, Windows x64 platform, absolute user data paths, manifest and ZIP with read-only checks, preserving unpublished fixes. Explain the differences, backup scope, execution and rollback plans and obtain explicit approval before execution; continue steps covered by existing authorization. Stop and verify again if the target version or package hash changes after approval.'],
+        ['在独立维护窗口结束任务、子 Agent、Shell、侧聊、媒体、配置及导入导出操作，暂停预约并核对共用身份的外部写入；保存草稿与附件。正常停机后整批备份实际身份、会话、媒体、配置、预约和项目数据，保留原权限；不要输出凭据或上传私人备份。', 'In an independent maintenance window, finish tasks, subagents, Shell sessions, side chats, media, configuration and import/export operations, pause schedules and verify external writers sharing the identity. Save drafts and attachments. After normal shutdown, back up the actual identity, sessions, media, configuration, schedules and projects together, preserving permissions. Do not print credentials or upload private backups.'],
+        ['只下载清单 package 字段指定的 baizelingtai Windows ZIP，核对 SHA256 后解压到新的程序目录，保留旧程序。沿用已核实的用户数据绝对路径、.env 和更新源配置；核对 baizelingtai-portable.json 或 BAIZELINGTAI_UPDATE_FEED_URL。不要用新包的空 data 替换用户数据，不要移动已有项目路径或改写会话 JSONL。', 'Download only the baizelingtai Windows ZIP specified by the manifest package field. Verify SHA256, extract it into a new application directory and retain the old application. Reuse verified absolute user data paths, .env and update source configuration; check baizelingtai-portable.json or BAIZELINGTAI_UPDATE_FEED_URL. Do not replace user data with an empty data directory from the new bundle, move existing project paths or rewrite session JSONL.'],
+        ['启动后只读核对实际运行版本、配套 Pi、原有会话、配置、文件和预约状态，再按已确认计划恢复预约；不自动重放任务。失败按计划回退，结果不确定时不要重复执行。不要停止或重启承载当前对话的服务，应由独立 Agent 或管理员执行。', 'After startup, verify the actual running version, bundled Pi, existing sessions, configuration, files and schedule state with read-only checks, then resume schedules according to the approved plan. Do not replay tasks automatically. Roll back according to the plan on failure, and do not repeat uncertain operations. Do not stop or restart the service hosting this conversation; an independent Agent or administrator must perform the update.']
+    );
+    rows.push(
+        ['工作对话', 'Work chat'],
+        ['服务器凭据库', 'Server credential store'],
+        ['引擎与依赖', 'Engine and dependencies'],
+        ['扩展来源：{0}', 'Extension source: {0}'],
+        ['会话连接已关闭', 'Session connection closed']
+    );
+    rows.push(
+        ['内网发布页：{0}', 'Intranet release page: {0}'],
+        ['ZIP 字节数：{0}', 'ZIP bytes: {0}'],
+        ['请协助我更新部署机器上的白泽灵台，以本机配置和更新页显示的更新来源为准。先只读核对实际运行实例、源码/运行版本、更新源、目标发布版本、配套 Pi 版本和锁定依赖；阅读本机或目标包的 docs/AGENT_GUIDE.md、docs/INSTALL_RECOVERY.md、docs/UPDATES.md 及目标版本说明，修改源码时遵循仓库 AGENTS.md，保留尚未发布的修复。如果部署采用 GitLab 内网源，只使用该源的清单和整包，不回退外网、不单独升级 Pi；来源不符或未核实时停止并核对配置。先说明差异、兼容性、备份范围、实施及回退计划，取得明确确认后执行；已有授权覆盖的步骤继续执行。执行前结束任务、子 Agent、Shell、侧聊、媒体、配置、导入导出和共用身份的外部写入，暂停预约，保存草稿与附件。正常停机后备份实际身份、会话、配置、媒体及项目数据，校验准确包的哈希，保留旧程序和数据绝对路径；启动后只读核对版本与数据，再按计划恢复预约。不自动重试不确定的操作，不删除用户数据。如果你运行在待更新实例中，不要在当前会话中停止或重启承载你的服务；请由部署机器上独立 Agent 或管理员在维护窗口执行。', 'Help me update 白泽灵台 on its host using the update source configured locally and shown on the update page. First verify the actual running instance, source/runtime versions, update source, target release, bundled Pi and locked dependencies with read-only checks. Read docs/AGENT_GUIDE.md, docs/INSTALL_RECOVERY.md, docs/UPDATES.md and release notes from the local installation or target bundle; follow AGENTS.md for source changes and preserve unpublished fixes. If this deployment uses an intranet GitLab source, use only its manifest and complete bundle, without external fallback or a separate Pi upgrade; stop and verify configuration if the source differs or is unverified. Explain differences, compatibility, backup scope, execution and rollback plans and obtain explicit approval; continue steps covered by existing authorization. Finish tasks, subagents, Shell sessions, side chats, media, configuration, import/export and external identity writers, pause schedules and save drafts and attachments. After normal shutdown, back up actual identity, sessions, configuration, media and projects; verify the exact archive hash, retaining the old application and absolute data paths. After startup, verify versions and data read-only, then resume schedules according to the plan. Do not retry uncertain operations or delete user data. If you run inside the instance being updated, do not stop or restart the service hosting this conversation; an independent Agent or administrator on the host must act in a maintenance window.'],
+        ['下载前固定已确认的清单版本、package、bytes 和 SHA256；只接受同源且无需登录的地址，禁止把账号、Cookie 或 Token 放进命令。遇到登录页、重定向、下载失败、字节数或哈希不符时停止，不尝试外网或自动重放。解压前检查 ZIP 路径与顶层目录。常规更新只校验整包的字节数和 SHA256，不逐文件对比依赖；逐文件验收由维护者在发包前完成。解压后核对应用版本、配套引擎与启动状态。', 'Pin the approved manifest version, package, bytes and SHA256 before downloading. Accept only same-origin URLs requiring no login; never put accounts, Cookies or Tokens in commands. Stop on login pages, redirects, download failures, size or hash mismatches, without external fallback or automatic replay. Check ZIP paths and its top-level directory before extraction. Routine updates verify only the whole archive size and SHA256, without comparing dependency files individually; maintainers perform file-level acceptance before publishing. After extraction, verify the application version, bundled engine and startup state.'],
+        ['新程序首次启动前，把原来随旧目录解析的数据默认值固定为原路径的绝对地址：PI_CODING_AGENT_DIR、PI_MEDIA_DATA_DIR、PI_MEDIA_CONFIG_DIR 和 PI_WEB_DEFERRED_FILE，并保留项目根目录、访问配置与更新源；不要仅复制 .env 就假定数据路径一致。先完成旧实例正常停机，再启动新实例，同一身份只能有一个实例。保留旧程序与停机备份，若启动或验收失败，先正常停止新实例，再按计划恢复原路径数据并启动旧程序。', 'Before first startup of the new application, pin old directory-relative data defaults to their original absolute paths: PI_CODING_AGENT_DIR, PI_MEDIA_DATA_DIR, PI_MEDIA_CONFIG_DIR and PI_WEB_DEFERRED_FILE. Preserve project roots, access configuration and the update source; copying .env alone does not guarantee identical data paths. Finish normal shutdown of the old instance before starting the new one; only one instance may own an identity. Retain the old application and stopped backup. If startup or validation fails, first stop the new instance normally, then restore original-path data and start the old application according to the plan.']
+    );
+    rows.push(
+        ["请用部署机器上的独立 Agent，按本机配置的来源检查白泽灵台更新；内网源读取 latest.json 比较 version，没有新版就结束。有新版按已有授权更新，未授权先确认；步骤见本机 docs/UPDATES.md 和 docs/INSTALL_RECOVERY.md。更新前确认空闲、停机备份，沿用原数据绝对路径和配置，保留旧版；启动后验收，失败回退。不自动重试失败操作，不要停止或重启承载当前对话的服务。","Use an independent Agent on the host to check 白泽灵台 updates from the locally configured source. For intranet updates, read latest.json and compare version; stop if there is no newer release. Update under existing authorization, otherwise confirm first; follow local docs/UPDATES.md and docs/INSTALL_RECOVERY.md. Ensure the instance is idle, stop normally and back up. Reuse original absolute data paths and configuration, retaining the old version. Validate after startup and roll back on failure. Do not retry failed operations automatically or stop or restart the service hosting this conversation."],
+        ["请用部署机器上的独立 Agent 更新白泽灵台 Windows 便携版，安装步骤按本机 docs/UPDATES.md 执行。","Use an independent Agent on the host to update the Windows portable edition of 白泽灵台, following local docs/UPDATES.md for installation."],
+        ["读取 latest.json，按 SemVer 比较 version 与实际运行版本；没有新版就结束。有新版先确认目标，已有授权无需重复确认。按 package 下载同源 ZIP，核对 bytes 和 sha256；仅更新内网整包，不运行 npm 安装，保留本机未发布的修复。","Read latest.json and compare version with the actual running version using SemVer; stop if there is no newer release. Confirm the target before updating; existing authorization does not need reconfirmation. Download the same-origin ZIP from package and verify bytes and sha256. Update only the intranet bundle without npm installation, preserving unpublished local fixes."],
+        ["确认空闲、暂停预约并保存草稿后，正常停机、备份，解压到新程序目录；沿用原数据绝对路径、.env 和更新源，保留旧版。启动后验收版本与数据，失败回退。清单或下载失败、目标变化、校验不符就停止，不自动重试。不要停止或重启承载当前对话的服务。","Ensure the instance is idle, pause schedules and save drafts, then stop normally and back up. Extract into a new application directory, reuse original absolute data paths, .env and the update source, and retain the old version. Validate versions and data after startup; roll back on failure. Stop on manifest or download failure, target changes or verification mismatches without automatic retries. Do not stop or restart the service hosting this conversation."]
     );
     globalThis.PiI18nCatalog = Object.freeze(rows.map(row => Object.freeze(row)));
 })();

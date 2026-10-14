@@ -21,6 +21,144 @@ const fixture = (releases, options = {}) => {
     return { service, requests };
 };
 
+const feedSource = 'http://gitlab.example:8080/team/pivane/-/raw/main/updates/latest.json';
+const feed = (extra = {}) => ({ schemaVersion: 1, version: '1.8.0', piVersion: '1.1.0', platform: 'win32', arch: 'x64',
+    channel: 'stable', publishedAt: '2026-10-12T00:00:00Z', package: 'pivane-1.8.0-windows-x64-portable.zip',
+    sha256: 'a'.repeat(64), bytes: 1234, releasesUrl: 'http://gitlab.example:8080/team/pivane/-/releases/v1.8.0', ...extra });
+
+test('configured intranet release page survives missing, inapplicable or failed manifests without external checks', async () => {
+    const releasesUrl = 'http://gitlab.example:8080/team/pivane/-/releases';
+    const env = { BAIZELINGTAI_UPDATE_FEED_URL: feedSource, BAIZELINGTAI_UPDATE_RELEASES_URL: releasesUrl };
+    for (const mode of ['missing-link', 'inapplicable', 'error', 'manifest-link']) {
+        const requests = [];
+        const service = new UpdateService({ env, platform: mode === 'inapplicable' ? 'linux' : 'win32', arch: 'x64',
+            fetch: async url => {
+                requests.push(url);
+                if (mode === 'error') throw Error('offline');
+                return { ok: true, json: async () => feed(mode === 'manifest-link' ? {} : { releasesUrl: undefined }) };
+            } });
+        assert.equal(service.snapshot().pivane.releasesUrl, releasesUrl);
+        const data = await service.check();
+        assert.deepEqual(requests, [feedSource]);
+        const expected = mode === 'manifest-link' ? feed().releasesUrl : releasesUrl;
+        assert.equal(data.pivane.releasesUrl, expected);
+        assert.equal(data.pi.releasesUrl, expected);
+        assert.equal(data.pivane.status, mode === 'error' ? 'error' : mode === 'inapplicable' ? 'no-release' : 'available');
+    }
+    for (const url of ['https://other.example/releases', 'javascript:alert(1)',
+        'http://user:secret@gitlab.example:8080/releases', releasesUrl + '?token=secret']) {
+        assert.throws(() => new UpdateService({ env: { ...env, BAIZELINGTAI_UPDATE_RELEASES_URL: url } }), /Invalid update link/);
+    }
+});
+
+test('intranet checks share one manifest, report bundled Pi and never contact GitHub/npm even on failure', async () => {
+    let now = 0;
+    const requests = [];
+    const service = new UpdateService({ appVersion: '1.7.0', piVersion: '1.1.0', platform: 'win32', arch: 'x64',
+        env: { PIVANE_UPDATE_FEED_URL: feedSource }, now: () => now,
+        fetch: async (url, options) => { requests.push({ url, options }); return { ok: true, json: async () => feed() }; } });
+    service.notifications = { cachedPi: () => { throw Error('Must not use npm reminder cache'); }, recordSuccess: () => { throw Error('Must not write npm reminder'); } };
+    assert.equal(service.snapshot().source.origin, 'http://gitlab.example:8080'); assert.equal(requests.length, 0);
+    const first = service.check(); assert.equal(first, service.check());
+    const data = await first;
+    assert.equal(requests.length, 1); assert.equal(requests[0].url, feedSource);
+    assert.equal(data.pivane.version, '1.8.0'); assert.equal(data.pivane.status, 'available');
+    assert.equal(data.pivane.packageFormat, 'windows-portable-zip');
+    assert.equal(data.pivane.downloadUrl, new URL(feed().package, feedSource).href);
+    assert.equal(data.pi.bundled, true); assert.equal(data.pi.status, 'current');
+    assert.equal(data.pivane.sha256, 'a'.repeat(64));
+    now += 299999; await service.check(); assert.equal(requests.length, 1);
+    now++; service.fetch = async url => { requests.push({ url }); throw Error('private error'); };
+    const failed = await service.check();
+    assert.equal(failed.pivane.status, 'error'); assert.equal(failed.pi.status, 'error');
+    assert.equal(requests.length, 2); assert.ok(requests.every(r => r.url === feedSource));
+    assert.ok(!JSON.stringify(failed).includes('private error'));
+});
+
+test('intranet manifest selects platform/channel and rejects invalid metadata or unrelated download origins', async () => {
+    async function check(data, options = {}, channel = 'preview') {
+        return new UpdateService({ env: { PIVANE_UPDATE_FEED_URL: feedSource }, platform: 'win32', arch: 'x64',
+            fetch: async () => ({ ok: true, json: async () => data }), ...options }).check(channel);
+    }
+    assert.equal((await check(feed(), { platform: 'linux' })).pivane.status, 'no-release');
+    assert.equal((await check(feed(), { arch: 'arm64' })).pivane.status, 'no-release');
+    assert.equal((await check(feed({ version: '1.8.0-rc.1', channel: 'preview' }), {}, 'stable')).pivane.status, 'no-release');
+    assert.equal((await check(feed({ version: '1.8.0-rc.1', channel: 'preview' }))).pivane.version, '1.8.0-rc.1');
+    for (const extra of [{ schemaVersion: 2 }, { version: 'v1.8.0' }, { piVersion: '' }, { sha256: 'wrong' }, { bytes: 0 },
+        { platform: 'linux' }, { channel: 'other' }, { version: '1.8.0-rc.1' }, { publishedAt: 'bad' },
+        { package: 'https://other.example/app.zip' }, { package: '//evil.example/app.zip' }, { package: 'javascript:alert(1)' },
+        { package: 'http://user:secret@gitlab.example:8080/app.zip' }, { package: 'app.tar.gz' },
+        { package: 'app.zip?token=private' }, { releasesUrl: 'https://evil.example/page' }]) {
+        const result = await check(feed(extra));
+        assert.equal(result.pivane.status, 'error', JSON.stringify(extra)); assert.equal(result.pi.status, 'error');
+        assert.equal(result.pivane.downloadUrl, undefined);
+    }
+});
+
+test('portable source persists for distributed installs and explicit deployment configuration takes precedence', t => {
+    const { configuredFeed } = require('../server/pi-update-feed');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-feed-config-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    assert.equal(configuredFeed(root, {}), null);
+    fs.writeFileSync(path.join(root, 'pivane-portable.json'), JSON.stringify({ version: 1, updateFeedUrl: feedSource }));
+    assert.equal(configuredFeed(root, {}), feedSource);
+    assert.equal(configuredFeed(root, { PIVANE_UPDATE_FEED_URL: '' }), null);
+    const api = 'http://gitlab.example/api/v4/projects/20/repository/files/latest.json/raw?ref=main';
+    assert.equal(configuredFeed(root, { PIVANE_UPDATE_FEED_URL: api }), api);
+    assert.equal(configuredFeed(root, { BAIZELINGTAI_UPDATE_FEED_URL: api }), api);
+    assert.equal(configuredFeed(root, { BAIZELINGTAI_UPDATE_FEED_URL: '', PIVANE_UPDATE_FEED_URL: api }), null);
+    for (const url of ['file:///C:/update.json', 'http://user:secret@gitlab.example/feed', 'http://gitlab.example/feed?token=secret', 'http://gitlab.example/feed#secret']) {
+        assert.throws(() => configuredFeed(root, { PIVANE_UPDATE_FEED_URL: url }), /feed URL/);
+    }
+    fs.writeFileSync(path.join(root, 'pivane-portable.json'), '{');
+    assert.throws(() => configuredFeed(root, {}), /Cannot read/);
+});
+
+test('new baizelingtai metadata supports legacy installs without rewriting either file', t => {
+    const { configuredFeed, portableMetadataFile } = require('../server/pi-update-feed');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'baizelingtai-source-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const file = path.join(root, 'baizelingtai-portable.json'), legacy = path.join(root, 'pivane-portable.json');
+    const bytes = JSON.stringify({ version: 1, updateFeedUrl: feedSource });
+    fs.writeFileSync(file, bytes);
+    assert.equal(portableMetadataFile(root), file); assert.equal(configuredFeed(root, {}), feedSource);
+    assert.equal(fs.readFileSync(file, 'utf8'), bytes); assert.equal(fs.existsSync(legacy), false);
+    fs.writeFileSync(legacy, bytes);
+    assert.throws(() => configuredFeed(root, {}), /Conflicting portable/);
+    fs.unlinkSync(file);
+    assert.equal(portableMetadataFile(root), legacy); assert.equal(configuredFeed(root, {}), feedSource);
+    assert.equal(fs.readFileSync(legacy, 'utf8'), bytes);
+});
+
+test('public intranet HTTP transport checks JSON and refuses redirects; ZIP cannot enter the legacy installer', async t => {
+    const source = express(); let mode = 'json', lookups = 0;
+    source.get('/latest.json', (_req, res) => {
+        lookups++;
+        if (mode === 'redirect') return res.redirect('/login');
+        if (mode === 'html') return res.type('html').send('<html>Sign in</html>');
+        res.json(feed({ package: 'portable.zip', releasesUrl: undefined }));
+    });
+    const remote = source.listen(0, '127.0.0.1'); await once(remote, 'listening');
+    const sourceUrl = `http://127.0.0.1:${remote.address().port}/latest.json`;
+    let now = 0;
+    const service = new UpdateService({ env: { PIVANE_UPDATE_FEED_URL: sourceUrl }, platform: 'win32', arch: 'x64', now: () => now });
+    const app = express(); app.use(express.json()); const router = express.Router(); mountUpdateRoutes(router, service); app.use('/api/pi', router);
+    const local = app.listen(0, '127.0.0.1'); await once(local, 'listening');
+    t.after(async () => { for (const server of [local, remote]) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); } });
+    assert.equal((await service.check()).pivane.version, '1.8.0'); assert.equal(lookups, 1);
+    for (const value of ['redirect', 'html']) {
+        mode = value; now += 300000;
+        assert.equal((await service.check()).pivane.status, 'error');
+    }
+    const before = lookups;
+    for (const action of ['application', 'update']) {
+        const response = await fetch(`http://127.0.0.1:${local.address().port}/api/pi/settings/updates/review`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
+        assert.equal(response.status, 409); assert.ok((await response.json()).error.includes('Windows'));
+    }
+    assert.equal(lookups, before);
+});
+
 test('automatic update routes share authenticated preferences, enforce Origin and reject execution input', async t => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-auto-updates-'));
     const preferences = new (require('../server/workspace-preferences-service').WorkspacePreferencesService)({ filePath: path.join(root, 'preferences.json') });

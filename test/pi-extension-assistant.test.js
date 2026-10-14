@@ -70,6 +70,8 @@ test('extension assistant persists its identity, scopes tools, confirms packages
         await run({ name: 'extensions_inventory', args: {} });
         assert.match(JSON.stringify(calls[0].messages), /dedicated Extension Assistant/);
         assert.match(JSON.stringify(calls[0].messages), /openai\/skills/);
+        assert.match(JSON.stringify(calls[0].messages), /@astron-team\/skillhub/);
+        assert.match(JSON.stringify(calls[0].messages), /registry\/skill.md/);
         assert.doesNotMatch(JSON.stringify(calls), new RegExp(access.extensionAssistantToken));
         const inventoryResult = (await worker.request('get_messages')).messages.find(m => m.role === 'toolResult' && m.toolName === 'extensions_inventory');
         assert.equal(inventoryResult.isError, false);

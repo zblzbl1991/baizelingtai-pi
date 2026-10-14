@@ -57,7 +57,7 @@
         setEnabled(value) {
             this.enabled = value;
             $('settings-manage-templates').disabled = !value;
-            $('settings-manage-templates').title = value ? translateUi("管理 Pi 原生提示词模板") : translateUi("模板管理等待后台启用");
+            $('settings-manage-templates').title = value ? translateUi("管理提示词模板") : translateUi("模板管理等待后台启用");
         }
         closeActions(focus = false) {
             this.addMenu.hidden = true; this.addButton.setAttribute('aria-expanded', 'false');
@@ -220,7 +220,7 @@
             const reload = this.button(translateUi("重新加载当前会话资源"), () => this.reload()); reload.disabled = !this.host.context().connected;
             actions.append(this.button(translateUi("新建模板"), () => this.editor()), reload);
             this.body.append(actions, node('p', translateUi("模板是按需调用的任务快捷方式：在聊天输入框输入 /名称 和参数才会展开，不会自动加入每轮对话。长期项目约定放在 AGENTS.md，README 用于项目说明。"), 'pi-composer-help'));
-            this.body.append(node('p', translateUi("与终端共用原生 prompts 目录。保存后，已打开的会话需空闲时重新加载；项目模板受 Pi trust 控制。覆盖与删除会留备份，同名模板被遮蔽时需改名。"), 'pi-composer-help'));
+            this.body.append(node('p', translateUi("与终端共用原生 prompts 目录。保存后，已打开的会话需空闲时重新加载；项目模板受项目信任控制。覆盖与删除会留备份，同名模板被遮蔽时需改名。"), 'pi-composer-help'));
                 const sample = node('details'); sample.append(node('summary', translateUi("从常用任务开始")));
                 for (const example of examples) sample.append(this.button(example[1], () => this.editor({ name: example[0], scope: 'user', content: `---\ndescription: ${example[1]}\n---\n${example[2]}\n` })));
                 this.body.append(sample);
@@ -245,11 +245,11 @@
             const form = node('form');
             const nameLabel = node('label', translateUi("命令名（字母、数字、-、_；不含 / 和 .md）")), name = node('input'); name.value = record.name || ''; name.required = true; name.pattern = '[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}'; name.disabled = Boolean(record.revision); name.id = 'pi-template-name'; nameLabel.append(name);
             const scopeLabel = node('label', translateUi("保存位置")), scope = node('select'); scope.id = 'pi-template-scope';
-            for (const [value, text] of [['user', translateUi("全局 · 与所有项目共用")], ['project', translateUi("当前项目 · 需 Pi 信任后加载")]]) { const option = node('option', text); option.value = value; scope.append(option); }
+            for (const [value, text] of [['user', translateUi("全局 · 与所有项目共用")], ['project', translateUi("当前项目 · 信任后加载")]]) { const option = node('option', text); option.value = value; scope.append(option); }
             scope.value = record.scope || 'user'; scope.disabled = Boolean(record.revision); scopeLabel.append(scope);
             const contentLabel = node('label', translateUi("原生 Markdown 模板")), content = node('textarea'); content.id = 'pi-template-content'; content.rows = 12; content.required = true; content.value = record.content || translateUi("---\ndescription: 简要说明此模板的用途\nargument-hint: \"[补充要求]\"\n---\n请完成以下任务：\n${1:-补充默认要求}\n"); contentLabel.append(content);
             const submit = node('button', translateUi("保存模板")); submit.type = 'submit';
-            form.append(nameLabel, scopeLabel, contentLabel, node('p', translateUi("$1、$2 为位置参数，$@ 表示全部参数，${1:-默认值} 为可选参数；由 Pi 原生展开。"), 'pi-composer-help'), submit);
+            form.append(nameLabel, scopeLabel, contentLabel, node('p', translateUi("$1、$2 为位置参数，$@ 表示全部参数，${1:-默认值} 为可选参数；由底层引擎展开。"), 'pi-composer-help'), submit);
             form.addEventListener('submit', e => { e.preventDefault(); this.run(async () => {
                 this.valid(); if (submit.disabled) return;
                 const key = this.key();

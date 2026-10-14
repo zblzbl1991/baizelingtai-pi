@@ -51,14 +51,14 @@
             this.body.append(node('p', session.name || session.firstMessage || translateUi("未命名会话"), 'pi-transfer-session'));
             const label = node('label', translateUi("文件格式"));
             const format = node('select'); format.id = 'pi-transfer-format';
-            for (const [value, title] of [['html', translateUi("HTML · 独立阅读")], ['jsonl', translateUi("Pi JSONL · 当前分支，可导入继续")]]) {
+            for (const [value, title] of [['html', translateUi("HTML · 独立阅读")], ['jsonl', translateUi("JSONL · 当前分支，可导入继续")]]) {
                 const option = node('option', title); option.value = value; format.append(option);
             }
             label.append(format);
             const scope = node('p', '', 'pi-transfer-scope');
             const update = () => { scope.textContent = format.value === 'html'
                 ? translateUi("包含会话树中已保存的历史分支、压缩前记录、思考与工具内容，以及原生导出携带的系统提示和工具定义。可离线打开；范围不限于网页当前显示的正文。")
-                : translateUi("仅导出当前活动分支，保留该分支上的消息、工具和摘要记录，供 Pi 导入继续。其他分支不包含在内，这不是完整会话树备份。"); };
+                : translateUi("仅导出当前活动分支，保留该分支上的消息、工具和摘要记录，可导入继续，兼容 Pi JSONL 格式。其他分支不包含在内，这不是完整会话树备份。"); };
             format.addEventListener('change', update); update();
             this.body.append(label, scope, node('p', translateUi("会话空闲时可导出，最大 64 MiB。记录可能包含路径、代码和对话中出现的私密内容，分享前请检查。项目文件和运行环境不随记录打包。")));
             this.button(translateUi("下载记录"), async () => {
@@ -152,7 +152,7 @@
             return true;
         }
         openImport(cwd) {
-            if (!this.begin(translateUi("导入 Pi 会话"))) return false;
+            if (!this.begin(translateUi("导入会话"))) return false;
             const epoch = this.epoch;
             this.body.append(node('p', translateUi("选择 Pi v2/v3 JSONL 文件，导入到目标项目下的独立新线程。已有线程保留；导入后不会自动发送消息或切换当前会话。")));
             const projectLabel = node('label', translateUi("目标项目"));
@@ -166,7 +166,7 @@
             customPath.placeholder = translateUi("选择允许范围内已存在的项目目录"); pathLabel.append(customPath);
             pathLabel.hidden = Boolean(project.value);
             project.addEventListener('change', () => { pathLabel.hidden = Boolean(project.value); });
-            const fileLabel = node('label', translateUi("Pi 会话文件（最大 16 MiB）"));
+            const fileLabel = node('label', translateUi("会话文件（最大 16 MiB）"));
             const file = node('input'); file.id = 'pi-transfer-file'; file.type = 'file'; file.accept = '.jsonl'; fileLabel.append(file);
             this.body.append(projectLabel, pathLabel, fileLabel, node('p', translateUi("HTML 和其他 Agent 的会话格式暂不支持。消息中的旧路径保留原文，实际工作目录使用所选项目；项目文件、凭据和运行环境需要另行准备。")));
             const submit = this.button(translateUi("导入为新线程"), async () => {
@@ -184,7 +184,7 @@
                     const result = await this.options.apiFetch('/api/pi/sessions/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(120000), body: JSON.stringify({ cwd: target, content, requestId }) });
                     try { await this.options.refresh(result.session.cwd); }
                     catch { this.options.toast(translateUi("会话已导入，线程列表暂未刷新，请稍后刷新列表"), 'info'); }
-                    if (epoch !== this.epoch) { this.options.toast(translateUi("Pi 会话已导入为新线程"), 'success'); return; }
+                    if (epoch !== this.epoch) { this.options.toast(translateUi("会话已导入为新线程"), 'success'); return; }
                     this.body.replaceChildren(node('p', translateUi("已导入到 {0}", result.session.cwd)), node('p', result.session.name || result.session.firstMessage || translateUi("未命名会话")));
                     this.status.textContent = translateUi("新线程已保存。可以继续当前工作，或打开导入的线程。"); this.footer.replaceChildren();
                     this.button(translateUi("打开新线程"), async () => {

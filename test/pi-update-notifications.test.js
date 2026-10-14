@@ -30,6 +30,17 @@ test('daily Pi checks coalesce, persist across restart, preserve unrelated prefe
     f.service.piVersion = '0.86.0'; assert.equal(restarted.snapshot().available, false);
 });
 
+test('intranet bundle sources disable npm polling and old upstream reminders without altering preferences', async t => {
+    const f = fixture(t);
+    await f.notices.check();
+    const before = f.preferences.readDocument();
+    f.service.feed = 'http://gitlab.example/latest.json';
+    f.advance(2 * DAY);
+    const result = await f.notices.check();
+    assert.equal(result.supported, false); assert.equal(result.enabled, false); assert.equal(result.available, false);
+    assert.equal(f.calls(), 1); assert.deepEqual(f.preferences.readDocument(), before);
+});
+
 test('network failures back off silently and disabling during a pending check survives completion', async t => {
     const failure = fixture(t, () => { throw new Error('private proxy credential'); });
     await failure.notices.check(); assert.equal(failure.calls(), 1);

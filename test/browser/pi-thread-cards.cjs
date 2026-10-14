@@ -91,7 +91,7 @@ async function run(browser, base, width, locale) {
  await page.locator('[data-project-action="menu"]').click();
  const menu=page.locator('.pi-thread-menu:not(.hidden)');
  const more=locale==='zh-CN'?'更多操作':'More actions';
- const rare=locale==='zh-CN'?['导入 Pi 会话','项目信任','复制项目路径']:['Import Pi session','Project trust','Copy project path'];
+ const rare=locale==='zh-CN'?['导入会话','项目信任','复制项目路径']:['Import session','Project trust','Copy project path'];
  for(const label of rare)assert.equal(await menu.getByRole('menuitem',{name:label,exact:true}).count(),0);
  await menu.getByRole('menuitem',{name:more,exact:true}).focus();await page.keyboard.press('ArrowRight');
  for(const label of rare)assert.equal(await menu.getByRole('menuitem',{name:label,exact:true}).count(),1);

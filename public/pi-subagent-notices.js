@@ -26,7 +26,7 @@
         strong.textContent = t(label);
         const icon = document.createElement('i'); icon.className = iconClass; icon.setAttribute('aria-hidden', 'true');
         strong.before(icon);
-        const source = document.createElement('span'); source.className = 'pi-subagent-notice-source'; source.textContent = 'pi-subagents';
+        const source = document.createElement('span'); source.className = 'pi-subagent-notice-source'; source.textContent = t('扩展来源：{0}', 'pi-subagents'); source.hidden = true;
         header.append(source);
         return true;
     }
@@ -44,7 +44,8 @@
         hint.textContent = preview(source); hint.title = hint.textContent;
         const chevron = document.createElement('i'); chevron.className = 'fa-solid fa-chevron-right pi-subagent-notice-chevron'; chevron.setAttribute('aria-hidden', 'true');
         const origin = header.querySelector('.pi-subagent-notice-source');
-        summary.append(...[...header.childNodes].filter(node => node !== origin), hint, ...(origin ? [origin] : []), chevron);
+        summary.append(...[...header.childNodes].filter(node => node !== origin), hint, chevron);
+        if (origin) { origin.hidden = false; body.prepend(origin); }
         header.remove(); body.remove();
         fold.append(summary, body);
         const ensure = () => { for (const node of body.querySelectorAll('[data-pending-markdown]')) { node.innerHTML = render(node._piMarkdown || ''); node.removeAttribute('data-pending-markdown'); delete node._piMarkdown; } };

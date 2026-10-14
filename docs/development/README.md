@@ -1,4 +1,4 @@
-# Pivane 开发文档
+# 白泽灵台开发文档
 
 这些文档随源码版本管理，保存可复用的设计、契约和流程。机器地址、当前部署、有效授权和验证日志属于私有维护资料，源码入口通过可选的 `AGENTS.local.md` 指向本机资料。
 
@@ -12,11 +12,12 @@
 | 系统边界、数据流、设计取舍与已知技术债 | [架构](ARCHITECTURE.md) |
 | 开发步骤、验证范围、文档责任 | [开发流程](WORKFLOW.md) |
 | 助手身份、分类与档案记忆的实现边界 | [助手档案实现](AGENT_PROFILES.md) |
-| Pivane 名称、旧版本兼容、项目迁移 | [命名与迁移](NAMING.md) |
+| 白泽灵台名称、旧版本兼容、项目迁移 | [命名与迁移](NAMING.md) |
 | Pi/第三方依赖、公开 API 和升级验证 | [依赖与上游适配](DEPENDENCIES.md) |
 | 候选包、发布与恢复演练 | [发布流程](RELEASING.md) |
 | 字段和协议 | [API](../API.md)、对应功能文档（索引见 [文档目录](../README.md)） |
 | 平台原生组件 | [native](../../native/README.md) |
+| guizang-ppt 与内网 SkillHub 来源、CLI 和接口依据 | [SkillHub 接入核查](research/skillhub-guizang-ppt.md) |
 
 用户可见行为以功能文档为准；实现细节以本目录为准；两者都不记录某台机器的部署状态。
 

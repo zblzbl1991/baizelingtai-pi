@@ -8,7 +8,7 @@ const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['te
 async function run(browser, base, width, locale, noProject = false) {
     const ctx = await browser.newContext({ locale, viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
     const page = await ctx.newPage(), errors = [], sent = [], writes = [], mutations = [];
-    let memoryAdapterInstalled = false, pptSkill = null, pptNeedsReview = false;
+    let memoryAdapterInstalled = false, pptSkill = null, pptNeedsReview = false, bundledCapabilities = false, bundledDesktopEnabled = true;
     let hold = false, release, enabled = true, failResources = false, inspected = false, holdInventory = false, releaseInventory, projectTrusted = false;
     const sessions = [{ id: 'original', cwd, name: 'Original', messageCount: 2 }];
     page.on('pageerror', e => errors.push(e.message));
@@ -34,13 +34,23 @@ async function run(browser, base, width, locale, noProject = false) {
             await new Promise(resolve => { releaseInventory = resolve; });
         }
         if (p === '/api/pi/settings/native/resources') return route.fulfill({ json: { cwd, revision: 'r1', scope: url.searchParams.get('scope'), trust: { effective: projectTrusted },
-            featuredSkills: pptSkill || [], featuredSkillNeedsReview: pptNeedsReview, packages: [{ source: 'npm:fixture', scope: 'user', installed: true }, { source: 'npm:@example/document-tools@1.2.3', scope: 'user', installed: true },
+            skillhub: { registry: 'http://skillhub.example.com', namespace: 'global', slug: 'guizang-ppt-skill' }, featuredSkills: pptSkill || [], featuredSkillNeedsReview: pptNeedsReview, packages: [{ source: 'npm:fixture', scope: 'user', installed: true }, { source: 'npm:@example/document-tools@1.2.3', scope: 'user', installed: true },
                 { source: '/fixture/pivane/vendor/pi-subagents', scope: 'user', installed: true, managedBy: 'pivane', name: 'pi-subagents', version: '0.74.0' },
                 { source: 'git:github.com/nicobailon/pi-web-access@v1.0', scope: 'user', installed: true },
                 { source: 'npm:pi-hermes-memory', scope: 'user', installed: false },
                 { source: 'npm:@other/pi-computer-use', scope: 'user', installed: true },
+                ...(bundledCapabilities ? [
+                    { source: '/fixture/vendor/pi-web-access', scope: 'user', installed: true, managedBy: 'pivane', name: 'pi-web-access', version: '0.39.0' },
+                    { source: '/fixture/vendor/pi-computer-use', scope: 'user', installed: true, managedBy: 'pivane', name: '@injaneity/pi-computer-use', version: '0.5.1' },
+                    { source: '/fixture/pi-packages/presentations', scope: 'user', installed: true, managedBy: 'pivane', name: 'pivane-presentations', version: '1.0.0' },
+                ] : []),
                 ...(url.searchParams.get('scope') === 'project' && projectTrusted ? [{ source: 'npm:project-fixture', scope: 'project', installed: true }] : [])
             ], resources: [
+                ...(bundledCapabilities ? [
+                    { id: 'bundled-web', type: 'extensions', path: '/fixture/vendor/pi-web-access/dist/index.js', source: '/fixture/vendor/pi-web-access', enabled: true, scope: 'user', override: 'inherit' },
+                    { id: 'bundled-desktop', type: 'extensions', path: '/fixture/vendor/pi-computer-use/extensions/computer-use.ts', source: '/fixture/vendor/pi-computer-use', enabled: bundledDesktopEnabled, scope: 'user', override: 'inherit' },
+                    { id: 'bundled-ppt', type: 'skills', path: '/fixture/vendor/guizang-ppt-skill/SKILL.md', source: '/fixture/pi-packages/presentations', enabled: true, scope: 'user', override: 'inherit' },
+                ] : []),
                 { id: 'native-mcp', type: 'extensions', path: 'builtin:mcp', source: 'builtin', enabled: true, scope: 'user', override: 'inherit' },
                 { id: 'fixture', type: 'skills', path: '/tmp/fixture/SKILL.md', source: 'npm:fixture', enabled: true, scope: 'user', override: 'inherit' },
                 { id: 'second', type: 'skills', path: 'C:\\Skills\\spreadsheet-helper\\SKILL.md', source: 'local', enabled: false, scope: 'user', override: 'inherit' },
@@ -90,34 +100,43 @@ async function run(browser, base, width, locale, noProject = false) {
     memoryAdapterInstalled = false; await page.locator('#extensions-refresh').click();
     await page.locator('#extension-pi-hermes-memory [data-installation="configured"]').waitFor();
     assert.equal(await page.locator('#extension-pi-computer-use [data-installation="missing"]').count(), 1);
-    await page.locator('#extension-ppt-master [data-installation="missing"]').waitFor();
-    pptSkill = [{ id: 'ppt-master', scope: 'user', enabled: true }];
+    await page.locator('#extension-guizang-ppt [data-installation="missing"]').waitFor();
+    assert.equal(await page.locator('#extension-guizang-ppt [data-extension-source]').getAttribute('href'), 'http://skillhub.example.com/space/global/guizang-ppt-skill');
+    await page.locator('#extension-guizang-ppt [data-extension-configure]').click();
+    await page.locator('#pi-extension-assistant-dialog').waitFor({ state: 'visible' });
+    const pptDraft = await page.locator('#pi-extension-assistant-need').inputValue();
+    assert.match(pptDraft, /http:\/\/skillhub.example.com\/space\/global\/guizang-ppt-skill/);
+    assert.match(pptDraft, /@astron-team\/skillhub.*--registry.*--dir/);
+    assert.equal(mutations.length, 0, 'SkillHub setup only prepares a draft');
+    await page.keyboard.press('Escape');
+    pptSkill = [{ id: 'guizang-ppt', scope: 'user', enabled: true }];
     await page.locator('#extensions-refresh').click();
-    await page.locator('#extension-ppt-master [data-installation="installed"]').waitFor();
-    assert.match(await page.locator('#extension-ppt-master [data-installation]').textContent(), locale === 'en' ? /Skill found.*Global/ : /已发现技能.*所有项目/);
-    pptSkill = [{ id: 'ppt-master', scope: 'user', enabled: false }];
+    await page.locator('#extension-guizang-ppt [data-installation="installed"]').waitFor();
+    assert.match(await page.locator('#extension-guizang-ppt [data-installation]').textContent(), locale === 'en' ? /Skill found.*Global/ : /已发现技能.*所有项目/);
+    pptSkill = [{ id: 'guizang-ppt', scope: 'user', enabled: false }];
     await page.locator('#extensions-refresh').click();
-    await page.locator('#extension-ppt-master [data-installation="configured"]').waitFor();
+    await page.locator('#extension-guizang-ppt [data-installation="configured"]').waitFor();
     pptSkill = null; pptNeedsReview = true; await page.locator('#extensions-refresh').click();
-    await page.locator('#extension-ppt-master [data-installation="unknown"]').waitFor();
+    await page.locator('#extension-guizang-ppt [data-installation="unknown"]').waitFor();
     pptNeedsReview = false; await page.locator('#extensions-refresh').click();
-    await page.locator('#extension-ppt-master [data-installation="missing"]').waitFor();
+    await page.locator('#extension-guizang-ppt [data-installation="missing"]').waitFor();
     failResources = true; await page.locator('#extensions-refresh').click();
     await page.waitForFunction(() => document.getElementById('extensions-inventory-status').textContent.includes('Synthetic inventory failure'));
     assert.equal(await page.locator('[data-installation="installed"]').count(), 0, 'failed refresh must not retain stale installed labels');
+    assert.equal(await page.locator('#extension-guizang-ppt [data-extension-source]').getAttribute('href'), null, 'failed refresh clears the source with its inventory');
     failResources = false; await page.locator('#extensions-refresh').click();
     await page.locator('#extension-pi-subagents [data-installation="installed"]').waitFor();
     if (!noProject) {
         await page.locator('#extensions-scope').selectOption('project');
         await page.locator('#extension-pi-computer-use [data-installation="unknown"]').waitFor();
-        await page.locator('#extension-ppt-master [data-installation="unknown"]').waitFor();
+        await page.locator('#extension-guizang-ppt [data-installation="unknown"]').waitFor();
         projectTrusted = true;
         await page.locator('#extensions-refresh').click();
         await page.locator('#extension-pi-native-mcp [data-installation="installed"]').waitFor();
-        pptSkill = [{ id: 'ppt-master', scope: 'project', enabled: true }];
+        pptSkill = [{ id: 'guizang-ppt', scope: 'project', enabled: true }];
         await page.locator('#extensions-refresh').click();
-        await page.locator('#extension-ppt-master [data-installation="installed"]').waitFor();
-        assert.match(await page.locator('#extension-ppt-master [data-installation]').textContent(), locale === 'en' ? /Project/ : /当前项目/);
+        await page.locator('#extension-guizang-ppt [data-installation="installed"]').waitFor();
+        assert.match(await page.locator('#extension-guizang-ppt [data-installation]').textContent(), locale === 'en' ? /Project/ : /当前项目/);
         pptSkill = null;
         holdInventory = true; await page.locator('#extensions-refresh').click();
         for (let i = 0; !releaseInventory && i < 100; i++) await new Promise(resolve => setTimeout(resolve, 10));
@@ -130,13 +149,36 @@ async function run(browser, base, width, locale, noProject = false) {
     }
     assert.equal(await page.locator('#extensions-nav [data-extensions-tab]').count(), 3);
     assert.equal(await page.locator('.workspace-settings-nav button:visible').count(), 0, 'settings tabs stay out of the extension centre');
+    bundledCapabilities = true;
+    await page.locator('#extensions-refresh').click();
+    for (const id of ['pi-web-access', 'pi-computer-use', 'guizang-ppt']) {
+        await page.locator(`#extension-${id} [data-installation="installed"]`).waitFor();
+        assert.match(await page.locator(`#extension-${id} [data-installation]`).textContent(), /白泽灵台/);
+    }
+    assert.match(await page.locator('#extension-guizang-ppt [data-extension-source]').getAttribute('href'), /github.com\/op7418\/guizang-ppt-skill\/tree\/c91369/);
+    await page.locator('#extension-guizang-ppt [data-extension-configure]').click();
+    await page.locator('#pi-extension-assistant-dialog').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#pi-extension-assistant-need').inputValue(), locale === 'en' ? /bundled with 白泽灵台/ : /白泽灵台内置/);
+    await page.keyboard.press('Escape');
+    bundledDesktopEnabled = false;
+    await page.locator('#extensions-refresh').click();
+    await page.locator('#extension-pi-computer-use [data-installation="configured"]').waitFor();
+    assert.match(await page.locator('#extension-pi-computer-use [data-installation]').textContent(), locale === 'en' ? /disabled/ : /已停用/);
+    bundledDesktopEnabled = true;
+    await page.locator('#extensions-refresh').click();
+    await page.locator('#extension-pi-computer-use [data-installation="installed"]').waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.screenshot({ path: `/tmp/pivane-bundled-${locale}-${width}.png` });
+    bundledCapabilities = false;
+    await page.locator('#extensions-refresh').click();
+    await page.locator('#extension-pi-computer-use [data-installation="missing"]').waitFor();
     await page.locator('#extensions-search').fill('injaneity');
     assert.equal(await page.locator('.extensions-card').count(), 1);
     await page.locator('.extensions-card summary').click();
     assert.match(await page.locator('.extensions-card').innerText(), /Linux\/Wayland/);
     await page.locator('.extensions-card [data-extension-configure]').click();
     await page.locator('#pi-extension-assistant-dialog').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#pi-extension-assistant-need').inputValue(), /npm:@injaneity\/pi-computer-use/);
+    assert.match(await page.locator('#pi-extension-assistant-need').inputValue(), /pi-computer-use/);
     assert.equal(await page.locator('.pi-extension-examples button').count(), 4);
     await page.locator('.pi-extension-examples button').nth(2).click();
     const updateDraft = await page.locator('#pi-extension-assistant-need').inputValue();

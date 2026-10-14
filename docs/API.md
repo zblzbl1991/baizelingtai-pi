@@ -1,5 +1,11 @@
 # API Reference
 
+## 桌面启动私有通道
+
+Windows 托盘与 `scripts/start-desktop.cjs` 使用继承的 stdin/stdout LF 通道。新增 `waiting` 响应 `{type:"waiting",url}`，允许浏览器先打开本次启动的本地等待页；`ready` 的 `url` 才是经受管子服务 IPC 和 HTTP 检查确认的工作台地址。`starting`、`error`、`stopping` 和私有 stdin 的 `stop` 继续沿用原语义，不增加工作台的公开控制接口。
+
+临时等待页的只读 `GET /status` 返回 `{state:"starting"}`、`{state:"ready",url}` 或 `{state:"error",message}`，仅监听本机 `127.0.0.1` 并校验 Host/Origin。它不属于 `/api/pi`，不读取会话或凭据，不接受启动重试、停机或配置写入；生命周期与用户操作见 [托盘启动器](DESKTOP_LAUNCHER.md)。
+
 ## 成果中心（artifacts）
 
 `GET /api/pi/status.artifacts` 表示成果能力；`GET /api/pi/activity.artifactOperations` 为真实读写操作数量。`GET /api/pi/artifacts` 仍返回有界、来源重验的待保存目录；新增 `/artifacts/library` 独立库分页、`POST /artifacts/batch` 逐文件／批量保存、星标、合集、重命名、项目标签、导出、回收站和永久删除（purge 可从任意视图永久删除已保存的库条目，要求 confirmed=true、精确 library ID 及当前 revision；中断的删除在回收站显示为删除待核对／deletionPending），`GET /artifacts/operations/:requestId` 核对不确定写入。`/artifacts/:key/preview|cover|origin|location` 按来源 key 或稳定 library ID 读取。已独立保存的文件不依赖来源会话；删除会话与删除成果副本分开。原交付链接语义不变，source key 仍不是授权。完整字段、确认／修订、预算和错误见 [成果中心](ARTIFACTS.md#预算资格与接口)。
@@ -10,7 +16,7 @@
 
 运行能力包括 liveRecovery/extensionDrafts/sessionSearch/runtimeConfiguration 标记。主连接 get_messages.webLive 为有界partial/tool展示快照，广播增加webRuntimeId/webSequence；主WS新增 ack_extension_draft、get_runtime_configuration、restart_runtime（空闲持久线程，runtimeId/expectedRevision/confirmed）。GET /sessions/search?q&cwd?&offset?&searchId? 提供受保护、可取消、有界原生正文跨线程检索。完整字段、预算、实际信任、配置修订、重开互斥与接受ACK语义见 [NATIVE_COMPLETION.md](NATIVE_COMPLETION.md)。不添加裸导航/工具权限、不存持久聊天副本。
 
-原生设置：GET `/api/pi/settings/native` schema 提供 `defaultTools`（type=tools、choices/defaults/platform、maxEntries=1024/maxNameLength=500）、`codemode.mode`（on/only）、`codemode.inlineBudget`（0–1000000）与 `defaultProjectTrust`（ask/always/never、globalOnly）。PUT 接受普通／自定义工具名和顺序 +/- 条目；普通名称替换，只有修饰符时修改继承选择，重复修饰符保留，重复普通名拒绝。null 删除本层覆盖，Pivane [] 不默认启用内置工具，扩展工具可能仍自动激活；受信项目修饰符叠加全局 [] 不恢复默认。信任策略仅全局写入，项目范围即使 null 也拒绝。保存返回 requiresRuntimeRestart=true，不改变现有实例或逐项目信任决定；完整语义见 [NATIVE_SETTINGS.md](NATIVE_SETTINGS.md)。
+原生设置：GET `/api/pi/settings/native` schema 提供 `defaultTools`（type=tools、choices/defaults/platform、maxEntries=1024/maxNameLength=500）、`codemode.mode`（on/only）、`codemode.inlineBudget`（0–1000000）与 `defaultProjectTrust`（ask/always/never、globalOnly）。PUT 接受普通／自定义工具名和顺序 +/- 条目；普通名称替换，只有修饰符时修改继承选择，重复修饰符保留，重复普通名拒绝。null 删除本层覆盖，白泽灵台 [] 不默认启用内置工具，扩展工具可能仍自动激活；受信项目修饰符叠加全局 [] 不恢复默认。信任策略仅全局写入，项目范围即使 null 也拒绝。保存返回 requiresRuntimeRestart=true，不改变现有实例或逐项目信任决定；完整语义见 [NATIVE_SETTINGS.md](NATIVE_SETTINGS.md)。
 
 页面通知/提示音仅复用现有GET /api/pi/activity，不新增API；后台推送仍是显式可选功能，基础localhost通知无需调用订阅或VAPID接口。详见NOTIFICATIONS.md。
 
@@ -146,11 +152,11 @@
 
 `browserNotifications=true` 标记设备Web Push订阅与任务通知后端。`GET /notifications`、`POST /notifications/key`、`POST /notifications/status`、`PUT/DELETE /notifications/subscription`、`POST /notifications/test` 复用认证和Origin，响应no-store；只公开VAPID公钥，订阅绑定当前访问身份，关闭/撤销停止后续推送。参数、限额和HTTPS/手机要求见 [NOTIFICATIONS.md](NOTIFICATIONS.md)。
 
-`/settings/subagents` 提供内置 pi-subagents 的状态与模型/思考配置，返回 `plugin.managedBy:"pivane"`、`canInstall:false`、`upgradeFrom:null`。旧 `/settings/subagents/install` 和 `/settings/subagents/upgrade` 保留确认和修订检查，但返回 400，提示组件随 Pivane 安装或更新。未安装、停用或版本不匹配时不能保存，ready 不代表已加载进当前 worker。原生资源清单的内置包增加 `managedBy/name/version`，内置资源开关保存到 `pivaneBuiltins.subagents`；内置包不允许通过通用包操作独立安装、移除或更新。字段、修订和范围见[子 Agent 专属设置](NATIVE_SETTINGS.md#子-agent-专属设置)。
+`/settings/subagents` 提供内置 pi-subagents 的状态与模型/思考配置，返回 `plugin.managedBy:"pivane"`、`canInstall:false`、`upgradeFrom:null`。旧 `/settings/subagents/install` 和 `/settings/subagents/upgrade` 保留确认和修订检查，但返回 400，提示组件随白泽灵台安装或更新。未安装、停用或版本不匹配时不能保存，ready 不代表已加载进当前 worker。原生资源清单的内置子 Agent、网页、桌面与演示文稿资源登记包增加 `managedBy/name/version`，内置资源开关分别保存到 `pivaneBuiltins.subagents/web/computer/presentations`；内置包不允许通过通用包操作独立安装、移除或更新。字段、修订和范围见[子 Agent 专属设置](NATIVE_SETTINGS.md#子-agent-专属设置)。
 
-当前绑定 Pi 的应用对 `POST /settings/updates/review {action:'update'}` 返回 409，需同时更新 Pivane 与已验证适配；备份、重启和应用票据保留原语义。
+当前绑定 Pi 的应用对 `POST /settings/updates/review {action:'update'}` 返回 409，需同时更新白泽灵台与已验证适配；备份、重启和应用票据保留原语义。
 
-原生资源清单包含 `builtin:mcp`、`builtin:codemode`、`builtin:tool-search`、`builtin:llama.cpp`，沿用 `path/enabled/override` 开关语义；它们不是可独立安装的 npm 包。新增或更新可识别的旧 `pi-mcp-adapter` 包返回 400 管理说明，移除旧声明仍可执行。原生 MCP/Codemode 不新增 Pivane MCP HTTP 网关；嵌套工具事件沿用原生 `parentToolCallId`，当前工具调用仍受权限钩子。旧配置的显式停机迁移见 [MCP.md](MCP.md)。
+原生资源清单包含 `builtin:mcp`、`builtin:codemode`、`builtin:tool-search`、`builtin:llama.cpp`，沿用 `path/enabled/override` 开关语义；它们不是可独立安装的 npm 包。新增或更新可识别的旧 `pi-mcp-adapter` 包返回 400 管理说明，移除旧声明仍可执行。原生 MCP/Codemode 不新增白泽灵台 MCP HTTP 网关；嵌套工具事件沿用原生 `parentToolCallId`，当前工具调用仍受权限钩子。旧配置的显式停机迁移见 [MCP.md](MCP.md)。
 
 `nativeMcpManagement=true` 标记 MCP 网页接口：
 
@@ -161,7 +167,7 @@
 - 网页原生 OAuth 沿用待确认输入；`gateway_mcp_authorization` 只在当前管理槽投影 `{authorization:{server,url,runtimeId}|null}`，重连快照 `mcpAuthorization` 可恢复正在处理的链接，完成立即清除。不写新凭据存储；URL 是待授权输入，不用于日志。迟到／未知私有 `pivaneMcp` 响应全部截获。操作参与 worker 生命周期，浏览器超时／断线不取消，也不自动重放。
 - 配置及运行响应 no-store，错误只为 `MCP_*` 安全代码；修订覆盖两范围 MCP、设置、trust 与 cwd。已保存配置与实际加载独立核对，细节见[原生 MCP](MCP.md)。
 
-`nativeSettings`、`nativeResources`、`projectTrust`、`modelAdvanced` 标记原生配置增强。设置 `/settings/native`、`/settings/native/trust`、`/settings/native/resources`、`/settings/native/packages`、`/settings/native/skill` 和 `/settings/models/advanced` 的方法、修订、范围和限额见 [NATIVE_SETTINGS.md](NATIVE_SETTINGS.md)。`GET /settings/native/resources` 另返回 `featuredSkills: [{id:'ppt-master',scope:'user'|'project',enabled:boolean}]`（可能为空），另有 `featuredSkillNeedsReview:boolean` 指示候选技能声明无法核实；只代表原生目录已发现且声明了匹配来源的本地技能，不证明依赖或运行会话已加载。主连接新增 `get_native_resources` 返回当前 worker 的实际 trust/资源来源，不返回系统提示正文或工具 schema；最多3000项/512KiB，不扩展裸 RPC 白名单。`/activity.nativeSettingsBusy` 供空闲部署检查。受管扩展原生换会话或直接导航被取消，网页入口保持。
+`nativeSettings`、`nativeResources`、`projectTrust`、`modelAdvanced` 标记原生配置增强。设置 `/settings/native`、`/settings/native/trust`、`/settings/native/resources`、`/settings/native/packages`、`/settings/native/skill` 和 `/settings/models/advanced` 的方法、修订、范围和限额见 [NATIVE_SETTINGS.md](NATIVE_SETTINGS.md)。`GET /settings/native/resources` 另返回 `featuredSkills: [{id:'guizang-ppt'|'ppt-master',scope:'user'|'project',enabled:boolean}]`（可能为空），另有 `featuredSkillNeedsReview:boolean` 指示候选技能声明无法核实；另返回 `skillhub:{registry,namespace,slug,guideUrl,detailUrl}`（实例配置，不发起远程请求）；guizang-ppt 核对官方 CLI 来源记录和 SKILL.md 哈希，旧 ppt-master 来源声明识别保留兼容。只代表原生目录已发现且本地来源记录匹配，不证明完整包、依赖或运行会话已加载。主连接新增 `get_native_resources` 返回当前 worker 的实际 trust/资源来源，不返回系统提示正文或工具 schema；最多3000项/512KiB，不扩展裸 RPC 白名单。`/activity.nativeSettingsBusy` 供空闲部署检查。受管扩展原生换会话或直接导航被取消，网页入口保持。
 
 `systemPrompts=true` 标记系统提示词管理：GET `/settings/system-prompts?cwd` 返回 global/project × append/base 原生文件正文、推导来源、整体 revision 和 64 KiB 单文件预算；PUT 接受 `{cwd,scope,kind,content,expectedRevision}`，content=null 恢复默认/继承，成功返回 `{ok:true,requiresReload:true}`。修订覆盖四文件内容/身份和原生配置/trust，冲突409不覆盖，保存不重载或中断 worker。主连接 `get_system_prompt` 通过当前 worker 私有资源管道读取正文、基础/追加输入、上下文文件、Skills、实际工具、时间与运行身份，1 MiB 超限整体失败；`configured` 为当前文件与实际信任推导来源，`matchesSavedFiles` 仅比较基础/追加与信任，无法核对为 null，不表示最终供应商请求一致。原 `get_native_resources` 继续不返回正文；读取不调用模型、不写历史、不广播私有结果。完整失败、草稿与生效语义见 [NATIVE_SETTINGS.md](NATIVE_SETTINGS.md#系统提示词查看与编辑)。
 
@@ -193,11 +199,15 @@
 
 ### 版本检查与 Pi 受管维护
 
-`/status` 的 `appVersion` 表示 Pivane，原 `version` 继续表示实际 Pi 包版本。`GET /settings/updates?channel=stable或preview`只读当前版本与内存缓存；`POST /settings/updates/check`接受 JSON `{channel?}`，显式查询 GitHub/npm 并缓存 5 分钟，查询本身不安装。只读检查省略 channel 时 Pivane 默认包含预发布版；stable 参数供旧客户端兼容，当前设置页不显示渠道切换。维护 review 省略 channel 时仍按本地版本选择原默认渠道，以保留旧客户端执行语义。`POST /settings/updates/automatic`仅接受空 JSON `{}`，按持久 24 小时成功期限检查 Pi 正式版，失败按 1–24 小时指数退避；并发共享请求，不安装。`GET /settings/updates/notifications`返回 enabled、available、eligible、idle、currentVersion、version、lastSuccessAt/nextCheckAt（Unix 毫秒或 null）。`POST`同路径接受 `{enabled:boolean}` 或 `{action:"claim"或"snooze"或"ignore",version}`；claim 仅当前可提醒版本且空闲时返回 claimed:true，同版本仅一次，snooze 延后 3 天，ignore 仅忽略该版。过期版本动作 409、错误字段 400、存储/服务不可用 503。身份与 Origin 校验、no-store 沿用工作台；偏好保留无关字段，查询与提醒不会产生维护票据或执行请求。
+新 Windows 包使用 `baizelingtai-portable.json`，部署配置优先读取 `BAIZELINGTAI_UPDATE_FEED_URL`；以下旧环境变量与元数据文件名继续读取兼容，两个元数据文件同时存在时拒绝猜测。标准 `pack:windows` 读取本机发布配置，并以 `baizelingtai` 作为 GitLab Generic Package Registry 包名；详见[构建与分发](DESKTOP_LAUNCHER.md#内网更新源与-gitlab-分发)。既有 REST 响应字段保持兼容。
+
+更新快照增加 `source:{type:"official"}` 或 `{type:"manifest",url,origin}`。部署配置 `BAIZELINGTAI_UPDATE_FEED_URL`（兼容 `PIVANE_UPDATE_FEED_URL`）优先于 Windows 包内的 `updateFeedUrl`；清单模式的 check 只读取同源公开 HTTP(S) JSON，不查询 GitHub/npm。可用 `BAIZELINGTAI_UPDATE_RELEASES_URL` 指定同源发布页，作为未检查、错误、暂无适用版本及清单未指定 `releasesUrl` 时的入口；有效清单的 `releasesUrl` 优先。`pivane` 可返回 `packageFormat:"windows-portable-zip"`、`downloadUrl`、`sha256`、`bytes`、`publishedAt`；`pi.bundled:true` 的 version 是目标整包的配套 Pi 版本。错误清单返回各卡片 status:error，平台/架构/渠道不适用返回 no-release，保留 5 分钟缓存及请求互斥。notifications 返回 `supported:false,enabled:false,available:false`，automatic 不联网且不改既有提醒偏好；application/update review 返回 409，防止旧 tar.gz/npm 安装器处理 ZIP。清单字段与分发步骤见[内网更新源](UPDATES.md#gitlab-与内网-windows-更新源)。未配置源时以下官方检查语义不变。
+
+`/status` 的 `appVersion` 表示白泽灵台，原 `version` 继续表示实际 Pi 包版本。`GET /settings/updates?channel=stable或preview`只读当前版本与内存缓存；`POST /settings/updates/check`接受 JSON `{channel?}`，显式查询 GitHub/npm 并缓存 5 分钟，查询本身不安装。只读检查省略 channel 时白泽灵台默认包含预发布版；stable 参数供旧客户端兼容，当前设置页不显示渠道切换。维护 review 省略 channel 时仍按本地版本选择原默认渠道，以保留旧客户端执行语义。`POST /settings/updates/automatic`仅接受空 JSON `{}`，按持久 24 小时成功期限检查 Pi 正式版，失败按 1–24 小时指数退避；并发共享请求，不安装。`GET /settings/updates/notifications`返回 enabled、available、eligible、idle、currentVersion、version、lastSuccessAt/nextCheckAt（Unix 毫秒或 null）。`POST`同路径接受 `{enabled:boolean}` 或 `{action:"claim"或"snooze"或"ignore",version}`；claim 仅当前可提醒版本且空闲时返回 claimed:true，同版本仅一次，snooze 延后 3 天，ignore 仅忽略该版。过期版本动作 409、错误字段 400、存储/服务不可用 503。身份与 Origin 校验、no-store 沿用工作台；偏好保留无关字段，查询与提醒不会产生维护票据或执行请求。
 
 以下维护接口暂保留供既有集成兼容及受控恢复，**当前设置页不调用也不显示执行入口**。`GET /settings/updates/maintenance`返回启动器能力、generation、busy、版本指针和最近维护结果；`POST /settings/updates/review`只接受 `{action:"update"或"backup"或"restart"}`，返回绑定服务端目标版本和进程代次的 10 分钟票据。`POST /settings/updates/execute`只接受 `{ticket,confirmed:true,draftsSaved:true,externalWritersStopped:true}`，再次检查空闲并暂停预约，接受返回 202。票据一次有效，不接受命令、URL、路径或版本覆盖；忙碌/过期/重复为 409，格式错误 400，不支持或交接失败 503。交接不确定不自动解锁或重试。
 
-所有接口复用身份/Origin、响应 no-store。`maintenance.job`增加脱敏 `output`、`outputTruncated`、`exitCode`、`fromVersion`与`installedVersion`；输出按行回传并保留有界尾部，只有实际退出后才返回退出码，成功后刷新版本卡片。普通`node server.js`与`npm start`自动支持，无需改服务启动命令；`--direct`为不含自动维护的开发入口。维护期间拒绝普通 API/WS 新工作；关闭页面不取消已接受操作。Pi 精确依赖在独立快照中安装并验证，然后停机备份和启动；Pivane 应用更新使用 `action:"application"`、可选 `channel` 复用 review/execute，票据绑定服务器选择的版本和 SHA256；能力以 `maintenance.appUpdateSupported` 为准。兼容字段 `installMode:"manual"`不表示受管维护不可用。字段、文件权限、预算、失败处理及恢复边界见[版本与更新](UPDATES.md)。
+所有接口复用身份/Origin、响应 no-store。`maintenance.job`增加脱敏 `output`、`outputTruncated`、`exitCode`、`fromVersion`与`installedVersion`；输出按行回传并保留有界尾部，只有实际退出后才返回退出码，成功后刷新版本卡片。普通`node server.js`与`npm start`自动支持，无需改服务启动命令；`--direct`为不含自动维护的开发入口。维护期间拒绝普通 API/WS 新工作；关闭页面不取消已接受操作。Pi 精确依赖在独立快照中安装并验证，然后停机备份和启动；白泽灵台应用更新使用 `action:"application"`、可选 `channel` 复用 review/execute，票据绑定服务器选择的版本和 SHA256；能力以 `maintenance.appUpdateSupported` 为准。兼容字段 `installMode:"manual"`不表示受管维护不可用。字段、文件权限、预算、失败处理及恢复边界见[版本与更新](UPDATES.md)。
 
 ### `GET /projects`
 

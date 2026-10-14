@@ -68,9 +68,7 @@ async function run(browser, viewport, theme) {
     const field = name => page.locator('#lab-connections-dialog').getByLabel(name, { exact: true });
     const manager = page.locator('#lab-connections-dialog');
     async function media() {
-        const desktop = page.locator('[data-tab="media"]');
-        if (await desktop.isVisible()) await desktop.click();
-        else { await page.locator('#workspace-more-toggle').click(); await page.locator('[data-more-tab="media"]').click(); }
+        await page.evaluate(() => window.PiWorkspaceRoute.navigate('media'));
     }
     async function open() { await page.locator('#lab-connect').click(); await manager.locator('.mc-provider-list').waitFor({ state: 'attached' }); }
     async function manage() { await manager.getByRole('button', { name: /^管理模型（/ }).first().click(); }
@@ -165,7 +163,9 @@ async function run(browser, viewport, theme) {
         await page.locator('#mc-close').click();
         await page.locator('#workspace-settings-toggle').click();
         await page.locator('[data-settings-tab="media"]').click();
-        await page.locator('[data-media-settings-kind="image"]').click();
+        assert.equal(await page.locator('#settings-multimodal').isVisible(), false);
+        // Retained media setup remains available to programmatic entry points.
+        await page.evaluate(() => PiMediaConnections.open({ kind: 'image', origin: 'settings' }));
         await manager.locator('.mc-provider-list').waitFor({ state: 'attached' });
         await click('新增服务'); await field('常用服务').selectOption('google');
         assert.equal(await field('Base URL').inputValue(), 'https://generativelanguage.googleapis.com/v1beta');
@@ -262,7 +262,7 @@ async function run(browser, viewport, theme) {
         providers.push(...['image', 'video', 'tts'].map(mediaKind => ({ ...copy(shared), id: mediaKind + '-service', name: mediaKind + ' dedicated service', models: shared.models.filter(model => model.kind === mediaKind).map(model => ({ ...copy(model), name: mediaKind + ' dedicated model' })) })), { ...copy(shared), id: 'empty-service', name: 'Empty service', models: [] });
         revision++;
         for (const kind of ['image', 'video', 'tts']) {
-            await page.locator(`[data-media-settings-kind="${kind}"]`).click();
+            await page.evaluate(kind => PiMediaConnections.open({ kind, origin: 'settings' }), kind);
             await manager.locator('.mc-provider-list').waitFor();
             assert.equal(await manager.evaluate(n => n.matches(':modal')), true, 'all three kinds open the same modal');
             assert.equal(await page.locator('#mc-speech-tabs').isVisible(), kind === 'tts');
@@ -290,7 +290,7 @@ async function run(browser, viewport, theme) {
                 await page.locator('#mc-close').click();
             } else await page.locator('#mc-close').click();
         }
-        await page.locator('#settings-speech-open').click(); await manager.locator('.mc-provider-list').waitFor();
+        await page.evaluate(() => PiMediaConnections.open({ kind: 'tts', origin: 'settings' })); await manager.locator('.mc-provider-list').waitFor();
         await manage();
         const speechCard = manager.locator('.mc-card').filter({ has: page.getByText('speech-fixture-model', { exact: true }) });
         await speechCard.getByRole('button', { name: '编辑模型', exact: true }).click();
@@ -311,7 +311,7 @@ async function run(browser, viewport, theme) {
         await page.keyboard.press('Escape'); await manager.waitFor({ state: 'hidden' });
         await page.locator('#settings-transcription-body input[type="password"]').waitFor({ state: 'detached' });
         assert.equal(await page.locator('#settings-transcription-body input[type="password"]').count(), 0, 'closing clears credential drafts');
-        await page.locator('#settings-speech-open').click(); await manager.locator('.mc-provider-list').waitFor();
+        await page.evaluate(() => PiMediaConnections.open({ kind: 'tts', origin: 'settings' })); await manager.locator('.mc-provider-list').waitFor();
         assert.equal(await page.locator('#mc-tts-tab').getAttribute('aria-selected'), 'true', 'speech always opens with TTS model management');
         assert.equal(writes.filter(item => item.suffix === '/execute').length, 0);
         assert.equal(await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }).includes('ui-private-key-fixture')), false);

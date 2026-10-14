@@ -15,7 +15,7 @@ async function main() {
     if (process.argv[2] === '--portable-root') {
         const root = fs.realpathSync.native(process.argv[3]);
         assert.equal(fs.existsSync(path.join(root, '.pivane-portable-validation')), true, 'only the independent archive validator may supply a portable root');
-        assert.equal(fs.existsSync(path.join(root, 'pivane-portable.json')), true);
+        assert.equal(fs.existsSync(require(path.join(root, 'server/pi-update-feed')).portableMetadataFile(root)), true);
         const base = path.dirname(root), scratch = path.join(base, 'browser-only'); fs.mkdirSync(scratch);
         const env = require('../../scripts/package-windows-portable.cjs').portableEnvironment(root, scratch);
         const system = path.join(process.env.SystemRoot, 'System32');
@@ -53,12 +53,14 @@ async function main() {
             await new Promise(resolve => setTimeout(resolve, 100));
         }
         const ready = JSON.parse(fs.readFileSync(live, 'utf8'));
+        const waiting = JSON.parse(fs.readFileSync(path.join(root, '.pivane-runtime/desktop/smoke-waiting.json'), 'utf8'));
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true });
         const pageErrors = [];
         for (const [name, viewport] of [['desktop', { width: 1440, height: 900 }], ['mobile', { width: 390, height: 844 }]]) {
             const context = await browser.newContext({ viewport, locale: 'zh-CN', isMobile: name === 'mobile', hasTouch: name === 'mobile' });
             const page = await context.newPage(); page.on('pageerror', error => pageErrors.push(error.message));
-            await page.goto(ready.url, { waitUntil: 'networkidle' });
+            await page.goto(waiting.url, { waitUntil: 'domcontentloaded' });
+            await page.waitForURL(ready.url, { waitUntil: 'networkidle' });
             assert.equal(await page.title(), '白泽灵台');
             assert.equal(await page.locator('body').evaluate(element => element.classList.contains('workspace-access-locked')), false);
             assert.equal(await page.locator('#workspace-sidebar h2').textContent(), '白泽灵台');
@@ -78,7 +80,7 @@ async function main() {
         assert.deepEqual(pageErrors, []);
         // Exercise the second-click path while the first tray owns the service.
         env.PIVANE_DESKTOP_SHORTCUT = shortcut;
-        const shortcutScript = '$shell=New-Object -ComObject WScript.Shell; $lnk=$shell.CreateShortcut($env:PIVANE_DESKTOP_SHORTCUT); if ($lnk.TargetPath -ne $env:PIVANE_DESKTOP_SMOKE_ROOT+"\\白泽灵台.exe") { throw "Unexpected shortcut target" }; Start-Process -FilePath $env:PIVANE_DESKTOP_SHORTCUT';
+        const shortcutScript = '$shell=New-Object -ComObject WScript.Shell; $lnk=$shell.CreateShortcut($env:PIVANE_DESKTOP_SHORTCUT); if ($lnk.TargetPath -ne $env:PIVANE_DESKTOP_SMOKE_ROOT+"\\白泽灵台.exe") { throw "Unexpected shortcut target" }; Start-Process -FilePath $env:PIVANE_DESKTOP_SHORTCUT -WindowStyle Hidden';
         const second = spawn('powershell.exe', ['-NoProfile', '-EncodedCommand', Buffer.from(shortcutScript, 'utf16le').toString('base64')], { env, windowsHide: true, stdio: 'ignore' });
         const [secondCode] = await once(second, 'close'); assert.equal(secondCode, 0);
         const secondOpen = path.join(root, '.pivane-runtime/desktop/smoke-open-2.json'), openDeadline = Date.now() + 30000;
@@ -94,6 +96,9 @@ async function main() {
         while (!fs.existsSync(resultFile)) { assert.ok(Date.now() < stoppedDeadline, 'tray must finish normal shutdown'); await new Promise(resolve => setTimeout(resolve, 100)); }
         const report = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
         assert.equal(code, 0, errors);
+        assert.equal(report.some(event => event.type === 'startup-notice-shown'), false);
+        assert.equal(report.find(event => event.type === 'browser-opened')?.url, waiting.url, 'EXE opens the browser waiting page first');
+        assert.ok(report.findIndex(event => event.type === 'browser-opened') < report.findIndex(event => event.type === 'ready'), 'browser opens before service readiness');
         assert.equal(report.filter(event => event.type === 'browser-opened').length, 2, 'EXE launch and duplicate shortcut click each open exactly once');
         assert.equal(report.filter(event => event.type === 'ready').length, 1, 'readiness is processed once even when ShellExecute pumps messages');
         assert.equal(report.filter(event => event.type === 'error').length, 0);

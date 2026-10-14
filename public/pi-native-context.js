@@ -53,7 +53,7 @@
                 $('pi-project-trust-name').textContent = cwd.split('/').filter(Boolean).at(-1) || cwd;
                 body.replaceChildren(node('p', cwd, { class: 'native-trust-path' }));
                 const state = node('span', trust.effective ? translateUi("已信任") : translateUi("未信任"), { id: 'native-trust-state', class: 'native-trust-badge', 'data-trusted': String(trust.effective) });
-                body.append(state, node('p', translateUi("以上为按配置推导的状态；当前运行实例的实际信任请在会话详情查看。")), node('p', translateUi("信任后，Pi 可以加载这个项目的设置、Skills 和扩展。扩展可执行代码，请只信任熟悉的来源。")));
+                body.append(state, node('p', translateUi("以上为按配置推导的状态；当前运行实例的实际信任请在会话详情查看。")), node('p', translateUi("信任后，可以加载这个项目的设置、Skills 和扩展。扩展可执行代码，请只信任熟悉的来源。")));
                 const actions = node('div', undefined, { class: 'native-trust-actions' });
                 async function save(decision, b) {
                     if (!trustValid(n, parent)) return;
@@ -126,7 +126,7 @@
                     const list = node('ul'); for (const text of items) list.append(node('li', text));
                     if (items.length) details.append(list); else details.append(node('p', translateUi("没有此类资源"))); content.append(details);
                 }
-                const note = node('details', undefined, { class: 'native-runtime-note' }); note.append(node('summary', translateUi("清单说明")), node('p', translateUi("这里显示当前会话实际加载的来源。配置修改后可能需要重新加载；只注册 hooks 的扩展不在清单中。")), node('p', translateUi("系统提示：{0}{1}。", value.systemPrompt.custom ? translateUi("自定义") : translateUi("Pi 默认"), value.systemPrompt.appended ? translateUi("，含追加指令") : ''))); content.append(note);
+                const note = node('details', undefined, { class: 'native-runtime-note' }); note.append(node('summary', translateUi("清单说明")), node('p', translateUi("这里显示当前会话实际加载的来源。配置修改后可能需要重新加载；只注册 hooks 的扩展不在清单中。")), node('p', translateUi("系统提示：{0}{1}。", value.systemPrompt.custom ? translateUi("自定义") : translateUi("内置默认"), value.systemPrompt.appended ? translateUi("，含追加指令") : ''))); content.append(note);
             } catch (e) { if (n === readEpoch && parent === key()) content.replaceChildren(node('p', e.message)); }
             finally { if (n === readEpoch) { reading = false; updateControls(); } }
         }

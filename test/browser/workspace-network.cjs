@@ -32,6 +32,7 @@ const token = 'isolated-network-browser-token';
             await page.locator('#pi-token-input').fill(token); await page.locator('#pi-token-form button[type=submit]').click();
             await page.locator('#pi-token-dialog').waitFor({ state: 'hidden' });
             await page.waitForFunction(() => window.WorkspaceNetwork && document.querySelector('#network-summary').textContent.includes('·'));
+            assert.equal(await page.locator('#workspace-access-nav').isVisible(), false);
             if (await page.locator('#pi-project-dialog:not(.hidden)').isVisible()) await page.locator('#pi-project-dialog-close').click();
             assert.equal(await page.locator('#network-proxy-url').isVisible(), false);
             assert.equal(await page.locator('#network-listen-mode').isDisabled(), false);

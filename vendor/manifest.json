@@ -5390,6 +5390,901 @@
           "sha256": "0e61861b935fccb717fd6613b0660b106b16945607a719227cc2ce5cb3274d60"
         }
       ]
+    },
+    {
+      "name": "pi-web-access",
+      "version": "0.39.0",
+      "directory": "pi-web-access",
+      "source": "https://registry.npmjs.org/pi-web-access/-/pi-web-access-0.39.0.tgz",
+      "license": "MIT",
+      "sha256": "43debf362235f99d0655a4e4e0e4314f8ecaf2ddb0bd723140e735259bd08087",
+      "files": [
+        {
+          "path": "vendor/pi-web-access/abortable.ts",
+          "sha256": "7dfecc609c4de5d9c71f6dcecc8fc53040fe5f8235a6aa81e62dad127153259e"
+        },
+        {
+          "path": "vendor/pi-web-access/activity.ts",
+          "sha256": "b3db83f65a9c1291d7a63ff85427fe8c3de282722512704eb394aefb2bdae716"
+        },
+        {
+          "path": "vendor/pi-web-access/anysearch.ts",
+          "sha256": "e85144e63afb4dd92ae8a57b70bdc4725d2cae53df6bdc925a1828871edb282c"
+        },
+        {
+          "path": "vendor/pi-web-access/auth-fetch.ts",
+          "sha256": "451632f006d3503adeb20fe488383b915fbaa373852fa593274572fada472ccd"
+        },
+        {
+          "path": "vendor/pi-web-access/baizhi.ts",
+          "sha256": "de6fd604e01e1c905f424cc48c950468adb202650adb3d2b1e96e6a4573e363c"
+        },
+        {
+          "path": "vendor/pi-web-access/banner.png",
+          "sha256": "484bfd4baec4084b65e65cc7ebc1ec03d6a8ceb85fa5a32366ae940c004e5f81"
+        },
+        {
+          "path": "vendor/pi-web-access/bocha.ts",
+          "sha256": "6b63d95fb4723f53b4c2ea08ddac6ace1ead73f3afa9ed93304fda29e1312b01"
+        },
+        {
+          "path": "vendor/pi-web-access/brave-rate-limit.ts",
+          "sha256": "db927cd2ac0606ab95303b1c8cde84129a1d1a83d1e640bf75a8549816a7969c"
+        },
+        {
+          "path": "vendor/pi-web-access/brave.ts",
+          "sha256": "9694737baca3f6e751e678d73cd21667f256db5f5f30b7944c2c59c1d1aa1296"
+        },
+        {
+          "path": "vendor/pi-web-access/brightdata-unlocker.ts",
+          "sha256": "6699b32542dcd843c687eae25f48dfaf2cfb08be69bb9e0e69c6d907f32188a7"
+        },
+        {
+          "path": "vendor/pi-web-access/brightdata.ts",
+          "sha256": "fa76249cfe6eabaa8d5f38d181ddf82bb04f3bc722e7c631c25935e04f0cd898"
+        },
+        {
+          "path": "vendor/pi-web-access/ceramic.ts",
+          "sha256": "8bc036df3b11af006dfb50f49b88a79f9b6fbbf634c62ea44881d959dc2e5173"
+        },
+        {
+          "path": "vendor/pi-web-access/CHANGELOG.md",
+          "sha256": "3f73d85f9aadfaded35995bbfc7b715b0dc19f6543ea4fb702e5f4579283d385"
+        },
+        {
+          "path": "vendor/pi-web-access/chrome-cookies.ts",
+          "sha256": "a20a0e686592b78db62e60d411252ab36c0b6b1b7067f031060053978c23ebdb"
+        },
+        {
+          "path": "vendor/pi-web-access/content-find.ts",
+          "sha256": "aa9411fca11ef104d8cadc7d0d9e9b632ee6ba8849a179b470e572a8f2222819"
+        },
+        {
+          "path": "vendor/pi-web-access/crawl4ai.ts",
+          "sha256": "ab187b78970b7c467276824f1ad9798154e00b647bd0b84d14aaef1cf9a4ed44"
+        },
+        {
+          "path": "vendor/pi-web-access/credential-source.ts",
+          "sha256": "7448e9138645b7f06f4efe84430248612f7fbae08aecc5f47aab2a24c3d93386"
+        },
+        {
+          "path": "vendor/pi-web-access/curator-page.ts",
+          "sha256": "c6fd720d0a63974821e124a6ec3cab6ada746e0e2bd776915f49b26747788cc1"
+        },
+        {
+          "path": "vendor/pi-web-access/curator-run.ts",
+          "sha256": "c2b9255ada712d956eadac9dd08de5528da2ac36e1e6061ef1a725e3b32f1a3b"
+        },
+        {
+          "path": "vendor/pi-web-access/curator-server.ts",
+          "sha256": "17848f1cf4030b79ca483e9aeeadfee83cfa9266a2f2fa3ed96cdb5a6022276b"
+        },
+        {
+          "path": "vendor/pi-web-access/data-uri-sanitize.ts",
+          "sha256": "2f63c0b0b5009eb9b92ca27d041707c3f7d0d0042ea0ee8a921ad0813f332ec0"
+        },
+        {
+          "path": "vendor/pi-web-access/datalab-pdf-extract.ts",
+          "sha256": "ae9492cdbf457fe3817ccad9c175e1cdb7b30a81814610669eb9a6d86524799f"
+        },
+        {
+          "path": "vendor/pi-web-access/declared-web-links.ts",
+          "sha256": "1b40014be2cfacab169d7b67dced666445e9f4c78be2eee4a9455fc3ac126949"
+        },
+        {
+          "path": "vendor/pi-web-access/degoog.ts",
+          "sha256": "bc29bf2d2240e0c5cdbf8b143582f03b6cdaaf8df6680c525babb85c810b0d54"
+        },
+        {
+          "path": "vendor/pi-web-access/dist/index.js",
+          "sha256": "4f2513eafda60732db95604f8963f4f0059301394e91f7bf14acf67d8e534394"
+        },
+        {
+          "path": "vendor/pi-web-access/dist/mcp-cli.js",
+          "sha256": "b4395333903ce7dfc4b3a7bfd3d18e96db6ac6134d981761eab5065e07e45f65"
+        },
+        {
+          "path": "vendor/pi-web-access/domain-filter-normalization.ts",
+          "sha256": "dfbc8c225bca1087f601b551d24817422fe5e4b514d30e397c745586b6a942db"
+        },
+        {
+          "path": "vendor/pi-web-access/duckduckgo.ts",
+          "sha256": "92cc9bcaadc9d375c0a3019a8a807ed173cf5c31c63ffe42b785b445bf998256"
+        },
+        {
+          "path": "vendor/pi-web-access/endpoint-pdf-extract.ts",
+          "sha256": "42d68bf77881524116588c462d94d8b3572f418124c063f71847b1abd1963892"
+        },
+        {
+          "path": "vendor/pi-web-access/exa.ts",
+          "sha256": "325edb245623676dda5cb2aeab60daa3dd3aae445756201e79a4c285a6e6e9b0"
+        },
+        {
+          "path": "vendor/pi-web-access/extract.ts",
+          "sha256": "905fa84a0baa48240180abe670db59a9b87d0d1d70d081c9aa6608c586672f78"
+        },
+        {
+          "path": "vendor/pi-web-access/feature-config.ts",
+          "sha256": "207dc9f392086474b7759a5fc9c36b0540096359d367f213f198bab39fd258bf"
+        },
+        {
+          "path": "vendor/pi-web-access/fetch-params.ts",
+          "sha256": "78eff681c9a0084352a67242e77280d2c92b8737289de99970f529c0ed803fdf"
+        },
+        {
+          "path": "vendor/pi-web-access/firecrawl.ts",
+          "sha256": "20fc090318b3a1a56e2db03d76801d29f47c1ac9199fa4f16856cbde03c55133"
+        },
+        {
+          "path": "vendor/pi-web-access/gemini-adc.ts",
+          "sha256": "bbd7b8dc6913265597af61246157eb80a5dc8605095d503859a8f13f87de33fc"
+        },
+        {
+          "path": "vendor/pi-web-access/gemini-api.ts",
+          "sha256": "dd5b853d2bba02ced7284b74dac1bcf1f11bb0bf99067d7eaf5d970fc6f86599"
+        },
+        {
+          "path": "vendor/pi-web-access/gemini-pdf-extract.ts",
+          "sha256": "9730ff102e0b30b3cdd7a203fce6fe381ff3968c8d3a4442792e4046db0dcc8a"
+        },
+        {
+          "path": "vendor/pi-web-access/gemini-search.ts",
+          "sha256": "993558beed9962acf04854863dfc7ac430b84ab0f8db3e9c9c6c34d360659311"
+        },
+        {
+          "path": "vendor/pi-web-access/gemini-url-context.ts",
+          "sha256": "3f37b5480d964937b2228d95b61a3a95639e9ca5a1afbea4f2f0f2885ff512fa"
+        },
+        {
+          "path": "vendor/pi-web-access/gemini-web-config.ts",
+          "sha256": "a1c408a3cef6127a3818d776d7b66240e17b2509475c1a9eaa29102340d476ef"
+        },
+        {
+          "path": "vendor/pi-web-access/gemini-web.ts",
+          "sha256": "7a6a173476c37b0d6967adcdc511ebee351403c14b6f7275e1cb4a8956e0e6ea"
+        },
+        {
+          "path": "vendor/pi-web-access/github-api.ts",
+          "sha256": "ae3aa01a7fc5b490a40477c9ed63edfb696ef9f467776051e8823d509cb36ceb"
+        },
+        {
+          "path": "vendor/pi-web-access/github-extract.ts",
+          "sha256": "b977354457f85a03c596d7ba6c0cbb764ca4d8bbfb9b96d885ec8db818b3729b"
+        },
+        {
+          "path": "vendor/pi-web-access/github-issue-pr.ts",
+          "sha256": "811a39d70af3e5c0d3dfebd2ea166d7ca157f23b0ed4fd9df4e2919fd26d37ac"
+        },
+        {
+          "path": "vendor/pi-web-access/index.ts",
+          "sha256": "2f65b86a1c4c45971ac8f94c0c14e14a72133d202fc2272fd7e143e073cb4cbe"
+        },
+        {
+          "path": "vendor/pi-web-access/jina-search.ts",
+          "sha256": "5c2ddfc0dae97cda6362c795f698c51748f1a2a2331d6bd9d1e987bd4156e928"
+        },
+        {
+          "path": "vendor/pi-web-access/kagi.ts",
+          "sha256": "d191cf1477291f44f2f50c4414f761cca2db1d2b73defee24a4d0a818874f11f"
+        },
+        {
+          "path": "vendor/pi-web-access/keenable.ts",
+          "sha256": "3e9846b73d9a8b27e3cd7ab1fa727fad63cd41a1110e038b10fe929ef63ecbb5"
+        },
+        {
+          "path": "vendor/pi-web-access/kimi-search.ts",
+          "sha256": "7ae816ed0ec6da9e3ce468e600c89247fe025eb8bbdb5d5a86a044d6262ebd5c"
+        },
+        {
+          "path": "vendor/pi-web-access/LICENSE",
+          "sha256": "871b3c6c64e030c0647ca33543716bdae9511ae2d6a85d6f4ce63783bab52c8f"
+        },
+        {
+          "path": "vendor/pi-web-access/mcp-cli.ts",
+          "sha256": "9da674f67f5f2fda676305680018f832143f038b0d7d529bbf0a0f375787ec89"
+        },
+        {
+          "path": "vendor/pi-web-access/mcp-server.ts",
+          "sha256": "ab420346abb1feec7a3f3f0a6c100366dbadde007b8dbca03837c4060d12bb90"
+        },
+        {
+          "path": "vendor/pi-web-access/mcp-tool-definitions.ts",
+          "sha256": "3cf752af7932c1da9ae454794e6d9440e51a2257ae44e9b090aed0cd0565dc96"
+        },
+        {
+          "path": "vendor/pi-web-access/mistral-search.ts",
+          "sha256": "0de7af0bfb75e0e5e30d7e0b7e7ee8a6b4400b6dc7d38206c0a014fa172ef48c"
+        },
+        {
+          "path": "vendor/pi-web-access/ollama.ts",
+          "sha256": "eafab6812a45c82542744f0535b1edbb99313b94874eaf835f2497cf8a5d46cd"
+        },
+        {
+          "path": "vendor/pi-web-access/openai-search.ts",
+          "sha256": "17b9ab716990c2535569c164d60e21ee21b86b172288050418a5f6bb1fd0f3ac"
+        },
+        {
+          "path": "vendor/pi-web-access/package.json",
+          "sha256": "2554422f0319e2ba0ac79befde82eb73812a686ae695fa89c76c69ef81a14403"
+        },
+        {
+          "path": "vendor/pi-web-access/page-query.ts",
+          "sha256": "0e9922d0743cbda5b6294d12ab96b37d3249750e3262392c57681038fe52b27a"
+        },
+        {
+          "path": "vendor/pi-web-access/parallel-mcp.ts",
+          "sha256": "f470f71dadaf1e1911cc0dc621466c6dd84760a920d1d93b10d1306f5aa13dd4"
+        },
+        {
+          "path": "vendor/pi-web-access/parallel.ts",
+          "sha256": "48e02c4441d558e2d105114868393c4633a1b90d8be8774a3a36c7aaefa76f35"
+        },
+        {
+          "path": "vendor/pi-web-access/pdf-extract.ts",
+          "sha256": "b9b1a153c7b4be051c3c4d16e6a1da3f43c42ffd8153e52e62446e0c759d018d"
+        },
+        {
+          "path": "vendor/pi-web-access/perplexity.ts",
+          "sha256": "c6f9643153c95c196923df51f8c8f5915fc4512fca9e1daec4887ec30c46262b"
+        },
+        {
+          "path": "vendor/pi-web-access/pi-web-fetch-demo.mp4",
+          "sha256": "46608abb5e82467d952adc882ae8e79b0fa55eb227ad2fbef4717910bd71bcb8"
+        },
+        {
+          "path": "vendor/pi-web-access/promise-try.d.ts",
+          "sha256": "c9927616ac3e6cc7ccdc308712c0b8394cdafdfcec562190fb0a2adc5ee8ea7e"
+        },
+        {
+          "path": "vendor/pi-web-access/querit.ts",
+          "sha256": "e86b10cddd1deb0518ef177b5457f0784f8481898e21f01aa69658f8e52a4a50"
+        },
+        {
+          "path": "vendor/pi-web-access/query-rewrite.ts",
+          "sha256": "b9f474a6ba8b4c78ad0fc37f31d08e52efbd19e508e3c6f2e7516744d6d6d9c8"
+        },
+        {
+          "path": "vendor/pi-web-access/README.md",
+          "sha256": "aff6896ecfbe25438fa5bb9a61036cf89757d1e19f510bdf47aae3d7126060dd"
+        },
+        {
+          "path": "vendor/pi-web-access/render-search-error.ts",
+          "sha256": "4b012923b794dc0a78109c1f52964e0a51762431fc50ce9fd84c7ecefd288883"
+        },
+        {
+          "path": "vendor/pi-web-access/rsc-extract.ts",
+          "sha256": "6e2537d70f80f750e619db887ffe9da14ef78a8cd5d502b49bf13a1865ef2078"
+        },
+        {
+          "path": "vendor/pi-web-access/search-answer-formatting.ts",
+          "sha256": "64e4b23a62cebc4abaf5a6c47cbf82e5891e3db636989265eabeb48b4620231e"
+        },
+        {
+          "path": "vendor/pi-web-access/search-result-count-normalization.ts",
+          "sha256": "2fd4fd99ee46d434319fa85a0c96365ac1b7e98d4b03088f936cbdf83bed0e02"
+        },
+        {
+          "path": "vendor/pi-web-access/search1api.ts",
+          "sha256": "b69be84ec369dc99dd1e7da23c867a28c96d93b287d018781f5326d95e4401da"
+        },
+        {
+          "path": "vendor/pi-web-access/searchinfinity.ts",
+          "sha256": "d832d48d70888d4cf09fb94131c1a1e295b6199c8774f260c26ea1371b7477f2"
+        },
+        {
+          "path": "vendor/pi-web-access/searxng.ts",
+          "sha256": "f4f3713dcc192041609b9de0dec6543c56acd5e52eb0b72d4adc7f0b3fe84695"
+        },
+        {
+          "path": "vendor/pi-web-access/SECURITY.md",
+          "sha256": "80df9ec418ccb957b86c796f15b202e713e6ad7b944a2d1e278cb69f39cb96dd"
+        },
+        {
+          "path": "vendor/pi-web-access/serpapi.ts",
+          "sha256": "25b2cd1835a4b9f7b7f62239ef45bf490dd6fce5a5a017f9eb5358f2bdd6d03b"
+        },
+        {
+          "path": "vendor/pi-web-access/serpbase.ts",
+          "sha256": "6c7c251190ffa9193790ff52ad24355c2390cf11e364d11eb4408d3447ebf2d8"
+        },
+        {
+          "path": "vendor/pi-web-access/serpdive.ts",
+          "sha256": "0a3f49bc05275c3aa614a6b425c578abda8b93e31d78b62f2ba0b284a1fc4e9e"
+        },
+        {
+          "path": "vendor/pi-web-access/serper.ts",
+          "sha256": "4cb7e539b42ff6cfb1d7cec48ca18d221524dc6dd943d6eeef1b93e8bef92c5f"
+        },
+        {
+          "path": "vendor/pi-web-access/serply.ts",
+          "sha256": "f8e75cab53c2710b05ad29ccfff4ddd5c6cf50d752a3878a6d693e91e309cc6f"
+        },
+        {
+          "path": "vendor/pi-web-access/source-check.ts",
+          "sha256": "4ae94754e9e2993f62b0ab535014c4b3ce51de344f013201344dd1bdcd4e7f2c"
+        },
+        {
+          "path": "vendor/pi-web-access/ssrf-protection.ts",
+          "sha256": "068a4f97678befa3d34f3281646a0bf42f0dc773be5998b83da5e3776273b36f"
+        },
+        {
+          "path": "vendor/pi-web-access/storage.ts",
+          "sha256": "8c034ebfc2f43b1f54a850467208eb27681d1c790e87cc8ce8377e0ded1f6e7b"
+        },
+        {
+          "path": "vendor/pi-web-access/summary-model-scope.ts",
+          "sha256": "22e32998f7a60f5383f5d7a401426c106e99aca0e1b8c816a947c2aaafd0f349"
+        },
+        {
+          "path": "vendor/pi-web-access/summary-review.ts",
+          "sha256": "3e36fc21ad5c31319a1b5b243c8225c0a567a5a2afbeec2204d9e5780f8747f9"
+        },
+        {
+          "path": "vendor/pi-web-access/tavily.ts",
+          "sha256": "98d272e03296aa9221e330ee3b7f59fa32d10996892fbd7fcbe3472ce561c961"
+        },
+        {
+          "path": "vendor/pi-web-access/tinyfish.ts",
+          "sha256": "7685a53fcf3430376225f40af3d1c5def7f84df55c6a3cf03c6ee1449bfbf9f6"
+        },
+        {
+          "path": "vendor/pi-web-access/tool-activation.ts",
+          "sha256": "f9efe97b8adbfc43149e8eef1d2abc39a2c2b12cc5ee0b2159ce2a2c93d91e35"
+        },
+        {
+          "path": "vendor/pi-web-access/tool-arguments.ts",
+          "sha256": "c8cf343610cdc414387c58c9777e20cb2947d9bb01bc6b469467ea72bae16f2b"
+        },
+        {
+          "path": "vendor/pi-web-access/utils.ts",
+          "sha256": "4b9b1004ec5d6948ede065c2c7607d1af531614e22f97037c66ab430a9a923de"
+        },
+        {
+          "path": "vendor/pi-web-access/valyu.ts",
+          "sha256": "31720b968d664213b2adaa8d1305d229162432990db3a8e08ac4f30ee39576a2"
+        },
+        {
+          "path": "vendor/pi-web-access/video-extract.ts",
+          "sha256": "b8835a71169532656997f4a861cd3b65043935e596c75ddc458a0fa52a9f82c1"
+        },
+        {
+          "path": "vendor/pi-web-access/web-tool-contract.ts",
+          "sha256": "ce971b67b7ec9291806ee997c2b1134a38a3e6d29fed1bf70a36e25146781224"
+        },
+        {
+          "path": "vendor/pi-web-access/web-tool-core.ts",
+          "sha256": "6f2768f8a01c4c344a2dd686ad8d9fe9813269fd38619114c21075ef43960d1f"
+        },
+        {
+          "path": "vendor/pi-web-access/xai-search.ts",
+          "sha256": "278ec6f38e7f4b89b0841cb1a6807c6b33346bf2517ff1163a6ff4e7a25f17d1"
+        },
+        {
+          "path": "vendor/pi-web-access/xcrawl.ts",
+          "sha256": "ffee9edc06e1c7a4da27dbb410866c335903953a7651a6ae420b9da88e651fd7"
+        },
+        {
+          "path": "vendor/pi-web-access/you.ts",
+          "sha256": "e6a1b377182ff1544290dee25caa1834075cb2e1fdcf550f75ebe9e9d7096c3e"
+        },
+        {
+          "path": "vendor/pi-web-access/youtube-extract.ts",
+          "sha256": "f2b953898120d345a55baea7ff55cb5735df24d7edb76f2a3ae314894129165b"
+        },
+        {
+          "path": "vendor/pi-web-access/zai.ts",
+          "sha256": "025434bf88dc12430dba25f0bc68e320eabfdda4c2df7b6bbfa0868e865d4908"
+        }
+      ]
+    },
+    {
+      "name": "@injaneity/pi-computer-use",
+      "version": "0.5.1",
+      "directory": "pi-computer-use",
+      "source": "https://registry.npmjs.org/@injaneity/pi-computer-use/-/pi-computer-use-0.5.1.tgz",
+      "license": "MIT",
+      "sha256": "ec7fff45a3febbab2b5c302db1171f5f10d6ca85aacd892a9f422028246dcb79",
+      "files": [
+        {
+          "path": "vendor/pi-computer-use/assets/reference/img.jpg",
+          "sha256": "cae89c535df4c515171c91543f044d255c95b9dce04118737a3ff15ee958d4f8"
+        },
+        {
+          "path": "vendor/pi-computer-use/docs/architecture.md",
+          "sha256": "479a2b8870a6ef338f6a0771d52a29096f8baf1d66ac4b6753330a74f3e59101"
+        },
+        {
+          "path": "vendor/pi-computer-use/docs/configuration.md",
+          "sha256": "82cb7cdf735e5b26edf68c7f647f26bd089fbad90d2861d3729e68460c23f746"
+        },
+        {
+          "path": "vendor/pi-computer-use/docs/development.md",
+          "sha256": "c3dc3e09e1c86dfe4dbe5a75f6dd7442bfb26a69efd0cd107ef74d9652787154"
+        },
+        {
+          "path": "vendor/pi-computer-use/docs/linux.md",
+          "sha256": "2df803044b4db0817d8efa55dcaee7791db95ff484627fb5c65b9d4d4722ff16"
+        },
+        {
+          "path": "vendor/pi-computer-use/docs/troubleshooting.md",
+          "sha256": "ab0076e7a42c6f86c50a4c465e82357f6edc833f6132570316a57f841c84e414"
+        },
+        {
+          "path": "vendor/pi-computer-use/docs/usage.md",
+          "sha256": "a92dedff9875511f7c1a87aa28409e2cb6d77d7c9289a7f7b3c1f6558c2c586e"
+        },
+        {
+          "path": "vendor/pi-computer-use/docs/windows-bridge.md",
+          "sha256": "913ff900c0c3360725ff9e2c5d9f2d516e8a173b113e88ac9d610f4c6c52584d"
+        },
+        {
+          "path": "vendor/pi-computer-use/extensions/computer-use.ts",
+          "sha256": "1ed753c7b9bd4f11e36225e3358f827c2349d3a0fb71bbb18f8e4de38c5a9420"
+        },
+        {
+          "path": "vendor/pi-computer-use/LICENSE",
+          "sha256": "c269a9558b881ddb20c263823a393a101d2b8c7b668d51e9666e79d2614d4b2b"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/linux/bridge-rs/Cargo.lock",
+          "sha256": "905f5d1aefd8b8e9cb4d292cdc186e54d999dd821b5343ab251b6f55fbc9b7fb"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/linux/bridge-rs/Cargo.toml",
+          "sha256": "d974431a70d621066a84343c3887590b404f16ef79e6e323fcdbaab0b5ff322c"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/linux/bridge-rs/src/atspi.rs",
+          "sha256": "e8aad487e4d4d02e6ff48cbedcd7748fb24de2f23d0d1e6461c22cb5c4cf6a00"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/linux/bridge-rs/src/error.rs",
+          "sha256": "d553ca07226c8193ce777ed6dec2dd478cbc6b8b3f8f6787889e6bdf54fcef39"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/linux/bridge-rs/src/lib.rs",
+          "sha256": "55202aa52347ff226b9d12382795968a4b3a43824276322518fa5cde3091b171"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/linux/bridge-rs/src/main.rs",
+          "sha256": "de47f254ec23163dc649a2f7dd225b25720755a1c3037c38c51e0b334bde5c9a"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/linux/bridge-rs/src/protocol.rs",
+          "sha256": "5fc04cf91bd7b57085198b5239d922e9f72e57acfda14bd52c9ca15253b18459"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/linux/bridge-rs/src/state.rs",
+          "sha256": "b09771a3f0a81cc2cab6d9806fed42204edcfb19ec8e23b4b67a5787ddf9f5bc"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/linux/bridge-rs/src/wayland.rs",
+          "sha256": "601c2daa17e8a940d3e94e5bd5766603a12968c74738e4c9b3015053c8c44189"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/linux/bridge-rs/src/x11.rs",
+          "sha256": "40848d0cc7b13d0bf9cd1e7c484cd710138ef8a9ae4608ed0a33aced811906f0"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/linux/bridge-rs/tests/protocol_tests.rs",
+          "sha256": "aab02064aeb22a3cbb31823cf4d1136a42b5d3bd27b927225a85c100e9edaa75"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/macos/bridge.swift",
+          "sha256": "adb5a4eb6ada931a5cbc16761fec7dbe27a290900326a4142bd7f4097865a7ba"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/Cargo.lock",
+          "sha256": "d3bb3573da8eaa0f5fd64930117e43f67906f59c37aea8d3c799d52b42d9e261"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/Cargo.toml",
+          "sha256": "ccc76c16d4b76b2393e6c25cf9b3e3ded3f8be00ee37822dde4640c676a4d7b6"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/src/capture.rs",
+          "sha256": "9c8ef3ad57d3ec0287e3f9a52a08da73a18f4eac2f16c78f2f46b9a896078265"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/src/error.rs",
+          "sha256": "04ffff726babecaa0440da23e9b76ae1332f38bbf66ef87e11b485ccaf75c6bd"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/src/input.rs",
+          "sha256": "3ecdedd32226d7b89df8734c4aaf023aa819db33dda9e8943630e4b8958771f3"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/src/lib.rs",
+          "sha256": "0fbbaa791f3d158d00935896c5c19f1cb33b04841577a410f44190c5e4fc582f"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/src/main.rs",
+          "sha256": "404c6c4463ff2bacdb05a5a5dbb5791c1937e34425022178ab6dcb54dc860443"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/src/protocol.rs",
+          "sha256": "28215311ec367270d77242a0ec5cc8a3c9087a8b0ef7eabf00a058f7d4eab969"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/src/refs.rs",
+          "sha256": "b9fbe182dadd863b5b13ba562ba750c1ad5d56813c2f8a102d35ebefd4bcb60d"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/src/state.rs",
+          "sha256": "dc14719c56bcbc352a1232ae10494b657d7deaceb23511cc4af1dbdac20b3add"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/src/uia.rs",
+          "sha256": "e0b79692d07448bfaf0b3d268fc226e9b1b0bd7763cf0da1b921379b8e6e5569"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/src/window.rs",
+          "sha256": "ab9eb78a1bee1fecd478da4300532887e6db9bf0a4d7b0095ef4a164451f3367"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/tests/protocol_tests.rs",
+          "sha256": "ef92ae66fc1fa0598954a1e0d02b4bcecf3a65117a6538fb167fc492b651df6b"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/tests/refs_tests.rs",
+          "sha256": "7575b6895c63dba4c68f00baf68f53f23c178656298c01b7696a25b423ba5db8"
+        },
+        {
+          "path": "vendor/pi-computer-use/native/windows/bridge-rs/tests/state_tests.rs",
+          "sha256": "79868d028d37708eaea6e1b20976db11fca7c38cbb5e9f1b5d6330cf5a296a62"
+        },
+        {
+          "path": "vendor/pi-computer-use/package.json",
+          "sha256": "009d7e870f82837a7b8e2d69e89b0d5ed522b4514bec9206e68afbb0243ff152"
+        },
+        {
+          "path": "vendor/pi-computer-use/prebuilt/linux/arm64/linux-bridge",
+          "sha256": "42e11b2e77fa3f9ec4b858c99cbc28703d086acc84c2bd19df2fb3dbceeab759"
+        },
+        {
+          "path": "vendor/pi-computer-use/prebuilt/linux/x64/linux-bridge",
+          "sha256": "671658d3dd237b5dc86bba0786a3cf48a9173ec24b9aa6775cb597b61b335eb9"
+        },
+        {
+          "path": "vendor/pi-computer-use/prebuilt/macos/arm64/bridge",
+          "sha256": "8d337dca854e998b924fe60c467bb0e85250e5df12ebefc0c4ef8b2dd703ba10"
+        },
+        {
+          "path": "vendor/pi-computer-use/prebuilt/macos/universal/pi-computer-use.app/Contents/_CodeSignature/CodeResources",
+          "sha256": "6686de10a28a2fe11b36cbb86dcbacc827cfc4ea116b4dabf1845e5aee629e9b"
+        },
+        {
+          "path": "vendor/pi-computer-use/prebuilt/macos/universal/pi-computer-use.app/Contents/Info.plist",
+          "sha256": "be3d98932eea8f686b301cb228458aacc4105e71fd9034cd76a5560509f8f6ba"
+        },
+        {
+          "path": "vendor/pi-computer-use/prebuilt/macos/universal/pi-computer-use.app/Contents/MacOS/bridge",
+          "sha256": "070cb9a8ebc96b138fdf1c1eca12b3ced118a04a70b8536746ef8af726998dbd"
+        },
+        {
+          "path": "vendor/pi-computer-use/prebuilt/macos/x64/bridge",
+          "sha256": "138732f57c4e7b63a499627ec91a359ff1849e7b516dfa669661755b3e2b93fe"
+        },
+        {
+          "path": "vendor/pi-computer-use/prebuilt/windows/windows-bridge.exe",
+          "sha256": "d3ef7e59bc03c421d6d29de53750c343cc1bb2f126aa23224241fdfd5c3a7094"
+        },
+        {
+          "path": "vendor/pi-computer-use/README.md",
+          "sha256": "e0bbb56284ea24629b8d3dbf1aebef6f4102965f3e77fff0e2139de029b1ea20"
+        },
+        {
+          "path": "vendor/pi-computer-use/scripts/build-native.mjs",
+          "sha256": "990ebcfb0ecef1e4718ae2e2187a314c2580b5fdd638d974c2651dd067bbc66e"
+        },
+        {
+          "path": "vendor/pi-computer-use/scripts/setup-helper.mjs",
+          "sha256": "4595a69a0eea88e73fb09bb5ff9066b1c3b5632c1a173d36e5200ccd50fe21f4"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/actions.ts",
+          "sha256": "1f6aaf9a1cc51ee9ac640f2cb2c31426c522f90cc8b338f5c9dde1ed462de0bb"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/bridge.ts",
+          "sha256": "4a206d8e714e910e00f83746524f8ffefaa72219966da89c3dde5af48213f34b"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/cdp.ts",
+          "sha256": "b885dfdba3665cde1f39263c8189da6cc6b4e2b2f728da2f53f01afe55375f9f"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/config.ts",
+          "sha256": "f453b7572cadcb6f3a84d0641e1b35112156458b77adfa290ca94a0155f6c5f9"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/contract.ts",
+          "sha256": "b2873c27f392c7254c49e71be6a2dfd8a2c0b865f29acd57ce0a49698dabbc41"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/note.ts",
+          "sha256": "2c9b3f65f09cd883c3771ee59d935dd216871770841590fe4dc3e0e6d96beed1"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/outline.ts",
+          "sha256": "4fbed9a94390b894a959b3bdf97aedca5d4a8d5b0b2fed8b0f77fb86eddf6367"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/output.ts",
+          "sha256": "42c2075e8e42e27a203a356f962ba5ed2c656cc08108c9923513289a04a12d94"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/permissions.ts",
+          "sha256": "a77419b41c82be2cd3486f0a01d1b2ba481f77b82d5a2259020b9d6567f36d0c"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/architecture.ts",
+          "sha256": "f83bb785ac7940d0f7b00b3a3d0d9b28e6db9c2d80c4dcaf263a3d254e3b8503"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/coerce.ts",
+          "sha256": "355d255cfb712de3e1fc1fafe5b9031eecc6c11e069aba3f5687bbaf607362d5"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/index.ts",
+          "sha256": "ee3a831c45a14a1bb65fea7ffb0c9f1c69293373a3b9ea5b047b7b37ea0cba32"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/linux/backend.ts",
+          "sha256": "228f59712f5e8c0abbc27366135dcf219b35c3ac78443e6d04cda5c661433928"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/linux/helper.ts",
+          "sha256": "0d79a939164cf9a5d4d87a6c8be006796892c4e6afe1b000d68f1507135b0ab3"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/macos/backend.ts",
+          "sha256": "f9f462d5f9fbc0ab1118ac87159b29ba98971de118c4c273a0da61dbf5d20c44"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/macos/browser.ts",
+          "sha256": "125dbbefd53bc360f7757e8ec8d08057120cd587aacae4e496f6c2a58253c0e8"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/macos/helper-path.d.mts",
+          "sha256": "503129cbd5648661d3c49f39d1953e910c1f2dac180f8340dbe25774e365fe91"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/macos/helper-path.mjs",
+          "sha256": "c3d042cefa4eaede85df7de27a7d407babdfd3a10880201f846cfeae511c5074"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/macos/helper.ts",
+          "sha256": "4c344d4396a61f58cba7334f67e17108f40d9950c24940ce470f8d640a75eff3"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/macos/permissions.ts",
+          "sha256": "ee453e77162fb49fae1a63d851e1c14b2e69d065af378348bc592c04b247c814"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/types.ts",
+          "sha256": "37676ae89be612d49a66885f003586d59e61e474d0c568d2761752b1a3c11ed4"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/windows/backend.ts",
+          "sha256": "9d32a3c852fa5ba7828cdaf2021bca48cfd7a6682480736212047c488fd0428a"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/platform/windows/helper.ts",
+          "sha256": "d641c6bfde41271ba867b51a3c7c4891f9769d9fc2caf9227331c130e19e0570"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/root-selection.ts",
+          "sha256": "983fc2603f8ec229eaa9075d97b4a10795862417c3bc2eb781013594c90aefcd"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/runtime.ts",
+          "sha256": "dd2c969de1e9de8b3424404b70334f5356d4f9147c598517e2e09f00ded1510a"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/state.ts",
+          "sha256": "f1f0345b0dde53617ef871b1b4b8e2dad9c39ff762f2acfcb40bc4fd2f6c48b0"
+        },
+        {
+          "path": "vendor/pi-computer-use/src/view.ts",
+          "sha256": "9dc72cd405f776cd3f79f0ab20bd182bcc4bffcf6a82f5b870e07652c1e252aa"
+        }
+      ]
+    },
+    {
+      "name": "guizang-ppt-skill",
+      "version": "c91369c449d34755d320a8b81d0734000d99d1ab",
+      "directory": "guizang-ppt-skill",
+      "kind": "skill",
+      "source": "https://codeload.github.com/op7418/guizang-ppt-skill/tar.gz/c91369c449d34755d320a8b81d0734000d99d1ab",
+      "license": "AGPL-3.0-only",
+      "sha256": "3b8c644ea672a49c731a9c7cfab55578f1d06a3ef4120f964390d86d26f259f1",
+      "files": [
+        {
+          "path": "vendor/guizang-ppt-skill/.github/ISSUE_TEMPLATE/bug_report.yml",
+          "sha256": "5e4105e6eb3fba91356404f9cf326b54867ed9f2bb85136702619f6131879572"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/.github/ISSUE_TEMPLATE/config.yml",
+          "sha256": "aa1f3e0bda230b3d64bfe979b61302fb5231c8175f44360f385816c914d0ef3b"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/.github/ISSUE_TEMPLATE/feature_request.yml",
+          "sha256": "9ac99498a0bfbaef113fd5e0051f3ad1af2163a348bf42914373c2ca8d8bf51b"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/.github/ISSUE_TEMPLATE/question.yml",
+          "sha256": "e42d5c6f95e1e8edf5a324d31d6cee9ba5cd403125fcdac6c3d69fb09546c2f9"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/.github/pull_request_template.md",
+          "sha256": "32cf673a6a613b48cfe79f41110aeee5d35a776b0d117f1d02b269c420d847da"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/.github/workflows/presenter-runtime-sync.yml",
+          "sha256": "1b666ac89b135a48c7938efc3e738bedfb6f3f4a956a8773e1b2a23c0939e45d"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/.gitignore",
+          "sha256": "3337b5a532e15c3e79fe9bc5f00d45a0319b2d3e17a12dff9b62f416c6d6a74d"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/assets/motion.min.js",
+          "sha256": "45615c1e7639fb9828942d0689c897e745690b0f6df13022223c9409fc01557c"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/assets/ppt-skill-showcase.png",
+          "sha256": "59123f156fa7f30617c754d551cd56b1343224eb005e3bd98ecf3cf3a09eacb4"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/assets/screenshot-backgrounds/style-a/dune.webp",
+          "sha256": "6456386ea5b98bdd43fbef7e3c80b2527131f5580c3972aaff3d9a7a596031c0"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/assets/screenshot-backgrounds/style-a/forest-ink.webp",
+          "sha256": "e6f9df859806344533b7425c64aed82e3dfbe1450ccb5fccbecdca9be0e3cfd2"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/assets/screenshot-backgrounds/style-a/indigo-porcelain.webp",
+          "sha256": "bb935571900303ae9d5febd04e1598e091bdf5bbdabd8766f8b108baaa5638f8"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/assets/screenshot-backgrounds/style-a/kraft-paper.webp",
+          "sha256": "0637a027068c2f14facbfca802efe98ed9bd35fd15bdfc47b65cddd53a054d9a"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/assets/screenshot-backgrounds/style-a/monocle-classic.webp",
+          "sha256": "96c4edc98c1facb6c5f4d636f2c80d2bfd073f8b510075a4a4959f3c55accdf0"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/assets/screenshot-backgrounds/style-b/ikb-dot-gradient.webp",
+          "sha256": "d0c43b937f1e61031fb5ff9daf5e91fd5032eba3cc72f40abd93b0d93c2fd092"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/assets/screenshot-backgrounds/style-b/lemon-green-dot-shadow.webp",
+          "sha256": "629eb0b45381d22bbc6a581d37cfc6c4a0e371570b8f8896619562a1420ab81c"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/assets/screenshot-backgrounds/style-b/lemon-grid.webp",
+          "sha256": "41391448c19c5d52c7f35e953f0a9172d3272f1934e1c597987014bba2e50cef"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/assets/screenshot-backgrounds/style-b/safety-orange-halftone.webp",
+          "sha256": "324df63073f53b58a6424f8a56beecc66cfa28aa4831315d7f19e135780579a6"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/assets/template-swiss.html",
+          "sha256": "97f3a70df0933a31e79710216edc65eca872625c41caac744512c6dcad7342ef"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/assets/template.html",
+          "sha256": "e97ae73269d34afa683bb051c85957d68cd6447b26e3a192f96fea382174488e"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/CONTRIBUTING.md",
+          "sha256": "ed95404a4919ad6bd43f569d0416346a763f93f1bfde400ee49bcb32686cb2ff"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/docs/unification-plan.md",
+          "sha256": "839961ed8e9ab6bc4ddc28804845e412c48efb4d3d111eaac5a333a52d7341e8"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/LICENSE",
+          "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/README.en.md",
+          "sha256": "9023078e4edfd82492c1e50e71696df4301b65973506976c91cb3e7bc1b88a54"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/README.md",
+          "sha256": "58360b425706e29ea79ed8bd3e26f0b322a69926e164a3d223aa24692581698f"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/references/checklist.md",
+          "sha256": "8a7f55634ce113f4932d5cc835e17b81ce479c91953cf7ff1d28b979714b42b9"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/references/components.md",
+          "sha256": "dca1b1d2476fde014f07217319f3ad90b8056255e221c680933b8db2aeddebb9"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/references/image-prompts.md",
+          "sha256": "dae1ce04bbeb75d5222dc2e5196d438af6512acbc125e91b1594b41a1850d6f8"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/references/layouts-swiss.md",
+          "sha256": "395392f380f010249afb244214d994d36bffc3e8ae052473dc3a81a357c660ad"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/references/layouts.md",
+          "sha256": "d156d1763d9838cfed4fcca83246ac902d9e722e97b9cceddfe1eeeda9f168ac"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/references/presenter-mode.md",
+          "sha256": "30b93637e96459ba70c5011e0c46ef5bb5763e5a3c8de317a85dffa7b3a09426"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/references/screenshot-framing.md",
+          "sha256": "981ee5f10878a7cf039d31092ba8e76da6cf37b06144ea464df85afe19ea940b"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/references/swiss-layout-lock.md",
+          "sha256": "5eeadd9648fade569e305d6928a4dfb93b841a4fb38eda249a5ad380c3abe217"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/references/swiss-map-component.md",
+          "sha256": "057db8cc245d2c3d760206dd73cd57a57e66c831ffc02c0c67ed799fc2092b8d"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/references/themes-swiss.md",
+          "sha256": "eec246cd44a1674990d6fe614ee32a59912695c317279a1b86d2710db0319bc8"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/references/themes.md",
+          "sha256": "a4bee3ef7b22d56fb904b0643a117368d85f0265ceccdf5111ad497fe22cc656"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/scripts/check-presenter-runtime-sync.mjs",
+          "sha256": "53d14553b2853c835c99d55732972059b183bc68fccc5b7897691db78ee08d79"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/scripts/validate-presenter-mode.mjs",
+          "sha256": "7a074b7f122b6c8fed9d0e0cdf27067f64516a48de436e432bb9783d24e8a579"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/scripts/validate-swiss-deck.mjs",
+          "sha256": "86735de23bb91cc3b4d9bfc5d9f956b5b02bdc0f14c96da2010617b4e660d4d5"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/SKILL.md",
+          "sha256": "57f046e2c8600bb9d5de9dafc6ff1860d13e28eb0d94c6790c58e8ca8ca5e839"
+        },
+        {
+          "path": "vendor/guizang-ppt-skill/SPONSORS.md",
+          "sha256": "11140416d492dfd1ac5dd13e9c7d96da09a310f84ca365c80b98e89f5f0aa185"
+        }
+      ]
     }
   ]
 }

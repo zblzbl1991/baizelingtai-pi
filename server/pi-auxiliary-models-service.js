@@ -9,7 +9,7 @@ const AUXILIARY_PURPOSES = Object.freeze([
         enabledLabel: '自动生成会话标题' }),
     Object.freeze({ id: 'media-planner', storage: 'mediaAgent', label: '媒体规划', description: '图像、视频、语音参数与模型接入方案',
         automaticLabel: '自动 · 媒体规划默认',
-        help: '自动时按服务器媒体规划配置、Pi 默认模型及可用模型选择。只生成可编辑方案，媒体执行仍需单独确认。' }),
+        help: "自动时按服务器媒体规划配置、默认模型及可用模型选择。只生成可编辑方案，媒体执行仍需单独确认。" }),
     ...[['memory-correction', '明确纠错', '提取用户明确纠正的长期事实'],
         ['memory-review', '增量复盘', '空闲时复盘新完成的对话'],
         ['memory-extraction', '边界提炼', '压缩或退出时提取持久信息']].map(([id, label, description]) =>

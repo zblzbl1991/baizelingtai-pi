@@ -36,6 +36,8 @@ dist/
 /runtime/
 /tools/
 /pivane-portable.json
+/baizelingtai-portable.json
+/.baizelingtai-update-build.json*
 /PORTABLE_MANIFEST.json
 # Private maintainer context; public development contracts remain versioned.
 /AGENTS.local.md

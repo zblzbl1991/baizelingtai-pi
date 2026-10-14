@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>正在启动 · 白泽灵台</title>
+    <link rel="icon" href="/brand.png">
+    <link rel="stylesheet" href="/startup.css">
+    <script src="/startup.js" defer></script>
+</head>
+<body>
+    <main aria-labelledby="startup-title">
+        <img class="brand brand-default" src="/brand-horizontal.svg" width="272" height="60" alt="白泽灵台">
+        <img class="brand brand-inverse" src="/brand-horizontal-dark.svg" width="272" height="60" alt="白泽灵台">
+        <div class="status" role="status" aria-live="polite" aria-atomic="true">
+            <h1 id="startup-title">正在启动</h1>
+            <p id="startup-detail">就绪后会自动进入工作台，请稍候。</p>
+        </div>
+        <span class="waiting" aria-hidden="true"></span>
+        <p class="hint" id="startup-hint">这个页面会自动更新。</p>
+        <noscript>请开启浏览器 JavaScript，以显示启动状态和自动进入工作台。</noscript>
+    </main>
+</body>
+</html>

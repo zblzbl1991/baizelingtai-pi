@@ -1,0 +1,8 @@
+{
+  "name": "pivane-presentations",
+  "version": "1.0.0",
+  "private": true,
+  "license": "ISC",
+  "description": "Resource registration for the separately licensed, unmodified guizang-ppt-skill",
+  "pi": { "skills": ["../../vendor/guizang-ppt-skill"] }
+}

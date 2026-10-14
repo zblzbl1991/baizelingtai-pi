@@ -1,6 +1,8 @@
 const fetch = require('node-fetch');
 const { proxyAgent: proxyFor } = require('./workspace-network-transport');
 const application = require('../package.json');
+const path = require('node:path');
+const { configuredFeed, parseFeed, sourceLink } = require('./pi-update-feed');
 const { version: installedPi } = require('../node_modules/@earendil-works/pi-coding-agent/package.json');
 
 const RELEASES = 'https://api.github.com/repos/YogurtJ/pivane/releases?per_page=100';
@@ -47,25 +49,30 @@ class UpdateService {
         this.piVersion = options.piVersion || installedPi;
         this.bundledPiVersion = application.pivaneManaged?.baselinePi || application.dependencies['@earendil-works/pi-coding-agent'];
         this.platform = options.platform || process.platform;
+        this.arch = options.arch || process.arch;
+        this.feed = configuredFeed(options.root || path.resolve(__dirname, '..'), this.env);
+        this.releasesPage = this.feed ? sourceLink(this.env.BAIZELINGTAI_UPDATE_RELEASES_URL || this.feed, this.feed) : RELEASE_PAGE;
+        this.feedPending = new Map();
         this.cache = new Map();
         this.inflight = new Map();
     }
     snapshot(channel = 'preview') {
         if (!['stable', 'preview'].includes(channel)) throw Object.assign(new Error('Invalid update channel'), { status: 400 });
         const cached = this.cache.get(channel);
-        const automatic = this.notifications?.cachedPi();
+        const automatic = this.feed ? null : this.notifications?.cachedPi();
         const pi = automatic && (!cached || automatic.checkedAt > Date.parse(cached.checkedAt))
             ? { version: automatic.version, status: relation(this.piVersion, automatic.version), releasesUrl: PI_PAGE }
             : cached?.pi;
         return {
             channel, platform: this.platform, installMode: 'manual',
+            source: this.feed ? { type: 'manifest', url: this.feed, origin: new URL(this.feed).origin } : { type: 'official' },
             appVersion: this.appVersion, piVersion: this.piVersion, bundledPiVersion: this.bundledPiVersion,
             dependencyMatches: this.piVersion === (application.pivaneManaged?.piVersion || this.bundledPiVersion),
             managedPi: Boolean(application.pivaneManaged),
             checkedAt: cached?.checkedAt || null,
             cacheUntil: cached ? new Date(cached.expires).toISOString() : null,
-            pivane: cached?.pivane || { status: 'unchecked', releasesUrl: RELEASE_PAGE },
-            pi: pi || { status: 'unchecked', releasesUrl: PI_PAGE }
+            pivane: cached?.pivane || { status: 'unchecked', releasesUrl: this.releasesPage },
+            pi: pi || { status: 'unchecked', releasesUrl: this.feed ? this.releasesPage : PI_PAGE, ...(this.feed ? { bundled: true } : {}) }
         };
     }
     async json(url) {
@@ -83,6 +90,11 @@ class UpdateService {
         } finally { clearTimeout(timer); agent?.destroy(); }
     }
     async pivane(channel) {
+        if (this.feed) {
+            const candidate = await this.manifest(channel);
+            return candidate ? { ...candidate, status: relation(this.appVersion, candidate.version) }
+                : { status: 'no-release', releasesUrl: this.releasesPage };
+        }
         const releases = await this.json(RELEASES);
         if (!Array.isArray(releases) || releases.length > 100) throw new Error('Invalid release list');
         const candidates = releases.flatMap(release => {
@@ -103,7 +115,20 @@ class UpdateService {
         const latest = candidates[0];
         return { ...latest, status: relation(this.appVersion, latest.version) };
     }
-    async pi() {
+    manifest(channel = 'preview') {
+        if (this.feedPending.has(channel)) return this.feedPending.get(channel);
+        const pending = Promise.resolve().then(async () => parseFeed(await this.json(this.feed), {
+            source: this.feed, platform: this.platform, arch: this.arch, channel, compareVersions, releasesUrl: this.releasesPage
+        })).finally(() => this.feedPending.delete(channel));
+        this.feedPending.set(channel, pending);
+        return pending;
+    }
+    async pi(channel) {
+        if (this.feed) {
+            const candidate = await this.manifest(channel);
+            return candidate ? { status: relation(this.piVersion, candidate.piVersion), version: candidate.piVersion,
+                bundled: true, releasesUrl: candidate.releasesUrl } : { status: 'no-release', bundled: true, releasesUrl: this.releasesPage };
+        }
         const data = await this.json(PI_LATEST);
         if (data?.name !== '@earendil-works/pi-coding-agent' || !versionParts(data.version) || versionParts(data.version).pre.length) throw new Error('Invalid package version');
         return { status: relation(this.piVersion, data.version), version: data.version, releasesUrl: PI_PAGE };
@@ -115,13 +140,13 @@ class UpdateService {
         if (this.cache.get(channel)?.expires > this.now()) return Promise.resolve(this.snapshot(channel));
         // Reserve synchronously, before network requests; callers share one check per channel.
         const pending = Promise.resolve().then(async () => {
-            const results = await Promise.allSettled([this.pivane(channel), this.pi()]);
+            const results = await Promise.allSettled([this.pivane(channel), this.pi(channel)]);
             this.cache.set(channel, {
                 checkedAt: new Date(this.now()).toISOString(), expires: this.now() + TTL,
-                pivane: results[0].status === 'fulfilled' ? results[0].value : { status: 'error', releasesUrl: RELEASE_PAGE },
-                pi: results[1].status === 'fulfilled' ? results[1].value : { status: 'error', releasesUrl: PI_PAGE }
+                pivane: results[0].status === 'fulfilled' ? results[0].value : { status: 'error', releasesUrl: this.releasesPage },
+                pi: results[1].status === 'fulfilled' ? results[1].value : { status: 'error', releasesUrl: this.feed ? this.releasesPage : PI_PAGE, ...(this.feed ? { bundled: true } : {}) }
             });
-            if (results[1].status === 'fulfilled') {
+            if (!this.feed && results[1].status === 'fulfilled') {
                 try { this.notifications?.recordSuccess(results[1].value); } catch { /* Manual version lookup remains usable if reminder storage is unavailable. */ }
             }
             return this.snapshot(channel);
@@ -156,6 +181,7 @@ function mountUpdateRoutes(router, service = new UpdateService(), hooks = {}) {
             const action = req.body.action;
             if (req.body.channel !== undefined && (action !== 'application' || !['stable', 'preview'].includes(req.body.channel))) throw Object.assign(new Error('Invalid update channel'), { status: 400 });
             if (!['update', 'application', 'backup', 'restart'].includes(action)) throw Object.assign(new Error('维护操作无效'), { status: 400 });
+            if (service.feed && ['update', 'application'].includes(action)) throw Object.assign(new Error('内网更新源提供 Windows 整包，请下载后在独立维护窗口更新'), { status: 409 });
             maintenance.assertAvailable(action, idle);
             let version, release;
             if (action === 'application') {

@@ -98,7 +98,7 @@ async function run(browser, viewport) {
     const importMenu = async () => {
         await drawer(); await page.locator(`[data-project-cwd="${cwd}"] [data-project-action="menu"]`).click();
         await menu.getByRole('menuitem', { name: '更多操作', exact: true }).click();
-        await menu.getByRole('menuitem', { name: '导入 Pi 会话', exact: true }).click(); await dialog.waitFor();
+        await menu.getByRole('menuitem', { name: '导入会话', exact: true }).click(); await dialog.waitFor();
     };
     const geometry = async () => {
         const bad = await page.evaluate(() => [...document.querySelectorAll('#pi-transfer-dialog, #pi-transfer-dialog .pi-transfer-body, #pi-transfer-dialog label, #pi-transfer-dialog select')]
@@ -168,11 +168,11 @@ async function run(browser, viewport) {
         assert.equal(await page.locator('#pi-transfer-dialog[open]').count(), 0);
     }
     await drawer(); await page.locator(`[data-project-cwd="${cwd}"] [data-project-action="menu"]`).click();
-    assert.equal(await menu.getByRole('menuitem', { name: '导入 Pi 会话' }).count(), 0);
+    assert.equal(await menu.getByRole('menuitem', { name: '导入会话' }).count(), 0);
     assert.deepEqual(errors, []); await context.close(); console.log(`transfer ${viewport.width}: passed`);
 }
 (async () => {
-    const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
         for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }]) await run(browser, viewport);
         if (fs.existsSync('/tmp/pi-transfer-native-fixture.html')) {

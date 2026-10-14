@@ -9,10 +9,10 @@
         const element = node('section', undefined, { class: 'updates-notification-settings' }); element.hidden = true;
         const checkbox = node('input', undefined, { type: 'checkbox', id: 'updates-auto-check' });
         const label = node('label', undefined, { class: 'maintenance-check' });
-        label.append(checkbox, node('span', t('自动检查 Pi 更新')));
+        label.append(checkbox, node('span', t("自动检查底层引擎更新")));
         const feedback = node('p', '', { role: 'status', class: 'settings-help' });
-        element.append(label, node('p', t('最多每 24 小时检查一次 Pi 正式版，只查询版本信息，不会自动下载或安装。此设置由本实例所有设备共用。'), { class: 'settings-help' }), feedback);
-        const banner = node('aside', undefined, { id: 'pi-update-notice', class: 'pi-update-card', role: 'region', 'aria-label': t('Pi 更新提醒') });
+        element.append(label, node('p', t("最多每 24 小时检查一次底层引擎正式版，只查询版本信息，不会自动下载或安装。此设置由本实例所有设备共用。"), { class: 'settings-help' }), feedback);
+        const banner = node('aside', undefined, { id: 'pi-update-notice', class: 'pi-update-card', role: 'region', 'aria-label': t("底层引擎更新提醒") });
         banner.hidden = true; document.body.append(banner);
         let epoch = 0, pending = false, saving = false, data, shownVersion, timer;
         const visible = () => !document.hidden && !document.body.classList.contains('workspace-access-locked');
@@ -22,11 +22,11 @@
         }) });
         function apply(value) {
             if (typeof value?.enabled !== 'boolean') return false;
-            data = value; element.hidden = false; checkbox.checked = value.enabled;
+            data = value; element.hidden = value.supported === false; checkbox.checked = value.enabled;
             for (const e of document.querySelectorAll('#workspace-settings-toggle, [data-settings-tab="updates"]')) {
                 e.toggleAttribute('data-pi-update', value.available === true);
                 let badge = e.querySelector('.pi-update-badge');
-                if (!badge) { badge = node('span', t('Pi 有可用更新'), { class: 'pi-update-badge' }); e.append(badge); }
+                if (!badge) { badge = node('span', t("底层引擎有可用更新"), { class: 'pi-update-badge' }); e.append(badge); }
                 badge.hidden = !value.available;
             }
             if (!value.available || shownVersion !== value.version || !value.idle) banner.hidden = true;
@@ -39,9 +39,9 @@
             const icon = node('span', undefined, { class: 'pi-update-icon', 'aria-hidden': 'true' });
             icon.append(node('i', undefined, { class: 'fa-solid fa-arrow-up' }));
             const heading = node('div', undefined, { class: 'pi-update-heading' });
-            const versions = node('div', undefined, { class: 'pi-update-versions', role: 'group', 'aria-label': t('Pi 版本：{0} → {1}', currentVersion, version) });
+            const versions = node('div', undefined, { class: 'pi-update-versions', role: 'group', 'aria-label': t("引擎版本：{0} → {1}", currentVersion, version) });
             versions.append(node('span', currentVersion, { class: 'pi-update-from' }), node('span', '→', { 'aria-hidden': 'true' }), node('span', version, { class: 'pi-update-to' }));
-            heading.append(node('strong', t('Pi 有可用更新')), versions);
+            heading.append(node('strong', t("底层引擎有可用更新")), versions);
             const header = node('div', undefined, { class: 'pi-update-header' }); header.append(icon, heading);
             const row = node('div', undefined, { class: 'pi-update-actions' });
             const footer = node('div', undefined, { class: 'pi-update-footer' });

@@ -74,7 +74,7 @@ async function run(browser, base, width) {
         assert.equal(await loading.getAttribute('role'), 'status');
         assert.equal(await loading.getAttribute('aria-busy'), 'true');
         assert.equal(await page.locator('#pi-input').isDisabled(), true);
-        assert.match(await loading.textContent(), /正在加载 Pi session|Loading Pi session/);
+        assert.match(await loading.textContent(), /正在加载会话|Loading session/);
         releaseOpen();
         await page.waitForFunction(() => window.fixtureWorkflows?.deferredRevision === 'queue-1');
         const poll = token => page.evaluate(token => window.fixtureWorkflows.refresh(false, { deferredRevision: token }), token);

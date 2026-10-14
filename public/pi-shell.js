@@ -99,7 +99,7 @@
             try {
                 const value = await this.options.request(key === 'steeringMode' ? 'set_steering_mode' : 'set_follow_up_mode', { mode, runtimeId: this.modes.runtimeId, revision: this.modes.revision });
                 if (epoch !== this.epoch) return;
-                this.applyModes(value); this.modeStatus.textContent = translateUi("当前运行实例已更新，并交由 Pi 保存全局默认");
+                this.applyModes(value); this.modeStatus.textContent = translateUi("当前运行实例已更新，并保存全局默认");
             } catch (error) {
                 if (epoch !== this.epoch) return;
                 this.modeStatus.textContent = translateUi("{0}；请核对设置，未自动重试", error.message);

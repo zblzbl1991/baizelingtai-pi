@@ -19,6 +19,8 @@ class UpdateNotifications {
             ? { version: state.version, checkedAt: state.lastSuccessAt } : null;
     }
     snapshot() {
+        if (this.service.feed) return { supported: false, enabled: false, available: false, eligible: false, idle: Boolean(this.idle()),
+            currentVersion: this.service.piVersion, version: null, lastSuccessAt: null, nextCheckAt: null };
         const state = this.read(), enabled = state.enabled !== false;
         const available = enabled && compareVersions(this.service.piVersion, state.version) === -1 && state.ignoredVersion !== state.version;
         const reminding = state.remindVersion === state.version && Number.isFinite(state.remindAt);
@@ -32,6 +34,7 @@ class UpdateNotifications {
         this.patch({ version: info.version, lastSuccessAt: this.now(), nextCheckAt: this.now() + DAY, failures: 0 });
     }
     check() {
+        if (this.service.feed) return Promise.resolve(this.snapshot());
         if (this.pending) return this.pending;
         const state = this.read();
         if (state.enabled === false || state.nextCheckAt > this.now()) return Promise.resolve(this.snapshot());

@@ -226,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function authSourceLabel(provider) {
         const labels = {
-            stored: 'Pi credential store',
+            stored: translateUi('服务器凭据库'),
             environment: provider.authLabel || translateUi("环境变量"),
             models_json_key: 'models.json',
             models_json_command: 'models.json command',
@@ -246,7 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<article class="settings-row provider-row" data-provider-id="${escapeHtml(provider.id)}">
             <span class="settings-status-dot ${provider.configured ? 'ok' : ''}"></span>
             <div class="settings-row-main">
-                <div class="settings-row-title"><strong>${provider.configured ? translateUi("已配置") : translateUi("尚未连接")}</strong><span class="settings-badge">${custom?.api ? translateUi("自定义配置") : translateUi("Pi 内置")}</span></div>
+                <div class="settings-row-title"><strong>${provider.configured ? translateUi("已配置") : translateUi("尚未连接")}</strong><span class="settings-badge">${custom?.api ? translateUi("自定义配置") : translateUi("内置")}</span></div>
                 <div class="settings-row-meta"><span>${escapeHtml(authSourceLabel(provider))}</span><span>${escapeHtml([methods.apiKey ? 'API Key' : '', methods.oauth ? 'OAuth' : ''].filter(Boolean).join(' · ') || translateUi("使用服务器环境认证"))}</span></div>
             </div>
             <div class="settings-row-actions">
@@ -294,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (providers.some(provider => provider.id === current.provider)) elements.mediaAgentProvider.value = current.provider;
         if (!elements.mediaAgentProvider.value && providers[0]) elements.mediaAgentProvider.value = providers[0].id;
         populateMediaAgentModelSelect(current.modelId);
-        elements.mediaAgentCurrent.textContent = current.provider && current.modelId ? `${current.provider}/${current.modelId}` : translateUi("跟随 Pi 默认模型");
+        elements.mediaAgentCurrent.textContent = current.provider && current.modelId ? `${current.provider}/${current.modelId}` : translateUi("跟随默认模型");
     }
 
     async function saveMediaAgentModel(button) {
@@ -416,8 +416,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const provider = state.modelSnapshot.providers.find(item => item.id === providerId);
         openEditor(`${provider?.name || providerId} · ${method === 'oauth' ? translateUi("OAuth 登录") : translateUi("API Key 配置")}`, `
             <div class="settings-form settings-login">
-                <p>${translateUi("按 Pi 提供的步骤完成连接，凭据由 Pi 保存。关闭此窗口会取消尚未完成的登录。")}</p>
-                ${method === 'oauth' ? `<p>${translateUi("在手机或其他电脑上授权时，localhost 回调可能无法打开；可将地址栏中的完整回调地址粘贴到下方 Pi 提供的输入框。")}</p>` : ''}
+                <p>${translateUi("按提示完成连接，凭据保存到服务器凭据库。关闭此窗口会取消尚未完成的登录。")}</p>
+                ${method === 'oauth' ? `<p>${translateUi("在手机或其他电脑上授权时，localhost 回调可能无法打开；可将地址栏中的完整回调地址粘贴到下方输入框。")}</p>` : ''}
                 <div id="settings-login-status" role="status" aria-live="polite">${translateUi("正在启动登录…")}</div>
                 <div id="settings-login-events"></div><div id="settings-login-prompts"></div>
                 <p id="settings-login-error" role="alert"></p>
@@ -583,14 +583,14 @@ document.addEventListener('DOMContentLoaded', () => {
         openEditor(`${model.name} · Thinking`, `
             <form id="settings-thinking-default-form" class="settings-form">
                 <p>${translateUi("可用等级：{0}。默认值用于新的会话；恢复已有会话时保留其思考状态。", escapeHtml(model.thinkingLevels.join(' / ')))}</p>
-                <label><span>${translateUi("此模型默认思考等级")}</span><select name="level"><option value="">${translateUi("跟随全局（{0}）", escapeHtml(snapshot.preferences.defaultThinkingLevel || translateUi("Pi 默认")))}</option>${model.thinkingLevels.map(level => `<option value="${escapeHtml(level)}">${escapeHtml(level)}</option>`).join('')}</select></label>
+                <label><span>${translateUi("此模型默认思考等级")}</span><select name="level"><option value="">${translateUi("跟随全局（{0}）", escapeHtml(snapshot.preferences.defaultThinkingLevel || translateUi("内置默认")))}</option>${model.thinkingLevels.map(level => `<option value="${escapeHtml(level)}">${escapeHtml(level)}</option>`).join('')}</select></label>
                 <button class="settings-primary-button" type="submit">${translateUi("保存默认值")}</button>
             </form>
             <details class="settings-thinking-advanced"><summary>${translateUi("高级：模型支持的等级与参数映射")}</summary>
-                <p>${translateUi("仅按实际服务能力修改。禁用的等级将从 Pi 选择器隐藏；映射值会传给供应商。保存能力后重新打开窗口选择默认值。")}</p>
+                <p>${translateUi("仅按实际服务能力修改。禁用的等级将从选择器隐藏；映射值会传给供应商。保存能力后重新打开窗口选择默认值。")}</p>
                 <form id="settings-thinking-map-form" class="settings-form">
-                    ${keys.map(level => `<div class="settings-thinking-map-row" data-level="${escapeHtml(level)}"><label><span>${escapeHtml(level)}</span><select aria-label="${translateUi("{0} 支持方式", escapeHtml(level))}"><option value="inherit">${translateUi("使用 Pi 定义")}</option><option value="disabled">${translateUi("不支持")}</option><option value="mapped">${translateUi("自定义映射")}</option></select></label><label><span>${translateUi("供应商参数值")}</span><input aria-label="${translateUi("{0} 参数值", escapeHtml(level))}" maxlength="100"></label></div>`).join('')}
-                    <div class="settings-form-actions"><button type="button" id="settings-thinking-reset">${translateUi("恢复 Pi 原始能力")}</button><button class="settings-primary-button" type="submit">${translateUi("保存能力")}</button></div>
+                    ${keys.map(level => `<div class="settings-thinking-map-row" data-level="${escapeHtml(level)}"><label><span>${escapeHtml(level)}</span><select aria-label="${translateUi("{0} 支持方式", escapeHtml(level))}"><option value="inherit">${translateUi("使用内置定义")}</option><option value="disabled">${translateUi("不支持")}</option><option value="mapped">${translateUi("自定义映射")}</option></select></label><label><span>${translateUi("供应商参数值")}</span><input aria-label="${translateUi("{0} 参数值", escapeHtml(level))}" maxlength="100"></label></div>`).join('')}
+                    <div class="settings-form-actions"><button type="button" id="settings-thinking-reset">${translateUi("恢复内置能力")}</button><button class="settings-primary-button" type="submit">${translateUi("保存能力")}</button></div>
                 </form>
             </details><p id="settings-thinking-error" role="alert"></p>`);
         const epoch = state.editorEpoch;
@@ -644,7 +644,7 @@ document.addEventListener('DOMContentLoaded', () => {
             closeEditor();
             state.modelSnapshot = null;
             await loadModels(true);
-            toast(translateUi("API Key 已保存到 Pi credential store；重新打开 runtime 后生效"), 'success', 6500);
+            toast(translateUi("API Key 已保存到服务器凭据库；重新打开运行实例后生效"), 'success', 6500);
         } finally {
             setBusy(button, false);
         }
@@ -654,7 +654,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const provider = state.modelSnapshot.providers.find(item => item.id === providerId);
         openEditor(translateUi("设置 {0} API Key", provider?.name || providerId), `
             <form id="settings-api-key-form" class="settings-form">
-                <div class="settings-secret-note"><i class="fa-solid fa-shield-halved"></i><span>${translateUi("凭据由 Pi 保存，现有值不会回显。请在受信网络中配置。")}</span></div>
+                <div class="settings-secret-note"><i class="fa-solid fa-shield-halved"></i><span>${translateUi("凭据保存到服务器凭据库，现有值不会回显。请在受信网络中配置。")}</span></div>
                 <label><span>API Key</span><input id="settings-api-key-input" type="password" autocomplete="new-password" required></label>
                 <div class="settings-form-actions"><button type="button" data-editor-cancel>${translateUi("取消")}</button><button class="settings-primary-button" type="submit"><i class="fa-solid fa-floppy-disk"></i> ${translateUi("保存")}</button></div>
             </form>
@@ -672,7 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function removeCredential(providerId, button) {
-        if (!confirm(translateUi("移除 Pi credential store 中这个 Provider 的凭据？环境变量或 models.json 中的配置不会被删除。"))) return;
+        if (!confirm(translateUi("移除服务器凭据库中这个供应商的凭据？环境变量或 models.json 中的配置不会被删除。"))) return;
         setBusy(button, true);
         try {
             const result = await apiFetch(`/api/pi/settings/providers/${encodeURIComponent(providerId)}/credential`, { method: 'DELETE' });

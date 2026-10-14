@@ -227,11 +227,15 @@ async function check(browser, base, width, language) {
     assert.equal(await request.locator('summary strong').textContent(), en ? 'Subagent needs guidance' : '子 Agent 请求指示');
     assert.equal(await request.locator('.pi-subagent-notice-preview').textContent(), 'reviewer asks: may I edit tests?');
     assert.equal(await request.locator('details').evaluate(node => node.open), false, 'notices start collapsed');
+    assert.equal(await request.locator('.pi-subagent-notice-source').isVisible(), false);
+    assert.ok(!(await request.locator('summary').innerText()).includes('pi-subagents'));
     assert.equal(await request.locator('.pi-markdown strong').count(), 0, 'Markdown renders on expansion');
     const rowHeight = await request.evaluate(node => node.getBoundingClientRect().height);
     assert.ok(rowHeight <= 44, 'collapsed notice is one row: ' + rowHeight);
     await request.scrollIntoViewIfNeeded(); await page.screenshot({ path: `/tmp/pivane-subagent-notices-collapsed-${width}-${language}.png` });
     await request.locator('summary').click();
+    assert.equal(await request.locator('.pi-subagent-notice-source').textContent(), en ? 'Extension source: pi-subagents' : '扩展来源：pi-subagents');
+    assert.equal(await request.locator('.pi-subagent-notice-source').isVisible(), true);
     await request.locator('.pi-markdown strong').waitFor();
     assert.equal(await request.locator('.pi-markdown strong').textContent(), 'may I edit tests?');
     const result = page.locator('.pi-message.pi-subagent-notice[data-subagent-tone="result"]');

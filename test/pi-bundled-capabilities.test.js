@@ -17,9 +17,13 @@ test.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
 test('vendor inventory is byte-identical upstream and excludes dependency trees', () => {
     const files = require('../scripts/vendor-files.cjs').vendorFiles(path.resolve(__dirname, '..'));
-    assert.equal(files.length, 1344);
+    const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../vendor/manifest.json'), 'utf8'));
+    assert.equal(files.length, 1 + manifest.packages.reduce((count, entry) => count + entry.files.length, 0));
     assert.equal(files.some(file => file.includes('/node_modules/')), false);
-    for (const entry of catalog) assert.ok(files.includes(`${entry.directory}/LICENSE`));
+    for (const entry of manifest.packages) assert.ok(files.includes(`vendor/${entry.directory || entry.name}/LICENSE`));
+    assert.ok(files.includes('vendor/pi-computer-use/prebuilt/windows/windows-bridge.exe'));
+    assert.ok(files.includes('vendor/pi-computer-use/native/windows/bridge-rs/src/main.rs'));
+    assert.ok(files.includes('vendor/guizang-ppt-skill/assets/template.html'));
 });
 
 test('bundled memory supersedes obsolete paths without rewriting data or executable configuration', async () => {
@@ -43,7 +47,7 @@ test('managed inventory preserves legacy filters, respects trust, and saves port
     const legacy = { packages: [{ source: 'npm:pi-subagents@0.1.0', skills: [] }, 'npm:pi-hermes-memory@0.9.9'], sentinel: 9 };
     fs.writeFileSync(settingsFile, JSON.stringify(legacy));
     let snapshot = await resources.snapshot(cwd);
-    assert.equal(snapshot.packages.length, 1);
+    assert.equal(snapshot.packages.length, catalog.filter(entry => entry.mode === 'package').length);
     assert.equal(snapshot.packages[0].managedBy, 'pivane');
     assert.equal(snapshot.resources.filter(r => r.type === 'skills' && r.enabled && r.source === packagePath(catalog[0])).length, 0);
     const extension = snapshot.resources.find(r => r.type === 'extensions' && r.source === packagePath(catalog[0]));
@@ -68,6 +72,29 @@ test('managed inventory preserves legacy filters, respects trust, and saves port
     assert.equal((await resources.snapshot(cwd)).resources.find(r => r.type === 'extensions').enabled, true);
     await toggle('project', 'inherit'); await toggle('global', 'on');
     assert.equal((await resources.snapshot(cwd)).resources.find(r => r.type === 'extensions').enabled, true, 'restoring inheritance must not leave an implicit blanket exclusion');
+});
+
+test('new bundled capabilities can be disabled and restored without changing legacy declarations', async () => {
+    const { PiNativeService } = require('../server/pi-native-service');
+    const { PiResourceService } = require('../server/pi-resource-service');
+    const { PiSessionStore } = require('../server/pi-session-store');
+    const resources = new PiResourceService(new PiNativeService(new PiSessionStore()));
+    const declarations = ['npm:pi-web-access@0.1.0', 'npm:@injaneity/pi-computer-use@0.1.0'];
+    fs.writeFileSync(settingsFile, JSON.stringify({ packages: declarations, sentinel: 'keep' }));
+    for (const entry of catalog.filter(item => ['web', 'computer', 'presentations'].includes(item.id))) {
+        let snapshot = await resources.snapshot(cwd, 'global');
+        const resource = snapshot.resources.find(item => item.source === packagePath(entry));
+        assert.ok(resource?.enabled, entry.id);
+        await resources.toggle({ cwd, scope: 'global', resourceId: resource.id, expectedRevision: snapshot.revision, confirmed: true, state: 'off' });
+        snapshot = await resources.snapshot(cwd, 'global');
+        assert.equal(snapshot.resources.find(item => item.id === resource.id).enabled, false);
+        for (const action of ['install', 'remove', 'update']) await assert.rejects(resources.packageAction({ cwd, scope: 'global',
+            source: `pivane:${entry.name}`, action, expectedRevision: snapshot.revision, confirmed: true }), /此组件由白泽灵台管理/);
+        await resources.toggle({ cwd, scope: 'global', resourceId: resource.id, expectedRevision: snapshot.revision, confirmed: true, state: 'inherit' });
+        assert.equal((await resources.snapshot(cwd, 'global')).resources.find(item => item.id === resource.id).enabled, true);
+    }
+    const saved = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+    assert.deepEqual(saved.packages, declarations); assert.equal(saved.sentinel, 'keep');
 });
 
 test('bundled subagent runs against a synthetic provider, with native host controls and no old factory execution', { timeout: 120000 }, async t => {
@@ -139,8 +166,12 @@ test('bundled subagent runs against a synthetic provider, with native host contr
     const resources = await worker.getNativeResources();
     assert.equal(resources.tools.filter(item => item.name === 'subagents_enable').length, 1);
     assert.ok(resources.skills.some(item => item.name === 'pi-subagents'));
+    assert.ok(resources.skills.some(item => item.name === 'guizang-ppt-skill'));
+    for (const name of ['web_search', 'fetch_content', 'get_search_content', 'find_roots', 'observe_ui', 'act_ui'])
+        assert.equal(resources.tools.filter(item => item.name === name).length, 1, name);
     assert.equal(resources.tools.some(item => item.name === 'memory_add'), false);
     assert.equal(fs.existsSync(marker), false);
+    assert.equal(fs.existsSync(path.join(agentDir, 'helpers')), false, 'opening a chat must not install or start a desktop helper');
     let launch;
     const off = worker.subscribe(event => { if (event.type === 'extension_ui_request' && event.message?.startsWith('FIXTURE_SPAWN:')) launch = JSON.parse(event.message.slice(14)); });
     await worker.request('prompt', { message: '/fixture-spawn' });
@@ -200,13 +231,19 @@ test('bundled subagent runs against a synthetic provider, with native host contr
     assert.ok(nativeIdle && worker.isIdle() && !worker.retainsBackgroundWork(), 'completion notifications settled before reload');
     // Native reload must recompute resource filters without restarting or losing
     // the current session. The old package factories remain blocked.
-    settings.pivaneBuiltins = { subagents: { extensions: [] } };
+    settings.pivaneBuiltins = { subagents: { extensions: [] }, web: { extensions: [] }, computer: { extensions: [] }, presentations: { skills: [] } };
     fs.writeFileSync(settingsFile, JSON.stringify(settings));
     await worker.reloadResources();
     assert.equal((await worker.getNativeResources()).tools.some(item => item.name === 'subagents_enable'), false);
+    assert.equal((await worker.getNativeResources()).tools.some(item => ['web_search', 'find_roots'].includes(item.name)), false);
+    assert.equal((await worker.getNativeResources()).skills.some(item => item.name === 'guizang-ppt-skill'), false);
     settings.pivaneBuiltins.subagents.extensions = ['+index.js'];
+    delete settings.pivaneBuiltins.web; delete settings.pivaneBuiltins.computer; delete settings.pivaneBuiltins.presentations;
     fs.writeFileSync(settingsFile, JSON.stringify(settings));
     await worker.reloadResources();
     assert.equal((await worker.getNativeResources()).tools.filter(item => item.name === 'subagents_enable').length, 1);
+    assert.equal((await worker.getNativeResources()).tools.filter(item => item.name === 'web_search').length, 1);
+    assert.equal((await worker.getNativeResources()).tools.filter(item => item.name === 'find_roots').length, 1);
+    assert.equal((await worker.getNativeResources()).skills.filter(item => item.name === 'guizang-ppt-skill').length, 1);
     assert.equal(fs.existsSync(marker), false);
 });

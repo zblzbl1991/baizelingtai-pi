@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src="public/brand/logo-192.png" alt="白泽灵台 logo" width="96" height="96">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="public/brand/logo-horizontal-dark.svg">
+  <img src="public/brand/logo-horizontal.svg" alt="白泽灵台 logo" width="362" height="80">
+</picture>
 
 # 白泽灵台
 

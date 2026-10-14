@@ -82,8 +82,7 @@
         const storage = node('div', null, 'artifacts-storage'), storageText = node('span'), meter = node('span', null, 'artifacts-meter'), meterFill = node('span');
         meter.append(meterFill); storage.append(storageText, meter); storage.setAttribute('role', 'img');
         const refresh = button(tr('刷新', 'Refresh'), () => { void load(true); }, 'artifacts-btn is-icon artifacts-refresh', { icon: 'fa-arrows-rotate', iconOnly: true }); refresh.id = 'artifacts-refresh';
-        const create = button(tr('去创作', 'Create'), () => window.PiWorkspaceRoute.navigate('media'), 'artifacts-btn artifacts-create', { icon: 'fa-wand-magic-sparkles' });
-        const headerActions = node('div', null, 'artifacts-header-actions'); headerActions.append(storage, refresh, create);
+        const headerActions = node('div', null, 'artifacts-header-actions'); headerActions.append(storage, refresh);
         header.append(intro, headerActions);
         // ---------- Views ----------
         const views = node('nav', null, 'artifacts-views'); views.setAttribute('aria-label', tr('成果视图', 'Artifact views'));
@@ -333,9 +332,9 @@
             if (state.failed && !items.length) emptyState('fa-triangle-exclamation', tr('成果暂时无法读取', 'Artifacts are temporarily unavailable'), tr('来源没有被修改。请稍后重试，或回到来源会话查看。', 'Sources were not changed. Try again later or open the source conversation.'), button(tr('重试', 'Try again'), () => { void load(true); }, 'artifacts-btn is-primary', { icon: 'fa-arrows-rotate' }));
             else if (filtered()) emptyState('fa-magnifying-glass', tr('没有匹配的成果', 'No matching artifacts'), state.view === 'all' && state.next != null ? tr('换个关键词或清除筛选；也可以继续发现更多来源。', 'Try other words or clear filters, or discover more sources.') : tr('换个关键词，或清除筛选条件。', 'Try other words or clear the filters.'), button(tr('清除筛选', 'Clear filters'), clearFilters, 'artifacts-btn'));
             else if (state.view === 'saved') emptyState('fa-box-archive', tr('把值得留下的结果存在这里', 'Keep your best results here'), tr('聊天中交付的文件和生成的媒体会先出现在「待保存」。保存后，删除聊天也不会丢失。', 'Files delivered in conversations and generated media appear in Unsaved first. Once saved, they outlive the conversation.'),
-                ...(c4.all ? [button(tr(`查看待保存（${c4.all}）`, `Review unsaved (${c4.all})`), () => setView('all'), 'artifacts-btn is-primary', { icon: 'fa-inbox' })] : []), button(tr('去创作', 'Create something'), () => window.PiWorkspaceRoute.navigate('media'), 'artifacts-btn', { icon: 'fa-wand-magic-sparkles' }));
+                ...(c4.all ? [button(tr(`查看待保存（${c4.all}）`, `Review unsaved (${c4.all})`), () => setView('all'), 'artifacts-btn is-primary', { icon: 'fa-inbox' })] : []));
             else if (state.view === 'favorite') emptyState('fa-star', tr('还没有星标成果', 'No starred artifacts yet'), tr('在成果上点星标，常用的内容就会出现在这里。', 'Star an artifact and it will show up here for quick access.'));
-            else if (state.view === 'all') emptyState('fa-inbox', tr('没有待保存的结果', 'Nothing waiting to be saved'), tr('让 Agent 交付报告、网页或文件，或在创作工具中生成媒体，它们会出现在这里。上传的参考素材不会自动出现。', 'Ask your Agent to deliver a report, web page or file, or generate media; they will appear here. Uploaded references are not included.'), button(tr('去创作', 'Create something'), () => window.PiWorkspaceRoute.navigate('media'), 'artifacts-btn', { icon: 'fa-wand-magic-sparkles' }));
+            else if (state.view === 'all') emptyState('fa-inbox', tr('没有待保存的结果', 'Nothing waiting to be saved'), tr('让 Agent 交付报告、网页或文件，它们会出现在这里。上传的参考素材不会自动出现。', 'Ask your Agent to deliver a report, web page or file; they will appear here. Uploaded references are not included.'));
             else if (state.view === 'trash') emptyState('fa-trash-can', tr('回收站是空的', 'Trash is empty'), tr('移到回收站的成果可以恢复，也可以永久删除。', 'Trashed artifacts can be restored or deleted permanently.'));
             else emptyState('fa-eye-slash', tr('没有隐藏的成果', 'No hidden artifacts'), tr('隐藏只影响展示，不会删除文件。', 'Hiding changes visibility without deleting files.'));
             const pages = Math.ceil(items.length / PAGE);

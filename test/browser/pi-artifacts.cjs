@@ -58,6 +58,9 @@ async function run(browser, base, width, locale, theme) {
         ws.send(JSON.stringify({ type: 'response', id: cmd.id, command: cmd.type, success: true, data: response }));
     }));
     await page.goto(base + '/#/artifacts', { waitUntil: 'domcontentloaded' });
+    await page.locator('.artifacts-header').waitFor();
+    assert.equal(await page.locator('.artifacts-create').count(), 0);
+    assert.equal(await page.locator('#artifacts-tab .fa-wand-magic-sparkles').count(), 0);
     await page.locator('.artifacts-views [data-view="all"]').click();
     const card = title => page.locator('.artifacts-card').filter({ has: page.getByRole('heading', { name: title, exact: true }) });
     await card('Research report').waitFor(); assert.equal(await page.locator('.artifacts-card').count(), 4);

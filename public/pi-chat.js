@@ -7,11 +7,11 @@ document.addEventListener('DOMContentLoaded', () => {
         { name: 'tree', description: translateUi("查看会话分支，选择从哪里继续"), source: 'web' },
         { name: 'trust', description: translateUi("管理当前项目的信任"), source: 'web' },
         { name: 'export', description: translateUi("打开当前线程的导出记录窗口"), source: 'web' },
-        { name: 'import', description: translateUi("打开 Pi 会话导入窗口，选择文件与目标项目"), source: 'web' },
+        { name: 'import', description: translateUi("打开会话导入窗口，选择文件与目标项目"), source: 'web' },
         { name: 'templates', description: translateUi("打开设置中的提示词模板入口"), source: 'web' },
         { name: 'copy', description: translateUi("复制最近一条 Agent 回复"), source: 'web' },
         { name: 'compact', description: translateUi("压缩上下文，可附加摘要要求"), source: 'web' },
-        { name: 'quit', description: translateUi("退出当前 Pi runtime"), source: 'web' },
+        { name: 'quit', description: translateUi("退出当前运行实例"), source: 'web' },
         { name: 'btw', description: translateUi("打开临时侧聊，可附加问题"), source: 'web' }
     ];
     const elements = {
@@ -346,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
         changed: () => {
             state.shellBusy = shell.busy; setStreaming(state.streaming);
             if (state.connected && !state.shellBusy && !state.streaming && !state.compacting) {
-                setConnection('connected', translateUi("Pi Agent 已连接")); setAgentState('connected', translateUi("空闲"), state.model?.id || 'Pi Agent');
+                setConnection('connected', translateUi("已连接")); setAgentState('connected', translateUi("空闲"), state.model?.id || assistantName());
             }
         }
     });
@@ -591,7 +591,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch {}
         if (response.status === 401) {
             showTokenDialog();
-            throw new Error(translateUi("需要 Pi Web 访问令牌"));
+            throw new Error(translateUi("需要工作台访问令牌"));
         }
         if (!response.ok) throw Object.assign(new Error(translateUi(data?.error || `HTTP ${response.status}`)), { status: response.status, data });
         return data;
@@ -628,7 +628,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // One projection for the footer: related work does not lock the main composer.
     function refreshAgentState() {
-        if (state.connected) setAgentState('connected', translateUi('空闲'), state.model?.id || 'Pi Agent');
+        if (state.connected) setAgentState('connected', translateUi('空闲'), state.model?.id || assistantName());
     }
 
     function setAgentState(kind, title, detail) {
@@ -661,7 +661,7 @@ document.addEventListener('DOMContentLoaded', () => {
             title = labels[0] || translateUi('空闲');
             kind = state.pendingUi.size || side.waiting || side.uncertain || attention && !active && !state.streaming && !side.busy && !controls?.subagents?.background?.active
                 ? 'waiting' : labels.length ? 'working' : 'connected';
-            detail = state.model ? `${state.model.provider}/${state.model.id}` : 'Pi Agent';
+            detail = state.model ? `${state.model.provider}/${state.model.id}` : assistantName();
         }
         elements.agentStateDot.dataset.state = kind;
         elements.agentState.textContent = title;
@@ -749,7 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!window.WorkspaceAccess.authenticated) return;
         }
         elements.projectButton.disabled = true;
-        setConnection('connecting', translateUi("正在连接 Pi Agent"));
+        setConnection('connecting', translateUi("正在连接"));
         try {
             const status = await apiFetch('/api/pi/status');
             state.scheduledTasks = status.scheduledTasks === true;
@@ -1821,7 +1821,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         elements.sessionCount.textContent = translateUi('{0} 个项目', orderedProjects().length);
         elements.sessionCount.title = translateUi("{0} 个项目 · {1} 个当前线程", orderedProjects().length, state.sessions.length);
-        elements.sessionList.innerHTML = groups + archiveSection || (state.sessionFilter === 'work' ? '' : `<div class="pi-list-state">${query ? translateUi("没有匹配的项目或线程") : translateUi("还没有 Pi 项目")}</div>`);
+        elements.sessionList.innerHTML = groups + archiveSection || (state.sessionFilter === 'work' ? '' : `<div class="pi-list-state">${query ? translateUi("没有匹配的项目或线程") : translateUi("还没有项目")}</div>`);
         renderActivityBadges();
         if (!groups && !archiveSection && state.sessionFilter !== 'work') {
             const action = document.createElement('button'); action.type = 'button'; action.className = 'pi-list-state-action';
@@ -2231,9 +2231,9 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.compactButton.disabled = true;
         elements.currentThreadMenu.disabled = false;
         transcriptScroll.reset();
-        elements.transcript.innerHTML = `<div class="pi-transcript-loading" role="status" aria-live="polite" aria-busy="true"><span class="pi-spinner" aria-hidden="true"></span><span data-loading-label>${session.ephemeral ? translateUi("正在启动临时 Pi runtime") : translateUi("正在加载 Pi session")}</span></div>`;
+        elements.transcript.innerHTML = `<div class="pi-transcript-loading" role="status" aria-live="polite" aria-busy="true"><span class="pi-spinner" aria-hidden="true"></span><span data-loading-label>${session.ephemeral ? translateUi("正在启动临时会话") : translateUi("正在加载会话")}</span></div>`;
         document.getElementById('pi-chat-knowledge').hidden = true;
-        setConnection('connecting', translateUi("正在连接 Pi Agent"));
+        setConnection('connecting', translateUi("正在连接"));
         setAgentState('connecting', translateUi("正在启动"), getSessionTitle(session));
         const openedCwd = state.cwd;
         const connected = await connectSocket(session);
@@ -2263,7 +2263,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const openCommand = session.ephemeral ? 'open_ephemeral' : 'open_session';
                     const payload = { token: state.token, cwd: state.cwd };
                     if (!session.ephemeral) payload.sessionId = session.id;
-                    setConnection('connecting', translateUi("正在加载 Pi session"));
+                    setConnection('connecting', translateUi("正在加载会话"));
                     const snapshot = await requestRpc(openCommand, payload, 180000);
                     if (generation !== state.socketGeneration) return resolve(false);
                     state.connected = true;
@@ -2275,7 +2275,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (!live || !event.webRuntimeId || event.webSequence > live.sequence
                             || event.type === 'extension_error' || event.type === 'extension_ui_request' && event.method === 'notify') handlePiEvent(event);
                     }
-                    setConnection(state.shellBusy || state.compacting || state.streaming ? 'working' : 'connected', state.shellBusy ? translateUi("Shell 正在执行") : state.compacting ? translateUi("正在压缩上下文") : state.streaming ? translateUi("Pi 正在执行") : translateUi("Pi Agent 已连接"));
+                    setConnection(state.shellBusy || state.compacting || state.streaming ? 'working' : 'connected', state.shellBusy ? translateUi("Shell 正在执行") : state.compacting ? translateUi("正在压缩上下文") : state.streaming ? translateUi("正在执行") : translateUi("已连接"));
                     resolve(true);
                 } catch (error) {
                     if (generation !== state.socketGeneration || state.socket !== socket) return resolve(false);
@@ -2316,7 +2316,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 state.pendingUi.clear();
                 closeRequestDialog();
                 renderPendingUi();
-                rejectPending(new Error(event.reason || 'Pi Agent connection closed'));
+                rejectPending(new Error(event.reason || translateUi('会话连接已关闭')));
                 if (event.code === 4401) {
                     clearTimeout(state.reconnectTimer);
                     if (window.WorkspaceAccess?.supported) void window.WorkspaceAccess.refresh();
@@ -2334,7 +2334,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
             socket.addEventListener('error', () => {
-                if (generation === state.socketGeneration) setConnection('error', translateUi("Pi Agent 连接失败"));
+                if (generation === state.socketGeneration) setConnection('error', translateUi("连接失败"));
             });
         });
     }
@@ -2398,7 +2398,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function requestRpc(type, payload = {}, timeoutMs = 45000) {
         if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
-            return Promise.reject(new Error(translateUi("Pi Agent 尚未连接")));
+            return Promise.reject(new Error(translateUi("尚未连接")));
         }
         const id = `browser-${state.nextRequestId++}`;
         return new Promise((resolve, reject) => {
@@ -2460,7 +2460,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         for (const event of live.tools || []) updateToolExecution(event, event.type === 'tool_execution_end' ? event.isError ? 'error' : 'done' : 'running');
-        if (live.truncated) appendEventNotice('info', translateUi("运行现场超过恢复预览限额，部分内容未显示；最终消息以 Pi 完成记录为准。"));
+        if (live.truncated) appendEventNotice('info', translateUi("运行现场超过恢复预览限额，部分内容未显示；最终消息以会话完成记录为准。"));
     }
 
     function applySnapshot(snapshot) {
@@ -2507,7 +2507,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setAgentState(
             state.compacting || state.streaming || state.shellBusy ? 'working' : 'connected',
             state.shellBusy ? translateUi("Shell 执行中") : state.compacting ? translateUi("压缩中") : state.streaming ? translateUi("执行中") : translateUi("空闲"),
-            state.model ? `${state.model.provider}/${state.model.id}` : 'Pi Agent'
+            state.model ? `${state.model.provider}/${state.model.id}` : assistantName()
         );
         autoResizeInput();
         void workflows.refresh(true).catch(() => {});
@@ -2680,9 +2680,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (role === 'user') article._piUserMessage = message;
         if (role === 'assistant') article._piAssistantMessage = message;
         const header = document.createElement('header');
-        const title = role === 'user' ? translateUi("你") : role === 'assistant' ? 'Pi' : translateUi("系统");
-        const model = role === 'assistant' && message.model ? `<span>${escapeHtml(message.model)}</span>` : '';
-        header.innerHTML = `<strong>${title}</strong>${model}`;
+        const title = role === 'user' ? translateUi("你") : role === 'assistant' ? assistantName() : translateUi("系统");
+        const titleNode = document.createElement('strong'); titleNode.textContent = title; header.append(titleNode);
+        if (role === 'assistant' && message.model) {
+            const modelNode = document.createElement('span'); modelNode.textContent = message.model; header.append(modelNode);
+        }
         if (role === 'assistant' && message.pivaneSpeed) {
             const speed = document.createElement('span'); speed.className = 'pi-message-speed';
             const actual = message.pivaneSpeed.serviceTier;
@@ -3039,7 +3041,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const extension = state.session?.assistant?.kind === 'extensions';
         const root = document.createElement('div'); root.className = 'pi-empty-state session-ready pi-start';
         const hero = document.createElement('header'); hero.className = 'pi-start-hero';
-        const mark = document.createElement('img'); mark.className = 'pi-start-logo'; mark.src = 'brand/logo-192.png'; mark.alt = ''; mark.width = 44; mark.height = 44;
+        const mark = document.createElement('img'); mark.className = 'pi-start-logo brand-default'; mark.src = 'brand/logo.svg'; mark.alt = ''; mark.width = 44; mark.height = 44;
+        const inverseMark = document.createElement('img'); inverseMark.className = 'pi-start-logo brand-inverse'; inverseMark.src = 'brand/logo-dark.svg'; inverseMark.alt = ''; inverseMark.width = 44; inverseMark.height = 44;
         const title = document.createElement('h2');
         title.textContent = extension ? getSessionTitle(state.session) : state.session ? translateUi('今天想推进什么？') : translateUi('从一次对话开始');
         const description = document.createElement('p');
@@ -3047,7 +3050,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : state.session ? translateUi('描述目标、贴上资料，或从下面选一个开始。')
                 : state.assistantMode ? translateUi('选择助手项目与线程，继续你的工作。')
                     : state.cwd ? translateUi('继续最近的聊天，或在当前项目开始新聊天。') : translateUi('打开服务器上的项目目录，开始你的第一项工作。');
-        hero.append(mark, title, description);
+        hero.append(mark, inverseMark, title, description);
         const projectName = state.cwd ? state.projects.find(project => project.cwd === state.cwd)?.name || getProjectName(state.cwd) : '';
         if (projectName && !extension) {
             const scope = document.createElement('span'); scope.className = 'pi-start-scope'; scope.title = state.cwd;
@@ -3205,16 +3208,16 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'agent_start':
                 state.retrying = false;
                 setStreaming(true);
-                setConnection('working', translateUi("Pi 正在执行"));
-                setAgentState('working', translateUi("执行中"), state.model?.id || 'Pi Agent');
+                setConnection('working', translateUi("正在执行"));
+                setAgentState('working', translateUi("执行中"), state.model?.id || assistantName());
                 break;
             case 'agent_settled':
                 state.retrying = false;
                 historyView.changed();
                 if (chatKnowledge?.settled) chatKnowledge.settled(); else void chatKnowledge?.refresh();
                 setStreaming(false);
-                setConnection('connected', translateUi("Pi Agent 已连接"));
-                setAgentState('connected', translateUi("空闲"), state.model?.id || 'Pi Agent');
+                setConnection('connected', translateUi("已连接"));
+                setAgentState('connected', translateUi("空闲"), state.model?.id || assistantName());
                 reconcileSession();
                 break;
             case 'message_start':
@@ -3261,7 +3264,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 state.compaction = { status: 'running', reason: event.reason };
                 setStreaming(state.streaming);
                 setConnection('working', translateUi("正在压缩上下文"));
-                setAgentState('working', translateUi("压缩中"), state.model?.id || 'Pi Agent');
+                setAgentState('working', translateUi("压缩中"), state.model?.id || assistantName());
                 renderCompactionStatus();
                 break;
             case 'compaction_end':
@@ -3275,8 +3278,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
                 renderCompactionStatus();
                 setStreaming(state.streaming);
-                setConnection(state.streaming ? 'working' : 'connected', state.streaming ? translateUi("Pi 正在执行") : translateUi("Pi Agent 已连接"));
-                setAgentState(state.streaming ? 'working' : 'connected', state.streaming ? translateUi("执行中") : translateUi("空闲"), state.model?.id || 'Pi Agent');
+                setConnection(state.streaming ? 'working' : 'connected', state.streaming ? translateUi("正在执行") : translateUi("已连接"));
+                setAgentState(state.streaming ? 'working' : 'connected', state.streaming ? translateUi("执行中") : translateUi("空闲"), state.model?.id || assistantName());
                 if (state.compaction.status === 'error' && event.errorMessage) toast(translateUi("压缩失败：{0}", event.errorMessage), 'error', 8000);
                 if (event.reason === 'manual' || !state.streaming) void reconcileSession();
                 else void refreshStats();
@@ -3319,7 +3322,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 void refreshActivity();
                 break;
             case 'gateway_error':
-                toast(event.error || translateUi("Pi Agent 发生错误"), 'error', 7000);
+                toast(event.error || translateUi("助手发生错误"), 'error', 7000);
                 break;
         }
     }
@@ -3338,7 +3341,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const article = document.createElement('article');
         article.className = 'pi-message assistant streaming';
         if (message.timestamp != null) article.dataset.messageKey = JSON.stringify([message.role, message.timestamp, '']);
-        article.innerHTML = `<header><strong>Pi</strong><span class="pi-stream-label">${translateUi("生成中")}</span></header><div class="pi-message-body"></div>`;
+        article.innerHTML = `<header><strong></strong><span class="pi-stream-label">${translateUi("生成中")}</span></header><div class="pi-message-body"></div>`;
+        article.querySelector('header strong').textContent = assistantName();
         elements.transcript.querySelector('.pi-empty-state')?.remove();
         elements.transcript.appendChild(article);
         state.liveMessage = { article, blocks: new Map(), message, pending: new Map(), frame: null, generation: state.socketGeneration };
@@ -3726,6 +3730,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (stats?.totalMessages != null) elements.metaMessages.textContent = String(stats.totalMessages);
     }
 
+    function assistantName() {
+        return (!state.session?.ephemeral && state.session?.agentProfile?.name) || translateUi('助手');
+    }
+
     function syncActualIdentity() {
         const profile = state.session?.ephemeral ? null : state.session?.agentProfile;
         const header = $('pi-actual-identity'), composer = $('pi-composer-identity');
@@ -3765,7 +3773,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const compacting = state.compacting || state.compactRequested;
         const stopping = nativeControls.value?.stopping || state.controlRequested;
         const busy = state.treeBusy || state.shellBusy || streaming || compacting || stopping || state.resourceRequested || Boolean(state.modelRefreshOp) || modelSpeed.pending;
-        if (state.connected && state.shellBusy) { setConnection('working', translateUi("Shell 正在执行")); setAgentState('working', translateUi("Shell 执行中"), state.model?.id || 'Pi Agent'); }
+        if (state.connected && state.shellBusy) { setConnection('working', translateUi("Shell 正在执行")); setAgentState('working', translateUi("Shell 执行中"), state.model?.id || assistantName()); }
         const cancellable = !state.modelRefreshOp && !state.treeBusy && !state.shellBusy && state.connected && !state.resourceRequested && (nativeControls.enabled ? busy : streaming && !compacting);
         elements.stopButton.dataset.cancellable = String(cancellable);
         elements.stopButton.disabled = !state.connected || stopping;
@@ -3785,7 +3793,7 @@ document.addEventListener('DOMContentLoaded', () => {
         syncModelGuidance();
         elements.thinkingSelect.disabled = busy || !state.connected || state.thinkingLevels.length <= 1;
         modelSpeed.setBlocked(busy || !state.connected || state.pendingUi.size > 0);
-        elements.composerStatus.textContent = !state.connected ? translateUi("未打开会话") : state.shellBusy ? translateUi("Shell 正在执行，可继续编辑草稿；停止请使用命令卡片") : state.treeBusy ? translateUi("正在切换对话位置，请在历史页查看进度或取消") : state.resourceRequested ? translateUi("正在重新加载原生资源") : stopping ? translateUi("正在停止 / 取回，请等待确认") : compacting ? translateUi("上下文压缩中") : streaming ? translateUi("Agent 运行中：引导在本轮工具后送达，后续在任务完成后送达") : translateUi("Pi Agent 已就绪");
+        elements.composerStatus.textContent = !state.connected ? translateUi("未打开会话") : state.shellBusy ? translateUi("Shell 正在执行，可继续编辑草稿；停止请使用命令卡片") : state.treeBusy ? translateUi("正在切换对话位置，请在历史页查看进度或取消") : state.resourceRequested ? translateUi("正在重新加载原生资源") : stopping ? translateUi("正在停止 / 取回，请等待确认") : compacting ? translateUi("上下文压缩中") : streaming ? translateUi("Agent 运行中：引导在本轮工具后送达，后续在任务完成后送达") : translateUi("已就绪");
         historyView.sync();
         workflows.update();
         sideChat.updateParent();
@@ -3876,7 +3884,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function quitRuntime() {
-        if (!state.connected) return toast(translateUi("当前没有运行中的 Pi runtime"), 'error');
+        if (!state.connected) return toast(translateUi("当前没有运行中的会话实例"), 'error');
         const wasEphemeral = Boolean(state.session?.ephemeral);
         try {
             await requestRpc('quit_session', {}, 30000);
@@ -3889,12 +3897,12 @@ document.addEventListener('DOMContentLoaded', () => {
             modelPicker.setDisabled(true);
             elements.thinkingSelect.disabled = true;
             elements.currentThreadMenu.disabled = true;
-            elements.composerStatus.textContent = translateUi("Pi runtime 已退出");
-            setConnection('idle', translateUi("Pi runtime 已退出"));
+            elements.composerStatus.textContent = translateUi("运行实例已退出");
+            setConnection('idle', translateUi("运行实例已退出"));
             setAgentState('idle', translateUi("已退出"), wasEphemeral ? translateUi("临时会话已销毁") : translateUi("重新打开会话可继续"));
             renderSessions();
             updateSessionMeta();
-            toast(wasEphemeral ? translateUi("临时会话已销毁") : translateUi("Pi runtime 已退出，会话记录已保留"), 'success');
+            toast(wasEphemeral ? translateUi("临时会话已销毁") : translateUi("运行实例已退出，会话记录已保留"), 'success');
             return true;
         } catch (error) {
             toast(error.message, 'error');
@@ -4478,7 +4486,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             const archived = state.archivedProjects.has(cwd);
             const moreItems = [
-                ...(transfer.enabled ? [command(translateUi("导入 Pi 会话"), 'fa-file-import', () => transfer.openImport(cwd))] : []),
+                ...(transfer.enabled ? [command(translateUi("导入会话"), 'fa-file-import', () => transfer.openImport(cwd))] : []),
                 ...(state.nativeSettings ? [command(translateUi("项目信任"), 'fa-shield-halved', () => nativeContext.openTrust(cwd))] : []),
                 command(translateUi("复制项目路径"), 'fa-copy', () => copyTextToClipboard(cwd))
             ];

@@ -195,13 +195,13 @@
                 const state = el('span', 'sa-model-state'); state.dataset.tone = tone; state.title = t(stateLabel); state.append(icon);
                 head.append(state, el('strong', 'sa-model-name', step.name || step.step), el('span', 'sa-model-step', role ? `${role} · ${step.step}` : step.step));
                 const tags = el('div', 'sa-model-tags');
-                const model = el('code', 'sa-model-id', step.model || t('默认模型')); model.title = step.model || t('pi-subagents 未报告模型，使用继承的默认模型');
+                const model = el('code', 'sa-model-id', step.model || t('默认模型')); model.title = step.model || t("子 Agent 扩展未报告模型，使用继承的默认模型");
                 if (!step.model) model.classList.add('muted');
                 tags.append(model);
                 if (step.thinking) tags.append(el('span', 'sa-model-thinking', t('思考 {0}', t(thinking[step.thinking] || step.thinking))));
                 item.append(head, tags); list.append(item);
             }
-            const content = models.length ? [list] : [el('p', 'pi-native-help', t('pi-subagents 没有报告此运行的模型信息。'))];
+            const content = models.length ? [list] : [el('p', 'pi-native-help', t("子 Agent 扩展没有报告此运行的模型信息。"))];
             this.openDialog(t('模型 · {0}', run.label), content);
         }
         async stop(run) {
@@ -244,7 +244,7 @@
         }
         async showCost() {
             const { cost } = await this.request('cost', {});
-            if (!cost) throw new Error(t('当前 pi-subagents 版本不提供用量数据'));
+            if (!cost) throw new Error(t("当前子 Agent 扩展版本不提供用量数据"));
             const table = el('table', 'sa-runs-cost');
             const head = el('tr'); for (const text of [t('来源'), t('输入'), t('输出'), t('费用')]) head.append(el('th', '', text));
             table.append(head);

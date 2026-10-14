@@ -989,7 +989,7 @@ const httpServer = app.listen(PORT, network.host, () => {
     const localHost = ['::', '0.0.0.0'].includes(address.address) ? '127.0.0.1' : address.address;
     process.env.PI_WORKSPACE_INTERNAL_ORIGIN = `http://${localHost.includes(':') ? `[${localHost}]` : localHost}:${address.port}`;
     if (!workspaceBaseUrlProvided) process.env.PI_WORKSPACE_BASE_URL = process.env.PI_WORKSPACE_INTERNAL_ORIGIN;
-    console.log(`Pivane backend running at http://localhost:${httpServer.address().port}`);
+    console.log(`baizelingtai backend running at http://localhost:${httpServer.address().port}`);
     if (maintenance.managed) {
         const base = process.env.PI_MANAGED_BASE || __dirname;
         const agent = path.resolve((process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi/agent')).replace(/^~(?=$|[\\/])/, os.homedir()));

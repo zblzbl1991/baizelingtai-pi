@@ -653,7 +653,7 @@
                 const article = document.createElement('article'); article.className = `pi-message ${message.role}`;
                 article.dataset.messageKey = JSON.stringify(['side', message.role, message.timestamp]);
                 const header = document.createElement('header'); const strong = document.createElement('strong');
-                strong.textContent = message.role === 'user' ? translateUi("你") : message.role === 'compactionSummary' ? translateUi("侧聊摘要") : translateUi("Pi · 侧聊"); header.appendChild(strong); article.appendChild(header);
+                strong.textContent = message.role === 'user' ? translateUi("你") : message.role === 'compactionSummary' ? translateUi("侧聊摘要") : translateUi("助手 · 侧聊"); header.appendChild(strong); article.appendChild(header);
                 const body = document.createElement('div'); body.className = 'pi-message-body'; body.dataset.readingKey = article.dataset.messageKey;
                 const markdown = document.createElement('div'); markdown.className = 'pi-markdown';
                 if (message.role === 'assistant') markdown.innerHTML = text ? this.host.renderMarkdown(text) : `<p class="pi-side-empty">${translateUi("思考中")}</p>`;

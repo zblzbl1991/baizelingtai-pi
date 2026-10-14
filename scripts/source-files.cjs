@@ -58,12 +58,16 @@ function distributionFiles(root) {
         'public/vendor/katex-0.18.7/katex.min.js', 'public/vendor/katex-0.18.7/katex.min.css', 'public/vendor/katex-0.18.7/LICENSE',
         'public/brand/fontawesome-6.4.0/css/all.min.css', 'public/brand/fontawesome-6.4.0/LICENSE.txt',
         ...['fa-brands-400', 'fa-regular-400', 'fa-solid-900', 'fa-v4compatibility'].flatMap(name => ['woff2', 'ttf'].map(ext => `public/brand/fontawesome-6.4.0/webfonts/${name}.${ext}`)),
-        'public/site.webmanifest', 'public/brand/favicon.ico', 'public/brand/apple-touch-icon.png',
+        'public/site.webmanifest', 'public/brand/logo.svg', 'public/brand/logo-dark.svg', 'public/brand/logo-app.svg',
+        'public/brand/logo-horizontal.svg', 'public/brand/logo-horizontal-dark.svg',
+        'public/brand/logo-maskable-192.png', 'public/brand/logo-maskable-512.png',
+        'public/brand/favicon.ico', 'public/brand/apple-touch-icon.png',
         ...[64, 192, 512, 1024].map(size => `public/brand/logo-${size}.png`),
         'config/media-lab.json', 'config/tts-providers.json',
         'server/profile-memory/upstream-lock.json',
         'test/private-file-helper.cjs', 'test/fixtures/pi-0843-session.jsonl', 'test/fixtures/release-video.mp4',
-        'pi-packages/media-workbench/package.json', 'pi-packages/media-workbench/extensions/media-tools.ts'
+        'pi-packages/media-workbench/package.json', 'pi-packages/media-workbench/extensions/media-tools.ts',
+        'pi-packages/presentations/package.json'
     ];
     const fonts = 'public/vendor/katex-0.18.7/fonts';
     for (const name of fs.readdirSync(path.join(root, fonts)).sort()) {

@@ -7,21 +7,25 @@
 ## Start your first session
 
 1. Follow the [installation guide](INSTALL.md), start the instance and open its URL.
-2. In **Settings → Providers and models**, check existing Pi configuration. Add an API key or complete OAuth if credentials are missing. Keep credentials out of chat. For remote OAuth, localhost means the server; use the provider's device-code or manual-callback flow when available.
-3. Return to Pi Agent, select a server project directory and choose **New chat**, a model and its thinking level.
+2. In **Settings → Providers and models**, check existing model configuration. Add an API key or complete OAuth if credentials are missing. Keep credentials out of chat. For remote OAuth, localhost means the server; use the provider's device-code or manual-callback flow when available.
+3. Return to Work chat, select a server project directory and choose **New chat**, a model and its thinking level.
 4. Send a simple question, then refresh and reopen the persistent thread to check that the reply is retained. Requests use your provider account.
 
 If Pi CLI has models but the browser does not, check its identity directory and startup environment using [existing Pi users](INSTALL.md#existing-pi-cli-users). Global models and extensions can be managed before selecting a project.
 
 ## Workspace navigation
 
-- **Pi Agent** groups threads by directory; **Assistant chat** groups them by identity and project category. Profiles, extensions, scheduled tasks and the media lab have separate pages.
+白泽灵台 uses a dark green outlined mark with a muted green dot. The sidebar, start screen and login page use the transparent mark with light strokes in the dark theme; the startup waiting page uses the horizontal wordmark. Browser tabs, Windows desktop/tray and phone home screens use the background icon. The dot belongs to the brand and does not indicate online status.
+
+Replies use the identity name bound to the current session, or **Assistant** when no identity is bound. Subagent extension sources appear in expanded notice details. Engine versions are under **Settings → Versions and updates → Engine and dependencies**.
+
+- **Work chat** groups threads by directory; **Assistant chat** groups them by identity and project category. Profiles, extensions, scheduled tasks and Artifacts have separate pages. The media lab entry is hidden from the desktop sidebar and the phone's **More** menu.
 - Phones place additional entries under **More**. Bottom and header navigation remain available while the project/thread drawer is open. The header drawer button closes it directly; the project name opens the project picker. Opening another entry or panel closes the drawer first.
 - **Projects** browses directories; **Activity** shows running work, items needing attention and recent threads. Background status refreshes retain the visible thread position and keyboard focus. Sidebar search matches titles and first questions. **Search text** searches conversation content; Ctrl/Cmd+K focuses sidebar search.
 - Text search retains its query, results page and reading position within the current page. **Locate current thread** adjusts the list and focus without changing archive state or restarting the session.
 - Details, Files, History and Side chat share the right panel. Desktop panels dock and resize; narrow desktops temporarily hide the thread list. Phones use a drawer with Close and Esc support. Closing a panel does not stop its task.
 
-Opening management pages does not end the session. When switching between Pi Agent and Assistant chat, select the thread again to continue. Drafts and loaded attachments are retained per thread within the page; **preserve unsent content before refreshing or closing it**.
+Opening management pages does not end the session. When switching between Work chat and Assistant chat, select the thread again to continue. Drafts and loaded attachments are retained per thread within the page; **preserve unsent content before refreshing or closing it**.
 
 ## Models and capabilities
 
@@ -29,7 +33,7 @@ Click the model name on desktop, or the context ring on phones. Search by name, 
 
 Channels supporting Fast or Ultrafast show a separate Speed control with cost multipliers. Defaults are managed under **Providers and models**; see [model settings](../PROVIDER_SETTINGS.md).
 
-**Settings → Models & capabilities** manages image, video, speech and subagent settings. Media entries show their own category; Speech separates TTS from ASR. Changing a shared service URL or credential affects all its models. Chat credentials do not automatically configure media services.
+**Settings → Models & capabilities** provides subagent settings. The multimodal section, including image, video and speech entries and setup help, is temporarily hidden; existing media services, models and credentials are retained. See [media connections](../MEDIA_CONNECTIONS.md) for other setup entry points. Chat credentials do not automatically configure media services.
 
 ### Use subagents
 
@@ -77,7 +81,7 @@ If creation is uncertain, inspect the original task instead of creating it again
 
 ## Assistant identities and memory
 
-Create an identity under **Assistant profiles**, with SOUL (behavior), USER (preferences) and MEMORY (long-term memory). Select it in Assistant chat, then choose a project category and thread. New ordinary Pi Agent threads do not bind an identity.
+Create an identity under **Assistant profiles**, with SOUL (behavior), USER (preferences) and MEMORY (long-term memory). Select it in Assistant chat, then choose a project category and thread. New ordinary Work chat threads do not bind an identity.
 
 Categories may share a server directory and add different instructions, but **files, AGENTS.md and memory scoped to the physical directory remain shared**. Identities are not security sandboxes, and opening a thread does not change its existing identity. See [assistant profiles](../AGENT_PROFILES.md).
 
@@ -104,6 +108,8 @@ Open **Extensions** on desktop or **More → Extensions** on phones:
 Installed does not mean loaded in the current conversation. Reload idle resources and verify them after setup. Untrusted projects cannot receive project writes. Legacy MCP adapter migration requires stopped backups; see [MCP](../MCP.md) and [native resources](../NATIVE_SETTINGS.md).
 
 Use **Add → Add capabilities…** for setup or troubleshooting. Package operations use web confirmation, and tools run on the deployment machine. Computer-use extensions do not directly control the phone viewing 白泽灵台. Third-party resources need their own dependencies and permissions.
+
+**Search and read the web**, **Use desktop applications**, and **Create presentations** ship with the app. No separate installation is needed. Manage their resource switches under Installed and reload idle resources. Web search needs network access and may need provider configuration. Desktop tools check the deployment machine's permissions on first use. The bundled original guizang-ppt skill produces HTML presentations; editable PPTX is not guaranteed, and external fonts/scripts may need network access. See [bundled capabilities](../BUNDLED_CAPABILITIES.md) for sources, versions and licenses.
 
 ## Scheduled tasks
 
@@ -153,7 +159,7 @@ Configure a media model, then ask “draw a cover for this report” or “read 
 
 - For a staged video workflow, first ask for opening/ending frames or reference images, confirm those cards, and wait for them to finish. In the next turn, ask the Agent to use those images for a video. It reads current-branch results and uses stable asset references; the card shows frame roles and reference order. Finished videos can be played, downloaded and reused as video references.
 - Video requests default to a two-hour wait, configurable up to 24 hours; existing saved values are preserved. For accepted asynchronous jobs, Continue querying original task retrieves the same job after a timeout or restart without creating another generation. Synchronous requests without a task ID need checking at the provider.
-- To edit an image, upload a PNG/JPEG/WebP in Pi Agent or an assistant conversation and describe the changes. The Agent selects a model with image inputs and shows the reference on the confirmation card. You can also ask to edit a completed card image, or replace the reference under Edit parameters. Available inputs depend on the model.
+- To edit an image, upload a PNG/JPEG/WebP in Work chat or an assistant conversation and describe the changes. The Agent selects a model with image inputs and shows the reference on the confirmation card. You can also ask to edit a completed card image, or replace the reference under Edit parameters. Available inputs depend on the model.
 - Edit parameters before confirming. Server-normalized changes return for another review.
 - Results appear in the card and lab history, including after reconnecting or changing devices. The same card is not submitted twice.
 - Multiple confirmed cards queue for available slots and can be cancelled before starting. Remote services allow 4 concurrent items (2 videos); local backends allow 1.
@@ -163,13 +169,13 @@ Side chat does not provide generation cards. See [the media lab](../MEDIA_LAB.md
 
 ## Media lab and read aloud
 
-New installations have no executable media service. Add a URL, credentials, model and supported protocol through Models & capabilities or the lab. Upload supported reference material, edit parameters directly or ask for planning help, then review and confirm.
+New installations have no executable media service. Add a URL, credentials, model and supported protocol through the lab. Upload supported reference material, edit parameters directly or ask for planning help, then review and confirm.
 
 A reply's speaker button authorizes that audio request using read-aloud defaults and may incur a charge. Interface language does not change its voice or speech language. See [media connections](../MEDIA_CONNECTIONS.md) and [read aloud](../REPLY_TTS.md).
 
 ## Network & access
 
-**Settings → Network & access** manages sign-in, listening scope and proxy settings. Listening and proxy changes are saved separately and apply after a safe service restart; saving does not restart or open a firewall. Enable sign-in before allowing other devices. Localhost in a proxy URL means the server. See [network and access](../ACCESS_CONTROL.md).
+The **Network & access** category is currently hidden in Settings; its existing `#/settings?tab=access` URL still opens the page for sign-in, listening scope and proxy settings. Listening and proxy changes are saved separately and apply after a safe service restart; saving does not restart or open a firewall. Enable sign-in before allowing other devices. Localhost in a proxy URL means the server. See [network and access](../ACCESS_CONTROL.md).
 
 ## Appearance and interface language
 

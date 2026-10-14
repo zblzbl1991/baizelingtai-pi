@@ -23,7 +23,7 @@ const thread = (id, profile, group) => ({ id, cwd, name: id, firstMessage: 'Synt
 const sessions = [thread('agent-original', null, null), thread('reference-one', profiles[0], groups[0]),
     thread('draft-one', profiles[0], groups[1]), thread('old-bound', profiles[0], null), thread('editor-one', profiles[1], groups[2])];
 const model = { provider: 'synthetic', id: 'visual', name: 'Visual fixture', input: ['text'] };
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.woff2': 'font/woff2' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
 
 async function assertDrawerControls(page, label) {
     const bounds = await page.evaluate(() => {
@@ -149,6 +149,7 @@ async function main() {
             await page.waitForFunction(() => document.querySelectorAll('#pi-attachments .pi-attachment-chip').length === 1 && document.querySelector('#pi-attachments').getAttribute('aria-busy') === 'false');
             assert.equal(await page.locator('#pi-stop-button').isVisible(), false);
             assert.equal(await page.locator('#pi-send-button').isVisible(), true);
+            assert.equal(await page.locator('.nav-menu [data-tab="media"]').count(), 0);
             if (width < 700) {
                 assert.equal(await page.locator('#workspace-more-toggle').isVisible(), true);
                 assert.equal(await page.locator('.nav-menu [data-tab="media"]').isVisible(), false);
@@ -162,7 +163,8 @@ async function main() {
                 assert.equal(await page.locator('#workspace-more-menu').isVisible(), true);
                 assert.equal(await page.locator('#workspace-more-toggle').getAttribute('aria-expanded'), 'true');
                 assert.equal(await page.evaluate(() => document.activeElement?.dataset.moreTab), 'cron');
-                for (const tab of ['artifacts', 'media', 'profiles']) {
+                assert.equal(await page.locator('#workspace-more-menu [data-more-tab="media"]').count(), 0);
+                for (const tab of ['artifacts', 'profiles']) {
                     await page.keyboard.press('ArrowDown');
                     assert.equal(await page.evaluate(() => document.activeElement?.dataset.moreTab), tab);
                 }
@@ -184,8 +186,7 @@ async function main() {
                 await page.locator('#workspace-settings-toggle').click();
                 assert.match(page.url(), /#\/settings\?tab=providers$/, 'settings cannot inherit the extensions route');
                 await page.locator('#workspace-settings-close').click();
-                await page.locator('#workspace-more-toggle').click();
-                await page.locator('#workspace-more-menu [data-more-tab="media"]').click();
+                await page.evaluate(() => window.PiWorkspaceRoute.navigate('media'));
                 assert.match(page.url(), /#\/media$/);
                 await page.locator('#workspace-more-toggle').click();
                 await page.keyboard.press('Escape');

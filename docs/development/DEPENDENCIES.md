@@ -8,7 +8,7 @@
 
 ## 适配边界
 
-依赖调整放在 Pivane 的 CLI/RPC/SDK 适配层，不修改 node_modules，也不维护 Pi 源码补丁。升级前阅读目标版本的原生文档和类型，核对实际公开 API；开发环境中导入成功不等于运行协议兼容。
+依赖调整放在白泽灵台的 CLI/RPC/SDK 适配层，不修改 node_modules，也不维护 Pi 源码补丁。升级前阅读目标版本的原生文档和类型，核对实际公开 API；开发环境中导入成功不等于运行协议兼容。
 
 | 边界 | 需要验证的行为 |
 |---|---|
@@ -25,7 +25,7 @@
 
 较早 Pi npm 包含独立 shrinkwrap；1.0.2 已移除它。两种布局均不能只靠根 override 或外层 audit 证明真实运行解析已修复。根直接依赖与 lock 保留审查过的 brace-expansion／undici 固定版本，`install-bundled-capabilities.cjs` 在所有受管安装入口先核实这些声明和真实目录，只移除明确识别的旧嵌套副本，再定位实际 nested／hoisted consumer，按 Node 查找顺序核对解析并扫描已知漏洞残留；consumer 缺失或解析不符失败关闭。未知版本、符号链接或布局失败关闭，不修改上游实现字节。隔离记忆 recipe 调用同一入口并更新 lock hash。
 
-Pivane 使用未打包的 Pi SDK／RPC 入口；Pi 自带 `dist/bundle` 中的内联代码不受依赖目录修正覆盖，不把本机运行修复宣称为所有上游分发产物已修复。
+白泽灵台使用未打包的 Pi SDK／RPC 入口；Pi 自带 `dist/bundle` 中的内联代码不受依赖目录修正覆盖，不把本机运行修复宣称为所有上游分发产物已修复。
 
 ## Pi 1.1 接入约束
 

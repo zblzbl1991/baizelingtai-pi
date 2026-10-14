@@ -1,6 +1,6 @@
 # 干净安装、更新与数据恢复
 
-本指南的命令以 **Linux Bash** 为主，面向个人安装；[macOS](MACOS.md)与[Windows](WINDOWS.md)另有原生步骤。Pivane 支持 Linux、macOS 与 Windows，统一使用 Node 22.x；各版本实际验收过的系统、磁盘与浏览器见[平台验证](RELEASE_INSTALL_VALIDATION.md)。不要把POSIX命令直接粘贴到Windows cmd，Windows项目路径列表使用分号。
+本指南的命令以 **Linux Bash** 为主，面向个人安装；[macOS](MACOS.md)与[Windows](WINDOWS.md)另有原生步骤。白泽灵台支持 Linux、macOS 与 Windows，统一使用 Node 22.x；各版本实际验收过的系统、磁盘与浏览器见[平台验证](RELEASE_INSTALL_VALIDATION.md)。不要把POSIX命令直接粘贴到Windows cmd，Windows项目路径列表使用分号。
 
 ## 1. 安装前提
 
@@ -14,7 +14,7 @@
 
 ## 选择项目范围
 
-Pivane 媒体和预约数据按实例保存，Pi 身份默认与 CLI 共用；`PI_PROJECT_ROOTS` 决定网页可以选择哪些服务器项目，两者分别配置。普通安装默认开放电脑上系统用户可访问的目录，Linux/macOS 使用 `/`，Windows 使用各盘符根目录。无需让用户先选择最小范围，也不要自行限制到 Documents 或 demo 目录；用户明确要求缩小时再配置：
+白泽灵台媒体和预约数据按实例保存，Pi 身份默认与 CLI 共用；`PI_PROJECT_ROOTS` 决定网页可以选择哪些服务器项目，两者分别配置。普通安装默认开放电脑上系统用户可访问的目录，Linux/macOS 使用 `/`，Windows 使用各盘符根目录。无需让用户先选择最小范围，也不要自行限制到 Documents 或 demo 目录；用户明确要求缩小时再配置：
 
 | 使用范围 | Linux/macOS 配置示例 |
 |---|---|
@@ -93,7 +93,7 @@ curl -fsS http://127.0.0.1:11408/api/pi/status
 
 `node scripts/install.cjs` 安装锁定依赖并准备随包子 Agent 与档案记忆组件，失败返回非零结果；不会启动任务或启用身份记忆。旧归档没有该脚本时使用 `npm ci`。
 
-子 Agent 模型与角色设置沿用原生配置，资源可在扩展页停用；档案记忆按助手身份启用。旧 CLI 包声明、过滤、记忆数据和独立安装路径保留，Pivane 优先加载自己的版本。旧跳过变量与安装尝试记录不再控制内置组件。SQLite 平台依赖、跳过脚本后的补全步骤和旧安装兼容见[内置能力包](BUNDLED_CAPABILITIES.md)。
+子 Agent 模型与角色设置沿用原生配置，资源可在扩展页停用；档案记忆按助手身份启用。旧 CLI 包声明、过滤、记忆数据和独立安装路径保留，白泽灵台优先加载自己的版本。旧跳过变量与安装尝试记录不再控制内置组件。SQLite 平台依赖、跳过脚本后的补全步骤和旧安装兼容见[内置能力包](BUNDLED_CAPABILITIES.md)。
 
 ## 3. 首次网页使用
 
@@ -110,7 +110,7 @@ curl -fsS http://127.0.0.1:11408/api/pi/status
 
 ### 媒体的安装前提
 
-实验室内的“生成方案”显式加载发布包内 `pi-packages/media-workbench/extensions/media-tools.ts`，**不依赖预先全局安装 Package**。它仍需要一个已配置的聊天模型。普通 Pi Agent 中如需这些规划工具，才在设置 → Packages 安装本发布目录下的 `pi-packages/media-workbench`，阅读并确认 Package 风险。使用版本目录更新后，要把这个本地 source 改到新版本，或将 Package 单独保留在固定路径并自行更新。
+实验室内的“生成方案”显式加载发布包内 `pi-packages/media-workbench/extensions/media-tools.ts`，**不依赖预先全局安装 Package**。它仍需要一个已配置的聊天模型。普通工作对话中如需这些规划工具，才在设置 → Packages 安装本发布目录下的 `pi-packages/media-workbench`，阅读并确认 Package 风险。使用版本目录更新后，要把这个本地 source 改到新版本，或将 Package 单独保留在固定路径并自行更新。
 
 无媒体服务时图像/视频可显示未配置，TTS 为空，这是正常首次状态。托管 HTTP 媒体可在实验室管理页配置；GPU bridge、Z-Image worker 文件/LoRA、ComfyUI 权重、Breeze/Qwen 远端脚本以及 curl/Python/SSH 等是所选 adapter 的额外前提，未附带在发布包中。详见 [媒体接入](MEDIA_CONNECTIONS.md)、[Flux](FLUX2_DEV.md) 与 [TTS](tts-providers/README.md)。不要复制维护者的本机路径或配方来“修复”空目录。
 
@@ -176,9 +176,9 @@ chmod 600 "$AGENT_BACKUP.sha256"
 
 新安装默认端口为 `11408`，已有实例可保留显式配置的端口。若更换端口，同步修改 `PORT`、工作台地址、服务覆盖、桌面入口和反向代理；使用默认预约路径时先将 `PI_WEB_DEFERRED_FILE` 固定为原队列的绝对路径，不能同时启动两个队列所有者。
 
-可先在设置 → [版本与更新](UPDATES.md)只读检查 Pivane/Pi 版本，打开官方发布页面，或复制提示词交给部署机器上的独立 Agent。网页不再提供安装、备份、重启或包/校验文件下载按钮；按本节在安全停机窗口操作。既有受管维护接口保留兼容，不等于网页会自动执行。全局 Pi CLI 的更新不改变工作台内核。
+可先在设置 → [版本与更新](UPDATES.md)只读检查白泽灵台/Pi 版本，打开官方发布页面，或复制提示词交给部署机器上的独立 Agent。网页不再提供安装、备份、重启或包/校验文件下载按钮；按本节在安全停机窗口操作。既有受管维护接口保留兼容，不等于网页会自动执行。全局 Pi CLI 的更新不改变工作台内核。
 
-受管 Pi 版本位于原安装目录的 `.pivane-runtime` 中，始终从原目录启动。升级 Pivane 应用采用新的发布目录并沿用原数据配置，不将旧受管快照覆盖到新发布目录。备份、恢复及源码开发与受管快照的关系见[维护说明](UPDATES.md)。
+受管 Pi 版本位于原安装目录的 `.pivane-runtime` 中，始终从原目录启动。升级白泽灵台应用采用新的发布目录并沿用原数据配置，不将旧受管快照覆盖到新发布目录。备份、恢复及源码开发与受管快照的关系见[维护说明](UPDATES.md)。
 
 更新前阅读目标版本的迁移和兼容说明，不假设任意降级兼容。项目路径迁移属于独立维护操作，见[命名与迁移](development/NAMING.md)。
 

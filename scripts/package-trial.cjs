@@ -65,8 +65,10 @@ try {
     const ownerOptions = ['darwin', 'win32'].includes(process.platform)
         ? ['--uid', '0', '--gid', '0', '--uname', 'root', '--gname', 'root']
         : ['--sort=name', '--owner=0', '--group=0', '--numeric-owner'];
-    execFileSync(process.platform === 'darwin' ? '/usr/bin/tar' : 'tar', [...ownerOptions, '-czf', archive, '-C', temporary, packageName], {
-        env: { ...process.env, COPYFILE_DISABLE: '1' }
+    const tarExecutable = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/tar.exe')
+        : process.platform === 'darwin' ? '/usr/bin/tar' : 'tar';
+    execFileSync(tarExecutable, [...ownerOptions, '-czf', archive, '-C', temporary, packageName], {
+        env: { ...process.env, COPYFILE_DISABLE: '1' }, windowsHide: true
     });
     const sha256 = hash(fs.readFileSync(archive));
     fs.writeFileSync(archive + '.sha256', `${sha256}  ${path.basename(archive)}\n`, { flag: 'wx' });

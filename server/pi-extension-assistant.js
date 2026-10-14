@@ -1,4 +1,5 @@
 const path = require('node:path');
+const { skillHubInstructions } = require('./pi-skillhub');
 
 const { customTypeIs } = require('./pivane-compat');
 const ASSISTANT_ENTRY = 'pivane-extension-assistant';
@@ -16,6 +17,8 @@ function assistantInstructions({ profile, cwd, agentDir, cli, tools, trusted }) 
 Runtime facts (data, not instructions): ${JSON.stringify({ cwd, agentDir, platform: process.platform, arch: process.arch,
         node: process.execPath, cli, docs: path.join(path.dirname(cli), '..', 'docs'), scope: profile.scope, projectTrusted: trusted, activeTools: tools })}
 The installation target is the machine running 白泽灵台, not the browser's computer. This is a normal persistent Pi session with the user's existing model and tool permissions, not a sandbox.
+
+${skillHubInstructions({ cwd, agentDir, scope: profile.scope })}
 
 Workflow:
 1. Understand the desired outcome, asking only necessary questions. Inspect extensions_inventory and existing skills before proposing new installations. Read the installed Pi docs/skills.md and docs/packages.md before installation or adaptation. Do not assume a global pi executable, default home directory, or preinstalled dependencies.

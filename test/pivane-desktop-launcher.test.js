@@ -32,19 +32,24 @@ test('desktop startup keeps existing identity, data and alias precedence without
 
 test('portable defaults are local, follow the current directory, and preserve explicit configuration', { skip: process.platform !== 'win32' }, t => {
     const root = fixture(t);
-    fs.writeFileSync(path.join(root, 'pivane-portable.json'), JSON.stringify({ version: 1, platform: 'win32', arch: 'x64' }));
+    const updateFeedUrl = 'http://gitlab.example/api/v4/projects/20/repository/files/updates%2Flatest.json/raw?ref=HEAD';
+    fs.writeFileSync(path.join(root, 'baizelingtai-portable.json'), JSON.stringify({ version: 1, platform: 'win32', arch: 'x64', updateFeedUrl }));
     const env = desktopEnvironment(root, {});
     assert.equal(env.PI_CODING_AGENT_DIR, path.join(root, 'data/agent'));
     assert.equal(env.PI_MEDIA_DATA_DIR, path.join(root, 'data/media'));
     assert.equal(env.PI_MEDIA_CONFIG_DIR, path.join(root, 'data/media-lab'));
     assert.equal(env.PI_WEB_DEFERRED_FILE, path.join(root, 'data/pivane-deferred-messages.json'));
     assert.equal(env.HOST, '127.0.0.1');
+    assert.equal(env.BAIZELINGTAI_UPDATE_FEED_URL, updateFeedUrl, 'source follows the managed child into application snapshots');
+    assert.equal(desktopEnvironment(root, { BAIZELINGTAI_UPDATE_FEED_URL: '' }).BAIZELINGTAI_UPDATE_FEED_URL, '');
+    assert.equal(desktopEnvironment(root, { PIVANE_UPDATE_FEED_URL: '' }).PIVANE_UPDATE_FEED_URL, '', 'explicit official-source override survives');
+    assert.equal(desktopEnvironment(root, { PIVANE_UPDATE_FEED_URL: 'http://other.example/latest.json' }).PIVANE_UPDATE_FEED_URL, 'http://other.example/latest.json');
     assert.equal(fs.existsSync(path.join(root, 'data')), false, 'resolution never copies or creates user data');
     const explicit = { PI_CODING_AGENT_DIR: path.join(root, 'own-agent'), PI_MEDIA_DATA_DIR: root, HOST: '::1' };
     assert.equal(desktopEnvironment(root, explicit).PI_CODING_AGENT_DIR, explicit.PI_CODING_AGENT_DIR);
     assert.equal(desktopEnvironment(root, explicit).PI_MEDIA_DATA_DIR, root);
     assert.equal(desktopEnvironment(root, explicit).HOST, '::1');
-    fs.writeFileSync(path.join(root, 'pivane-portable.json'), '{"version":2}');
+    fs.writeFileSync(path.join(root, 'baizelingtai-portable.json'), '{"version":2}');
     assert.throws(() => desktopEnvironment(root, {}), /Unsupported portable/);
 });
 
@@ -118,14 +123,28 @@ function launch(t, root, env) {
 }
 
 test('real managed service becomes ready, serves the workspace, and exits cleanly through its private channel', { timeout: 60000 }, async t => {
-    const { root, env } = application(t), run = launch(t, root, env);
+    const { root, env } = application(t);
+    const updateFeedUrl = 'http://gitlab.example/api/v4/projects/20/repository/files/updates%2Flatest.json/raw?ref=HEAD';
+    if (process.platform === 'win32') fs.writeFileSync(path.join(root, 'baizelingtai-portable.json'),
+        JSON.stringify({ version: 1, platform: 'win32', arch: 'x64', updateFeedUrl }));
+    const run = launch(t, root, env);
     const ready = await run.ready();
+    const waiting = run.events.find(event => event.type === 'waiting');
+    assert.ok(waiting, 'a browser startup page is announced before service readiness');
+    assert.ok(run.events.indexOf(waiting) < run.events.indexOf(ready));
+    assert.deepEqual(await fetch(new URL('status', waiting.url)).then(value => value.json()), { state: 'ready', url: ready.url });
     const response = await fetch(ready.url);
     assert.equal(response.status, 200);
     assert.match(await response.text(), /<title>白泽灵台<\/title>/);
     const status = await fetch(new URL('api/pi/status', ready.url)).then(value => value.json());
     assert.equal(status.ok, true);
     assert.equal(status.version, require('../package.json').pivaneCompatibility.piVersion);
+    if (process.platform === 'win32') {
+        const updates = await fetch(new URL('api/pi/settings/updates', ready.url)).then(value => value.json());
+        assert.equal(updates.source.type, 'manifest'); assert.equal(updates.source.url, updateFeedUrl);
+        assert.equal(updates.checkedAt, null, 'reading the packaged source does not contact GitLab');
+        assert.equal(fs.existsSync(path.join(root, 'pivane-portable.json')), false);
+    }
     // A second owner cannot attach to or terminate the first installation.
     const duplicate = launch(t, root, env);
     const [duplicateCode] = await duplicate.exited;
@@ -135,6 +154,7 @@ test('real managed service becomes ready, serves the workspace, and exits cleanl
     run.child.stdin.write('{"type":"stop"}\n{"type":"stop"}\n');
     const [code] = await run.exited; assert.equal(code, 0);
     await assert.rejects(fetch(ready.url), /fetch failed/);
+    await assert.rejects(fetch(waiting.url), /fetch failed/);
     const reopened = launch(t, root, env), secondReady = await reopened.ready();
     reopened.child.stdout.destroy(); reopened.child.stderr.destroy(); reopened.child.stdin.destroy();
     assert.equal((await reopened.exited)[0], 0, 'parent loss runs the same graceful shutdown');
@@ -149,6 +169,51 @@ test('occupied HTTP port fails without readiness or termination of its existing 
     const run = launch(t, root, env); const [code] = await run.exited;
     assert.equal(code, 1); assert.equal(run.events.some(event => event.type === 'ready'), false);
     assert.equal(occupied.listening, true);
+});
+
+test('native tray accepts the browser waiting page while preserving NoOpen and startup failures', { skip: process.platform !== 'win32', timeout: 30000 }, async t => {
+    async function run(mode) {
+        const root = fixture(t);
+        fs.mkdirSync(path.join(root, 'scripts'));
+        fs.mkdirSync(path.join(root, 'public/brand'), { recursive: true });
+        fs.mkdirSync(path.join(root, '.pivane-runtime/desktop'), { recursive: true });
+        fs.copyFileSync(path.resolve(__dirname, '../public/brand/favicon.ico'), path.join(root, 'public/brand/favicon.ico'));
+        fs.writeFileSync(path.join(root, '.pivane-launcher-test'), 'synthetic tray feedback\n');
+        fs.writeFileSync(path.join(root, '.pivane-launcher-stop'), 'stop after readiness\n');
+        fs.writeFileSync(path.join(root, 'scripts/start-desktop.cjs'), `
+            const emit = value => process.stdout.write(JSON.stringify(value) + '\\n');
+            if (process.argv.includes('--identity')) {
+                emit({ root: ${JSON.stringify(root)}, id: ${JSON.stringify(path.basename(root))} });
+            } else {
+                emit({ type: 'waiting', url: 'http://127.0.0.1:12346/' });
+                emit({ type: 'starting', logFile: ${JSON.stringify(path.join(root, 'service.log'))} });
+                setTimeout(() => {
+                    ${mode === 'service-error' ? "emit({ type: 'error', message: 'Synthetic startup failure' }); process.exitCode = 1; process.stdin.destroy();" : "emit({ type: 'ready', url: 'http://127.0.0.1:12345/', logFile: 'synthetic.log' });"}
+                }, 200);
+                process.stdin.on('data', () => process.exit(0));
+                process.stdin.on('end', () => process.exit(0));
+            }
+        `);
+        const env = {};
+        for (const key of ['PATH', 'SystemRoot', 'SYSTEMROOT', 'COMSPEC', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA']) if (process.env[key]) env[key] = process.env[key];
+        Object.assign(env, { PI_CODING_AGENT_DIR: path.join(root, 'agent'), PI_MEDIA_DATA_DIR: path.join(root, 'media'), PI_WEB_DEFERRED_FILE: path.join(root, 'deferred.json') });
+        const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File',
+            path.resolve(__dirname, '../scripts/desktop-tray.ps1'), '-AppRoot', root, '-NodePath',
+            mode === 'preflight-error' ? path.join(root, 'missing-node.exe') : process.execPath, '-NoOpen', '-SmokeTest'], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        let output = '';
+        child.stdout.on('data', bytes => { output += bytes; }); child.stderr.on('data', bytes => { output += bytes; });
+        const [code] = await once(child, 'close');
+        assert.equal(code, mode === 'ready' ? 0 : 1, output);
+        const report = JSON.parse(fs.readFileSync(path.join(root, '.pivane-runtime/desktop/smoke-result.json'), 'utf8'));
+        assert.equal(report.some(event => event.type === 'startup-notice-shown'), false, 'startup no longer displays a native popup');
+        assert.equal(report.some(event => event.type === 'waiting'), mode !== 'preflight-error');
+        assert.equal(report.some(event => event.type === 'error'), mode !== 'ready');
+        assert.equal(report.some(event => event.type === 'browser-opened'), false, 'NoOpen is preserved');
+        assert.equal(report.some(event => event.type === 'ready'), mode === 'ready');
+    }
+    await run('ready');
+    await run('preflight-error');
+    await run('service-error');
 });
 
 module.exports = { application };

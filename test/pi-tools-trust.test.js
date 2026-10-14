@@ -34,6 +34,10 @@ test.after(() => fs.rmSync(root, { recursive: true, force: true }));
 test('default tools preserve empty, inherited and native defaults, with actual new-worker activation and strict CLI distinction', { timeout: 120000 }, async () => {
     const supervisor = new PiAgentSupervisor();
     const active = async worker => (await worker.getNativeResources()).tools.filter(t => t.active).map(t => t.name).sort();
+    const extensionTools = ['bg_wait', 'fixture_custom', 'subagent', 'subagent_supervisor', 'update_plan',
+        'web_search', 'fetch_content', 'get_search_content', 'source_check',
+        'find_roots', 'observe_ui', 'search_ui', 'expand_ui', 'inspect_ui', 'act_ui', 'read_text', 'wait_for',
+        'launch_browser', 'navigate_browser', 'evaluate_browser'].sort();
     try {
         let snap = await service.snapshot(cwd);
         assert.equal(snap.settings.defaultTools.global, null);
@@ -46,7 +50,7 @@ test('default tools preserve empty, inherited and native defaults, with actual n
         assert.ok((await active(original)).includes('bash'), 'saving cannot alter an existing worker');
         await original.dispose();
         const empty = await supervisor.createEphemeralWorker(cwd);
-        assert.deepEqual(await active(empty), ['bg_wait', 'fixture_custom', 'subagent', 'subagent_supervisor', 'update_plan'], 'extension tools survive the empty built-in list; auto activation is eager without a dynamic-tool model');
+        assert.deepEqual(await active(empty), extensionTools, 'bundled extension tools survive the empty built-in list; auto activation is eager without a dynamic-tool model');
         await empty.dispose();
         await save({ defaultTools: ['read', 'grep'] });
         await trust(true);
@@ -56,7 +60,7 @@ test('default tools preserve empty, inherited and native defaults, with actual n
         assert.deepEqual(snap.settings.defaultTools.value, []);
         await save({ defaultTools: ['ls'] }, 'project');
         const projectWorker = await supervisor.createEphemeralWorker(cwd);
-        assert.deepEqual(await active(projectWorker), ['bg_wait', 'fixture_custom', 'ls', 'subagent', 'subagent_supervisor', 'update_plan']);
+        assert.deepEqual(await active(projectWorker), [...extensionTools, 'ls'].sort());
         await projectWorker.dispose();
         await save({ defaultTools: null }, 'project');
         snap = await service.snapshot(cwd);

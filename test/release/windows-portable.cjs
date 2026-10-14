@@ -18,14 +18,32 @@ function main() {
     let success = false;
     try {
         execFileSync(path.join(process.env.SystemRoot, 'System32/tar.exe'), ['-xf', path.resolve(archive), '-C', base], { windowsHide: true });
-        const original = path.join(base, '白泽灵台'), root = path.join(base, '白泽 灵台 & 便携测试');
+        const directories = fs.readdirSync(base, { withFileTypes: true });
+        assert.equal(directories.length, 1, 'one portable root directory');
+        assert.ok(directories[0].isDirectory() && !directories[0].isSymbolicLink());
+        const original = path.join(base, directories[0].name), root = path.join(base, '白泽 灵台 & 便携测试');
         fs.renameSync(original, root); // Exercise a relocated Chinese/space/metacharacter path.
         const tools = require(path.join(root, 'scripts/package-windows-portable.cjs'));
         const manifest = JSON.parse(fs.readFileSync(path.join(root, 'PORTABLE_MANIFEST.json'), 'utf8'));
         assert.equal(manifest.platform, 'win32'); assert.equal(manifest.arch, 'x64');
+        const expectedDirectory = tools.portableDirectoryName?.(manifest.appVersion) || `baizelingtai-${manifest.appVersion}`;
+        assert.ok([expectedDirectory, '白泽灵台'].includes(directories[0].name), 'versioned portable root or legacy root');
         assert.deepEqual(manifest.assets, require(path.join(root, 'scripts/windows-portable-assets.json')).assets, 'pinned tool catalog');
         const actual = tools.inventory(root).filter(file => file.path !== 'PORTABLE_MANIFEST.json');
         assert.deepEqual(actual, manifest.files, 'exact extracted bytes and inventory');
+        const portable = JSON.parse(fs.readFileSync(require(path.join(root, 'server/pi-update-feed')).portableMetadataFile(root), 'utf8'));
+        const sidecar = archive + '.update.json';
+        if (portable.updateFeedUrl || fs.existsSync(sidecar)) {
+            const update = JSON.parse(fs.readFileSync(sidecar, 'utf8'));
+            assert.equal(update.sha256, expected, 'update feed identifies this exact ZIP');
+            assert.equal(update.bytes, fs.statSync(archive).size);
+            assert.equal(update.version, manifest.appVersion);
+            assert.equal(update.piVersion, require(path.join(root, 'package.json')).dependencies['@earendil-works/pi-coding-agent']);
+            const { parseFeed, configuredFeed } = require(path.join(root, 'server/pi-update-feed'));
+            parseFeed(update, { source: portable.updateFeedUrl || 'https://example.invalid/latest.json', platform: 'win32', arch: 'x64',
+                channel: 'preview', compareVersions: require(path.join(root, 'server/pi-update-service')).compareVersions });
+            assert.equal(configuredFeed(root, {}), portable.updateFeedUrl || null);
+        }
         for (const file of actual) {
             // This exact zero-byte file is part of the pinned official Node ZIP.
             // Never allow a populated npmrc or any other account configuration.

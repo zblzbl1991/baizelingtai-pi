@@ -80,7 +80,8 @@ async function run(browser, viewport) {
     assert.equal(await tool.locator('.pi-edit-diff img').count(), 0);
     assert.equal(await tool.locator('.pi-tool-raw').getAttribute('open'), null);
     await tool.getByRole('button', { name: '复制 patch' }).click();
-    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), patch);
+    const clipboardPatch = await page.evaluate(() => navigator.clipboard.readText());
+    assert.equal(clipboardPatch, process.platform === 'win32' ? patch.replace(/\n/g, '\r\n') : patch);
     await selectMessageView(page, 'reading');
     await page.locator('.pi-process-group > summary').click();
     await tool.locator('.pi-edit-diff').waitFor({ state: 'visible' });
@@ -143,7 +144,7 @@ async function run(browser, viewport) {
     assert.equal(commands.filter(command => command.type === 'stop_and_recover').length, stopCount, 'reconnection never repeats stop');
     pendingStop = null;
     finish();
-    await page.waitForFunction(() => document.querySelector('#pi-composer-status').textContent === 'Pi Agent 已就绪');
+    await page.waitForFunction(() => document.querySelector('#pi-composer-status').textContent === '已就绪');
     assert.equal(await page.locator('#pi-input').inputValue(), 'Draft typed during stop');
     // Full reload restores server-side recovery and extension state, without replaying stop.
     const stops = commands.filter(command => command.type === 'stop_and_recover').length;
@@ -178,7 +179,7 @@ async function run(browser, viewport) {
     await context.close();
 }
 (async () => {
-    const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', args: ['--no-sandbox'], headless: true });
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'], headless: true });
     try { for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }]) await run(browser, viewport); }
     finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

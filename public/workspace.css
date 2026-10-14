@@ -975,15 +975,11 @@ button.pi-action-pending:not(.icon-btn):not(.pi-message-action) .pi-spinner { ma
     text-align: center;
 }
 
-.pi-empty-mark {
+.pi-empty-logo {
     width: 48px;
     height: 48px;
     margin-bottom: 16px;
-    border: 1px solid #355244;
-    border-radius: 50%;
-    color: var(--green);
-    background: #17211d;
-    font: 600 1.55rem/46px Georgia, serif;
+    object-fit: contain;
 }
 
 .pi-empty-state h2 {
@@ -1021,6 +1017,8 @@ button.pi-action-pending:not(.icon-btn):not(.pi-message-action) .pi-spinner { ma
 }
 
 .pi-message.assistant > header strong { color: var(--green); }
+.pi-message.assistant > header { flex-wrap: wrap; }
+.pi-message.assistant > header strong { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 
 .pi-message-action {
     width: 32px;
@@ -2071,6 +2069,10 @@ select:focus-visible,
 
 .workspace-logo { display: block; width: 28px; height: 28px; object-fit: contain; }
 
+.brand-inverse { display: none; }
+html[data-theme="dark"] .brand-default { display: none; }
+html[data-theme="dark"] .brand-inverse { display: block; }
+
 .sidebar-brand-toggle {
     display: grid;
     place-items: center;
@@ -3076,12 +3078,6 @@ body.is-resizing * {
     border-color: var(--line);
     background: var(--surface-sidebar);
     color: var(--text-muted);
-}
-
-.pi-empty-mark {
-    border-color: color-mix(in srgb, var(--green) 38%, var(--line));
-    background: var(--green-soft);
-    color: var(--green);
 }
 
 .pi-message.user .pi-message-body,

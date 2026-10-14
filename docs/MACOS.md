@@ -1,6 +1,6 @@
 # macOS 原生安装与运行
 
-Pivane 在 macOS 上原生运行，原生组件同时包含 Apple Silicon 与 Intel 架构，使用 Node 22.x 并通过浏览器访问。各版本实际验收过的系统、硬件与浏览器见[验证范围](RELEASE_INSTALL_VALIDATION.md)；在其他环境遇到问题，欢迎通过 [Issues](https://github.com/YogurtJ/pivane/issues) 反馈。
+白泽灵台在 macOS 上原生运行，原生组件同时包含 Apple Silicon 与 Intel 架构，使用 Node 22.x 并通过浏览器访问。各版本实际验收过的系统、硬件与浏览器见[验证范围](RELEASE_INSTALL_VALIDATION.md)；在其他环境遇到问题，欢迎通过 [Issues](https://github.com/YogurtJ/pivane/issues) 反馈。
 
 ## 安装前提
 
@@ -71,7 +71,7 @@ node scripts/install-service.cjs
 
 常驻服务不会自动继承安装终端中的 Provider Key、代理或 NODE_OPTIONS。若认证依赖环境变量或外部命令，需向本实例显式提供相同依赖，或通过网页原生登录保存认证；不要输出 Key。以后登录后自动启动，不需要重复安装依赖。
 
-打开`http://127.0.0.1:11408`或桌面 Pivane 入口，安装终端可以关闭；以后登录时自动启动。端口已被占用时先核对现有服务，不重复启动。
+打开`http://127.0.0.1:11408`或桌面白泽灵台入口，安装终端可以关闭；以后登录时自动启动。端口已被占用时先核对现有服务，不重复启动。
 
 另一个终端先用 `curl -fsS http://127.0.0.1:11408/api/access/status` 核对访问状态；需要认证时先在浏览器完成认证，再检查 Pi 状态。没有访问验证阻挡时，可用 `curl -fsS http://127.0.0.1:11408/api/pi/status` 检查 `ok=true`、Pi 版本与实际 `projectRoots`。网页可打开、只读状态正常即完成基础启动；普通安装无需运行全量测试、浏览器回归或打包。模型登录与真实请求另行验证。
 

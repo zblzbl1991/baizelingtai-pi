@@ -42,6 +42,9 @@ async function run(browser, base, width, locale) {
     });
     await page.goto(base, { waitUntil: 'domcontentloaded' }); await page.locator('#pi-project-dialog-close').click();
     await page.locator('#workspace-settings-toggle').click(); await page.locator('[data-settings-tab="media"]').click();
+    assert.equal(await page.locator('#settings-multimodal').isVisible(), false);
+    assert.equal(await page.locator('[data-settings-panel="media"] .settings-panel-header p').isVisible(), false);
+    for (const kind of ['image', 'video', 'tts']) assert.equal(await page.locator(`[data-media-settings-kind="${kind}"]`).isVisible(), false);
     const card = page.locator('#settings-subagents'), trigger = card.locator('[data-model-key="defaultModel"]'), picker = page.locator('.sa-picker');
     await card.getByText(locale === 'en' ? /pi-subagents is not installed/ : /尚未安装 pi-subagents/).waitFor(); assert.equal(await card.locator('form').count(), 0);
     page.once('dialog', dialog => dialog.dismiss()); await card.locator('.settings-primary-button').click(); assert.equal(writes.length, 0);

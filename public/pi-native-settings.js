@@ -65,7 +65,7 @@
             const saved = current[scope];
             const hasModifiers = entries => entries?.some(name => /^[+-]/.test(name));
             const initialMode = saved === null ? 'inherit' : hasModifiers(saved) ? 'entries' : 'custom';
-            const mode = select([['inherit', scope === 'project' ? translateUi("继承全局") : translateUi("Pi 默认")], ['custom', translateUi("替换工具列表")], ['entries', translateUi("原生工具名称与 +/- 修饰符")]], initialMode, 'native-tools-mode');
+            const mode = select([['inherit', scope === 'project' ? translateUi("继承全局") : translateUi("内置默认")], ['custom', translateUi("替换工具列表")], ['entries', translateUi("原生工具名称与 +/- 修饰符")]], initialMode, 'native-tools-mode');
             mode.disabled = disabled;
             wrapper.append(label(translateUi("工具选择方式"), mode));
             const list = node('fieldset', undefined, { class: 'native-tool-options' });
@@ -89,7 +89,7 @@
                 entries.hidden = mode.value !== 'entries'; entries.disabled = disabled || mode.value !== 'entries';
                 const chosen = mode.value === 'entries' ? entries.value.split('\n').map(s => s.trim()).filter(Boolean) : [...list.querySelectorAll('input:checked')].map(c => c.value);
                 field.value = JSON.stringify(mode.value === 'inherit' ? null : chosen);
-                summary.textContent = mode.value === 'inherit' ? scope === 'project' ? translateUi("移除项目覆盖，使用全局配置或 Pi 默认。") : translateUi("Pi 默认：{0}", spec.defaults.join('、'))
+                summary.textContent = mode.value === 'inherit' ? scope === 'project' ? translateUi("移除项目覆盖，使用全局配置或内置默认。") : translateUi("内置默认：{0}", spec.defaults.join('、'))
                     : !chosen.length ? translateUi("显式空列表：白泽灵台不默认启用任何工具，包括扩展和自定义工具。")
                     : chosen.every(name => /^[+-]/.test(name)) ? translateUi("仅 +/- 修饰符：修改继承的工具选择，按顺序应用。") : translateUi("普通名称替换继承列表，再按顺序应用 +/- 修饰符。");
             };
@@ -119,9 +119,9 @@
                     if (spec.type === 'tools') {
                         tool = toolField(spec, current, scope, scope === 'project' && !snapshot.trust.effective); field = tool.field;
                     } else if (spec.type === 'select' || spec.type === 'boolean') {
-                        const names = { ask: translateUi("询问（Pi 默认）"), always: translateUi("默认信任"), never: translateUi("默认不信任"), all: translateUi("全部投递"), 'one-at-a-time': translateUi("逐条投递"), auto: translateUi("自动选择") };
+                        const names = { ask: translateUi("询问（内置默认）"), always: translateUi("默认信任"), never: translateUi("默认不信任"), all: translateUi("全部投递"), 'one-at-a-time': translateUi("逐条投递"), auto: translateUi("自动选择") };
                         const choices = spec.choices?.map(v => [v, names[v] || v]) || [['true', translateUi("开启")], ['false', translateUi("关闭")]];
-                        field = select([['', scope === 'project' ? translateUi("继承全局") : translateUi("Pi 默认")], ...choices], saved === null ? '' : String(saved));
+                        field = select([['', scope === 'project' ? translateUi("继承全局") : translateUi("内置默认")], ...choices], saved === null ? '' : String(saved));
                     } else {
                         field = node(spec.type === 'lines' ? 'textarea' : 'input');
                         if (spec.type === 'number') { field.type = 'number'; field.min = spec.min; field.max = spec.max; field.step = 1; }
@@ -132,7 +132,7 @@
                     field.name = key; field.dataset.initial = JSON.stringify(saved); field.disabled = scope === 'project' && !snapshot.trust.effective;
                     const row = tool ? tool.wrapper : label(translateUi(spec.label), field);
                     const value = key === 'defaultProjectTrust' ? ({ ask: translateUi("询问"), always: translateUi("默认信任"), never: translateUi("默认不信任") }[current.value] || current.value) : spec.type === 'tools' ? current.value?.join('、') || translateUi("未启用任何内置工具") : typeof current.value === 'boolean' ? current.value ? translateUi("开启") : translateUi("关闭") : Array.isArray(current.value) ? current.value.join('、') || translateUi("未限定") : current.value ?? translateUi("默认");
-                    row.append(node('small', translateUi("当前配置：{0} · {1}", value, { project: translateUi("项目"), global: translateUi("全局"), default: translateUi("Pi 默认") }[current.source]))); grid.append(row);
+                    row.append(node('small', translateUi("当前配置：{0} · {1}", value, { project: translateUi("项目"), global: translateUi("全局"), default: translateUi("内置默认") }[current.source]))); grid.append(row);
                 }
                 if (id === 'tools') {
                     grid.append(node('p', translateUi("设置模型初始工具选择；codemode / tool_search 需对应扩展已加载。此设置不连接 MCP 或扩大工具权限。扩展和自定义工具仍可启用；这不是只读或安全模式，也不控制手动 ! Shell。当前实际工具可在会话详情 → 当前加载的资源中查看。"), { class: 'native-setting-help' }));
@@ -198,7 +198,7 @@
             const snapshot = await apiFetch('/api/pi/settings/native?cwd=' + encodeURIComponent(cwd)); if (!valid(n, cwd)) return;
             config = snapshot;
             const heading = node('div', undefined, { class: 'settings-panel-header' }), caption = node('div');
-            caption.append(node('h3', translateUi("Pi 配置")), node('p', currentCwd() ? translateUi("通常无需修改。需要时展开对应分类即可。") : translateUi("尚未选择项目，可先管理全局配置；选择项目后可设置项目覆盖。")));
+            caption.append(node('h3', translateUi("运行配置")), node('p', currentCwd() ? translateUi("通常无需修改。需要时展开对应分类即可。") : translateUi("尚未选择项目，可先管理全局配置；选择项目后可设置项目覆盖。")));
             const refresh = button(translateUi("刷新"), 'native-refresh', () => open('native'));
             refresh.className = 'settings-header-refresh';
             refresh.prepend(node('i', undefined, { class: 'fa-solid fa-rotate', 'aria-hidden': 'true' }));
@@ -360,7 +360,7 @@
             const names = new Map((metadata?.skills || []).map(s => [s.filePath, s]));
             const header = node('header', undefined, { class: 'settings-panel-header' });
             const heading = node('div');
-            heading.append(node('h3', translateUi("已安装")), node('p', translateUi("用 Packages 扩展 Pi 的工具、Skills、提示词与主题。")));
+            heading.append(node('h3', translateUi("已安装")), node('p', translateUi("用 Packages 扩展工具、Skills、提示词与主题。")));
             const refresh = withIcon(button(translateUi("刷新"), 'native-installed-refresh', () => void loadInstalled(n, cwd, $('native-installed-scope')?.value || scope).catch(e => { if (valid(n, cwd) && refresh.isConnected) status('native-resource-status', e.message); })), 'fa-rotate');
             refresh.className = 'settings-header-refresh';
             header.append(icon('fa-box-open'), heading, refresh);
@@ -548,7 +548,7 @@
                 if (!cwd) throw new Error(translateUi("服务器没有可用的项目目录，请检查项目范围设置（PI_PROJECT_ROOTS）。"));
                 $('native-settings-nav').hidden = !capabilities.nativeSettings;
                 $('system-prompts-nav').hidden = !capabilities.systemPrompts;
-                if (tab === 'native') { if (!capabilities.nativeSettings) panel.textContent = translateUi("当前后端尚未启用 Pi 配置"); else await loadNative(n, cwd); }
+                if (tab === 'native') { if (!capabilities.nativeSettings) panel.textContent = translateUi("当前后端尚未启用运行配置"); else await loadNative(n, cwd); }
                 if (tab === 'installed') {
                     if (!capabilities.nativeResources) { installedPanel.replaceChildren(node('p', translateUi("暂时无法读取配置，请刷新核对。"))); return; }
                     await loadInstalled(n, cwd, undefined, options.type || installedFilter);

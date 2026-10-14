@@ -1,4 +1,4 @@
-# Pivane 运维与排障
+# 白泽灵台运维与排障
 
 安装、更新、停机备份和恢复以[INSTALL_RECOVERY.md](INSTALL_RECOVERY.md)为主。本文描述通用运维，不提供任何维护者机器的默认配置。
 

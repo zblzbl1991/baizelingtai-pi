@@ -56,7 +56,8 @@
         <aside id="workspace-sidebar" class="sidebar">
             <div class="logo">
                 <button id="workspace-brand-toggle" class="sidebar-brand-toggle" type="button" title="折叠导航" aria-label="折叠导航" aria-expanded="true" aria-controls="workspace-sidebar" data-i18n-title="s1315" data-i18n-aria-label="s1315">
-                    <img class="workspace-logo" src="brand/logo-64.png" width="28" height="28" alt="">
+                    <img class="workspace-logo brand-default" src="brand/logo.svg" width="28" height="28" alt="">
+                    <img class="workspace-logo brand-inverse" src="brand/logo-dark.svg" width="28" height="28" alt="">
                 </button>
                 <div class="logo-brand">
                     <h2>白泽灵台</h2>
@@ -72,8 +73,8 @@
 
             <nav class="nav-menu" aria-label="工作区" data-i18n-aria-label="s1317">
                 <span class="workspace-nav-heading"><!--i18n:s2546-->工作</span>
-                <button class="nav-btn active" data-tab="chat" title="Pi Agent">
-                    <i class="fa-solid fa-comment" aria-hidden="true"></i><span>Pi Agent</span>
+                <button class="nav-btn active" data-tab="chat" title="工作对话" data-i18n-title="s3867" data-work-chat-nav>
+                    <i class="fa-solid fa-comment" aria-hidden="true"></i><span data-work-chat-label><!--i18n:s3867-->工作对话</span>
                 </button>
                 <button class="nav-btn" id="workspace-assistant-toggle" data-tab="assistant" type="button" title="助手对话" data-i18n-title="s2547"><i class="fa-solid fa-comments" aria-hidden="true"></i><span><!--i18n:s2547-->助手对话</span></button>
                 <button class="nav-btn" data-tab="cron" type="button"><i class="fa-regular fa-calendar-check" aria-hidden="true"></i><span data-cron-nav>定时任务</span></button>
@@ -81,14 +82,10 @@
                 <div id="workspace-more-menu" class="workspace-more-menu" role="menu" aria-label="更多功能" data-i18n-aria-label="s2651" hidden>
                     <button type="button" role="menuitem" data-more-tab="cron"><i class="fa-regular fa-calendar-check" aria-hidden="true"></i><span data-cron-nav>定时任务</span></button>
                     <button type="button" role="menuitem" data-more-tab="artifacts"><i class="fa-solid fa-box-archive" aria-hidden="true"></i><span data-artifacts-label>成果中心</span></button>
-                    <button type="button" role="menuitem" data-more-tab="media"><i class="fa-solid fa-flask" aria-hidden="true"></i><span><!--i18n:s1318-->多媒体实验室</span></button>
                     <button type="button" role="menuitem" data-more-tab="profiles"><i class="fa-solid fa-user-gear" aria-hidden="true"></i><span><!--i18n:s2468-->助手身份</span></button>
                     <button type="button" role="menuitem" data-more-tab="extensions"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i><span><!--i18n:s530-->扩展</span></button>
                 </div>
                 <button class="nav-btn" data-tab="artifacts" type="button"><i class="fa-solid fa-box-archive" aria-hidden="true"></i><span data-artifacts-label>成果中心</span></button>
-                <button class="nav-btn" data-tab="media" title="多媒体实验室" data-i18n-title="s1318">
-                    <i class="fa-solid fa-flask" aria-hidden="true"></i><span><!--i18n:s1318-->多媒体实验室</span>
-                </button>
                 <span class="workspace-nav-heading"><!--i18n:s2548-->管理</span>
                 <button class="nav-btn" id="workspace-profiles-toggle" data-tab="profiles" type="button" title="助手身份" data-i18n-title="s2468"><i class="fa-solid fa-user-gear" aria-hidden="true"></i><span><!--i18n:s2468-->助手身份</span></button>
                 <button class="nav-btn" id="workspace-extensions-toggle" data-tab="extensions" type="button" title="扩展" data-i18n-title="s530"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i><span><!--i18n:s530-->扩展</span></button>
@@ -223,11 +220,11 @@
                     <div id="pi-connection-banner" class="pi-connection-banner">
                         <span class="pi-status-dot"></span>
                         <span id="pi-mobile-thread-title"></span>
-                        <span id="pi-connection-text"><!--i18n:s477-->正在连接 Pi Agent</span>
+                        <span id="pi-connection-text"><!--i18n:s477-->正在连接</span>
                         <span id="pi-session-profile" class="pi-session-profile" hidden></span>
                         <span id="pi-actual-identity" class="pi-actual-identity" hidden></span>
                         <button id="pi-profile-authoring-return" class="pi-conversation-origin" type="button" hidden><i class="fa-solid fa-user-pen" aria-hidden="true"></i><span></span></button>
-                        <button id="pi-conversation-origin" class="pi-conversation-origin" type="button" hidden title="在 Pi Agent 中打开当前线程" aria-label="在 Pi Agent 中打开当前线程" data-i18n-title="s2574" data-i18n-aria-label="s2574"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i><span>Pi Agent</span></button>
+                        <button id="pi-conversation-origin" class="pi-conversation-origin" type="button" hidden title="在工作对话中打开当前线程" aria-label="在工作对话中打开当前线程" data-i18n-title="s2574" data-i18n-aria-label="s2574"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i><span data-work-chat-label><!--i18n:s3867-->工作对话</span></button>
                         <button id="pi-current-thread-menu" type="button" title="当前线程操作" aria-label="当前线程操作" aria-haspopup="menu" aria-expanded="false" disabled data-i18n-title="s1347" data-i18n-aria-label="s1347"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></button>
                     </div>
                     <div id="pi-pending-ui-banner" class="pi-pending-ui-banner hidden">
@@ -239,8 +236,9 @@
                         <div id="pi-transcript" class="pi-transcript" tabindex="0" role="region" aria-label="会话消息" data-i18n-aria-label="s1354">
                             <div id="pi-transcript-content" class="pi-transcript-content" aria-live="polite">
                                 <div class="pi-empty-state">
-                                    <div class="pi-empty-mark">π</div>
-                                    <h2>Pi Coding Agent</h2>
+                                    <img class="pi-empty-logo brand-default" src="brand/logo.svg" width="48" height="48" alt="">
+                                    <img class="pi-empty-logo brand-inverse" src="brand/logo-dark.svg" width="48" height="48" alt="">
+                                    <h2>白泽灵台</h2>
                                     <p><!--i18n:s359-->选择项目会话后开始工作</p>
                                 </div>
                             </div>
@@ -300,7 +298,7 @@
                                     <button id="pi-schedule-button" type="button" role="menuitem" tabindex="-1" title="延迟发送" hidden data-i18n-title="s992"><i class="fa-regular fa-clock" aria-hidden="true"></i><span><!--i18n:s992-->延迟发送<small><!--i18n:s1369-->指定时间发送消息</small></span></button>
                                 </div>
                             </div>
-                            <textarea id="pi-input" rows="1" placeholder="发送消息给 Pi" disabled data-i18n-placeholder="s1370"></textarea>
+                            <textarea id="pi-input" rows="1" placeholder="发送消息" disabled data-i18n-placeholder="s1370"></textarea>
                             <div class="pi-composer-actions right">
                                 <button id="pi-mobile-context-trigger" class="pi-mobile-context-trigger" type="button" aria-haspopup="dialog" aria-controls="pi-mobile-session-dialog" aria-label="上下文用量暂无统计"><span id="pi-mobile-context-percent">--</span></button>
                                 <button id="pi-transcribe-button" class="icon-btn subtle" type="button" disabled hidden><i class="fa-solid fa-microphone" aria-hidden="true"></i></button>
@@ -369,7 +367,7 @@
                         <div id="pi-queue-modes" hidden>
                             <label><!--i18n:s1388-->引导消息投递<select id="pi-steeringMode"><option value="one-at-a-time"><!--i18n:s1389-->逐条</option><option value="all"><!--i18n:s1341-->全部</option></select></label>
                             <label><!--i18n:s1390-->后续消息投递<select id="pi-followUpMode"><option value="one-at-a-time"><!--i18n:s1389-->逐条</option><option value="all"><!--i18n:s1341-->全部</option></select></label>
-                            <p class="pi-native-help"><!--i18n:s1391-->每次取出一条或全部待发消息。修改立即作用于当前运行实例，并保存 Pi 全局默认；项目覆盖仍有效，其他已启动实例不自动改变。</p>
+                            <p class="pi-native-help"><!--i18n:s1391-->每次取出一条或全部待发消息。修改立即作用于当前运行实例，并保存全局默认；项目覆盖仍有效，其他已启动实例不自动改变。</p>
                             <p id="pi-queue-mode-status" class="pi-native-help" role="status"></p>
                         </div>
                     </details>
@@ -614,7 +612,7 @@
                 </div>
                 <small id="pi-project-scope" class="pi-project-scope"></small>
             </form>
-            <button id="pi-import-session" class="pi-secondary-button" type="button" hidden><!--i18n:s208-->导入 Pi 会话</button>
+            <button id="pi-import-session" class="pi-secondary-button" type="button" hidden><!--i18n:s208-->导入会话</button>
             <div class="pi-directory-browser">
                 <div class="pi-directory-head">
                     <button id="pi-directory-up" class="icon-btn subtle" type="button" title="上级目录" aria-label="上级目录" data-i18n-title="s225" data-i18n-aria-label="s225"><i class="fa-solid fa-arrow-up"></i></button>
@@ -636,7 +634,7 @@
         <div class="workspace-settings-dialog">
             <header class="workspace-settings-header">
                 <div>
-                    <span class="pi-pane-kicker">PI WORKSPACE</span>
+                    <span class="pi-pane-kicker">白泽灵台</span>
                     <h2 id="workspace-settings-title"><!--i18n:s1331-->设置</h2>
                 </div>
                 <button id="workspace-settings-close" class="icon-btn subtle" type="button" title="返回对话" aria-label="返回对话" data-i18n-title="s2551" data-i18n-aria-label="s2551">
@@ -649,7 +647,7 @@
                     <button type="button" data-settings-tab="media"><i class="fa-solid fa-photo-film"></i><span>模型与能力</span></button>
                     <button type="button" data-settings-tab="models"><i class="fa-solid fa-sliders"></i><span><!--i18n:s1509-->使用偏好</span></button>
                     <button type="button" id="system-prompts-nav" data-settings-tab="system-prompts" hidden><i class="fa-solid fa-file-lines"></i><span data-system-prompts-label></span></button>
-                    <button type="button" id="native-settings-nav" data-settings-tab="native" hidden><i class="fa-solid fa-gear"></i><span><!--i18n:s726-->Pi 配置</span></button>
+                    <button type="button" id="native-settings-nav" data-settings-tab="native" hidden><i class="fa-solid fa-gear"></i><span><!--i18n:s726-->运行配置</span></button>
                     <button type="button" id="workspace-access-nav" data-settings-tab="access" hidden><i class="fa-solid fa-lock"></i><span><!--i18n:s1510-->访问控制</span></button>
                     <button type="button" data-settings-tab="usage"><i class="fa-solid fa-chart-column"></i><span><!--i18n:s1511-->用量统计</span></button>
                     <button type="button" data-settings-tab="updates"><i class="fa-solid fa-cloud-arrow-down" aria-hidden="true"></i><span><!--i18n:s1931-->版本与更新</span></button>
@@ -662,7 +660,7 @@
                     <section class="workspace-settings-panel active" data-settings-panel="providers">
                         <div class="settings-panel-header">
                             <i class="fa-solid fa-key" aria-hidden="true"></i>
-                            <div><h3><!--i18n:s1508-->供应商与模型</h3><p><!--i18n:s1512-->展开供应商，连接 Pi 内置服务或自定义服务，并管理其模型。测试会发送少量付费请求。</p></div>
+                            <div><h3><!--i18n:s1508-->供应商与模型</h3><p><!--i18n:s1512-->展开供应商，连接内置服务或自定义服务，并管理其模型。测试会发送少量付费请求。</p></div>
                             <div class="settings-header-actions" id="settings-provider-header-actions"><button id="settings-add-provider" class="settings-primary-button" type="button"><i class="fa-solid fa-plus"></i><!--i18n:s1513--> 自定义 Provider</button></div>
                         </div>
                         <div class="settings-toolbar">
@@ -676,15 +674,18 @@
                     </section>
 
                     <section class="workspace-settings-panel" data-settings-panel="media">
-                        <div class="settings-panel-header"><i class="fa-solid fa-photo-film" aria-hidden="true"></i><div><h3 id="settings-capabilities-title">模型与能力</h3><p><!--i18n:s1517-->接入自己的图像、视频和语音服务，模型 ID 由你选择。</p></div></div>
-                        <h4 id="settings-multimodal-title">多模态</h4>
-                        <div class="mc-settings-kinds">
-                            <button type="button" data-media-settings-kind="image"><i class="fa-regular fa-image"></i><strong><!--i18n:s109-->图像</strong><span>OpenAI、Gemini、Seedream</span></button>
-                            <button type="button" data-media-settings-kind="video"><i class="fa-solid fa-film"></i><strong><!--i18n:s108-->视频</strong><span><!--i18n:s1518-->Seedance、自定义异步服务</span></button>
-                            <button type="button" id="settings-speech-open" data-media-settings-kind="tts"><i class="fa-solid fa-volume-high"></i><strong><!--i18n:s107-->语音</strong><span><!--i18n:s3529-->朗读与语音转文字</span></button>
+                        <div class="settings-panel-header"><i class="fa-solid fa-photo-film" aria-hidden="true"></i><div><h3 id="settings-capabilities-title">模型与能力</h3><p hidden><!--i18n:s1517-->接入自己的图像、视频和语音服务，模型 ID 由你选择。</p></div></div>
+                        <!-- Temporarily hide multimodal setup while retaining its configuration entry points. -->
+                        <div id="settings-multimodal" hidden>
+                            <h4 id="settings-multimodal-title">多模态</h4>
+                            <div class="mc-settings-kinds">
+                                <button type="button" data-media-settings-kind="image"><i class="fa-regular fa-image"></i><strong><!--i18n:s109-->图像</strong><span>OpenAI、Gemini、Seedream</span></button>
+                                <button type="button" data-media-settings-kind="video"><i class="fa-solid fa-film"></i><strong><!--i18n:s108-->视频</strong><span><!--i18n:s1518-->Seedance、自定义异步服务</span></button>
+                                <button type="button" id="settings-speech-open" data-media-settings-kind="tts"><i class="fa-solid fa-volume-high"></i><strong><!--i18n:s107-->语音</strong><span><!--i18n:s3529-->朗读与语音转文字</span></button>
+                            </div>
+                            <p class="settings-help"><!--i18n:s1520-->选择常用服务，填写地址、Key 和模型 ID。高级参数可按需展开，也可让 Agent 根据 API 文档填写接入草稿。</p>
+                            <p class="settings-help"><!--i18n:s1521-->同一服务的模型共用 Key。保存接入后，在实验室检查清单并确认生成；回复朗读默认模型在“使用偏好”中选择。</p>
                         </div>
-                        <p class="settings-help"><!--i18n:s1520-->选择常用服务，填写地址、Key 和模型 ID。高级参数可按需展开，也可让 Agent 根据 API 文档填写接入草稿。</p>
-                        <p class="settings-help"><!--i18n:s1521-->同一服务的模型共用 Key。保存接入后，在实验室检查清单并确认生成；回复朗读默认模型在“使用偏好”中选择。</p>
                         <section id="settings-subagents"></section>
                     </section>
                     <section class="workspace-settings-panel" data-settings-panel="profiles" id="pi-profiles-panel">
@@ -820,7 +821,7 @@
                         </form>
                         <p id="settings-usage-status" role="status" aria-live="polite"></p>
                         <div id="settings-usage-result"></div>
-                        <details class="pi-usage-scope"><summary><!--i18n:s1574-->统计范围与费用说明</summary><p><!--i18n:s1575-->统计已入账的 Pi 持久会话，删除会话后仍保留用量。包含所有分支和有记录的工具／摘要用量；临时会话、侧聊、标题生成、媒体规划、模型测试及首次入账前已删除的记录不包含在内。</p><p><!--i18n:s1576-->原生复制、分叉和导入中保持 ID、时间与内容相同的记录只计一次，保留首次入账的会话归属。每日累计，支持按周和自然月查看；周从周一开始，各周期只包含所选日期范围。</p><p><!--i18n:s1577-->保留原始费用；零或缺失费用在模型 ID 精确匹配时按内置官方目录价补算，包含已知阶梯价。估算不是中转站账单，也不代表消费当日价格；无法确认的型号不猜价。缺少上报的用量仍标为未知。</p></details>
+                        <details class="pi-usage-scope"><summary><!--i18n:s1574-->统计范围与费用说明</summary><p><!--i18n:s1575-->统计已入账的持久会话，删除会话后仍保留用量。包含所有分支和有记录的工具／摘要用量；临时会话、侧聊、标题生成、媒体规划、模型测试及首次入账前已删除的记录不包含在内。</p><p><!--i18n:s1576-->原生复制、分叉和导入中保持 ID、时间与内容相同的记录只计一次，保留首次入账的会话归属。每日累计，支持按周和自然月查看；周从周一开始，各周期只包含所选日期范围。</p><p><!--i18n:s1577-->保留原始费用；零或缺失费用在模型 ID 精确匹配时按内置官方目录价补算，包含已知阶梯价。估算不是中转站账单，也不代表消费当日价格；无法确认的型号不猜价。缺少上报的用量仍标为未知。</p></details>
                     </section>
                     <section class="workspace-settings-panel" data-settings-panel="installed">
                         <div id="native-installed"></div>
@@ -848,7 +849,7 @@
 
     <div id="pi-token-dialog" class="pi-modal hidden" role="dialog" aria-modal="true" aria-labelledby="pi-token-title">
         <form id="pi-token-form" class="pi-modal-dialog token-dialog" aria-describedby="workspace-access-intro">
-            <div class="workspace-login-brand"><img src="brand/logo-192.png" width="44" height="44" alt=""><span>白泽灵台</span></div>
+            <div class="workspace-login-brand"><img class="brand-default" src="brand/logo.svg" width="44" height="44" alt=""><img class="brand-inverse" src="brand/logo-dark.svg" width="44" height="44" alt=""><span>白泽灵台</span></div>
             <div class="workspace-login-heading"><h2 id="pi-token-title"><!--i18n:s1304-->登录工作台</h2><p id="workspace-access-intro"><!--i18n:s1587-->输入访问 Token，继续你的工作。</p></div>
             <div class="workspace-login-field">
                 <label for="pi-token-input"><!--i18n:s1588-->访问 Token</label>

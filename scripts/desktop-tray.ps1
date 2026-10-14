@@ -22,6 +22,7 @@ $script:openPending = -not $NoOpen
 $script:readyAt = $null
 $script:tickBusy = $false
 $script:events = [System.Collections.Generic.List[object]]::new()
+$script:smokeValidated = $false
 $mutex = $null
 $ownsMutex = $false
 $openEvent = $null
@@ -36,7 +37,7 @@ function Show-Failure([string]$Message) {
     $script:events.Add(@{ type = 'error'; message = $Message })
 }
 function Open-Workspace {
-    if (-not $script:ready -or $script:stopping) { $script:openPending = $true; return }
+    if (-not $script:url -or $script:stopping) { $script:openPending = $true; return }
     try {
         $parsed = [Uri]$script:url
         if ($parsed.Scheme -ne 'http' -or $parsed.UserInfo -or $parsed.AbsolutePath -ne '/' -or $parsed.Query -or $parsed.Fragment) { throw '启动器收到无效的工作台地址。' }
@@ -74,6 +75,17 @@ function Handle-Message([string]$Line) {
     if ($Line.Length -gt 8192) { throw '启动器响应超过预算。' }
     $message = $Line | ConvertFrom-Json
     switch ($message.type) {
+        'waiting' {
+            $script:url = $message.url
+            $miOpen.Enabled = $true
+            $script:events.Add(@{ type = 'waiting'; url = $script:url })
+            if ($SmokeTest) {
+                $snapshot = ConvertTo-Json -Compress @{ type = 'waiting'; url = $script:url }
+                [IO.Directory]::CreateDirectory((Join-Path $AppRoot '.pivane-runtime\desktop')) | Out-Null
+                [IO.File]::WriteAllText((Join-Path $AppRoot '.pivane-runtime\desktop\smoke-waiting.json'), $snapshot, [Text.UTF8Encoding]::new($false))
+            }
+            if ($script:openPending) { Open-Workspace }
+        }
         'starting' { $script:logFile = $message.logFile }
         'ready' {
             $script:url = $message.url
@@ -101,9 +113,10 @@ function Handle-Message([string]$Line) {
 try {
     $AppRoot = [IO.Path]::GetFullPath($AppRoot)
     if ($env:PIVANE_DESKTOP_SMOKE_ROOT -eq $AppRoot) { $SmokeTest = $true }
+    if ($SmokeTest -and (-not (Test-Path -LiteralPath (Join-Path $AppRoot '.pivane-launcher-test')) -or -not $env:PI_CODING_AGENT_DIR -or -not $env:PI_MEDIA_DATA_DIR -or -not $env:PI_WEB_DEFERRED_FILE)) { throw 'SmokeTest 仅允许独立合成实例。' }
+    $script:smokeValidated = [bool]$SmokeTest
     $runner = Join-Path $AppRoot 'scripts\start-desktop.cjs'
     if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) { throw '找不到白泽灵台程序。请保留完整目录结构。' }
-    if ($SmokeTest -and (-not (Test-Path -LiteralPath (Join-Path $AppRoot '.pivane-launcher-test')) -or -not $env:PI_CODING_AGENT_DIR -or -not $env:PI_MEDIA_DATA_DIR -or -not $env:PI_WEB_DEFERRED_FILE)) { throw 'SmokeTest 仅允许独立合成实例。' }
     if (-not $NodePath) {
         foreach ($candidate in @((Join-Path $AppRoot 'runtime\node.exe'), (Join-Path (Split-Path $AppRoot -Parent) 'runtime\node.exe'))) {
             if (Test-Path -LiteralPath $candidate -PathType Leaf) { $NodePath = $candidate; break }
@@ -242,8 +255,9 @@ finally {
         }
         $script:service.Dispose()
     }
-    if ($SmokeTest -and $ownsMutex) {
+    if ($script:smokeValidated -and ($ownsMutex -or -not $mutex)) {
         $report = Join-Path $AppRoot '.pivane-runtime\desktop\smoke-result.json'
+        [IO.Directory]::CreateDirectory((Split-Path $report -Parent)) | Out-Null
         [IO.File]::WriteAllText($report, (ConvertTo-Json -InputObject $script:events.ToArray() -Depth 4), [Text.UTF8Encoding]::new($false))
     }
     if ($tray) { $tray.Visible = $false; $tray.Icon.Dispose(); $tray.Dispose() }

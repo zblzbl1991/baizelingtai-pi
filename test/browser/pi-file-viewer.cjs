@@ -101,7 +101,7 @@ async function run(browser, viewport) {
     assert.equal(reads.length, 1);
     diskReport = '# 磁盘版本 2\n\n<a href="details.md">详细说明</a>\n' + '\n## 阅读内容\n\n需要保留充分的空间检查整份报告。\n'.repeat(40);
     emit({ type: 'agent_settled' });
-    await page.waitForFunction(() => document.querySelector('#pi-composer-status').textContent === 'Pi Agent 已就绪');
+    await page.waitForFunction(() => document.querySelector('#pi-composer-status').textContent === '已就绪');
     assert.match(await page.locator('#pi-file-body').textContent(), /磁盘版本 1/); assert.equal(reads.length, 1, 'snapshot redraw does not reread disk');
     await page.locator('#pi-file-refresh').click();
     await page.waitForFunction(() => document.querySelector('#pi-file-body').textContent.includes('磁盘版本 2'));

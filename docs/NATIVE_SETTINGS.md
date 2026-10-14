@@ -2,7 +2,7 @@
 
 ## 子 Agent 专属设置
 
-设置 → **模型与能力**管理随 Pivane 交付的子 Agent。统一安装与旧 CLI 声明兼容见[内置能力包](BUNDLED_CAPABILITIES.md)。
+设置 → **模型与能力**管理随白泽灵台交付的子 Agent。统一安装与旧 CLI 声明兼容见[内置能力包](BUNDLED_CAPABILITIES.md)。
 
 直接管理全局/项目 settings.json 的 `subagents.defaultModel/defaultThinking` 和 `subagents.agentOverrides.<name>.model/thinking`，只修改提交字段，null 删除本层覆盖，保留工具、提示词、供应商覆盖和未知字段。模型及思考选项来自可用模型目录。本层保存值不是最终运行映射，角色定义、供应商覆盖和单次运行参数仍参与插件优先级。
 
@@ -14,8 +14,8 @@
 |---|---|---|
 | GET | `/api/pi/settings/subagents?cwd` | version/cwd/revision/trust、plugin 状态与版本、defaults、roles；仅返回模型和思考字段 |
 | PUT | `/api/pi/settings/subagents` | `{cwd,scope,expectedRevision,changes}`；changes 为 defaultModel/defaultThinking 或 agentOverrides.角色.model/thinking 的扁平键 |
-| POST | `/api/pi/settings/subagents/install` | 兼容旧客户端；校验确认与修订后返回 400，说明组件随 Pivane 管理，不另行安装 |
-| POST | `/api/pi/settings/subagents/upgrade` | 同上，组件只能随 Pivane 更新 |
+| POST | `/api/pi/settings/subagents/install` | 兼容旧客户端；校验确认与修订后返回 400，说明组件随白泽灵台管理，不另行安装 |
+| POST | `/api/pi/settings/subagents/upgrade` | 同上，组件只能随白泽灵台更新 |
 
 状态为 missing/disabled/unsupported/ready，ready 表示当前内置版本（0.74.0）文件存在且配置启用，不代表当前 worker 已加载。`plugin.managedBy="pivane"`、`canInstall=false`、`upgradeFrom=null`。未就绪时写设置失败。写入复用 nativeSettingsBusy、身份/Origin、修订和配置互斥；设置保存使用原生 settings 锁、私有备份与原子写入，项目写入要求 trust。
 
@@ -23,13 +23,23 @@
 
 ## 扩展中心
 
-内置子 Agent 包返回 `managedBy:"pivane"`、`name` 和 `version`，界面不提供独立更新和移除；资源开关写入当前范围的 `pivaneBuiltins.subagents`，保留原 CLI Packages 声明。发现页通过服务端内置元数据识别该包，不猜测本地目录名称。档案记忆仍通过 `status.profileMemory` 核对。
+内置子 Agent、网页、桌面与演示文稿资源登记包返回 `managedBy:"pivane"`、`name` 和 `version`，界面不提供独立更新和移除；资源开关分别写入当前范围的 `pivaneBuiltins.subagents/web/computer/presentations`，保留原 CLI Packages 声明。发现页通过服务端内置元数据识别，全部资源停用时显示“内置 · 已停用”。档案记忆仍通过 `status.profileMemory` 核对。具体版本、依赖与许可见[内置能力包](BUNDLED_CAPABILITIES.md)。
 
 扩展中心包含“发现”“已安装”和“MCP”。已安装按资源类型筛选，行内启停，菜单更新／移除／恢复继承；安装核对来源、范围、信任、修订及代码执行确认。确认后固定当时的项目与来源，提交期间锁定控件，迟到响应不能改变范围或重复提交。旧 `#/extensions?tab=packages|skills` 归一化到 `#/extensions?tab=installed&type=…`。已学习技能在助手身份页管理，具体操作见[用户指南](USER_GUIDE.md#扩展精选与已安装资源)。
 
 发现目录使用随包双语元数据，不自动抓取外部内容。只读核对原生资源清单，通过 npm 包身份或已知 GitHub 来源精确匹配，不用显示名或目录名猜测。Pi 原生 MCP 的 `builtin:mcp` 标记只表示资源配置，连接和授权状态单独核对，见[MCP](MCP.md)。
 
-清单包含已安装、已登记但文件未就绪、在所选可见范围未安装，以及无法确认的状态。PPT Master 属独立技能而非 npm 包：服务端只对原生资源目录中已发现的全局／可信项目 `SKILL.md` 作有界读取，校验 frontmatter 的 `name: ppt-master` 与 `metadata.official_repository` 精确对应精选来源后，在 `featuredSkills` 返回范围与启用状态；同名候选无法核实时用 `featuredSkillNeedsReview` 标记，不将不确定读数冒充未安装。前端据此显示“已发现技能”或“已发现 · 已停用”，未发现显示“未发现技能”。未信任项目中的缺失项、旧服务没有 `featuredSkills` 时保持未知；无法验证声明的本地复制不按名称推断为 PPT Master。声明自述只能用于目录显示，不证明上游代码完整性、依赖可用或当前会话已加载，必要时仍由助手核对。读取失败不保留旧安装标签，刷新不重放写操作。请求序号、当前项目及页面生命周期共同拒绝迟到响应；关闭页面和访问锁定使旧请求失效。状态只在内存展示，不持久化第二套资源库存，也不表示会话已加载或插件已验证。来源链接仅打开原项目；“了解与配置”和“添加自定义”复用扩展助手需求 dialog，并带入所选范围。旧服务没有 extensionAssistant 能力时禁用配置按钮并提示；无法读取原生清单时显示状态待核对。
+清单包含已安装、已登记但文件未就绪、在所选可见范围未安装，以及无法确认的状态。精选 PPT 为 guizang-ppt，原作者技能名与包名为 `guizang-ppt-skill`，主要生成网页演示文稿，不保证可编辑 PPTX。当前包由独立内置资源登记包加载，无需 SkillHub 安装；额外来源仍是独立技能而非 Pi npm 包，安装方式见[SkillHub 接入](#skillhub-技能来源)。服务端只对原生资源目录中已发现的全局／可信项目候选 `SKILL.md` 作有界读取；核对 frontmatter.name、SkillHub CLI 生成的 `.skillhub/metadata.json` 的 registry、namespace、slug、version、schemaVersion 和 SKILL.md 文件哈希后，在 `featuredSkills` 返回 `id:guizang-ppt`、范围与启用状态。同名文件缺少来源记录、记录不符或文件变化时用 `featuredSkillNeedsReview` 标记；旧 `ppt-master` 声明识别仍保留 API 兼容，不替换或删除其文件。元数据与哈希仅用于本地目录显示，不证明完整包、上游代码、依赖或当前会话已加载，必要时仍由助手核对。
+
+前端据此显示“已发现技能”或“已发现 · 已停用”，未发现显示“未发现技能”。未信任项目中的缺失项、旧服务没有 SkillHub 配置或 `featuredSkills` 时保持未知。读取失败不保留旧标签或 SkillHub 来源链接，刷新不重放写操作。请求序号、当前项目及页面生命周期共同拒绝迟到响应；关闭页面和访问锁定使旧请求失效。状态只在内存展示，不持久化第二套资源库存。“了解与配置”和“添加自定义”复用扩展助手需求 dialog，并带入所选范围。旧服务没有 extensionAssistant 能力时禁用配置按钮并提示；无法读取原生清单时显示状态待核对。
+
+### SkillHub 技能来源
+
+支持 [iflytek/skillhub](https://github.com/iflytek/skillhub) 自托管仓库。部署环境或实例 `.env` 可设置 `PIVANE_SKILLHUB_URL`，默认 `https://skill.xfyun.cn`；精选 PPT 的命名空间通过 `PIVANE_SKILLHUB_NAMESPACE` 设置（默认 `global`），包名通过 `PIVANE_SKILLHUB_PPT_SLUG` 设置（默认 `guizang-ppt-skill`）。URL 只允许不含凭据、查询和片段的 HTTP(S) 地址，支持部署子路径。真实内网地址只保存在实例配置。配置生效需要在正常维护窗口重新启动服务，不能重启承载当前执行的实例。
+
+发现页的“查看 SkillHub”打开当前配置的 `/space/<namespace>/<slug>`，不自动抓取外站。扩展助手先读取同一仓库的 `/registry/skill.md`，检查已安装资源、发布者、准确版本、许可、依赖和目标路径，说明方案后按用户授权安装。使用官方 `@astron-team/skillhub` CLI，先核对现有命令归属、版本与实际帮助；安装时显式传 `--registry`、`--dir`、准确坐标与选定版本。`--dir` 与 `--agent`／`--scope` 互斥；全局目录为实际 `agentDir/skills`，项目目录为当前受信项目 `.pi/skills`，不能假定默认 home 身份。CLI 校验包 fingerprint、目标归属和本地改动并生成来源记录，不以裸 ZIP 解压或手写记录绕过校验。
+
+仓库离线、缺包、401／403 时报告原因，不静默回退公网或换同名包。登录由用户在自己的终端输入凭据，不放进对话、命令参数或日志。内网 SkillHub 不自动提供 npm 镜像：需预装官方 CLI 或提供可用镜像，并核对部署版本支持所需参数。新部署不保证有 guizang-ppt-skill；管理员需先按许可导入选定版本及完整 assets、references、scripts，保留许可证和来源。原作者版本输出 HTML，内网字体／CDN 可用性及不同来源的 PPTX 变体须按实际包另行核对；助手不自动发布技能、替换旧技能或更新上游 Git 仓库。安装后分别检查文件、依赖、原生发现与实际会话加载。
 
 “了解与配置”、自定义需求和扩展助手示例只填写待发送草稿，不自动安装或调用模型。更新检查先核对来源、版本与兼容性，无法确定的版本明确标注，按用户授权执行。
 
@@ -41,7 +51,7 @@
 
 入口以需求输入为中心，示例为轻量标签；安装范围位于下方，“安装位置与项目”按需展开。底部突出“进入助手”按钮，短屏幕时正文内部滚动，按钮保留在底栏。点击后只创建原生会话，需求放入输入框后由用户发送，不自动调用模型或安装。助手使用正常会话的模型选择与工具权限；已有会话的草稿和附件保留在当前页面内存。“返回原会话”恢复原对话；刷新页面会丢失未发送草稿，但可以从会话列表重新打开扩展助手并继续。返回、关闭或停止不会撤销已经发生的安装。
 
-安装发生在运行 Pivane 的机器上，不是访问网页的电脑或手机。助手先检查已有资源，再检索和比较来源、许可、依赖、平台兼容性。官方来源不等于已适配或获得使用授权；公开下载不自动授予修改或分发权。助手只应在许可允许时适配技能，无法访问来源或验证失败时说明限制。
+安装发生在运行白泽灵台的机器上，不是访问网页的电脑或手机。助手先检查已有资源，再检索和比较来源、许可、依赖、平台兼容性。官方来源不等于已适配或获得使用授权；公开下载不自动授予修改或分发权。助手只应在许可允许时适配技能，无法访问来源或验证失败时说明限制。
 
 Pi 包操作使用 `extensions_inventory` 和 `extensions_package`：读取真实配置与修订，展示来源、范围和计划供用户确认，复用设置页的原生安装/更新/移除服务。项目安装仍要求信任；配置冲突或结果不确定时应先刷新核对，不自动重放。独立技能文件和系统依赖由已启用的常规工具在用户授权后配置，未提供统一依赖事务或一键回滚。许可检查、来源审查和这些常规工具操作由 Agent 指引约束，不是工具沙箱。
 
@@ -105,7 +115,7 @@ REST 复用工作台身份、Pi token、Origin 和 no-store，以及配置/登�
 
 ## 网页入口
 
-- **设置 → Pi 配置**：按服务器 schema 编辑全局／项目配置，只保存改动。
+- **设置 → 运行配置**：按服务器 schema 编辑全局／项目配置，只保存改动。
 - **项目菜单 → 更多操作 → 项目信任**或 `/trust`：绑定所选项目，不自动切换会话或授予信任。
 - **会话详情 → 当前加载的资源**：读取当前连接快照，空闲时显式重载；迟到结果不得串线程。
 - **扩展 → 已安装**：管理 Packages、技能、扩展模块、模板和主题，支持范围、启停和继承；开关使用 resourceId，不使用展示名。读取失败时禁止用旧快照修改。
@@ -156,13 +166,13 @@ GET 快照只投影允许字段，分别返回 global、project、配置有效�
 
 ## 默认工具与全局信任策略（2026-09-10）
 
-设置 → Pi 配置 → 工具使用 `defaultTools`，候选内置名由公开 Pi 工具工厂构造，加上 codemode/tool_search，返回 schema.choices/defaults/platform/maxEntries/maxNameLength；不会启动 runtime、发现扩展或执行工具。PowerShell 需要相应运行环境，Codemode 与 Tool Search 需要对应扩展加载。未设置使用 Pi 标准默认；恢复“Pi 默认”／“继承全局”提交 null 删除本层字段。替换模式保留普通名称，包括自定义名称；原生条目编辑器支持按顺序 `+名称`／`-名称`。只有修饰符时修改继承列表，含普通名称时先替换再应用修饰符。最多 1024 条、每条 500 字符，不接受空名称、空白／控制字符或重复普通名称；重复修饰符保留顺序。未知名称不被删除，但不代表实际工具存在或已获授权。
+设置 → 运行配置 → 工具使用 `defaultTools`，候选内置名由公开 Pi 工具工厂构造，加上 codemode/tool_search，返回 schema.choices/defaults/platform/maxEntries/maxNameLength；不会启动 runtime、发现扩展或执行工具。PowerShell 需要相应运行环境，Codemode 与 Tool Search 需要对应扩展加载。未设置使用 Pi 标准默认；恢复“内置默认”／“继承全局”提交 null 删除本层字段。替换模式保留普通名称，包括自定义名称；原生条目编辑器支持按顺序 `+名称`／`-名称`。只有修饰符时修改继承列表，含普通名称时先替换再应用修饰符。最多 1024 条、每条 500 字符，不接受空名称、空白／控制字符或重复普通名称；重复修饰符保留顺序。未知名称不被删除，但不代表实际工具存在或已获授权。
 
 显式 `defaultTools=[]` 表示无默认内置工具，不当作未配置；受信项目修饰符叠加全局空列表不会恢复 Pi 默认。它不是完整 allowlist：已启用扩展仍可能注册并激活默认工具，Codemode 间接调用另受权限规则约束。此设置不放宽子任务 gate，也不控制手动 Shell；实际工具从当前会话资源清单核对。
 
 同组提供 codemode.mode=on|only（默认 on）和 codemode.inlineBudget=0–1000000 安全整数（默认 3000）：控制工具呈现与估算内联声明 Token，不控制脚本执行超时。仅提交改变字段，保留未知原生设置及工具条目顺序；保存与实际线程加载分开。MCP autoEnableCodemode 属于 mcp.json，网页入口和 DTO 见[原生 MCP](MCP.md)。
 
-设置 → Pi 配置 → 项目信任提供 defaultProjectTrust=ask/always/never，globalOnly；项目范围提交该字段（包括 null）拒绝。null 恢复 Pi 默认 ask。策略仅作兜底，不覆盖已有项目或父目录的允许/拒绝；启动覆盖和 project_trust hooks 仍由原生 runtime 处理。RPC 的 ask 不弹启动询问，未决项目受信资源暂不加载，用户可从项目菜单或 /trust 授权。项目独立信任窗口展示默认策略并链接到全局设置，入口不切换所选项目或启动会话。
+设置 → 运行配置 → 项目信任提供 defaultProjectTrust=ask/always/never，globalOnly；项目范围提交该字段（包括 null）拒绝。null 恢复 Pi 默认 ask。策略仅作兜底，不覆盖已有项目或父目录的允许/拒绝；启动覆盖和 project_trust hooks 仍由原生 runtime 处理。RPC 的 ask 不弹启动询问，未决项目受信资源暂不加载，用户可从项目菜单或 /trust 授权。项目独立信任窗口展示默认策略并链接到全局设置，入口不切换所选项目或启动会话。
 
 配置推导与当前 runtime 实际信任分开说明；不信任不隔离工具权限，也不阻止所有上下文文件。两项保存均复用原接口/修订/锁/0600备份与原子写入，不改写 trust.json 的已有逐项目决定。设置和信任保存均提示新运行实例生效；仅切线程或刷新页面可能复用旧 worker，需要任务结束后 /quit 再重新打开。保存不自动停止/重载资源。写入期间锁定设置表单和范围；写入成功但重读失败只允许刷新核对，避免重放已成功的保存。
 

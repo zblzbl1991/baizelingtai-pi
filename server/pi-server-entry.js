@@ -9,10 +9,10 @@ function startManaged(root) {
         const networkEnvironment = { ...process.env }; network.applyEnvironment(networkEnvironment);
         launcher = new ManagedLauncher({ root, networkEnvironment });
         launcher.start().catch(() => {
-            console.error('Pivane managed startup failed. Check installation permissions and whether another process uses this installation.');
+            console.error('baizelingtai managed startup failed. Check installation permissions and whether another process uses this installation.');
             void launcher.close().finally(() => process.exit(1));
         });
-    } catch { console.error('Pivane maintenance state could not be opened; no update was attempted.'); process.exit(1); }
+    } catch { console.error('baizelingtai maintenance state could not be opened; no update was attempted.'); process.exit(1); }
     return launcher;
 }
 function handoff(root) {

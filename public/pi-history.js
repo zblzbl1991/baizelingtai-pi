@@ -165,7 +165,7 @@
                 $('pi-history-text-prev').hidden = !paged; $('pi-history-text-next').hidden = !paged;
                 $('pi-history-text-prev').disabled = !data.offset; $('pi-history-text-next').disabled = !data.hasMore;
                 $('pi-history-copy').textContent = data.offset || data.hasMore ? translateUi("复制本页") : translateUi("复制正文");
-                $('pi-history-bookmark-state').textContent = !data.canBookmark ? translateUi("首条回复保存后可添加书签") : data.labelTruncated ? translateUi("已有标签较长；如需修改，请输入新的书签名") : translateUi("书签保存在 Pi 原生会话中");
+                $('pi-history-bookmark-state').textContent = !data.canBookmark ? translateUi("首条回复保存后可添加书签") : data.labelTruncated ? translateUi("已有标签较长；如需修改，请输入新的书签名") : translateUi("书签保存在会话记录中");
                 this.status.textContent = '';
                 this.renderResults(); this.controls(); text.focus({ preventScroll: true }); this.panel.scrollTop = 0;
             } catch (e) { if (this.current(key, generation) && sequence === this.detailSequence) this.status.textContent = e.message; }

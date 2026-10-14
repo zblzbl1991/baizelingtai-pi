@@ -94,7 +94,8 @@
 .pi-subagent-notice[data-subagent-tone="error"] .pi-subagent-notice-fold > summary > i:first-child { color: var(--danger); }
 .pi-subagent-notice-fold > summary > strong { flex-shrink: 0; color: var(--text-main); font-size: 12.5px; font-weight: 600; }
 .pi-subagent-notice-preview { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pi-subagent-notice-source { flex-shrink: 0; color: var(--text-muted); font-size: 11px; opacity: .8; }
+.pi-subagent-notice-source { display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 11px; opacity: .8; }
+.pi-subagent-notice-source[hidden] { display: none; }
 .pi-subagent-notice-chevron { flex-shrink: 0; font-size: 9px; transition: transform .12s; }
 .pi-subagent-notice-fold[open] > summary { border-bottom: 1px solid var(--line); }
 .pi-subagent-notice-fold[open] .pi-subagent-notice-chevron { transform: rotate(90deg); }
@@ -102,6 +103,5 @@
 .pi-subagent-notice-fold > .pi-message-body { max-height: min(60vh, 560px); overflow: auto; overscroll-behavior: contain; padding: 10px 14px; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { .pi-subagent-notice-chevron { transition: none; } }
 @media (max-width: 600px) {
-    .pi-subagent-notice-source { display: none; }
     .pi-subagent-notice-fold > summary { min-height: 40px; }
 }

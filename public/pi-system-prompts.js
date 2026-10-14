@@ -112,12 +112,12 @@
                 cardHeading.append(node(isBase ? 'strong' : 'h4', isBase ? title(kind) : translateUi("2 · 希望 AI 怎么配合你？")));
                 const state = node('span', '', { class: 'system-prompt-state' }); cardHeading.append(state); card.append(cardHeading);
                 const form = node('form');
-                const mode = isBase ? select([['inherit', scope === 'global' ? translateUi("Pi 默认") : translateUi("继承全局")], ['custom', translateUi("使用本层内容")]], draft.content === null ? 'inherit' : 'custom', 'system-prompt-base-mode') : null;
+                const mode = isBase ? select([['inherit', scope === 'global' ? translateUi("内置默认") : translateUi("继承全局")], ['custom', translateUi("使用本层内容")]], draft.content === null ? 'inherit' : 'custom', 'system-prompt-base-mode') : null;
                 const editor = node('textarea', undefined, { rows: '9', spellcheck: 'false', id: `system-prompt-${kind}-text`, 'aria-label': title(kind), 'aria-describedby': `system-prompt-${kind}-help system-prompt-${kind}-validation`, placeholder: translateUi("例如：先给我结论，再解释原因。遇到不确定的地方请直接说明。") });
                 editor.value = draft.content === null ? inherited : draft.text;
                 const source = node('details', undefined, { class: 'system-prompt-source' });
                 source.append(node('summary', translateUi("文件位置与范围说明")), node('code', file.path));
-                if (scope === 'project') source.append(node('p', translateUi("全局内容")), node('pre', snapshot.files.global[kind].content ?? translateUi("未设置，使用 Pi 默认。")));
+                if (scope === 'project') source.append(node('p', translateUi("全局内容")), node('pre', snapshot.files.global[kind].content ?? translateUi("未设置，使用内置默认。")));
                 else if (snapshot.files.project[kind].content !== null && snapshot.trust.effective) source.append(node('p', translateUi("当前项目已有专属设置，会优先使用项目内容。修改这里不会覆盖它。")));
                 const views = node('div', undefined, { class: 'system-prompt-editor-tabs', role: 'group', 'aria-label': translateUi("内容视图") });
                 const display = node('div', undefined, { class: 'system-prompt-preview', hidden: '' });
@@ -133,9 +133,9 @@
                     display.hidden = view === 'edit';
                     if (view === 'preview') preview(display, currentText());
                     if (view === 'changes') changes(display, draft.original, draft.content);
-                    state.textContent = draft.uncertain ? translateUi("需要核对") : dirty(draft) ? translateUi("未保存") : draft.content === null ? (isBase ? translateUi("Pi 默认") : inheritedTitle(scope)) : translateUi("已保存");
+                    state.textContent = draft.uncertain ? translateUi("需要核对") : dirty(draft) ? translateUi("未保存") : draft.content === null ? (isBase ? translateUi("内置默认") : inheritedTitle(scope)) : translateUi("已保存");
                     state.dataset.dirty = String(dirty(draft) || draft.uncertain);
-                    helper.textContent = isBase ? translateUi("替换 Pi 默认基础行为说明。项目上下文和 Skills 仍可能追加；工具权限由工具配置控制。") : scope === 'project' ? (draft.content === null ? translateUi("下方显示所有项目的要求。直接修改即可为此项目定制；保存后将替代通用要求，不会自动叠加。") : translateUi("这里的内容只用于当前项目，会替代所有项目的通用要求，不会自动叠加。")) : translateUi("保留 AI 默认能力，只补充你的偏好。有专属要求的项目会优先使用项目设置。");
+                    helper.textContent = isBase ? translateUi("替换内置默认基础行为说明。项目上下文和 Skills 仍可能追加；工具权限由工具配置控制。") : scope === 'project' ? (draft.content === null ? translateUi("下方显示所有项目的要求。直接修改即可为此项目定制；保存后将替代通用要求，不会自动叠加。") : translateUi("这里的内容只用于当前项目，会替代所有项目的通用要求，不会自动叠加。")) : translateUi("保留 AI 默认能力，只补充你的偏好。有专属要求的项目会优先使用项目设置。");
                     validation.textContent = draft.uncertain ? translateUi("保存结果需要核对。请先刷新并核对草稿，不要重复提交。") : invalid ? translateUi("要求不能为空、包含空字符或超过 64 KiB。要移除要求，请使用恢复按钮。") : '';
                     editor.setAttribute('aria-invalid', String(invalid));
                     meter.textContent = translateUi("{0} 字符", Array.from(currentText()).length);
@@ -304,8 +304,8 @@
             body.replaceChildren(tabs, metadata);
             for (const kind of kinds) {
                 const section = node('details'), configured = snapshot.configured?.[kind];
-                section.append(node('summary', kind === 'append' ? translateUi("我的要求") : translateUi("基础提示")), node('p', configured ? translateUi("按文件与当前信任推导的来源：{0}", configured.scope === 'default' ? translateUi("Pi 默认") : scopeTitle(configured.scope)) : translateUi("文件来源暂时无法核对")));
-                section.append(node('pre', (kind === 'base' ? snapshot.customPrompt : snapshot.appendSystemPrompt) ?? (kind === 'base' ? translateUi("使用 Pi 默认基础提示，完整内容见提示正文。") : translateUi("没有追加指令"))));
+                section.append(node('summary', kind === 'append' ? translateUi("我的要求") : translateUi("基础提示")), node('p', configured ? translateUi("按文件与当前信任推导的来源：{0}", configured.scope === 'default' ? translateUi("内置默认") : scopeTitle(configured.scope)) : translateUi("文件来源暂时无法核对")));
+                section.append(node('pre', (kind === 'base' ? snapshot.customPrompt : snapshot.appendSystemPrompt) ?? (kind === 'base' ? translateUi("使用内置默认基础提示，完整内容见提示正文。") : translateUi("没有追加指令"))));
                 const origin = node('details'); origin.append(node('summary', translateUi("文件位置与范围说明")));
                 if (configured?.path) origin.append(node('code', configured.path));
                 origin.append(node('p', translateUi("来源路径为配置推导；内容相同不代表能识别启动参数或扩展的来源。"))); section.append(origin);
@@ -337,7 +337,7 @@
             });
             copyButton.prepend(icon('copy'));
             const searchRow = node('div', undefined, { class: 'system-prompt-search' }); searchRow.append(search, copyButton);
-            full.append(searchRow, found, text); body.append(sources, full, node('p', translateUi("此处为 Pi 当前提示快照。扩展可逐轮修改提示，供应商请求改写不包含在此视图中。")));
+            full.append(searchRow, found, text); body.append(sources, full, node('p', translateUi("此处为当前运行实例的提示快照。扩展可逐轮修改提示，供应商请求改写不包含在此视图中。")));
         }
         async function read(apply) {
             if (reading || !context().connected || apply && context().busy) return;

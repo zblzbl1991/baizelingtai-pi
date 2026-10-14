@@ -1,0 +1,34 @@
+:root {
+    color-scheme: light dark;
+    --background: oklch(98% 0.006 175);
+    --foreground: oklch(26% 0.025 175);
+    --muted: oklch(49% 0.018 175);
+    --accent: oklch(48% 0.075 182);
+    --line: oklch(89% 0.01 175);
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { width: min(100%, 560px); padding: 48px 24px; text-align: center; }
+.brand { display: block; width: min(272px, 100%); height: auto; margin: 0 auto 40px; }
+.brand-inverse { display: none; }
+h1 { margin: 0 0 14px; font-size: 26px; font-weight: 600; letter-spacing: 0.01em; }
+#startup-detail { margin: 0; line-height: 1.7; font-size: 16px; color: var(--muted); overflow-wrap: anywhere; white-space: pre-line; }
+.waiting { display: block; width: 24px; height: 24px; margin: 28px auto 0; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: waiting 1s linear infinite; }
+.hint, noscript { margin: 24px 0 0; font-size: 13px; line-height: 1.7; color: var(--muted); }
+body[data-state="error"] .waiting { display: none; }
+@keyframes waiting { to { transform: rotate(360deg); } }
+@media (prefers-color-scheme: dark) {
+    :root { --background: oklch(19% 0.009 175); --foreground: oklch(93% 0.008 175); --muted: oklch(70% 0.014 175); --accent: oklch(73% 0.08 175); --line: oklch(34% 0.012 175); }
+    .brand-default { display: none; }
+    .brand-inverse { display: block; }
+}
+@media (prefers-reduced-motion: reduce) { .waiting { animation: none; } }

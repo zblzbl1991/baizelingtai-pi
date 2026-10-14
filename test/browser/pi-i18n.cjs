@@ -28,6 +28,7 @@ async function run(browser, base, width, language) {
     const context = await browser.newContext({ viewport: { width, height: 1000 }, locale: language, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(); page.setDefaultTimeout(12000);
     const errors = [], calls = [], writes = [];
+    let displaySession = session, peer;
     page.on('pageerror', e => errors.push(e.message));
     await page.addInitScript(({ cwd }) => {
         localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem('pi.web.session:' + cwd, 'language-fixture');
@@ -39,7 +40,7 @@ async function run(browser, base, width, language) {
         let data = {};
         if (url.pathname === '/api/pi/status') data = { ok: true, projectRoots: ['/fixture'], defaultProject: cwd, usageStats: true, mediaLab: true, nativeSettings: true, sideChat: true };
         else if (url.pathname === '/api/pi/projects') data = { roots: ['/fixture'], projects: [{ cwd, name: '项目', sessionCount: 1 }] };
-        else if (url.pathname === '/api/pi/sessions') data = { sessions: [session] };
+        else if (url.pathname === '/api/pi/sessions') data = { sessions: [displaySession] };
         else if (url.pathname === '/api/pi/activity') data = { runtimes: [], replyNotices: [], pinnedProjects: [], hiddenProjects: [] };
         else if (url.pathname === '/api/pi/settings/models') data = { models: [model], providers: [{ id: 'fixture', name: '供应商', configured: true, authMethods: {} }], customProviders: [], preferences: { mediaAgent: { provider: 'fixture', modelId: model.id } } };
         else if (url.pathname === '/api/pi/settings/usage') data = usage(url.searchParams);
@@ -51,23 +52,27 @@ async function run(browser, base, width, language) {
         } else if (url.pathname.startsWith('/api/pi/media/lab')) data = { version: 1, models: [mediaModel] };
         return route.fulfill({ json: data });
     });
-    await page.routeWebSocket('**/api/pi/ws', ws => ws.onMessage(raw => {
+    await page.routeWebSocket('**/api/pi/ws', ws => { peer = ws; ws.onMessage(raw => {
         const command = JSON.parse(raw); calls.push(command.type);
         const state = { model, isStreaming: false, thinkingLevel: 'off' };
         let data = {};
-        if (command.type === 'open_session') data = { session, state, messages: { messages }, stats: {}, models: { models: [model] }, thinkingLevels: { levels: ['off'] }, commands: { commands: [] } };
+        if (command.type === 'open_session') data = { session: displaySession, state, messages: { messages }, stats: {}, models: { models: [model] }, thinkingLevels: { levels: ['off'] }, commands: { commands: [] } };
         else if (command.type === 'get_state') data = state;
         else if (command.type === 'get_messages') data = { messages };
         else if (command.type === 'get_available_models') data = { models: [model] };
         else if (command.type === 'get_available_thinking_levels') data = { levels: ['off'] };
         ws.send(JSON.stringify({ type: 'response', id: command.id, command: command.type, success: true, data }));
-    }));
+    }); });
     await page.goto(base, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.getElementById('pi-input').disabled);
     const english = language.startsWith('en');
     assert.equal(await page.locator('html').getAttribute('lang'), english ? 'en' : 'zh-CN');
     assert.equal(await page.title(), '白泽灵台');
     assert.equal(await page.locator('.logo-brand h2').textContent(), '白泽灵台');
+    assert.equal(await page.locator('[data-work-chat-nav]').getAttribute('title'), english ? 'Work chat' : '工作对话');
+    assert.equal(await page.locator('[data-work-chat-nav] [data-work-chat-label]').textContent(), english ? 'Work chat' : '工作对话');
+    assert.equal(await page.locator('#pi-input').getAttribute('placeholder'), english ? 'Send a message' : '发送消息');
+    assert.equal(await page.locator('.pi-message.assistant header strong').last().textContent(), english ? 'Assistant' : '助手');
     assert.equal(await page.locator('.workspace-login-brand span').textContent(), '白泽灵台');
     assert.equal(await page.locator('#workspace-settings-toggle').getAttribute('title'), english ? 'Workspace settings' : '工作台设置');
     const transcript = await page.locator('#pi-transcript-content').innerText();
@@ -120,6 +125,7 @@ async function run(browser, base, width, language) {
     await overflow(['#pi-inspector', '#pi-inspector-details']);
     if (width < 900) await page.locator('#pi-close-inspector').click();
     await page.locator('#workspace-settings-toggle').click();
+    assert.equal(await page.locator('#workspace-access-nav').isVisible(), false);
     await page.locator('[data-settings-tab="models"]').click();
     await page.waitForFunction(() => document.getElementById('settings-media-agent-model').options.length > 0);
     await overflow(['.workspace-settings-dialog', '.workspace-settings-body', '.workspace-settings-content', '.workspace-settings-nav', '.workspace-settings-panel.active', '.workspace-language-card', '#workspace-language', '#settings-media-agent-form']);
@@ -155,8 +161,10 @@ async function run(browser, base, width, language) {
         assert.equal(await page.locator('#workspace-more-toggle span').innerText(), english ? 'More' : '更多功能');
         await page.locator('#workspace-more-toggle').click();
         assert.equal(await page.locator('#workspace-more-menu').isVisible(), true);
-        await page.locator('#workspace-more-menu [data-more-tab="media"]').click();
-    } else await page.locator('[data-tab="media"]').click();
+        assert.equal(await page.locator('#workspace-more-menu [data-more-tab="media"]').count(), 0);
+        await page.keyboard.press('Escape');
+    }
+    await page.evaluate(() => window.PiWorkspaceRoute.navigate('media'));
     await page.locator('#lab-model option[value="image-fixture"]').waitFor({ state: 'attached' });
     assert.equal(await page.locator('#lab-parameters [data-param="prompt"]').getAttribute('aria-label'), english ? 'Prompt' : '提示词');
     await page.locator('#lab-parameters [data-param="prompt"]').fill('保存 <原始媒体提示词>');
@@ -169,8 +177,21 @@ async function run(browser, base, width, language) {
     await page.screenshot({ path: `/tmp/pivane-i18n-${language}-${width}-review.png` });
     assert.deepEqual(writes, ['/api/pi/media/lab/review']);
     assert.ok(!calls.includes('prompt') && !calls.includes('set_model'));
+    const boundName = 'Guide <img src=x onerror="window.identityXss=true"> ' + 'LongIdentity'.repeat(12);
+    displaySession = { ...session, agentProfile: { id: 'fixture-profile', name: boundName } };
     await page.reload({ waitUntil: 'domcontentloaded' });
     assert.equal(await page.locator('html').getAttribute('lang'), english ? 'zh-CN' : 'en');
+    await page.evaluate(() => window.PiWorkspaceRoute.navigate('chat'));
+    await page.waitForFunction(() => !document.getElementById('pi-input').disabled);
+    assert.equal(await page.locator('.pi-message.assistant header strong').last().textContent(), boundName);
+    peer.send(JSON.stringify({ type: 'agent_start' }));
+    peer.send(JSON.stringify({ type: 'message_start', message: { role: 'assistant', content: [] } }));
+    peer.send(JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'Synthetic streaming reply' } }));
+    await page.locator('.pi-message.assistant.streaming').waitFor();
+    assert.equal(await page.locator('.pi-message.assistant.streaming header strong').textContent(), boundName);
+    assert.equal(await page.locator('.pi-message.assistant header img').count(), 0);
+    assert.equal(await page.evaluate(() => Boolean(window.identityXss)), false);
+    await overflow(['.pi-message.assistant > header']);
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ language, width, translatedStaticAndDynamic: true, rawContentPreserved: true, noGeneration: true, errors }));
     await context.close();

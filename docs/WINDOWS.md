@@ -1,13 +1,13 @@
 # Windows 原生安装与验证
 
-Pivane 在 Windows x64 上原生运行，无需 WSL，使用 Node 22.x、Git for Windows 与 ripgrep。各版本实际验收过的系统与文件系统见[验证范围](RELEASE_INSTALL_VALIDATION.md)；在其他环境遇到问题，欢迎通过 [Issues](https://github.com/YogurtJ/pivane/issues) 反馈。
+白泽灵台在 Windows x64 上原生运行，无需 WSL，使用 Node 22.x、Git for Windows 与 ripgrep。各版本实际验收过的系统与文件系统见[验证范围](RELEASE_INSTALL_VALIDATION.md)；在其他环境遇到问题，欢迎通过 [Issues](https://github.com/YogurtJ/pivane/issues) 反馈。
 
 ## 安装前提
 
 当前源码的 `node scripts/install.cjs` 统一准备内置 pi-subagents 与 pi-hermes-memory，不再向共享 Pi 身份另行安装包；准备失败会返回安装错误。这个入口使用 SQLite 随包的原生二进制，避免 npm 无谓调用 Visual Studio C++ 编译。下文以 1.6.0 为例（安装其他版本时替换版本号），使用统一安装入口；旧归档没有此脚本时仍使用 `npm.cmd ci`。默认启用、旧配置兼容和平台依赖见[内置能力包](BUNDLED_CAPABILITIES.md)。
 
 - Node 22.x x64、npm、Git for Windows（含 Git Bash）、ripgrep 在运行进程 PATH 中可用。Pi 使用项目锁定依赖，不需要全局安装。
-- Pivane 自身使用随包的 Node-API 8 组件，无需现场编译该组件。当前源码内置记忆的 `better-sqlite3` 另外安装适配当前 Node 的二进制；缺少预构建文件时需要 Python 与 Visual Studio C++ 构建工具，见[内置能力包](BUNDLED_CAPABILITIES.md)。维护者重建 Pivane 自身组件的要求见 native/README.md。
+- 白泽灵台自身使用随包的 Node-API 8 组件，无需现场编译该组件。当前源码内置记忆的 `better-sqlite3` 另外安装适配当前 Node 的二进制；缺少预构建文件时需要 Python 与 Visual Studio C++ 构建工具，见[内置能力包](BUNDLED_CAPABILITIES.md)。维护者重建白泽灵台自身组件的要求见 native/README.md。
 - 普通安装复用当前用户的 Pi CLI 身份，Windows 原生默认通常是 `C:\Users\<用户>\.pi\agent`，不是 AppData；非空 `PI_CODING_AGENT_DIR` 优先。媒体和预约使用实例独立路径。只有需要隔离身份时才另建专用 Pi 目录，不把身份指向驱动器根目录或整个主目录。
 - Git Bash 用于内置 Bash 和手动 `!`/`!!`。Pi 的可选 PowerShell 工具沿用原生设置。创建文件符号链接仍受 Windows 的开发者模式/权限限制；本项目不自动开启开发者模式。
 
@@ -59,7 +59,7 @@ Copy-Item -LiteralPath (Join-Path $base 'instance.env') -Destination (Join-Path 
 node.exe scripts/install-service.cjs
 ```
 
-打开http://127.0.0.1:11408或桌面 Pivane 入口。安装终端可以关闭，以后用户登录时由计划任务启动；首次安装成功后不用每次重装依赖。运行进程已有环境变量优先于.env，启动前核对实际身份和认证依赖；保留原 Pi 需要的 Provider 环境变量、代理和命令 PATH，清除其他实例的无关覆盖，不输出秘密值，也不修改其他应用的系统环境。打开“供应商与模型”检查复用的配置，缺少可用认证时才登录。
+打开http://127.0.0.1:11408或桌面白泽灵台入口。安装终端可以关闭，以后用户登录时由计划任务启动；首次安装成功后不用每次重装依赖。运行进程已有环境变量优先于.env，启动前核对实际身份和认证依赖；保留原 Pi 需要的 Provider 环境变量、代理和命令 PATH，清除其他实例的无关覆盖，不输出秘密值，也不修改其他应用的系统环境。打开“供应商与模型”检查复用的配置，缺少可用认证时才登录。
 
 上例默认开放安装时 Windows 可见的各盘符根目录（例如`C:/;D:/`），系统文件权限继续生效；新增盘符时更新此配置并空闲重启。只有用户明确要求缩小范围时才设置`C:/Projects;D:/Work`等指定目录，使用分号分隔。实际目录必须存在，仍经过系统realpath、目录与权限检查。按需要修改instance.env并同步复制到当前代码目录，端口变更需同时修改PORT和PI_WORKSPACE_BASE_URL。上例只监听本机；开放远程访问需要相应监听地址、防火墙及访问验证配置。常驻配置、计划任务和桌面入口的管理见[后台常驻](BACKGROUND_SERVICE.md)。前台 `npm.cmd start` 仅用于试用与排障；停止前先结束任务并暂停预约，不能把强制结束任务当作正常退出。普通关闭与远端/脱离进程不是事务性撤销。
 

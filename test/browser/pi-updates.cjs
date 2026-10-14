@@ -40,6 +40,20 @@ async function run(browser, base, width, language) {
                 releasesUrl: 'https://github.com/YogurtJ/pivane/releases/tag/v1.0.0-rc.10',
                 downloadUrl: 'https://github.com/YogurtJ/pivane/releases/download/v1.0.0-rc.10/pivane-1.0.0-rc.10.tar.gz',
                 checksumUrl: 'https://github.com/YogurtJ/pivane/releases/download/v1.0.0-rc.10/pivane-1.0.0-rc.10.tar.gz.sha256' };
+            if (mode.startsWith('intranet')) {
+                data.source = { type: 'manifest', origin: 'http://gitlab.example:8080', url: 'http://gitlab.example:8080/api/v4/projects/team%2Fbaizelingtai/repository/files/updates%2Flatest.json/raw?ref=HEAD' };
+                data.pivane = { version: '1.8.0', status: 'available', packageFormat: 'windows-portable-zip', sha256: 'a'.repeat(64),
+                    bytes: 1234,
+                    releasesUrl: 'http://gitlab.example:8080/team/baizelingtai/-/releases/v1.8.0',
+                    downloadUrl: 'http://gitlab.example:8080/api/v4/projects/20/packages/generic/baizelingtai/1.8.0/baizelingtai-1.8.0.zip' };
+                data.pi = { version: '1.1.0', status: 'available', bundled: true, releasesUrl: data.pivane.releasesUrl };
+                noticeState = { ...noticeState, supported: false, enabled: false, available: false };
+                if (mode === 'intranet-error') {
+                    const releasesUrl = 'http://gitlab.example:8080/team/baizelingtai/-/releases';
+                    data.pivane = { status: 'error', releasesUrl };
+                    data.pi = { status: 'error', bundled: true, releasesUrl };
+                }
+            }
         } else if (url.pathname === '/api/pi/status') data = { ok: true, updateChecks: true, projectRoots: ['/fixture'], defaultProject: cwd };
         else if (url.pathname === '/api/pi/projects') data = { roots: ['/fixture'], projects: [{ cwd, name: 'Fixture', sessionCount: 1 }] };
         else if (url.pathname === '/api/pi/sessions') data = { sessions: [session] };
@@ -76,9 +90,12 @@ async function run(browser, base, width, language) {
     await page.locator('#updates-check').waitFor();
     assert.equal(await page.locator('#settings-updates-panel h3').textContent(), english ? 'Versions and updates' : '版本与更新');
     assert.equal(await page.locator('#updates-channel, #updates-install-pivane, #maintenance-update, #maintenance-backup, #maintenance-restart').count(), 0);
+    assert.equal(await page.locator('#settings-updates-panel .network-settings-link, #settings-updates-panel a[href*="section=proxy"]').count(), 0);
     await page.locator('#updates-pivane [data-state="available"]').waitFor();
     assert.ok(writes.filter(path => path === '/api/pi/settings/updates/check').length <= 1, 'initial visit checks once if uncached');
     assert.ok((await page.locator('#updates-pivane').innerText()).includes('1.0.0-rc.10'));
+    assert.equal(await page.locator('#updates-pi').isVisible(), false);
+    await page.locator('#updates-engine-details summary').click();
     assert.ok((await page.locator('#updates-pi').innerText()).includes('0.86.0'));
     assert.equal(await page.locator('#updates-pivane a[href$=".tar.gz"]').count(), 0);
     assert.equal(await page.locator('#updates-pivane a[href$=".sha256"]').count(), 0);
@@ -86,10 +103,11 @@ async function run(browser, base, width, language) {
     const prompt = await page.locator('#updates-agent-prompt').inputValue();
     assert.ok((await page.locator('#updates-pivane h4').textContent()).includes('白泽灵台'));
     assert.ok(prompt.includes('白泽灵台') && !prompt.includes('Pivane'));
-    assert.ok(prompt.includes('AGENT_GUIDE.md') && prompt.includes('INSTALL_RECOVERY.md'));
+    assert.ok(prompt.includes('UPDATES.md') && prompt.includes('INSTALL_RECOVERY.md'));
+    assert.ok(!prompt.includes('https://github.com'), 'update prompt must not hard-code an external repository');
     assert.ok(prompt.includes(english ? 'independent Agent' : '独立 Agent'));
-    assert.ok(prompt.includes(english ? 'explicit approval' : '明确确认'));
-    assert.ok(prompt.includes(english ? 'do not stop or restart' : '不要在当前会话中停止或重启'));
+    assert.ok(prompt.includes(english ? 'existing authorization' : '已有授权'));
+    assert.ok(prompt.includes(english ? 'stop or restart the service hosting' : '不要停止或重启承载当前对话的服务'));
     await page.locator('#updates-copy-prompt').click();
     await page.waitForFunction(() => document.querySelector('.updates-copy-feedback').textContent.length > 0);
     const copyStatus = await page.locator('.updates-copy-feedback').textContent();
@@ -106,6 +124,7 @@ async function run(browser, base, width, language) {
     const checkingRequest = page.waitForRequest(r => r.url().endsWith('/settings/updates/check'));
     await page.locator('#updates-check').click(); await checkingRequest;
     await page.waitForFunction(() => document.getElementById('updates-check').disabled);
+    assert.equal(await page.locator('#updates-engine-details').evaluate(e => e.open), true);
     await page.locator('#workspace-settings-close').click(); await page.locator('#workspace-settings-toggle').click();
     await page.waitForFunction(() => !document.getElementById('updates-check').disabled);
     const lateResponse = page.waitForResponse(r => r.url().endsWith('/settings/updates/check'));
@@ -114,6 +133,36 @@ async function run(browser, base, width, language) {
     mode = 'error'; await page.locator('#updates-check').click(); await page.locator('#updates-pivane [data-state="error"]').waitFor();
     assert.equal(await page.locator('#updates-pi [data-state="available"]').count(), 1);
     mode = 'empty'; await page.locator('#updates-check').click(); await page.locator('#updates-pivane [data-state="no-release"]').waitFor();
+    mode = 'intranet'; await page.locator('#updates-check').click(); await page.locator('#updates-source').waitFor();
+    assert.ok((await page.locator('#updates-source').textContent()).includes('http://gitlab.example:8080'));
+    const zip = page.locator('#updates-pivane a[href$="baizelingtai-1.8.0.zip"]');
+    assert.equal(await zip.textContent(), english ? 'Download Windows ZIP' : '下载 Windows ZIP');
+    assert.equal(await zip.getAttribute('href'), 'http://gitlab.example:8080/api/v4/projects/20/packages/generic/baizelingtai/1.8.0/baizelingtai-1.8.0.zip');
+    assert.equal(await zip.getAttribute('rel'), 'noopener noreferrer');
+    assert.ok((await page.locator('#updates-package-hash').textContent()).includes('a'.repeat(64)));
+    assert.ok((await page.locator('#updates-pi').textContent()).includes(english ? 'Bundled version' : '整包配套版本'));
+    const intranetPrompt = await page.locator('#updates-agent-prompt').inputValue();
+    assert.ok(intranetPrompt.includes('http://gitlab.example:8080/api/v4/projects/team%2Fbaizelingtai/repository/files/updates%2Flatest.json/raw?ref=HEAD'));
+    for (const field of ['latest.json', 'SemVer', 'version', 'package', 'bytes', 'sha256']) assert.ok(intranetPrompt.includes(field));
+    assert.ok(intranetPrompt.includes(english ? 'stop if there is no newer release' : '没有新版就结束'));
+    assert.ok(intranetPrompt.includes(english ? 'verification mismatches' : '校验不符'));
+    for (const cached of ['1.0.0-rc.2', '1.8.0', '1.1.0', '1234', 'a'.repeat(64)]) assert.ok(!intranetPrompt.includes(cached), 'prompt must read fresh target values from the manifest');
+    assert.ok(intranetPrompt.length < (english ? 1400 : 650), 'manifest-first prompt stays concise');
+    assert.ok(intranetPrompt.includes(english ? 'original absolute data paths' : '原数据绝对路径'));
+    assert.ok(intranetPrompt.includes(english ? 'back up' : '备份') && intranetPrompt.includes(english ? 'roll back' : '回退'));
+    assert.ok(intranetPrompt.includes(english ? 'existing authorization' : '已有授权'));
+    assert.ok(intranetPrompt.includes(english ? 'pause schedules' : '暂停预约'));
+    assert.ok(!intranetPrompt.includes('https://github.com/YogurtJ/pivane'));
+    await page.waitForFunction(() => document.getElementById('updates-auto-check').closest('section').hidden);
+    await overflow();
+    await page.screenshot({ path: path.join(process.env.PI_BROWSER_ARTIFACT_DIR || os.tmpdir(), `pivane-intranet-updates-${language}-${width}.png`) });
+    mode = 'intranet-error'; await page.locator('#updates-check').click(); await page.locator('#updates-pivane [data-state="error"]').waitFor();
+    assert.equal(await page.locator('#updates-pivane a').getAttribute('href'), 'http://gitlab.example:8080/team/baizelingtai/-/releases');
+    const unverified = await page.locator('#updates-agent-prompt').inputValue();
+    assert.equal(unverified, intranetPrompt, 'check failures must retain the same manifest-first prompt');
+    assert.ok(!unverified.includes('a'.repeat(64)) && !unverified.includes('baizelingtai-1.8.0.zip'));
+    assert.ok(!unverified.includes('https://github.com'));
+    assert.ok(unverified.includes(english ? 'without automatic retries' : '不自动重试'));
     mode = 'old'; await page.locator('[data-settings-tab="providers"]').click(); await page.locator('[data-settings-tab="updates"]').click();
     await page.waitForFunction(() => document.getElementById('updates-feedback')?.textContent.includes('稍后') || document.getElementById('updates-feedback')?.textContent.includes('later'));
     await page.locator('#workspace-settings-close').click();

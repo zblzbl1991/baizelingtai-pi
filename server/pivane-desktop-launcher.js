@@ -8,6 +8,7 @@ const { loadLocalEnv } = require('./pi-local-env');
 const { WorkspaceNetworkService } = require('./workspace-network-service');
 const { privateDir } = require('./pi-maintenance-files');
 const { outputRedactor, outputLines } = require('./pi-update-output');
+const { feedUrl, portableMetadataFile } = require('./pi-update-feed');
 
 function installationId(root) {
     return createHash('sha256').update(fs.realpathSync.native(root)).digest('hex').slice(0, 16);
@@ -16,7 +17,7 @@ function installationId(root) {
 function desktopEnvironment(root, environment = process.env) {
     const env = { ...environment };
     loadLocalEnv(path.join(root, '.env'), env);
-    const portableFile = path.join(root, 'pivane-portable.json');
+    const portableFile = portableMetadataFile(root);
     if (fs.existsSync(portableFile)) {
         const portable = JSON.parse(fs.readFileSync(portableFile, 'utf8'));
         if (portable.version !== 1 || portable.platform !== 'win32' || portable.arch !== 'x64' || process.platform !== 'win32' || process.arch !== 'x64')
@@ -28,6 +29,9 @@ function desktopEnvironment(root, environment = process.env) {
         env.PI_MEDIA_CONFIG_DIR ||= path.join(root, 'data/media-lab');
         env.PI_WEB_DEFERRED_FILE ||= path.join(root, 'data/pivane-deferred-messages.json');
         env.HOST ||= '127.0.0.1';
+        // Carry the installation's source into any managed application snapshot.
+        if (env.BAIZELINGTAI_UPDATE_FEED_URL === undefined && env.PIVANE_UPDATE_FEED_URL === undefined && portable.updateFeedUrl)
+            env.BAIZELINGTAI_UPDATE_FEED_URL = feedUrl(portable.updateFeedUrl);
     }
     // Match the managed entry point; changing launch method never migrates data.
     env.PI_MEDIA_DATA_DIR ||= root;
@@ -71,8 +75,23 @@ function listenForStop(input, stop) {
     input.on('error', () => { void stop(); });
 }
 
-async function startDesktop({ root, environment = process.env, emit, log = text => process.stderr.write(text + '\n'),
-    Manager = ManagedLauncher, Network = WorkspaceNetworkService, fetcher = fetch, forkServer = fork } = {}) {
+async function startDesktop(options = {}) {
+    const root = fs.realpathSync.native(options.root);
+    const startupEnvironment = { ...(options.environment || process.env) };
+    loadLocalEnv(path.join(root, '.env'), startupEnvironment);
+    const startup = await require('./pivane-desktop-startup').createDesktopStartup({ root, reservedPorts: [Number(startupEnvironment.PORT || 11408)] });
+    try {
+        options.emit({ type: 'waiting', url: startup.url });
+        return await startDesktopService({ ...options, root, startup });
+    } catch (error) {
+        startup.fail(error.desktopMessage || outputRedactor(options.environment || process.env)(error.message));
+        await startup.close({ allowFailureView: true });
+        throw error;
+    }
+}
+
+async function startDesktopService({ root, environment = process.env, emit, log = text => process.stderr.write(text + '\n'),
+    Manager = ManagedLauncher, Network = WorkspaceNetworkService, fetcher = fetch, forkServer = fork, startup } = {}) {
     if (Number(process.versions.node.split('.')[0]) < 22) throw Error('The desktop launcher requires Node.js 22 or later.');
     root = fs.realpathSync.native(root);
     if (fs.existsSync(path.join(root, '.pivane-runtime/service/installation.json'))) {
@@ -108,7 +127,10 @@ async function startDesktop({ root, environment = process.env, emit, log = text 
         if (!stopping) stopping = Promise.resolve().then(async () => {
             emit({ type: 'stopping' });
             try { await launcher.close(); }
-            finally { fs.closeSync(logFd); logFd = undefined; }
+            finally {
+                try { await startup.close({ allowFailureView: true }); }
+                finally { fs.closeSync(logFd); logFd = undefined; }
+            }
         });
         return stopping;
     };
@@ -120,10 +142,15 @@ async function startDesktop({ root, environment = process.env, emit, log = text 
         if (stopping) { await stopping; return; }
         const url = browserUrl(networkEnvironment.HOST, Number(launcher.env.PORT || env.PORT || 11408));
         await checkReady(url, fetcher);
-        if (!stopping) emit({ type: 'ready', url, logFile, agentDir: env.PI_CODING_AGENT_DIR, mediaDir: env.PI_MEDIA_DATA_DIR });
+        if (!stopping) {
+            startup.ready(url);
+            emit({ type: 'ready', url, logFile, agentDir: env.PI_CODING_AGENT_DIR, mediaDir: env.PI_MEDIA_DATA_DIR });
+        }
     } catch (error) {
         if (stopping) { await stopping; return; }
-        emit({ type: 'error', message: redact(error.message) });
+        error.desktopMessage = redact(error.message);
+        startup.fail(error.desktopMessage);
+        emit({ type: 'error', message: error.desktopMessage });
         error.desktopReported = true;
         try { await stop(); } catch (cleanup) { log(redact(cleanup.message)); }
         throw error;

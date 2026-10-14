@@ -1,6 +1,6 @@
-# Pivane 架构
+# 白泽灵台架构
 
-Pivane 是单体部署的 AI 工作台。一个 Express 服务提供同源 REST/WebSocket、浏览器静态资源和媒体入口；Pi Coding Agent 提供原生会话与工具执行；独立启动器负责受管版本和正常停机。源码按功能服务拆分，运行部署保持简单。
+白泽灵台是单体部署的 AI 工作台。一个 Express 服务提供同源 REST/WebSocket、浏览器静态资源和媒体入口；Pi Coding Agent 提供原生会话与工具执行；独立启动器负责受管版本和正常停机。源码按功能服务拆分，运行部署保持简单。
 
 具体文件与测试入口见 [模块导航](MODULES.md)，变更流程见 [WORKFLOW.md](WORKFLOW.md)，字段和限额以 [API](../API.md) 及各功能契约为准。
 
@@ -58,6 +58,7 @@ Pi 1.1.0 原生 MCP/Codemode 经 `pi-native-mcp.mjs` 和受管 ResourceLoader �
 - 线程间消息复用 `TaskCatalog` 的项目目录和 worker 私有命令：发送方原生 `pivane-agent-message-out` 是补投记录，接收方 `pivane-agent-message` custom message 是送达回执和唯一展示副本。`AgentMessages` 的内存队列可丢弃，重启后从两者重建；只在接收方空闲互斥区写入，需要时再追加隐藏唤醒消息触发一轮。跳数由发送线程当前轮次的触发来源决定，达到上限或唤醒预算后只留言。关闭的接收方只为唤醒启动唯一受管 worker。
 - 侧聊使用受限内存 SessionManager，冻结主会话背景，历史工具调用转换为引用。工具与逐回复确认由独立侧聊管理，关闭、断线和待确认请求有各自生命周期；共享目录不意味着写入隔离。独立模型选择由 SideConnection 专用协议执行，使用 worker.exclusive 预占空闲操作；预算/图片检查后调用原生模型与思考 RPC，不重建 SessionManager 或写全局偏好。浏览器模型控件属于每段 SideThread，不跨线程共享选择。侧聊生命周期由SideConnection负责12小时settled闲置回收，原生exclusive核对空闲并同步最终可见记录后释放worker；SideThread仅保留本页历史分段DOM，不传给新seed。点击不捕获背景，首次发送才prepare；新段关闭以专用空闲协议返回最终记录，清空/退出释放当前及历史展示。
 - 扩展助手仍是受 Supervisor 管理的原生会话，仅身份标记有效的 worker 获得专用管理凭据。安装与配置复用原生资源服务的锁、修订和 trust。
+- 网页、桌面与演示文稿通过统一内置资源目录随应用交付。网页宿主适配限制搜索为原生工具内完成，整页读取另用 `fetch_content`，不注册终端 curator／快捷键或脱离 worker 的后台抓取。桌面适配延迟 helper 准备到实际调用，helper 绑定真实 Agent 目录，项目配置遵守该运行实例的 trust。guizang-ppt 由独立包声明原版技能路径，保留独立 AGPLv3 源码与许可证，不写入身份技能目录或冒充 SkillHub 安装记录。
 - 任务进度由内置 `update_plan` 工具同步写原生 `pivane-task-progress` custom entry，以完整替换形成确定顺序。启动、分支导航和压缩后从完整当前 branch 恢复，Supervisor 只持有有界展示投影，快照沿用 live sequence 边界；不增加 worker 工作类型或外部任务数据库。模型上下文缺少最新工具结果时由 context hook 补入最新计划数据。
 - pi-subagents 适配位于受管会话扩展：worker 在扩展加载时提供其可选的 `@agegr/pi-web/session-liveness/v1` 进程内登记，每 2 秒及回合结束时经私有 notify 报告当前会话的聚合后台状态。Supervisor 把它作为保留状态而非回合忙碌：阻止空闲回收和全局维护，但不延迟任务回执等按回合空闲执行的操作。状态快照 widget 在 Supervisor 侧解析原始行并规范化，不进入通用 widget；控制经私有命令转发到插件的进程内 RPC，方法与参数由 Supervisor 白名单校验，所有权与运行状态仍由插件判断。
 - 档案知识由网关创建的唯一 `ProfileKnowledgeService` 管理：HTTP 管理页、原生工具适配和后台学习共用它的跨进程互斥锁、私有日志（v2 单调序号、回执窗口、请求 ID 与防复活墓碑）和待发布标记。只有服务端原生路径可写物理 cwd 范围；它在发布前后各做一次流式来源证明（会话头、唯一当前 ID 绑定、条目位于当前叶到根路径），只保留 id/parentId，不复制正文。
@@ -78,7 +79,7 @@ Pi Provider 身份与工作台访问身份独立。登录/退出使用公开 Mod
 
 文件服务、搜索、用量、备份与恢复复用原生描述符边界。Linux 使用 /proc，macOS 使用 F_GETPATH，Windows 查询 HANDLE 的最终路径和完整身份。打开对象的类型、预算、路径和前后变化均需核对；原生后端不可用时不能回退到未经验证的请求路径。
 
-POSIX 私密权限和目录刷盘、Windows 受保护 DACL 和写透替换分别处理。Pivane 自有原生组件的源码、二进制和 manifest 成批分发，普通安装不现场编译这些组件；SQLite 平台依赖另按内置能力安装规则处理。详见 [native](../../native/README.md)。
+POSIX 私密权限和目录刷盘、Windows 受保护 DACL 和写透替换分别处理。白泽灵台自有原生组件的源码、二进制和 manifest 成批分发，普通安装不现场编译这些组件；SQLite 平台依赖另按内置能力安装规则处理。详见 [native](../../native/README.md)。
 
 项目全文读取与目录浏览共用 `pi-file-scope` 的项目范围和私密根规则。`pi-file-browser` 只枚举受控元数据，父目录与返回条目分别验证打开描述符；文件名搜索有扫描、结果、时间与并发预算，不维护持久文件索引，不调用模型。
 
@@ -110,7 +111,7 @@ POSIX 私密权限和目录刷盘、Windows 受保护 DACL 和写透替换分别
 
 `pi-transcript-scroll.js` 在节点保留时直接复用阅读锚点，只为被替换部分保存和恢复详情状态；恢复展开的历史工具时先同步创建详情，再测量位置。历史工具行持有已接收的原始数据，首次展开才创建参数、输出、图片和差异；已展开行继续按原事件更新。`pi-turn-edits.js` 继续从完整权威消息派生文件记录，但只为重建部分创建正文卡片。此优化不做历史窗口化；折叠工具首次展开前，其详情不进入浏览器页内查找。
 
-`workspace-ui.js` 中的页面路由协调 Pi Agent、助手对话、多媒体与完整管理页面的地址、前进后退和选中导航；`settings.js` 继续拥有设置组件的打开／关闭与异步请求生命周期，设置分类只保留配置型页面，身份与扩展属于独立管理页（旧地址在路由层归一化）。`pi-extensions.js` 拥有扩展中心外壳：子导航、发现页和安装入口；已安装包与技能的渲染、统一资源行和安装窗口在 `pi-native-settings.js`。助手档案页面由 `pi-agent-profiles.js` 负责修订、安全草稿导入及文档／检索状态，并管理身份搜索、手机列表／详情切换和保存反馈；`pi-profile-dialog.js` 提供两种编辑器共用的异步确认窗口与焦点恢复。学习技能与正文展示在身份页内。
+`workspace-ui.js` 中的页面路由协调工作对话、助手对话、多媒体与完整管理页面的地址、前进后退和选中导航；`settings.js` 继续拥有设置组件的打开／关闭与异步请求生命周期，设置分类只保留配置型页面，身份与扩展属于独立管理页（旧地址在路由层归一化）。`pi-extensions.js` 拥有扩展中心外壳：子导航、发现页和安装入口；已安装包与技能的渲染、统一资源行和安装窗口在 `pi-native-settings.js`。助手档案页面由 `pi-agent-profiles.js` 负责修订、安全草稿导入及文档／检索状态，并管理身份搜索、手机列表／详情切换和保存反馈；`pi-profile-dialog.js` 提供两种编辑器共用的异步确认窗口与焦点恢复。学习技能与正文展示在身份页内。
 
 `pi-files-panel.js` 拥有文件打开入口、项目／本轮模式、阅读布局与共享查看器；`pi-file-browser.js` 拥有目录缓存、文件名搜索、键盘导航和请求取消。`pi-turn-edits.js` 只从原生消息派生轮次记录并通过共享查看器展示，不再管理项目文件链接。`pi-file-roots` 前后端模块分别负责服务器目录选择／文件解析／关联导航偏好和根选择／管理弹窗；按主项目保存的关联根复用私有 workspace preferences 的原子写与修订，不写原生会话。浏览根独立于会话 cwd，打开文件携带自己的根；展开偏好按根保留在本页内存。内容、目录数据、确认弹窗与请求在切线程时清空，迟到结果继续检查请求、上下文与连接代次。单文件外部预览不枚举父目录，关联根不作为权限或OS沙箱。浏览不会改变草稿或模型上下文。
 
@@ -153,6 +154,8 @@ POSIX 私密权限和目录刷盘、Windows 受保护 DACL 和写透替换分别
 内置第三方能力由 `pi-bundled-capabilities` 定义接入，`vendor/manifest.json` 保存上游原始文件与哈希。父会话通过 `pi-managed-runtime` 的公开 SDK/RPC 入口加载，`pi-bundled-resources` 在原生包解析前生成内存视图，`pi-bundled-loader` 在执行扩展前过滤重复来源。子 Agent 的版本审查 factory 接口只替换子会话的资源加载器，任务生命周期继续由上游与 Supervisor 管理；记忆仍通过档案适配，只改变 bundle 来源。安装、旧路径兼容和维护步骤见[内置能力包](../BUNDLED_CAPABILITIES.md)。
 
 普通 node server.js 和 npm start 经独立受管启动器；direct 模式用于明确的独立开发实例。当前设置页只读检查版本并提供独立 Agent 提示词，受管更新/备份 API 与恢复脚本暂保留兼容，前端不再提交维护操作。启动器持有安装目录锁，通过私有 IPC 和服务代次处理维护请求，正常停机等待全部登记的 RPC 进程实际退出。SIGINT/SIGTERM 监听在清理结束前保持注册；重复信号不重复清理。
+
+Windows 桌面入口由 `pivane-desktop-startup` 先提供仅限 loopback 的临时等待页，浏览器只读轮询本次启动的投影；就绪事实仍来自 ManagedLauncher 的子服务 IPC 与 HTTP 检查。等待页不启动 worker、不建立聊天副本、不复用被占用端口上的未知服务。就绪后同一标签页跳转到工作台，临时监听有界退役；失败先向等待页交付脱敏错误，再随启动清理关闭。
 
 源码工作区、运行 release 与发布归档分别有身份。受管 Pi 更新创建代码/依赖快照，应用更新下载并校验固定官方来源的归档。安装完成和服务启动完成分开记录；失败保留旧版本与证据，不自动恢复数据或重放维护请求。
 

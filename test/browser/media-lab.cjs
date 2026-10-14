@@ -75,8 +75,7 @@ async function run(browser, size, theme) {
     await page.route('**/images/*.png', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="4096" height="2048"><rect width="4096" height="2048" fill="#8bb5ab"/></svg>' }));
     await page.routeWebSocket('**/api/pi/ws', () => { throw new Error('Lab UI must not open an Agent session'); });
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-    if (await page.locator('[data-tab="media"]').isVisible()) await page.locator('[data-tab="media"]').click();
-    else { await page.locator('#workspace-more-toggle').click(); await page.locator('[data-more-tab="media"]').click(); }
+    await page.evaluate(() => window.PiWorkspaceRoute.navigate('media'));
     await page.locator('#lab-model option[value="fixture-image"]').waitFor({ state: 'attached' });
     assert.equal(await page.locator('#lab-model option[value^="legacy-"]').count(), 0);
     const main = key => page.locator(`#lab-parameters [data-param="${key}"]`);

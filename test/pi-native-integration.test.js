@@ -177,6 +177,45 @@ test('featured PPT skill reflects verified native discovery, scope and enabled s
     }
 });
 
+test('featured guizang skill checks SkillHub source and SKILL hash in the native inventory', async () => {
+    const { PiNativeService } = require('../server/pi-native-service');
+    const { PiResourceService } = require('../server/pi-resource-service');
+    const { createHash } = require('node:crypto');
+    const previous = process.env.PIVANE_SKILLHUB_URL;
+    process.env.PIVANE_SKILLHUB_URL = 'http://skillhub.example.com/registry-base';
+    const native = new PiNativeService(store), service = new PiResourceService(native);
+    const directory = path.join(root, 'agent/skills/guizang-ppt-skill');
+    fs.mkdirSync(path.join(directory, '.skillhub'), { recursive: true });
+    const file = path.join(directory, 'SKILL.md'), receipt = path.join(directory, '.skillhub/metadata.json');
+    const content = '---\nname: guizang-ppt-skill\ndescription: Synthetic presentation skill\n---\nFixture';
+    const metadata = { schemaVersion: 1, registry: process.env.PIVANE_SKILLHUB_URL, namespace: 'global', slug: 'guizang-ppt-skill', version: '1.0.0', files: { 'SKILL.md': createHash('sha256').update(content).digest('hex') } };
+    const snap = () => service.snapshot(cwd, 'global');
+    try {
+        fs.writeFileSync(file, content);
+        assert.equal((await snap()).featuredSkillNeedsReview, true, 'same name without receipt remains unknown');
+        fs.writeFileSync(receipt, JSON.stringify({ ...metadata, registry: 'https://other.example.com' }));
+        assert.deepEqual((await snap()).featuredSkills, []);
+        fs.writeFileSync(receipt, JSON.stringify(metadata));
+        let result = await snap();
+        assert.equal(result.skillhub.guideUrl, metadata.registry + '/registry/skill.md');
+        assert.deepEqual(result.featuredSkills, [{ id: 'guizang-ppt', scope: 'user', enabled: true }]);
+        await service.toggle({ cwd, scope: 'global', resourceId: result.resources.find(item => item.path === file).id, state: 'off', confirmed: true, expectedRevision: result.revision });
+        assert.deepEqual((await snap()).featuredSkills, [{ id: 'guizang-ppt', scope: 'user', enabled: false }]);
+        fs.writeFileSync(file, content + '\nLocal changes');
+        result = await snap();
+        assert.deepEqual(result.featuredSkills, []);
+        assert.equal(result.featuredSkillNeedsReview, true, 'edited skill cannot retain its found label');
+        fs.writeFileSync(file, content);
+        fs.writeFileSync(receipt, JSON.stringify({ ...metadata, namespace: 'other-team' }));
+        assert.equal((await snap()).featuredSkillNeedsReview, true);
+        fs.writeFileSync(receipt, 'x'.repeat(65537));
+        assert.equal((await snap()).featuredSkillNeedsReview, true, 'receipt read has a fixed budget');
+    } finally {
+        if (previous === undefined) delete process.env.PIVANE_SKILLHUB_URL; else process.env.PIVANE_SKILLHUB_URL = previous;
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
 test('Skills can be disabled and restored through native filters without deleting files or changing sibling resources', async () => {
     const { PiNativeService } = require('../server/pi-native-service');
     const { PiResourceService } = require('../server/pi-resource-service');

@@ -50,6 +50,7 @@ test('release inventory includes its own discovery and checking tools and exclud
     for (const file of ['scripts/source-files.cjs', 'scripts/check-syntax.cjs', 'scripts/run-tests.cjs',
         'server/pi-update-installer.js', 'test/source-files.test.js', 'pi-packages/media-workbench/skills/media-workbench/SKILL.md',
         'scripts/desktop-tray.ps1', 'scripts/start-desktop.cjs', 'server/pivane-desktop-launcher.js',
+        'server/pivane-desktop-startup.js', 'public/desktop-startup.html', 'public/desktop-startup.css', 'public/desktop-startup.js',
         'scripts/package-windows-portable.cjs', 'scripts/windows-portable-assets.json',
         '白泽灵台.exe', 'native/pivane-desktop-launcher.cs', 'native/pivane-desktop-launcher-build.json',
         '启动白泽灵台.vbs', '启动白泽灵台.cmd']) assert.ok(files.includes(file), file);
@@ -57,6 +58,8 @@ test('release inventory includes its own discovery and checking tools and exclud
     assert.equal(files.some(file => /^(?:backups|docs\/local|\.pivane-runtime|node_modules)\//.test(file)), false);
     assert.equal(files.some(file => /^public\/(?:images|audio|videos|downloads|legacy-workspace)\//.test(file)), false);
     assert.equal(files.includes('AGENTS.local.md'), false);
+    assert.equal(files.includes('.baizelingtai-update-build.json'), false);
+    assert.throws(() => require('../scripts/check-docs.cjs').assertPublicPath('.baizelingtai-update-build.json'), /Private or invalid/);
     assert.equal(files.includes('native/pi-win32-fd.lib'), false);
 });
 
