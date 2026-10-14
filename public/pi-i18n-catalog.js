@@ -9701,5 +9701,23 @@
         ["读取 latest.json，按 SemVer 比较 version 与实际运行版本；没有新版就结束。有新版先确认目标，已有授权无需重复确认。按 package 下载同源 ZIP，核对 bytes 和 sha256；仅更新内网整包，不运行 npm 安装，保留本机未发布的修复。","Read latest.json and compare version with the actual running version using SemVer; stop if there is no newer release. Confirm the target before updating; existing authorization does not need reconfirmation. Download the same-origin ZIP from package and verify bytes and sha256. Update only the intranet bundle without npm installation, preserving unpublished local fixes."],
         ["确认空闲、暂停预约并保存草稿后，正常停机、备份，解压到新程序目录；沿用原数据绝对路径、.env 和更新源，保留旧版。启动后验收版本与数据，失败回退。清单或下载失败、目标变化、校验不符就停止，不自动重试。不要停止或重启承载当前对话的服务。","Ensure the instance is idle, pause schedules and save drafts, then stop normally and back up. Extract into a new application directory, reuse original absolute data paths, .env and the update source, and retain the old version. Validate versions and data after startup; roll back on failure. Stop on manifest or download failure, target changes or verification mismatches without automatic retries. Do not stop or restart the service hosting this conversation."]
     );
+    rows.push(
+        ['一键更新', 'Update now'], ['正在核对安装目标…', 'Reviewing update…'], ['确认更新到 {0}', 'Confirm update to {0}'],
+        ['将下载完整程序，正常停机、备份数据并启动新版。更新期间请保持此页面打开。', 'The full application will be downloaded. The service will stop normally, back up data and start the new version. Keep this page open during the update.'],
+        ['已保存草稿，结束任务并暂停预约', 'I saved drafts, finished tasks and paused schedules'],
+        ['已停止使用同一数据的其他 Pi 进程', 'I stopped other Pi processes using the same data'],
+        ['确认并更新', 'Confirm and update'], ['正在提交更新…', 'Submitting update…'],
+        ['正在准备更新…', 'Preparing update…'], ['正在准备安装…', 'Preparing installation…'],
+        ['正在下载并校验整包…', 'Downloading and verifying the package…'], ['正在解压并核验文件…', 'Extracting and verifying files…'],
+        ['正在验证候选程序…', 'Validating the candidate…'], ['正在停止旧服务…', 'Stopping the previous service…'],
+        ['正在启动新版…', 'Starting the new version…'], ['正在更新…', 'Updating…'],
+        ['更新完成，新版已启动。', 'Update complete. The new version is running.'],
+        ['更新失败，已保留旧程序与备份。请查看结果后再决定。', 'Update failed. The previous application and available backups are retained. Review the result before taking further action.'],
+        ['更新被中断，请核对运行版本与备份。', 'Update interrupted. Check the running version and backups.'],
+        ['提交结果待核对，正在查询状态；不会重复提交。', 'Submission outcome is uncertain. Checking status without resubmitting.'],
+        ['服务正在切换，等待重新连接…', 'The service is switching. Waiting to reconnect…'],
+        ['当前启动方式不支持 Windows 内网整包自动更新，请使用便携版受管启动器或独立维护窗口', 'This launcher does not support Windows intranet package updates. Use the managed portable launcher or independent maintenance.'],
+        ['无法核对更新版本，请稍后再试', 'Unable to verify the update. Please try again later.']
+    );
     globalThis.PiI18nCatalog = Object.freeze(rows.map(row => Object.freeze(row)));
 })();

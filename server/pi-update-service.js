@@ -176,31 +176,42 @@ function mountUpdateRoutes(router, service = new UpdateService(), hooks = {}) {
     router.get('/settings/updates/maintenance', (_req, res) => res.set('Cache-Control', 'no-store').json(maintenance.status()));
     router.post('/settings/updates/review', async (req, res) => {
         res.set('Cache-Control', 'no-store');
+        let leave;
         try {
             if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body) || Object.keys(req.body).some(key => !['action', 'channel'].includes(key))) throw Object.assign(new Error('维护操作无效'), { status: 400 });
             const action = req.body.action;
             if (req.body.channel !== undefined && (action !== 'application' || !['stable', 'preview'].includes(req.body.channel))) throw Object.assign(new Error('Invalid update channel'), { status: 400 });
             if (!['update', 'application', 'backup', 'restart'].includes(action)) throw Object.assign(new Error('维护操作无效'), { status: 400 });
-            if (service.feed && ['update', 'application'].includes(action)) throw Object.assign(new Error('内网更新源提供 Windows 整包，请下载后在独立维护窗口更新'), { status: 409 });
+            if (service.feed && (action === 'update' || action === 'application' && !maintenance.status().portableUpdateSupported)) throw Object.assign(new Error('当前启动方式不支持 Windows 内网整包自动更新，请使用便携版受管启动器或独立维护窗口'), { status: 409 });
             maintenance.assertAvailable(action, idle);
+            leave = maintenance.enter(); // Reserve before remote lookup; execute/review cannot race it.
             let version, release;
             if (action === 'application') {
                 const channel = req.body.channel || (service.appVersion.includes('-') ? 'preview' : 'stable');
                 service.snapshot(channel);
                 const candidate = await service.pivane(channel);
-                if (candidate.status !== 'available' || !candidate.downloadUrl || !candidate.checksumUrl) throw Object.assign(new Error('此渠道没有可安装的白泽灵台新版本'), { status: 409 });
-                const bytes = await require('./pi-application-installer').download(candidate.checksumUrl, { env: service.env, maxBytes: 1024 });
-                const match = /^([a-f0-9]{64})  (pivane-[^\r\n]+\.tar\.gz)\r?\n?$/.exec(bytes.toString());
-                if (!match || match[2] !== `pivane-${candidate.version}.tar.gz`) throw Error('Invalid release checksum');
-                version = candidate.version; release = { version, sha256: match[1] };
+                if (candidate.status !== 'available' || !candidate.downloadUrl || !service.feed && !candidate.checksumUrl) throw Object.assign(new Error('此渠道没有可安装的白泽灵台新版本'), { status: 409 });
+                version = candidate.version;
+                if (service.feed) {
+                    release = { format: 'windows-portable-zip', feed: service.feed, channel, version, piVersion: candidate.piVersion,
+                        downloadUrl: candidate.downloadUrl, bytes: candidate.bytes, sha256: candidate.sha256 };
+                    if (!require('./pi-portable-installer').validPortable(release, service.feed)) throw Error('Invalid portable release');
+                } else {
+                    const bytes = await require('./pi-application-installer').download(candidate.checksumUrl, { env: service.env, maxBytes: 1024 });
+                    const match = /^([a-f0-9]{64})  (pivane-[^\r\n]+\.tar\.gz)\r?\n?$/.exec(bytes.toString());
+                    if (!match || match[2] !== `pivane-${candidate.version}.tar.gz`) throw Error('Invalid release checksum');
+                    release = { version, sha256: match[1] };
+                }
             }
             if (action === 'update') {
                 if (require('../package.json').pivaneCompatibility?.piVersion) throw Object.assign(new Error('当前白泽灵台与已验证 Pi 版本绑定，请一起更新白泽灵台及原生适配，不单独升级 Pi'), { status: 409 });
                 const upstream = await service.pi(); version = upstream.version;
                 if (compareVersions(service.piVersion, version) !== -1) throw Object.assign(new Error('没有高于当前版本的 Pi 正式版'), { status: 409 });
             }
+            leave(); leave = null;
             res.json({ ...maintenance.review({ action, version, release }, idle), currentVersion: action === 'application' ? service.appVersion : service.piVersion });
-        } catch (error) { res.status(error.status || 503).json({ error: error.status ? error.message : '无法核对 Pi 更新版本，请稍后再试' }); }
+        } catch (error) { res.status(error.status || 503).json({ error: error.status ? error.message : '无法核对更新版本，请稍后再试' }); }
+        finally { leave?.(); }
     });
     router.post('/settings/updates/execute', (req, res) => {
         res.set('Cache-Control', 'no-store');
@@ -215,7 +226,8 @@ function mountUpdateRoutes(router, service = new UpdateService(), hooks = {}) {
                 || params.channel !== undefined && !['stable', 'preview'].includes(params.channel)) {
                 return res.status(400).json({ error: 'Invalid update channel' });
             }
-            res.json(check ? await service.check(params.channel) : service.snapshot(params.channel));
+            const snapshot = check ? await service.check(params.channel) : service.snapshot(params.channel);
+            res.json({ ...snapshot, maintenance: maintenance.status() });
         } catch { res.status(503).json({ error: 'Update information unavailable' }); }
     };
     router.get('/settings/updates', route(false));

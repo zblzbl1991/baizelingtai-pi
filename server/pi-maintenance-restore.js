@@ -41,6 +41,12 @@ async function restoreBackup(root, id) {
     const guard = net.createServer(socket => socket.destroy());
     await new Promise((resolve, reject) => { guard.once('error', reject); guard.listen(port, '127.0.0.1', resolve); });
     try {
+        return restoreStoppedBackup(root, id);
+    } finally { await new Promise(resolve => guard.close(resolve)); }
+}
+// Called internally only after the launcher owns the lock and awaits child exit.
+function restoreStoppedBackup(root, id) {
+    root = fs.realpathSync.native(root);
         const plan = inspectBackup(root, id);
         if (process.platform === 'win32' && plan.manifest.entries.some(e => e.type === 'symlink')) throw new Error('This backup contains links; restore those with native Windows tools while stopped');
         const stateFile = path.join(root, '.pivane-runtime/state.json');
@@ -90,6 +96,5 @@ async function restoreBackup(root, id) {
         state.job = { id: randomUUID(), action: 'restore', phase: 'succeeded', finishedAt: new Date().toISOString(), backup: safety };
         atomicJson(stateFile, state);
         return { restored: id, files: plan.files, safetyBackup: safety.directory };
-    } finally { await new Promise(resolve => guard.close(resolve)); }
 }
-module.exports = { inspectBackup, restoreBackup };
+module.exports = { inspectBackup, restoreBackup, restoreStoppedBackup };
