@@ -52,7 +52,7 @@ class ComplianceLedger {
         finally { if (parentFd !== undefined) fs.closeSync(parentFd); }
     }
     async snapshot() { const { file } = await this.paths(); return this.read(file); }
-    async transact(update) {
+    async transact(update, beforeUpdate) {
         if (this.busy) throw fail('合规账本正在保存，请查询原操作', 409, 'COMPLIANCE_BUSY');
         this.busy = true;
         let directoryFd, lock, check;
@@ -68,8 +68,9 @@ class ComplianceLedger {
             };
             check(); lock = path.join(root, 'ledger.lock');
             try { fs.mkdirSync(lock, { mode: 0o700 }); } catch { lock = null; throw fail('合规账本已锁定，请核对未完成操作', 409, 'COMPLIANCE_BUSY'); }
+            if (beforeUpdate) await beforeUpdate();
             check(); const state = this.read(file), before = JSON.stringify(state);
-            const value = update(state);
+            const value = update(state, { root, check });
             if (value && typeof value.then === 'function') throw fail('合规事务必须同步', 500);
             if (JSON.stringify(state) !== before) {
                 state.revision++;

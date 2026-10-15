@@ -34,6 +34,28 @@ export default function compliance(pi: ExtensionAPI) {
                 return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { pivaneCompliance: result } };
             }
         });
+        for (const operation of ['materials', 'checks']) {
+            pi.registerTool({ name: operation === 'materials' ? 'compliance_materials' : 'compliance_check', label: operation === 'materials' ? '合规资料' : '合规检查',
+                description: operation === 'materials'
+                    ? 'Import explicitly selected files relative to this managed session cwd, or current native attachment IDs. Stable requestId and expectedRevision required for import. list returns opaque document IDs. The reviewer must confirm roles, identity and selected versions in the workbench before checking. Never set human confirmation yourself.'
+                    : 'Run the four deterministic rule groups against reviewer-selected snapshots, or list/get batches and read bounded evidence. run requires projectId, stable requestId and expectedRevision. get requires batchId; evidence requires batchId and fieldId. No model inference, no human confirmation. Unknown and failed checks are not passes.',
+                parameters: Type.Object({ action: StringEnum(operation === 'materials' ? ['import', 'list'] : ['run', 'list', 'get', 'evidence']),
+                    projectId: Type.Optional(Type.String()), batchId: Type.Optional(Type.String()), fieldId: Type.Optional(Type.String()),
+                    requestId: Type.Optional(Type.String()), expectedRevision: Type.Optional(Type.Integer({ minimum: 0 })),
+                    sources: Type.Optional(Type.Array(Type.Union([Type.Object({ kind: Type.Literal('file'), path: Type.String() }), Type.Object({ kind: Type.Literal('attachment'), id: Type.String() })]), { maxItems: 32 })) }),
+                execute: async (_id, raw, signal, _update, ctx) => {
+                    if (!eligible(ctx)) throw new Error('合规专用会话资格无效'); signal?.throwIfAborted();
+                    const origin = process.env.PI_WORKSPACE_INTERNAL_ORIGIN!, url = new URL('/api/pi/compliance/tool', origin);
+                    if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid compliance service origin');
+                    const sessionFile = ctx.sessionManager.getSessionFile(), sessionId = ctx.sessionManager.getSessionId();
+                    const input = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== undefined));
+                    const response = await fetch(url, { method: 'POST', redirect: 'error', signal, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.PI_WEB_NAVIGATION_TOKEN}` }, body: JSON.stringify({ ...input, operation }) });
+                    const result = await response.json(); if (!response.ok) throw new Error(result.error || '合规操作失败');
+                    if (sessionFile !== ctx.sessionManager.getSessionFile() || sessionId !== ctx.sessionManager.getSessionId()) throw new Error('会话已变化，请查询原回执');
+                    return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { pivaneCompliance: result } };
+                }
+            });
+        }
     });
     pi.on('before_agent_start', (event, ctx) => {
         if (eligible(ctx)) return;

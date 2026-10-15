@@ -12,6 +12,12 @@
 | `GET/PUT /api/pi/compliance/projects/:id` | 读取或更新工程项目档案 |
 | `POST /api/pi/compliance/sessions` | 输入 `cwd/requestId/expectedRevision`，建立有原生操作标记的专用聊天；重复请求返回原会话回执 |
 | `GET /api/pi/compliance/operations/:requestId` | 查询持久回执；准备中的首次配置或会话返回 `status:pending/phase/canResume`，未知操作返回 404，不表示可以重发 |
+| `GET/POST /api/pi/compliance/projects/:id/documents` | 枚举或导入明确选定资料；POST 输入操作编号、修订及 `sources` |
+| `GET /api/pi/compliance/documents/:id/content` | 返回经快照哈希校验的 `name/hash/base64` 原字节，不接受私密路径 |
+| `PUT /api/pi/compliance/documents/:id/assignment` | 用户提交 `role/identityConfirmed/selected/numberAbsentConfirmed?` 与操作编号、修订 |
+| `GET/POST /api/pi/compliance/projects/:id/batches` | 枚举历史批次摘要或以当前已选资料建立文本检查批次 |
+| `GET /api/pi/compliance/batches/:id` | 按需读取固定的 `batch` 和当前账本 `revision` |
+| `GET /api/pi/compliance/batches/:id/evidence/:fieldId` | 返回批次内字段原文、页码/工作表行及原件摘要 |
 | `POST /api/pi/compliance/tool` | 仅接受存活受管 worker 的独立导航凭据；从真实会话绑定确定资格，用户 Token 不能调用此接口 |
 
 修订是非负整数。所有业务变更要求稳定 `requestId` 和当前 `expectedRevision`。相同操作编号、相同语义 JSON 内容返回原回执，JSON 键顺序不影响识别；同一编号换内容返回 `COMPLIANCE_CONFLICT`，修订已变化返回 `COMPLIANCE_STALE`。回执的 `revision` 属于该次提交，继续修改前读取当前状态。
@@ -21,6 +27,12 @@
 创建或更新档案输入 `{requestId,expectedRevision,project}`。`project` 包含 `name`，以及可为 null 的 `number/organization/year/phase/type/stage`；`identityConfirmed` 表示审查人员已核对身份。`applicability` 包含 `documents-identity/feasibility-numbers/contract-deadline/feasibility-order`，值为 true、false 或 null。返回 `{ok,project,revision}`，档案另外拥有自身的 `id/revision/createdAt/updatedAt`。当前支持创建、读取和更新，保留原有档案数据。
 
 受管 `compliance_project` 工具的 `action` 为 `list/get/create/update`。`list` 每页最多五十个编号、名称、业务编号与修订摘要，使用返回的 `nextOffset` 继续；`get` 用 `projectId` 按需读取字段。模型不能通过工具参数指定档案身份、来源聊天或私密路径。发现资源、登记工具和执行工具均核对当前启用状态与专用档案。`GET /api/pi/activity` 增加 `complianceBusy`，受管 worker 业务操作同时纳入生命周期投影。
+
+导入输入 `{requestId,expectedRevision,sources,cwd?,sessionId?}`。每项来源为 `{kind:"upload",name,base64}`、`{kind:"file",path}` 或 `{kind:"attachment",id}`；目录路径相对显式授权的 `cwd`，附件核对当前原生分支或用户明确选择的当前聊天草稿。文件每份最多 20 MiB，每个工程最多 32 份/256 MiB，原件总容量 2 GiB/一万对象。JSON 请求沿用 32 MiB 上限，本机多文件逐份上传。返回 `{ok,documents,reused,revision}`；资料拥有独立 `id/projectId/name/format/hash/size/source/assignment/createdAt`，重复内容在同工程内复用 ID。资料角色为 `award-notice/contract/feasibility-report/feasibility-review/feasibility-approval/register/unknown`。人工核对接口不向 worker 导航凭据开放。
+
+建立批次仅输入 `{requestId,expectedRevision}`。批次保存 `id/revision/projectId/projectSnapshot/documents/rulePackage/configurationSnapshot/fields/results/execution/review/createdAt`。`rulePackage` 固定实际规则内容与版本；`fields` 含 `id/documentId/key/raw/value/precision/status/location/candidates`，日期 `value` 保存 ISO 日期区间 `start/end`，精度为 `day/month`，未知为 null。位置包含 `page/region/viewport/rects` 或 `sheet/row/column/address` 及有界 `excerpt`。`results` 使用 `conclusion:passed|issue|insufficient|not-applicable`，`execution:completed|failed`，并保存 `reason/evidence/sources/review`；证据为本批次字段 ID。人工复核状态初始为 `unreviewed`，执行失败不能解释为通过。批次最多五百个，仍受八 MiB 账本上限限制。
+
+受管 `compliance_materials` 支持 `list/import`，仅接受当前 worker 工作目录内的相对路径或当前分支附件 ID；返回必要摘要及不透明 ID。`compliance_check` 支持 `run/list/get/evidence`，按需读取批次和字段证据。内部工具 HTTP 输入用 `operation:materials|checks` 区分，项目工具沿用原接口。工具创建/更新工程元数据不能新设人工身份或适用性确认；原确认只在身份字段未变化时保留，字段变化重置待核对。文本处理复用办公附件的同一解析池，HTTP 断开不释放仍在执行的工作，全部任务参与维护空闲与关闭等待。
 
 ## 桌面启动私有通道
 

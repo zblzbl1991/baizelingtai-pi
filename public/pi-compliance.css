@@ -18,4 +18,18 @@
 .compliance-project-list { display: grid; gap: 6px; margin-bottom: 16px; }
 .compliance-project-list button { text-align: left; overflow-wrap: anywhere; white-space: normal; }
 .compliance-project-form { margin-top: 24px; }
+.compliance-materials { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 12px; }
+.compliance-materials fieldset { min-width: 0; border: 0; padding: 0; margin: 0; display: grid; gap: 12px; }
+.compliance-materials label { display: grid; gap: 7px; }
+.compliance-materials input, .compliance-materials select, .compliance-materials textarea { min-width: 0; width: 100%; max-width: 100%; box-sizing: border-box; font: inherit; font-size: 16px; color: var(--text-main); background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+.compliance-materials label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: 10px; }
+.compliance-materials input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 18px; }
+.compliance-materials .compliance-material-row { border-top: 1px solid var(--line); padding-block: 16px; margin-top: 16px; }
+.compliance-materials legend, .compliance-materials p { overflow-wrap: anywhere; }
+.compliance-result { padding-block: 12px; border-bottom: 1px solid var(--line); }
+.compliance-result p { margin-block: 8px; }
+.compliance-evidence { margin-top: 16px; padding: 12px; background: var(--surface-2); }
+.compliance-evidence[hidden] { display: none; }
+.compliance-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.compliance-materials button { white-space: normal; }
 @media(max-width:680px) { #pi-compliance-drawer { padding: 16px; } .compliance-drawer-header { top: -16px; margin: -16px -16px 0; padding: 16px; } #pi-compliance-open { font-size: .75rem; } }
