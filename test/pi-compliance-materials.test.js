@@ -189,3 +189,15 @@ test('damaged snapshot bytes are reported as execution failure, separately from 
     const checked=(await write(`/projects/${archive.id}/batches`,{})).data.batch, result=checked.results.find(r=>r.id==='contract-deadline');
     assert.equal(result.execution,'failed'); assert.equal(result.conclusion,'insufficient'); assert.equal(checked.execution.status,'failed'); assert.equal(result.review.status,'unreviewed'); assert.ok(result.sources.some(source=>source.documentId===docs[1].id));
 });
+
+test('ledger type stage and applicability remain traceable candidates until the reviewer confirms the project inputs',async()=>{
+    const archive=(await write('/projects',{project:{name:'模板工程'}})).data.project;
+    const csv='项目名称,项目类型,阶段,本次规则适用清单,日期\n模板工程,市政工程,可研,"{""contract-deadline"":true}",2026-08-01\n';
+    const imported=await write(`/projects/${archive.id}/documents`,{sources:[{kind:'upload',name:'输入台账.csv',base64:Buffer.from(csv).toString('base64')}]});assert.equal(imported.status,200,JSON.stringify(imported.data));
+    const document=imported.data.documents[0];await call('PUT',`/documents/${document.id}/assignment`,{requestId:'template-role',expectedRevision:revision,role:'register',identityConfirmed:true,selected:true});
+    const result=await write(`/projects/${archive.id}/batches`,{});assert.equal(result.status,200,JSON.stringify(result.data));const batch=result.data.batch;
+    assert.equal(batch.fields.find(f=>f.key==='type')?.raw,'市政工程');assert.equal(batch.fields.find(f=>f.key==='stage')?.raw,'可研');
+    assert.equal(batch.fields.find(f=>f.key==='applicability')?.raw,'{"contract-deadline":true}');assert.equal(batch.fields.find(f=>f.key==='type').location.row,2);
+    assert.equal(batch.projectSnapshot.type,null);assert.equal(batch.projectSnapshot.stage,null);assert.equal(batch.projectSnapshot.applicability['contract-deadline'],null);assert.equal(batch.projectSnapshot.identityConfirmed,false);
+    assert.equal((await call('GET','/projects/'+archive.id)).data.project.applicability['contract-deadline'],null,'imported applicability cannot confirm or change the engineering archive');
+});

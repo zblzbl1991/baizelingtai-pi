@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { fail } = require('./pi-compliance-ledger');
 const { date } = require('./pi-compliance-rules');
-const KEYS = ['projectName', 'projectNumber', 'organization', 'year', 'phase', 'date', 'documentNumber'];
+const KEYS = ['projectName', 'projectNumber', 'organization', 'year', 'phase', 'type', 'stage', 'applicability', 'date', 'documentNumber'];
 async function recognize(service, batch, document, image, beforeRequest) {
     const raw = Buffer.from(image.base64 || '','base64'), classified = require('./pi-file-types').classify(raw,'page.png');
     if (raw.length > 4*1024*1024 || classified.kind !== 'image' || classified.mime !== 'image/png' || classified.width !== image.width || classified.height !== image.height || image.page < 1 || !Number.isSafeInteger(image.page) || image.width*image.height > 4*1024*1024) throw fail('渲染图像或传输预算无效',415,'COMPLIANCE_IMAGE');
@@ -20,6 +20,11 @@ async function recognize(service, batch, document, image, beforeRequest) {
         messages: [{ role: 'user', content: [{ type: 'text', text: JSON.stringify({ documentId: document.id, page: image.page, width: image.width, height: image.height }) }, { type: 'image', data: image.base64, mimeType: image.mimeType }], timestamp: Date.now() }]
     }, { maxTokens: 2000 }, (await getSdk()).getAgentDir()); }
     catch { throw fail('识别请求执行结果不确定，请核对原请求；未自动重发',502,'COMPLIANCE_MODEL_UNCERTAIN'); }
+    const reported = response.usage || {};
+    const usage = { inputTokens: Number.isFinite(reported.input) && reported.input > 0 ? reported.input : null,
+        outputTokens: Number.isFinite(reported.output) && reported.output > 0 ? reported.output : null,
+        cost: { actual: null, estimate: reported.cost?.total > 0 ? reported.cost.total : null, currency: 'USD', basis: reported.cost?.total > 0 ? 'model-catalog-estimate' : 'unknown' } };
+    try {
     if (response.stopReason === 'error' || response.stopReason === 'aborted') throw fail('识别请求失败或结果不确定，请核对原请求', 502, 'COMPLIANCE_MODEL_UNCERTAIN');
     const text = response.content?.filter(c => c.type === 'text').map(c => c.text).join('');
     let parsed; try { if (!text || text.length > 20000) throw new Error(); parsed = JSON.parse(text); } catch { throw fail('识别结果不符合字段 schema', 502, 'COMPLIANCE_MODEL_SCHEMA'); }
@@ -34,7 +39,7 @@ async function recognize(service, batch, document, image, beforeRequest) {
         return { id: randomUUID(), documentId: document.id, key: f.key, raw: f.raw.trim(), value: known ? d?.value || f.raw.trim() : null, precision: d?.precision || null, status: known ? 'known' : 'unknown',
             location: { page: image.page, region: upper ? 'upper' : 'body', rect: f.rect, viewport: { width: image.width, height: image.height }, excerpt: f.excerpt }, source: 'recognition' };
     });
-    const usage = response.usage || {};
-    return { fields, usage: { inputTokens: usage.input > 0 ? usage.input : null, outputTokens: usage.output > 0 ? usage.output : null, cost: { actual: null, estimate: usage.cost?.total > 0 ? usage.cost.total : null, currency: 'USD', basis: usage.cost?.total > 0 ? 'model-catalog-estimate' : 'unknown' } } };
+    return { fields, usage };
+    } catch (error) { error.recognitionUsage = usage; throw error; }
 }
 module.exports = { recognize };

@@ -9,7 +9,7 @@
     function mount({ root, project, apiFetch, context, valid }) {
         const section = node('section', undefined, 'compliance-materials'), stateText = node('p', '', 'settings-help'); stateText.id = 'compliance-material-status'; stateText.setAttribute('role','status');
         const controls = node('fieldset'), list = node('div'), results = node('div'), evidence = node('section', undefined, 'compliance-evidence'); results.id = 'compliance-results'; evidence.id = 'compliance-evidence'; evidence.hidden = true;
-        let alive = true, revision, batch, busy = false, watching = false, watchGeneration = 0, evidenceEpoch = 0, evidenceOwner = null, reportView, reviewView;
+        let alive = true, revision, batch, busy = false, watching = false, watchGeneration = 0, batchSelection = 0, evidenceEpoch = 0, evidenceOwner = null, reportView, reviewView;
         const current = () => alive && section.isConnected && valid();
         section.append(node('h4','资料与检查'), node('p','每份资料不超过 20 MiB。工程最多 32 份、256 MiB，全部原件最多 2 GiB。扫描件使用本批次固定的识别模型。','settings-help'), stateText, controls, list, results, evidence); root.append(section);
         async function mutate(path, body, method = 'POST') {
@@ -29,7 +29,7 @@
                 const result = await apiFetch('/api/pi/compliance' + path, { method, headers: { 'Content-Type':'application/json' }, body: JSON.stringify(input) });
                 sessionStorage.removeItem(key); revision = result.revision; return result;
             } catch (error) {
-                if (error.status && error.status < 500 && error.status !== 404 && error.data?.code !== 'COMPLIANCE_BUSY') sessionStorage.removeItem(key);
+                if (window.PiCompliance.isDefiniteRejection(error)) sessionStorage.removeItem(key);
                 throw error;
             }
         }
@@ -41,7 +41,7 @@
         }
         const upload = node('input'); upload.id = 'compliance-upload'; upload.type = 'file'; upload.multiple = true; upload.accept = '.pdf,.png,.jpg,.jpeg,.webp,.xlsx,.csv';
         controls.append(button('下载 CSV 字段模板', () => {
-            const blob = new Blob(['\ufeff项目名称,项目编号,单位,年度,期次,日期,文号\r\n'], {type:'text/csv;charset=utf-8'}), url = URL.createObjectURL(blob), link = node('a');
+            const blob = new Blob(['\ufeff项目名称,项目编号,单位,年度,期次,项目类型,阶段,本次规则适用清单,日期,文号\r\n'], {type:'text/csv;charset=utf-8'}), url = URL.createObjectURL(blob), link = node('a');
             link.href = url; link.download = '合规资料字段模板.csv'; link.click(); setTimeout(() => URL.revokeObjectURL(url),0);
         }));
         controls.append(label('选择本机资料', upload), button('导入所选资料', () => act(async () => {
@@ -71,15 +71,15 @@
         const budget=()=>({pages:Number(pages.value),modelCalls:Number(calls.value),runMs:Number(minutes.value)*60000});
         controls.append(node('p','预算限制下一步准入，当前步骤实际结束后保存；PDF 文字读取和页面识别分别计入处理量。','settings-help'),budgetFields);
         async function refreshExecution(generation=watchGeneration) {
-            let id=batch?.id;
+            const selection=batchSelection;let id=batch?.id;
             if(!id){const data=await apiFetch('/api/pi/compliance/projects/'+project.id+'/batches');id=data.batches.at(-1)?.id;}
             if(!id||!current())return;
             const value=await apiFetch('/api/pi/compliance/batches/'+id);
-            if(!current()||generation!==watchGeneration||(batch&&(batch.id!==id||batch.revision>value.batch.revision)))return;batch=value.batch;revision=value.revision;showResults();
+            if(!current()||selection!==batchSelection||generation!==watchGeneration||(batch&&(batch.id!==id||batch.revision>value.batch.revision)))return;batch=value.batch;revision=value.revision;showResults();
         }
         async function watch(generation) { if(!watching||generation!==watchGeneration||!current())return;try{await refreshExecution(generation);}catch{}if(watching&&generation===watchGeneration&&current())setTimeout(()=>watch(generation),1000); }
-        async function run(action) { const generation=++watchGeneration;watching=true;setTimeout(()=>watch(generation),1000);try{await action();}finally{if(generation===watchGeneration){watching=false;watchGeneration++;}} }
-        controls.append(button('按已核对资料创建检查批次', () => act(()=>run(async()=>{batch=null;showResults();const value=await mutate('/projects/'+project.id+'/batches',{budget:budget()});if(current()){batch=value.batch;showResults();}}),'已保存检查进度，结论仍待人工复核。'), 'compliance-run-check'), button('刷新资料和批次', () => act(async () => {await refreshExecution();}, '已刷新。')));
+        async function run(action) { batchSelection++;const generation=++watchGeneration;watching=true;setTimeout(()=>watch(generation),1000);try{await action();}finally{if(generation===watchGeneration){watching=false;watchGeneration++;}} }
+        controls.append(button('按已核对资料创建检查批次', () => act(()=>run(async()=>{batch=null;showResults();const source=context(),value=await mutate('/projects/'+project.id+'/batches',{budget:budget(),...(source?.cwd&&source?.sessionId?{cwd:source.cwd,sessionId:source.sessionId}:{})});if(current()){batch=value.batch;showResults();}}),'已保存检查进度，结论仍待人工复核。'), 'compliance-run-check'), button('刷新资料和批次', () => act(async () => {await refreshExecution();}, '已刷新。')));
         function showResults() {
             const owner=batch?batch.id+':'+batch.revision:null;
             if(evidenceOwner&&evidenceOwner!==owner){evidenceEpoch++;evidenceOwner=null;evidence.replaceChildren();evidence.hidden=true;}
@@ -118,7 +118,8 @@
             reportView = window.PiComplianceReports?.mount({ root: results, batch, apiFetch, context, valid: () => current() && batch === selectedBatch });
         }
         async function load() {
-            const [docs,batches] = await Promise.all([apiFetch('/api/pi/compliance/projects/' + project.id + '/documents'),apiFetch('/api/pi/compliance/projects/' + project.id + '/batches')]); if (!current()) return;
+            const selection=++batchSelection;
+            const [docs,batches] = await Promise.all([apiFetch('/api/pi/compliance/projects/' + project.id + '/documents'),apiFetch('/api/pi/compliance/projects/' + project.id + '/batches')]); if (!current()||selection!==batchSelection) return;
             // A newer unrelated response must not authorize an older document form.
             revision = docs.revision; list.replaceChildren(node('h4','原件清单与选用版本'));
             if (!docs.documents.length) list.append(node('p','导入后逐份确认资料角色、归属和本次选用版本。','settings-help'));
@@ -131,8 +132,17 @@
                 const absent = node('input'); absent.type = 'checkbox'; absent.checked = doc.assignment?.numberAbsentConfirmed === true;
                 row.append(label('资料角色',role),label('归属已核对',confirmed),label('选用于新批次',selected),label('已查看发文首页并确认文号缺失',absent),button('保存资料核对',() => act(() => mutate('/documents/' + doc.id + '/assignment',{role:role.value,identityConfirmed:confirmed.checked,selected:selected.checked,numberAbsentConfirmed:absent.checked},'PUT'),'已保存资料核对。'))); list.append(row);
             }
-            if (!batch && batches.batches.length) { const saved = await apiFetch('/api/pi/compliance/batches/' + batches.batches.at(-1).id); if (!current()) return; batch = saved.batch; showResults(); }
-            if (batches.batches.length) { const history = node('select'); history.append(new Option(t('选择历史检查批次'),'')); for (const b of batches.batches) history.append(new Option(b.createdAt + ' · ' + b.id.slice(0,8),b.id)); history.onchange = async () => { if (!history.value) return; const saved = await apiFetch('/api/pi/compliance/batches/' + history.value).catch(error => { if(current()) stateText.textContent = error.message; }); if (saved && current()) { batch = saved.batch; showResults(); } }; list.append(label('历史批次',history)); }
+            if (!batch && batches.batches.length) { const saved = await apiFetch('/api/pi/compliance/batches/' + batches.batches.at(-1).id); if (!current()||selection!==batchSelection) return; batch = saved.batch; showResults(); }
+            if (batches.batches.length) {
+                const history = node('select'); history.append(new Option(t('选择历史检查批次'),'')); for (const b of batches.batches) history.append(new Option(b.createdAt + ' · ' + b.id.slice(0,8),b.id));history.value=batch?.id||'';
+                history.onchange = async () => {
+                    const id=history.value, selected=++batchSelection;watching=false;watchGeneration++;
+                    if (!id) return;
+                    const owns=()=>current()&&history.isConnected&&selected===batchSelection&&history.value===id;
+                    const saved = await apiFetch('/api/pi/compliance/batches/' + id).catch(error => { if(owns()) stateText.textContent = error.message; });
+                    if (saved && owns()&&saved.batch.id===id&&!(batch?.id===id&&batch.revision>saved.batch.revision)) { batch = saved.batch;revision=saved.revision;showResults(); }
+                }; list.append(label('历史批次',history));
+            }
         }
         load().catch(error => { if (current()) stateText.textContent = error.message; });
         return { dispose() { alive = false; watching = false; watchGeneration++; reportView?.dispose(); reviewView?.dispose(); } };

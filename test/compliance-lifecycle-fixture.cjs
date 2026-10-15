@@ -2,7 +2,7 @@
 // reads are retained; IPC only delays their settlement, never substitutes data.
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const childProcess = require('node:child_process'), fsp = require('node:fs/promises');
-let parserMarker, readHash, gate, disposed = false;
+let parserMarker, parserAction, parserMatches, readHash, gate, disposed = false;
 const hold = kind => new Promise(resolve => { gate = resolve; process.send({ type: 'held', kind }); });
 const originalFork = childProcess.fork;
 childProcess.fork = function(file, args, options) {
@@ -11,6 +11,7 @@ childProcess.fork = function(file, args, options) {
     let marked = false;
     const send = child.send; child.send = function(message, ...rest) {
         if (message.bytes && parserMarker && Buffer.from(message.bytes).includes(Buffer.from(parserMarker))) { marked = true; parserMarker = null; }
+        if (parserAction && message.input?.action === parserAction && --parserMatches === 0) { marked = true; parserAction = null; }
         if (message.bytes && Buffer.from(message.bytes).includes(Buffer.from('NEXT_IMPORT'))) process.send({type:'unexpected-next-parser'});
         return send.call(this, message, ...rest);
     };
@@ -45,6 +46,7 @@ const app = require('express')(); access.mount(app); app.use(require('express').
 const server = http.createServer(app); server.listen(0, '127.0.0.1', () => process.send({ type: 'ready', origin: `http://127.0.0.1:${server.address().port}` }));
 process.on('message', async message => {
     if (message.type === 'arm-parser') { parserMarker = message.marker; process.send({ type: 'armed' }); }
+    if (message.type === 'arm-parser-action') { parserAction = message.action; parserMatches = message.matches; process.send({ type: 'armed' }); }
     if (message.type === 'arm-read') { readHash = message.hash; process.send({ type: 'armed' }); }
     if (message.type === 'release') { gate?.(); gate = null; }
     if (message.type === 'dispose') { await gateway.dispose(); disposed = true; process.send({ type: 'disposed' }); }

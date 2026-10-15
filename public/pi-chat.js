@@ -4983,7 +4983,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const rows = state.projectSessions.get(session.cwd) || []; rows.unshift(session); state.projectSessions.set(session.cwd, rows); state.sessions = rows;
             rememberProject(session.cwd); renderProjects(); renderSessions(); await openSession(session);
         } catch (error) {
-            if (['COMPLIANCE_STALE', 'COMPLIANCE_CONFLICT', 'COMPLIANCE_DISABLED'].includes(error.data?.code)) sessionStorage.removeItem(storageKey);
+            if (window.PiCompliance.isDefiniteRejection(error)) sessionStorage.removeItem(storageKey);
             toast(error.status === 404 ? translateUi('原会话创建状态未知。请核对会话列表，系统没有重发请求。') : error.message, 'error');
         } finally { event.detail?.complete?.(); }
     });

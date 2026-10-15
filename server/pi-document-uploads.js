@@ -171,7 +171,8 @@ class DocumentUploads {
         if (worker.disposed || worker.restarting) throw fail('会话运行身份已变化', 409, 'DOCUMENT_CONTEXT');
         return { reference: authorized.reference, ...result };
     }
-    async dispose() { this.closed = true; await Promise.allSettled([...this.operations].map(job => job.promise)); await this.pool.dispose(); }
+    stopAdmission() { this.closed = true; }
+    async dispose() { this.stopAdmission(); await Promise.allSettled([...this.operations].map(job => job.promise)); await this.pool.dispose(); }
 }
 function mountDocumentUploads(router, service) {
     const respond = action => async (req, res) => {

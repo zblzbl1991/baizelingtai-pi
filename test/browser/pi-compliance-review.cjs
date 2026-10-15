@@ -25,7 +25,7 @@ async function run(browser, origin, width) {
     await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, route => route.abort());
     await page.route('**/api/**', async route => {
         const req = route.request(), endpoint = new URL(req.url()).pathname, json = data => route.fulfill({ json: data });
-        if (endpoint.endsWith('/review-proposals') && req.method() === 'POST') { preparePosts++; if (busyPrepare) { busyPrepare = false; return route.fulfill({status:409,json:{error:'实际操作忙碌，尚未接纳本次确认卡',code:'COMPLIANCE_BUSY'}}); } }
+        if (endpoint.endsWith('/review-proposals') && req.method() === 'POST') { preparePosts++; if (busyPrepare) { busyPrepare = false; return route.fulfill({status:409,json:{error:'实际操作忙碌，尚未接纳本次确认卡',code:'COMPLIANCE_BUSY',operationAccepted:false}}); } }
         if (endpoint.endsWith('/confirm') && req.method() === 'POST') { confirmPosts++; if (loseConfirm) { loseConfirm = false; await route.fetch(); return route.abort(); } }
         if (holdCard && /\/review-proposals\/[^/]+$/.test(endpoint) && req.method() === 'GET') { holdCard = false; const response = await route.fetch(); cardRequested(); await new Promise(resolve => { releaseCard = () => route.fulfill({ response }).then(resolve); }); return; }
         if (endpoint.startsWith('/api/pi/compliance') || endpoint === '/api/pi/profiles') return route.continue();

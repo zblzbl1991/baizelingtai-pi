@@ -14,6 +14,7 @@ const hash = value => createHash('sha256').update(JSON.stringify(canonical(value
 const empty = () => ({ version: 1, revision: 0, settingsRevision: 0, settings: { enabled: false, profileId: null, mainModel: null, extractionModel: null }, setup: null, projects: [], receipts: {} });
 const fingerprint = (kind, input) => { const { expectedRevision, expectedSettingsRevision, ...values } = input; return hash({ kind, ...values }); };
 const pendingMaps = state => [state.checkOperations,state.reportGenerations,state.reportDeliveries,state.sessionCreations];
+const hasOperation = (state,id) => Object.hasOwn(state.receipts,id)||state.setup?.requestId===id||pendingMaps(state).some(map=>map&&Object.hasOwn(map,id));
 const pendingCount = (state,except) => new Set([...pendingMaps(state).flatMap(map=>Object.keys(map||{})),...(state.setup?[state.setup.requestId]:[])].filter(id=>id!==except)).size;
 
 function request(input) {
@@ -116,4 +117,4 @@ class ComplianceLedger {
         })).value;
     }
 }
-module.exports = { ComplianceLedger, fail, hash, fingerprint, request, pendingCount, LIMIT };
+module.exports = { ComplianceLedger, fail, hash, fingerprint, request, pendingCount, hasOperation, LIMIT };

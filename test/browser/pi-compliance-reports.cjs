@@ -14,17 +14,29 @@ async function run(browser, origin, width, theme) {
     const page = await context.newPage(), errors = [], sessions = [{ id: 'ordinary', cwd, name: '普通会话', messageCount: 0 }]; let active = 'ordinary', loseImport = false, holdEvidence = false, releaseEvidence, importPosts = 0;
     const fixtureDirectory = path.join(temporary, 'fixtures-' + width); fs.mkdirSync(fixtureDirectory);
     const fixtureFiles = files => files.map(file => { const target = path.join(fixtureDirectory,file.name); fs.writeFileSync(target,file.buffer); return target; });
-    const httpFailures = [];
+    const httpFailures = [];let busyGenerate=true,acceptedGenerate=true,busyDelivery=true,acceptedDelivery=true,generationPosts=0,deliveryPosts=0;
     page.on('response', async response => { if (response.status() >= 400 && new URL(response.url()).pathname.startsWith('/api/pi/compliance')) { const data = await response.json().catch(()=>({})); httpFailures.push({ path: new URL(response.url()).pathname, status:response.status(),error:data.error,code:data.code }); } });
     page.setDefaultTimeout(60000);
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(({ cwd, token, theme }) => { if (window.top !== window.self) return; localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem('pi.web.session:' + cwd, 'ordinary'); sessionStorage.setItem('pi.web.token', token); localStorage.setItem('pi.workspace.theme', theme); }, { cwd, token, theme });
+    await page.addInitScript(()=>{window.syntheticReadErrors=[];const read=FileReader.prototype.readAsDataURL;FileReader.prototype.readAsDataURL=function(file){this.addEventListener('error',()=>window.syntheticReadErrors.push({name:file.name,size:file.size,error:this.error?.name}),{once:true});return read.call(this,file);};});
     if (width < 900) await page.addInitScript(() => { if (window.top !== window.self) return; Object.defineProperty(crypto,'randomUUID',{value:undefined}); Object.defineProperty(crypto,'subtle',{value:undefined}); });
     await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, route => route.abort());
     await page.route('**/api/**', async route => {
         const req = route.request(), endpoint = new URL(req.url()).pathname, json = data => route.fulfill({ json: data });
+        if(endpoint.startsWith('/api/pi/compliance/batches/')&&endpoint.endsWith('/reports')&&req.method()==='POST') {
+            generationPosts++;if(busyGenerate){busyGenerate=false;return route.fulfill({status:409,json:{error:'报告生成尚未接纳',code:'COMPLIANCE_BUSY',operationAccepted:false}});}
+            if(acceptedGenerate){acceptedGenerate=false;await route.fetch();return route.fulfill({status:409,json:{error:'报告生成已接纳，请查询回执',code:'COMPLIANCE_BUSY',operationAccepted:true}});}
+        }
+        if(endpoint.startsWith('/api/pi/compliance/reports/')&&endpoint.endsWith('/delivery')&&req.method()==='POST') {
+            deliveryPosts++;if(busyDelivery){busyDelivery=false;return route.fulfill({status:409,json:{error:'报告交付尚未接纳',code:'COMPLIANCE_BUSY',operationAccepted:false}});}
+            if(acceptedDelivery){acceptedDelivery=false;await route.fetch();return route.fulfill({status:409,json:{error:'报告交付已接纳，请查询回执',code:'COMPLIANCE_BUSY',operationAccepted:true}});}
+        }
+        if(endpoint==='/api/pi/artifacts'&&req.method()==='GET') {
+            const response=await route.fetch(),data=await response.json();data.items.reverse();return route.fulfill({response,json:data});
+        }
         if (endpoint.startsWith('/api/pi/compliance') && endpoint.endsWith('/documents') && req.method() === 'POST') {
-            importPosts++; if (loseImport) { loseImport = false; await route.fetch(); return route.abort(); }
+            importPosts++; if (loseImport) { loseImport = false; const response=await route.fetch(); console.log('report lost-import actual response',response.status()); return route.abort(); }
         }
         if (endpoint.includes('/compliance/batches/') && endpoint.includes('/evidence/') && holdEvidence) {
             holdEvidence = false; const response = await route.fetch(); await new Promise(resolve => { releaseEvidence = () => { route.fulfill({response}).then(resolve); }; }); return;
@@ -108,7 +120,10 @@ async function run(browser, origin, width, theme) {
         await page.waitForFunction(() => document.querySelector('#compliance-results')?.textContent.includes('合同签订期限：通过'));
         await page.locator('#compliance-report-generate').waitFor({timeout:1000});
         await page.locator('#compliance-report-generate').click();
+        await page.waitForFunction(()=>document.querySelector('#compliance-report-status')?.textContent.includes('报告生成尚未接纳'));await page.locator('#compliance-report-generate').click();
+        await page.waitForFunction(()=>document.querySelector('#compliance-report-status')?.textContent.includes('报告生成已接纳'));await page.locator('#compliance-report-generate').click();
         await page.waitForFunction(() => document.querySelector('[data-compliance-report]')?.textContent.includes('已生成 · 尚未交付'));
+        assert.equal(generationPosts,2,'accepted generation recovers the original report receipt without a new POST');
         const reportRow = page.locator('[data-compliance-report]').first();
         assert.match(await reportRow.textContent(), /未人工复核/);
         await reportRow.getByRole('button', {name:'预览 HTML 报告'}).click();
@@ -118,9 +133,20 @@ async function run(browser, origin, width, theme) {
         await page.getByRole('button',{name:'收起报告预览'}).click();
         const downloadEvent = page.waitForEvent('download'); await reportRow.getByRole('button',{name:'下载 Excel'}).click(); const download = await downloadEvent; assert.match(download.suggestedFilename(), /\.xlsx$/);
         await reportRow.getByRole('button', {name:'交付到当前聊天'}).click();
+        await page.waitForFunction(()=>document.querySelector('#compliance-report-status')?.textContent.includes('报告交付尚未接纳'));await reportRow.getByRole('button',{name:'交付到当前聊天'}).click();
+        await page.waitForFunction(()=>document.querySelector('#compliance-report-status')?.textContent.includes('报告交付已接纳'));await reportRow.getByRole('button',{name:'交付到当前聊天'}).click();
         await page.waitForFunction(() => document.querySelector('[data-compliance-report]')?.textContent.includes('已交付 · 待独立保存'));
+        assert.equal(deliveryPosts,2,'accepted delivery queries its receipt without appending another native reference');
+        const reportId=await reportRow.getAttribute('data-compliance-report');
+        const first=(await(await fetch(origin+'/api/pi/compliance/reports/'+reportId,{headers:auth})).json()).report;
+        const before=(await(await fetch(origin+'/api/pi/compliance',{headers:auth})).json()).revision;
+        const secondResponse=await fetch(origin+'/api/pi/compliance/reports/'+reportId+'/delivery',{method:'POST',headers:auth,body:JSON.stringify({requestId:'second-native-delivery-'+width,expectedRevision:before,cwd,sessionId:active})});
+        assert.equal(secondResponse.status,200);const second=(await secondResponse.json()).report;assert.notEqual(first.delivery.reference.id,second.delivery.reference.id);
+        await page.getByRole('button',{name:'核对报告状态',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#compliance-report-status')?.textContent.includes('操作结果已核对'));
         await reportRow.getByRole('button', {name:'保存到成果中心'}).click();
         await page.waitForFunction(() => document.querySelector('[data-compliance-report]')?.textContent.includes('已保存到成果中心'));
+        const independentlySaved=(await(await fetch(origin+'/api/pi/compliance/reports/'+reportId,{headers:auth})).json()).report;
+        assert.equal(independentlySaved.delivery.reference.id,second.delivery.reference.id);assert.ok(independentlySaved.savedFiles.every(Boolean),'only the exact current delivery satisfies independent saving, despite older same-name same-size files');
         if (width > 900) {
             holdEvidence = true; await page.locator('#compliance-results').getByRole('button',{name:'查看证据'}).first().click();
             await page.waitForTimeout(50); assert.equal(typeof releaseEvidence,'function'); await page.locator('#pi-compliance-close').click(); releaseEvidence();
@@ -143,7 +169,7 @@ async function run(browser, origin, width, theme) {
         assert.equal(await page.locator('#compliance-open-chat').isVisible(), false);
         await page.evaluate(() => { location.hash = '#/chat'; }); assert.equal(await page.locator('#pi-compliance-open').isVisible(), false);
         assert.deepEqual(errors, []); console.log(`compliance ${width} ${theme}: actual authenticated settings, dedicated session, project drawer, persistence and disable passed`);
-    } catch (error) { await page.screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR || os.tmpdir(),'compliance-report-failed-'+width+'.png')}).catch(()=>{}); console.error({ errors, httpFailures, url: page.url(), message: error.message, builtins: await page.locator('#settings-builtins').textContent().catch(()=>null), materials:await page.locator('#compliance-material-status').textContent().catch(()=>null),report:await page.locator('#compliance-report-status').textContent().catch(()=>null) }); throw error; }
+    } catch (error) { await page.screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR || os.tmpdir(),'compliance-report-failed-'+width+'.png')}).catch(()=>{}); console.error({ errors, httpFailures, fileErrors:await page.evaluate(()=>window.syntheticReadErrors).catch(()=>null), url: page.url(), message: error.message, builtins: await page.evaluate(()=>document.querySelector('#settings-builtins')?.textContent||null), materials:await page.evaluate(()=>document.querySelector('#compliance-material-status')?.textContent||null),report:await page.evaluate(()=>document.querySelector('#compliance-report-status')?.textContent||null) }); throw error; }
     finally { await context.close(); }
 }
 (async () => {

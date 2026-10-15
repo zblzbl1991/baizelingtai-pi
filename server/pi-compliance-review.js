@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { fail, hash, request } = require('./pi-compliance-ledger');
 const { date, evaluate } = require('./pi-compliance-rules');
-const KEYS = ['projectName', 'projectNumber', 'organization', 'year', 'phase', 'date', 'documentNumber'];
+const KEYS = ['projectName', 'projectNumber', 'organization', 'year', 'phase', 'type', 'stage', 'applicability', 'date', 'documentNumber'];
 const only = (value, keys) => { if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !keys.includes(key))) throw fail('复核参数无效'); };
 const text = (value, maximum, name) => { if (typeof value !== 'string' || !value.trim() || value.length > maximum || /[\x00-\x08\x0b-\x1f\x7f]/.test(value)) throw fail(name + '无效'); return value.trim(); };
 const binding = batch => ({ projectId: batch.projectId, batchId: batch.id, batchRevision: batch.revision,

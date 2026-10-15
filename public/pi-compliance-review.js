@@ -2,7 +2,7 @@
     const node = (tag, text, cls) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = String(text); if (cls) el.className = cls; return el; };
     const button = (text, action, id) => { const el = node('button', text, 'settings-secondary-button'); el.type = 'button'; el.onclick = action; if (id) el.id = id; return el; };
     const label = (text, field) => { const el = node('label', text); el.append(field); return el; };
-    const fields = { projectName: '项目名称', projectNumber: '项目编号', organization: '单位', year: '年度', phase: '期次', date: '日期', documentNumber: '文号' };
+    const fields = { projectName: '项目名称', projectNumber: '项目编号', organization: '单位', year: '年度', phase: '期次', type: '项目类型', stage: '阶段', applicability: '本次规则适用清单', date: '日期', documentNumber: '文号' };
     const rules = { 'documents-identity': '资料缺失与归属', 'feasibility-numbers': '可研评审及批复文号', 'contract-deadline': '合同签订期限', 'feasibility-order': '可研与评审时序' };
     const conclusions = { passed: '通过', issue: '发现候选问题', insufficient: '证据不足', 'not-applicable': '不适用' };
     const original = field => field ? field.raw ?? '原始提取未知' : '原始提取没有此字段';
@@ -57,7 +57,7 @@
             try {
                 const result = await apiFetch('/api/pi/compliance' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId, expectedRevision: revision, ...body }) });
                 sessionStorage.removeItem(storageKey); lastPendingKey = null; await consume(result); return result;
-            } catch (error) { if (error.status && error.status < 500 && error.status !== 404) { sessionStorage.removeItem(storageKey); lastPendingKey = null; } throw error; }
+            } catch (error) { if (window.PiCompliance.isDefiniteRejection(error)) { sessionStorage.removeItem(storageKey); lastPendingKey = null; } throw error; }
         }
         async function act(action) {
             if (busy || !current()) return; busy = true; form.disabled = true; cardRoot.querySelectorAll('button').forEach(b => b.disabled = true); status.textContent = '正在处理…';

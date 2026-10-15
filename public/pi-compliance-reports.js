@@ -17,7 +17,7 @@
             const input = { requestId: window.PiCompliance.randomId(), ...(!artifact ? { expectedRevision: revision } : {}), ...body };
             sessionStorage.setItem(key, JSON.stringify({ requestId: input.requestId, payload: JSON.stringify(body) }));
             try { const result = await apiFetch(prefix + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }); if (result.noReplay || result.pending) throw new Error('原操作仍待核对，系统未重发。'); sessionStorage.removeItem(key); return result; }
-            catch (error) { if (error.status && error.status < 500 && error.status !== 404 && error.data?.code !== 'COMPLIANCE_BUSY') sessionStorage.removeItem(key); throw error; }
+            catch (error) { if (window.PiCompliance.isDefiniteRejection(error)) sessionStorage.removeItem(key); throw error; }
         }
         async function act(action) {
             if (busy || !current()) return; busy = true; controls.disabled = true; list.querySelectorAll('button').forEach(b => b.disabled = true); status.textContent = '正在处理…';
@@ -50,9 +50,9 @@
                 row.append(button('预览 HTML 报告', () => act(() => file(report, 0, true))), button('下载 HTML', () => act(() => file(report, 0, false))), button('下载 Excel', () => act(() => file(report, 1, false))));
                 if (report.status !== 'delivered') row.append(button('交付到当前聊天', () => act(() => { const c = context(); return mutation('/reports/' + report.id + '/delivery', { cwd: c.cwd, sessionId: c.sessionId }); })));
                 if (report.status === 'delivered' && !complete) row.append(button('保存到成果中心', () => act(async () => {
-                    const delivery = report.delivery, sources = await apiFetch('/api/pi/artifacts?' + new URLSearchParams({ cwd: delivery.cwd, sessionId: delivery.sessionId })); if (!current()) return;
-                    const files = report.files.map(file => sources.items.flatMap(g => g.files).find(f => f.name === file.name && f.size === file.size));
-                    if (files.some(f => !f)) throw new Error('原生交付来源当前不可验证，请在成果中心核对来源。');
+                    const sources = await apiFetch('/api/pi/compliance/reports/'+report.id+'/sources'); if (!current()) return;
+                    const files=sources.files;
+                    if(sources.reference?.id!==report.delivery.reference.id||sources.reference?.manifestRevision!==report.delivery.reference.manifestRevision||files.length!==report.files.length||files.some((file,index)=>file.index!==index||file.sha256!==report.files[index].sha256))throw new Error('报告交付来源已变化，请刷新后核对。');
                     const result = await mutation('/batch', { action: 'save', files: files.map(f => ({ key: f.key })) }, true);
                     if (result.results?.some(r => !r.ok) || !result.results?.length) throw new Error(result.results?.filter(r => !r.ok).map(r => r.error).join('；') || result.error || '保存结果待核对');
                 })));

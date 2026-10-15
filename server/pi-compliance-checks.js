@@ -2,10 +2,15 @@ const { randomUUID } = require('node:crypto');
 const { fail, request, fingerprint, pendingCount } = require('./pi-compliance-ledger');
 const { RULE_PACKAGE, evaluate, date } = require('./pi-compliance-rules');
 const ROLES = ['award-notice', 'contract', 'feasibility-report', 'feasibility-review', 'feasibility-approval', 'register', 'unknown'];
-const LABELS = { projectName: ['项目名称', '工程项目名称', 'Project name'], projectNumber: ['项目编号', '工程项目编号', 'Project number'], organization: ['单位', '建设单位'], year: ['年度'], phase: ['期次'], date: ['日期', '签订日期', '合同签订日期', '中标通知书日期', '报告日期', '评审日期', '批复日期', 'Date'], documentNumber: ['文号', '发文字号', 'Document number'] };
+const LABELS = { projectName: ['项目名称', '工程项目名称', 'Project name'], projectNumber: ['项目编号', '工程项目编号', 'Project number'], organization: ['单位', '建设单位'], year: ['年度'], phase: ['期次'], type: ['项目类型'], stage: ['阶段', '项目阶段'], applicability: ['本次规则适用清单', '规则适用清单'], date: ['日期', '签订日期', '合同签订日期', '中标通知书日期', '报告日期', '评审日期', '批复日期', 'Date'], documentNumber: ['文号', '发文字号', 'Document number'] };
 const only = (value, keys) => { if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => !keys.includes(k))) throw fail('检查参数无效'); };
 const keyFor = label => Object.keys(LABELS).find(key => LABELS[key].includes(label.trim()));
 const columnOf = (cell, index) => cell.column || (cell.address ? [...cell.address.match(/^[A-Z]+/)[0]].reduce((n,c) => n*26+c.charCodeAt(0)-64,0) : index+1);
+function recordRecognitionUsage(usage, reported) {
+    usage.inputTokens=reported.inputTokens===null?null:(usage.inputTokens||0)+reported.inputTokens;
+    usage.outputTokens=reported.outputTokens===null?null:(usage.outputTokens||0)+reported.outputTokens;
+    if(reported.cost.estimate!==null){usage.cost.estimate=(usage.cost.estimate||0)+reported.cost.estimate;usage.cost.basis='partial-model-catalog-estimate';}
+}
 function candidates(documentId, entries) {
     const output = [];
     for (const key of Object.keys(LABELS)) {
@@ -120,8 +125,23 @@ class ComplianceChecks {
             state.batches[index] = structuredClone(batch); update?.(state);
         });
     }
+    async modelSnapshot(input, worker) {
+        if(input.cwd!==undefined||input.sessionId!==undefined){
+            const session=await this.service.store.getSession(input.cwd,input.sessionId);
+            worker=this.service.supervisor?.getActiveWorker(session.path);
+        }
+        if(!worker)return {worker:null,mainModel:null,mainModelSource:'unknown',mainModelSessionId:null};
+        if(worker.modelChangesPending||worker.modelChangeUncertain)throw fail('会话模型选择仍待核对',409,'COMPLIANCE_BUSY');
+        await this.service.authorizeWorker(worker);const generation=worker.modelChangeGeneration;
+        if(worker.modelChangesPending||worker.modelChangeUncertain||worker.controlPending||worker.controlUncertain)throw fail('会话模型选择仍待核对',409,'COMPLIANCE_BUSY');
+        const state=await worker.request('get_state');await this.service.authorizeWorker(worker);
+        if(worker.modelChangesPending||worker.modelChangeUncertain)throw fail('会话模型选择仍待核对',409,'COMPLIANCE_BUSY');
+        if(generation!==worker.modelChangeGeneration)throw fail('会话模型已变化，请重新核对',409,'COMPLIANCE_STALE');
+        const known=typeof state.model?.provider==='string'&&typeof state.model?.id==='string';
+        return {worker,generation,mainModel:known?{provider:state.model.provider,modelId:state.model.id}:null,mainModelSource:known?'native-session':'unknown',mainModelSessionId:known?worker.sessionId:null};
+    }
     create(projectId, input, worker) {
-        only(input,['requestId','expectedRevision','budget']); request(input); const budget = this.budget(input.budget);
+        only(input,['requestId','expectedRevision','budget','cwd','sessionId']); request(input); const budget = this.budget(input.budget);
         return this.launch(projectId, async () => {
             await this.ready(); const ledger = this.service.ledger;
             const state = await ledger.snapshot(), prior = ledger.receipt(state,'batch:' + projectId,input); if (prior) return prior;
@@ -130,9 +150,10 @@ class ComplianceChecks {
                 if (pending.fingerprint !== fingerprint('batch:' + projectId,input)) throw fail('操作编号已用于不同内容',409,'COMPLIANCE_CONFLICT');
                 return {status:'pending',batch:(state.batches || []).find(b=>b.id===pending.batchId),revision:state.revision};
             }
+            const model=await this.modelSnapshot(input,worker);worker=model.worker;
             const batch = { id:randomUUID(),revision:1,projectId,projectSnapshot:structuredClone(this.service.materials.project(state,projectId)),
                 documents:structuredClone((state.documents||[]).filter(d=>d.projectId===projectId&&d.assignment?.selected)),rulePackage:structuredClone(RULE_PACKAGE),
-                configurationSnapshot:{mainModel:state.settings.mainModel,extractionModel:state.settings.extractionModel,parserVersion:'local-labeled-1'},
+                configurationSnapshot:{mainModel:model.mainModel,mainModelSource:model.mainModelSource,mainModelSessionId:model.mainModelSessionId,extractionModel:state.settings.extractionModel,parserVersion:'local-labeled-2'},
                 fields:[],results:[],execution:{status:'running',reason:null,budget,usage:{pages:0,modelCalls:0,imageBytes:0,elapsedMs:0,inputTokens:null,outputTokens:null,cost:{actual:null,estimate:null,currency:'USD',basis:'unknown'}},steps:[]},review:{status:'unreviewed'},createdAt:new Date().toISOString() };
             for (const doc of batch.documents) {
                 doc.processing={status:'unreadable',reason:'尚未处理'};
@@ -140,6 +161,7 @@ class ComplianceChecks {
             }
             await this.service.reserve(()=>ledger.transact(current=>{
                 const old=ledger.receipt(current,'batch:' + projectId,input);if(old)throw fail('操作已完成，请查询回执',409);
+                if(worker&&(worker.disposed||worker.restarting||this.service.supervisor.getActiveWorker(worker.sessionPath)!==worker||worker.modelChangeGeneration!==model.generation||worker.modelChangesPending||worker.modelChangeUncertain||worker.controlPending||worker.controlUncertain))throw fail('会话模型或来源已变化，请重新核对',409,'COMPLIANCE_STALE');
                 ledger.assertRevision(current,input);this.service.assertEnabled(current);current.batches||=[];if(current.batches.length>=500)throw fail('检查批次达到五百上限',413);
                 if(Object.keys(current.checkOperations||{}).length>=500||Object.keys(current.receipts).length+pendingCount(current,input.requestId)>=10000)throw fail('未完成检查操作达到上限',413);
                 current.batches.push(structuredClone(batch));current.checkOperations||={};
@@ -221,12 +243,13 @@ class ComplianceChecks {
                     const {base64}=await this.service.materials.readContent(doc.id);
                     const image=await this.documents.pool.run(Buffer.from(base64,'base64'),doc.format,{page:step.page},{render:true});
                     const output=await require('./pi-compliance-recognition').recognize(this.service,batch,doc,image,async()=>{const now=await ledger.snapshot();elapsed();const reason=this.service.closed?'shutdown':!now.settings.enabled?'disabled':now.batches.find(b=>b.id===batch.id).execution.pauseRequested?(now.batches.find(b=>b.id===batch.id).execution.stopReason||'requested'):this.service.isSuspended()?'maintenance':usage.elapsedMs>=execution.budget.runMs?'budget-time':null;if(reason){execution.status='paused';execution.reason=reason;throw fail('当前步骤已保存，未启动模型请求',409,'COMPLIANCE_STEP_PAUSED');}const encoded=Buffer.byteLength(image.base64,'ascii');if((usage.imageBytes||0)+encoded>128*1024*1024){execution.status='paused';execution.reason='budget-imageBytes';throw fail('批次图像传输量达到 128 MiB，请缩小范围建立新批次',413,'COMPLIANCE_STEP_PAUSED');}usage.imageBytes=(usage.imageBytes||0)+encoded;usage.modelCalls++;await this.checkpoint(batch);});
-                    for(const field of output.fields){const prior=batch.fields.find(f=>f.documentId===field.documentId&&f.key===field.key);if(!prior)batch.fields.push(field);else if(prior.original?.absent&&prior.raw===null){const {id,...original}=field;Object.assign(prior,original);}else{prior.candidates||=[{raw:prior.raw,location:prior.location}];prior.candidates.push({raw:field.raw,location:field.location});if(prior.raw!==field.raw){prior.status='conflict';prior.value=null;}else if(field.status!=='known'){prior.status='unknown';prior.value=null;}}} usage.inputTokens=output.usage.inputTokens===null?null:(usage.inputTokens||0)+output.usage.inputTokens;usage.outputTokens=output.usage.outputTokens===null?null:(usage.outputTokens||0)+output.usage.outputTokens;
-                    if(output.usage.cost.estimate!==null){usage.cost.estimate=(usage.cost.estimate||0)+output.usage.cost.estimate;usage.cost.basis='partial-model-catalog-estimate';}
+                    recordRecognitionUsage(usage,output.usage);
+                    for(const field of output.fields){const prior=batch.fields.find(f=>f.documentId===field.documentId&&f.key===field.key);if(!prior)batch.fields.push(field);else if(prior.original?.absent&&prior.raw===null){const {id,...original}=field;Object.assign(prior,original);}else{prior.candidates||=[{raw:prior.raw,location:prior.location}];prior.candidates.push({raw:field.raw,location:field.location});if(prior.raw!==field.raw){prior.status='conflict';prior.value=null;}else if(field.status!=='known'){prior.status='unknown';prior.value=null;}}}
                     doc.processing=execution.steps.some(s=>s!==step&&s.documentId===doc.id&&s.status!=='completed')?{status:'unreadable',reason:'其余扫描页面尚未完成'}:{status:'completed',reason:'扫描字段候选已提取，结论仍待人工复核'};
                 }
                 step.status='completed';step.completedAt=new Date().toISOString();
             } catch(error) {
+                if(error.recognitionUsage)recordRecognitionUsage(usage,error.recognitionUsage);
                 step.status=error.code==='COMPLIANCE_STEP_PAUSED'?'pending':error.code==='COMPLIANCE_MODEL_UNCERTAIN'?'uncertain':'failed';step.reason=String(error.message).slice(0,500);step.code=error.code||'COMPLIANCE_PARSE_FAILED';
                 doc.processing={status:['COMPLIANCE_MODEL_UNAVAILABLE','COMPLIANCE_STEP_PAUSED'].includes(error.code)?'unreadable':'failed',reason:step.reason,code:step.code};
             }

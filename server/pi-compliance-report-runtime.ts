@@ -1,19 +1,13 @@
 import { complianceRuntime } from './pi-compliance-runtime.js';
 import { ENTRY, references } from './pi-deliverables.js';
 import { getAgentDir, type ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { complianceRequest } from './pi-compliance-client.js';
 export async function reportRequest(ctx: any, input: any) {
     if (ctx.mode !== 'rpc' || !complianceRuntime(ctx.sessionManager, ctx.cwd, getAgentDir())) throw new Error('合规专用会话资格无效');
     return postReportRequest(ctx, input);
 }
 async function postReportRequest(ctx: any, input: any) {
-    if (ctx.mode !== 'rpc') throw new Error('合规专用会话资格无效');
-    const origin = process.env.PI_WORKSPACE_INTERNAL_ORIGIN!, url = new URL('/api/pi/compliance/tool', origin);
-    if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid compliance service origin');
-    const sessionId = ctx.sessionManager.getSessionId(), sessionFile = ctx.sessionManager.getSessionFile();
-    const response = await fetch(url, { method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.PI_WEB_NAVIGATION_TOKEN}` }, body: JSON.stringify({ ...input, operation: 'reports' }) });
-    const result = await response.json(); if (!response.ok) throw new Error(result.error || '报告操作失败');
-    if (sessionId !== ctx.sessionManager.getSessionId() || sessionFile !== ctx.sessionManager.getSessionFile()) throw new Error('会话已变化，请核对原操作回执');
-    return result;
+    return complianceRequest(ctx,{...input,operation:'reports'});
 }
 export async function deliverReport(pi: ExtensionAPI, ctx: any, input: any) {
     const sessionId = ctx.sessionManager.getSessionId(), sessionFile = ctx.sessionManager.getSessionFile(), leaf = ctx.sessionManager.getLeafId();

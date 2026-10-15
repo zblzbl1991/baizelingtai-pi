@@ -24,7 +24,7 @@ test('managed compliance tools and four skills reach only verified dedicated ses
     });
     provider.listen(0, '127.0.0.1'); await once(provider, 'listening');
     fs.writeFileSync(path.join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'text', defaultProjectTrust: 'never', enableInstallTelemetry: false }));
-    fs.writeFileSync(path.join(agent, 'models.json'), JSON.stringify({ providers: { fixture: { baseUrl: `http://127.0.0.1:${provider.address().port}/v1`, api: 'openai-completions', apiKey: 'synthetic', models: [{ id: 'text', input: ['text'], contextWindow: 32000, maxTokens: 1000 }] } } }));
+    fs.writeFileSync(path.join(agent, 'models.json'), JSON.stringify({ providers: { fixture: { baseUrl: `http://127.0.0.1:${provider.address().port}/v1`, api: 'openai-completions', apiKey: 'synthetic', models: ['text','selected'].map(id=>({id,input:['text'],contextWindow:32000,maxTokens:1000})) } } }));
     const { createPiAgentGateway } = require('../server/pi-agent-routes'), { WorkspaceAccessService } = require('../server/workspace-access-service');
     const access = new WorkspaceAccessService({ filePath: path.join(agent, 'access.json'), envToken: () => 'fixture-compliance-token' });
     const gateway = createPiAgentGateway({ accessService: access, deferredFilePath: path.join(agent, 'deferred.json'), cronFilePath: path.join(agent, 'cron.sqlite') });
@@ -81,11 +81,18 @@ test('managed compliance tools and four skills reach only verified dedicated ses
         const importedId = materialResult.details.pivaneCompliance.documents[0].id; assert.ok(importedId);
         const docs = await api('GET', '/compliance/projects/' + project.id + '/documents'); assert.equal(docs.documents[0].id, importedId);
         await api('PUT', '/compliance/documents/' + importedId + '/assignment', { requestId: 'rpc-assign', expectedRevision: docs.revision, role: 'contract', identityConfirmed: true, selected: true });
+        await worker.request('set_model',{provider:'fixture',modelId:'selected'});
         operation = { name: 'compliance_check', input: { action: 'run', projectId: project.id, requestId: 'rpc-check', expectedRevision: (await api('GET', '/compliance')).revision } };
         await prompt(worker, 'fixture operate check');
         const checkResult = (await worker.request('get_entries')).entries.findLast(entry => entry.message?.toolName === 'compliance_check')?.message;
         assert.ok(checkResult && !checkResult.isError, JSON.stringify(checkResult)); assert.ok(checkResult.details.pivaneCompliance.batchId);
         const reviewBatch = (await api('GET', '/compliance/batches/' + checkResult.details.pivaneCompliance.batchId)).batch;
+        assert.deepEqual(reviewBatch.configurationSnapshot.mainModel,{provider:'fixture',modelId:'selected'});
+        assert.equal(reviewBatch.configurationSnapshot.mainModelSource,'native-session');
+        const httpBatch=(await api('POST','/compliance/projects/'+project.id+'/batches',{requestId:'http-selected-model',expectedRevision:(await api('GET','/compliance')).revision,cwd,sessionId:dedicated.id})).batch;
+        assert.deepEqual(httpBatch.configurationSnapshot.mainModel,{provider:'fixture',modelId:'selected'});
+        const unknownBatch=(await api('POST','/compliance/projects/'+project.id+'/batches',{requestId:'http-unknown-model',expectedRevision:(await api('GET','/compliance')).revision})).batch;
+        assert.equal(unknownBatch.configurationSnapshot.mainModel,null);assert.equal(unknownBatch.configurationSnapshot.mainModelSource,'unknown');
         operation = { name: 'compliance_review', input: { action: 'prepare', batchId: reviewBatch.id, batchRevision: reviewBatch.revision, requestId: 'rpc-review', expectedRevision: (await api('GET', '/compliance')).revision,
             change: { kind: 'field', documentId: importedId, key: 'date', raw: '2026-08', location: { sheet: 'CSV', row: 2, column: 2, excerpt: '日期列，原件只写到月' }, reason: '建议保留原件月份精度，等待用户确认' } } };
         await prompt(worker, 'fixture operate prepare review');
@@ -139,4 +146,49 @@ test('managed compliance tools and four skills reach only verified dedicated ses
         await gateway.dispose(); access.dispose(); server.closeAllConnections(); provider.closeAllConnections();
         await Promise.all([new Promise(r => server.close(r)), new Promise(r => provider.close(r))]);
     }
+});
+
+// Preserve native LF bytes and all unrelated frames. Delay only the real model
+// acknowledgement; no worker, provider result or state is substituted.
+function holdModelResponse(worker,command='set_model') {
+    const stream=worker.client.child.stdout, emit=stream.emit;let buffer=Buffer.alloc(0),held,resolve,reject;
+    const reached=new Promise((yes,no)=>{resolve=yes;reject=no;}), timer=setTimeout(()=>reject(new Error('actual set_model response not observed')),15000);
+    stream.emit=function(event,...args){
+        if(event!=='data')return emit.call(this,event,...args);
+        buffer=Buffer.concat([buffer,Buffer.from(args[0])]);let end;
+        while((end=buffer.indexOf(10))>=0){const line=buffer.subarray(0,end+1);buffer=buffer.subarray(end+1);let value;try{value=JSON.parse(line.toString('utf8'));}catch{}
+            if(!held&&value?.type==='response'&&value.command===command){held=Buffer.from(line);clearTimeout(timer);resolve();}
+            else emit.call(this,'data',line);
+        }return true;
+    };
+    return {reached,release(){clearTimeout(timer);stream.emit=emit;if(held)emit.call(stream,'data',held);if(buffer.length)emit.call(stream,'data',buffer);}};
+}
+
+test('HTTP batch creation rejects a real model switch while its native acknowledgement is pending or uncertain', {timeout:180000},async()=>{
+    const {createPiAgentGateway}=require('../server/pi-agent-routes'),{WorkspaceAccessService}=require('../server/workspace-access-service');
+    const access=new WorkspaceAccessService({filePath:path.join(agent,'access.json'),envToken:()=> 'synthetic-model-boundary'});
+    const gateway=createPiAgentGateway({accessService:access,deferredFilePath:path.join(agent,'deferred.json'),cronFilePath:path.join(agent,'cron.sqlite')});
+    const app=require('express')();access.mount(app);app.use(require('express').json());gateway.mount(app);
+    const server=http.createServer(app);server.listen(0,'127.0.0.1');await once(server,'listening');const origin='http://127.0.0.1:'+server.address().port;process.env.PI_WORKSPACE_INTERNAL_ORIGIN=origin;let revision=0,gate;
+    const call=async(method,route,body)=>{const response=await fetch(origin+'/api/pi/compliance'+route,{method,headers:{Authorization:'Bearer synthetic-model-boundary','Content-Type':'application/json'},body:body&&JSON.stringify(body)});const data=await response.json();if(response.ok&&Number.isSafeInteger(data.revision))revision=data.revision;return {status:response.status,data};};
+    const write=(route,body={},method='POST')=>call(method,route,{requestId:require('node:crypto').randomUUID(),expectedRevision:revision,...body});
+    try {
+        await call('GET','');assert.equal((await write('/settings',{enabled:true},'PUT')).status,200);
+        const project=(await write('/projects',{project:{name:'模型选择边界'}})).data.project,session=(await write('/sessions',{cwd})).data;
+        const worker=await gateway.supervisor.getWorker({cwd,sessionId:session.id,sessionPath:session.path});
+        gate=holdModelResponse(worker);const changing=worker.request('set_model',{provider:'fixture',modelId:'selected'});changing.catch(()=>{});await gate.reached;
+        try{const denied=await write('/projects/'+project.id+'/batches',{cwd,sessionId:session.id});assert.equal(denied.status,409,JSON.stringify(denied.data));assert.equal(denied.data.code,'COMPLIANCE_BUSY');}
+        finally{gate.release();gate=null;}await changing;
+        gate=holdModelResponse(worker,'get_state');const creating=write('/projects/'+project.id+'/batches',{cwd,sessionId:session.id});creating.catch(()=>{});await gate.reached;
+        await worker.request('set_model',{provider:'fixture',modelId:'text'});gate.release();gate=null;
+        const crossed=await creating;assert.equal(crossed.status,409,JSON.stringify(crossed.data));assert.equal(crossed.data.code,'COMPLIANCE_STALE','a fully completed model switch across the held snapshot response still invalidates the batch admission');
+        gate=holdModelResponse(worker);const uncertain=worker.request('set_model',{provider:'fixture',modelId:'selected'},100);uncertain.catch(()=>{});await gate.reached;await assert.rejects(uncertain,{code:'RPC_TIMEOUT'});
+        assert.equal((await write('/projects/'+project.id+'/batches',{cwd,sessionId:session.id})).status,409);
+        gate.release();gate=null;
+        assert.equal((await write('/projects/'+project.id+'/batches',{cwd,sessionId:session.id})).status,409,'a late acknowledgement does not clear the existing uncertain-model latch');
+        assert.equal((await call('GET','/projects/'+project.id+'/batches')).data.batches.length,0,'none of these denied attempts creates a batch');
+        await gateway.supervisor.stopSession(session.path);const reopened=await gateway.supervisor.getWorker({cwd,sessionId:session.id,sessionPath:session.path});
+        const actual=await reopened.request('get_state');assert.equal(actual.model.provider,'fixture');assert.equal(actual.model.id,'text','a model switch without a native message does not persist across a fresh worker');
+        const confirmed=await write('/projects/'+project.id+'/batches',{cwd,sessionId:session.id});assert.equal(confirmed.status,200,JSON.stringify(confirmed.data));assert.deepEqual(confirmed.data.batch.configurationSnapshot.mainModel,{provider:actual.model.provider,modelId:actual.model.id});assert.equal(confirmed.data.batch.configurationSnapshot.mainModelSource,'native-session');assert.equal(confirmed.data.batch.configurationSnapshot.mainModelSessionId,session.id);
+    } finally {gate?.release();await gateway.dispose();access.dispose();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });

@@ -49,6 +49,28 @@ class ComplianceReports {
     }
     async read(id) { const state = await this.service.ledger.snapshot(); return { revision: state.revision, report: await this.saved(this.find(state, id)) }; }
     async get(id) { return this.job(() => this.read(id)); }
+    async sources(id) { return this.job(async () => {
+        if(!this.artifacts)throw fail('成果来源服务不可用',503,'COMPLIANCE_REPORT_INCOMPLETE');
+        return this.artifacts.job(async()=>{
+        const { report }=await this.read(id), delivery=report.delivery, reference=delivery?.reference;
+        if(report.status!=='delivered'||!reference||!this.artifacts)throw fail('报告尚无可验证的原生交付',409,'COMPLIANCE_REPORT_INCOMPLETE');
+        const session=await this.service.store.getSession(delivery.cwd,delivery.sessionId), candidate={cwd:session.cwd,id:session.id,path:session.path};
+        const source=this.artifacts.deliveryService(candidate), branch=source.branch.bind(source);
+        source.branch=async input=>{const state=await branch(input);return {...state,refs:state.refs.filter(ref=>ref.id===reference.id&&ref.manifestRevision===reference.manifestRevision)};};
+        const {manifest}=await source.objects.manifest(reference.id,reference.manifestRevision);
+        if(manifest.files.length!==report.files.length||manifest.files.some((file,index)=>file.index!==index||file.revision!==report.files[index].sha256||file.sourceKind!=='compliance-report'||file.provenance?.reportId!==report.id||file.provenance?.batchId!==report.batchId||file.provenance?.batchRevision!==report.batchRevision))
+            throw fail('报告原生交付出处不匹配',409,'COMPLIANCE_REPORT_INCOMPLETE');
+        const files=[];
+        for(const file of report.files){
+            const data=await source.request({cwd:session.cwd,sessionId:session.id,id:reference.id,index:String(file.index)});
+            if(data.revision!==file.sha256||data.size!==file.size||data.name!==file.name||data.absolutePath!==null)throw fail('报告原生交付字节不匹配',409,'COMPLIANCE_REPORT_INCOMPLETE');
+            files.push({index:file.index,sha256:file.sha256,key:this.artifacts.addLocator({source:'delivery',candidate,deliveryId:reference.id,index:file.index,revision:file.sha256})});
+        }
+        const current=(await this.read(id)).report.delivery?.reference;
+        if(current?.id!==reference.id||current?.manifestRevision!==reference.manifestRevision)throw fail('报告交付已变化，请刷新后核对',409,'COMPLIANCE_STALE');
+        return {reference,files};
+        });
+    }); }
     async list(batchId) { return this.job(async () => { await this.service.checks.get(batchId); const state = await this.service.ledger.snapshot(), catalog = this.artifacts ? await this.artifacts.library.catalog() : null; return { revision: state.revision, reports: await Promise.all((state.reports || []).filter(r => r.batchId === batchId).map(r => this.saved(r, catalog))) }; }); }
     async bytes(report, index) {
         if (!Number.isInteger(index) || index < 0 || index >= report.files.length) throw fail('报告文件编号无效');
@@ -240,6 +262,7 @@ function mountReports(router, service, route) {
     router.get('/compliance/batches/:id/reports', safe(req => service.reports.list(req.params.id)));
     router.post('/compliance/batches/:id/reports', safe(req => service.reports.generate(req.params.id, req.body)));
     router.get('/compliance/reports/:id', safe(req => service.reports.get(req.params.id)));
+    router.get('/compliance/reports/:id/sources', safe(req => service.reports.sources(req.params.id)));
     router.get('/compliance/reports/:id/files/:index', safe(req => service.reports.content(req.params.id, /^\d$/.test(req.params.index) ? Number(req.params.index) : -1)));
     router.post('/compliance/reports/:id/delivery', safe(req => service.reports.deliver(req.params.id, req.body)));
 }

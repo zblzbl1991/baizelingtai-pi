@@ -1,4 +1,6 @@
 (() => {
+    const isDefiniteRejection = error => error.status>=400&&error.status<500&&error.status!==404&&error.data?.operationAccepted!==true&&error.data?.operationAccepted!==null
+        &&(error.data?.code!=='COMPLIANCE_BUSY'||error.data?.operationAccepted===false);
     const t = (text, ...values) => (window.PiI18n?.t || ((s, ...args) => s.replace(/\{(\d+)\}/g, (_, n) => args[n] ?? '')))(text, ...values);
     const node = (tag, text, className) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = t(text); if (className) el.className = className; return el; };
     const button = (text, id, action) => { const el = node('button', text, 'settings-secondary-button'); el.type = 'button'; if (id) el.id = id; el.onclick = action; return el; };
@@ -76,7 +78,7 @@
                     window.dispatchEvent(new CustomEvent('pi:compliance-config-saved'));
                     if (generation === epoch) await open();
                 } catch (error) {
-                    if (error.status && error.status < 500 && error.status !== 404 && error.data?.code !== 'COMPLIANCE_BUSY') sessionStorage.removeItem(storageKey);
+                    if (isDefiniteRejection(error)) sessionStorage.removeItem(storageKey);
                     if (generation === epoch) {
                         if (error.data?.code === 'COMPLIANCE_STALE' || error.data?.code === 'COMPLIANCE_CONFLICT') {
                             const latest = await apiFetch('/api/pi/compliance');
@@ -175,7 +177,7 @@
                     if (n !== generation || expected !== key()) return;
                     render(); document.getElementById('compliance-project-status').textContent = t('已保存。未填写的字段保留未知。');
                 } catch (error) {
-                    if (error.status && error.status < 500 && error.status !== 404 && error.data?.code !== 'COMPLIANCE_BUSY') pending.delete(expected);
+                    if (isDefiniteRejection(error)) pending.delete(expected);
                     if (n === generation && expected === key()) {
                         if (error.data?.code === 'COMPLIANCE_STALE') {
                             const latest = await apiFetch('/api/pi/compliance/projects'); if (n === generation && expected === key()) loaded = latest;
@@ -191,5 +193,5 @@
         window.addEventListener('workspace:access-locked', () => { trigger.hidden = true; close(); });
         return { update, close };
     }
-    window.PiCompliance = { createSettings, createChat, randomId };
+    window.PiCompliance = { createSettings, createChat, randomId, isDefiniteRejection };
 })();
