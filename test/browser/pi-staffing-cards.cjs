@@ -20,8 +20,9 @@ async function run(browser, width, raceOnly = false) {
     const project = { id: 'new', name: 'New', owner: 'Owner', department: 'A', start: '2026-11-01', end: '2026-11-05', minimum: 2 };
     const recommendation = await service.query({ kind: 'recommend', project }, source);
     const plan = await service.prepareChange({ requestId: 'prepare', expectedRevision: ready.revision, project, personIds: recommendation.selected.map(person => person.id) }, source);
-    const message = { role: 'toolResult', toolName: 'staffing_prepare_change', toolCallId: 'call-plan', isError: false,
-        content: [{ type: 'text', text: 'Synthetic plan prepared' }], details: { pivaneStaffing: { version: 1, plan } }, timestamp: Date.now() };
+    const typed = width === 320 ? { version: 2, reference: { id: plan.id, originId: plan.id, revision: plan.revision, kind: 'assign', source: { cwd: source.cwd, sessionId: source.sessionId } } } : { version: 1, plan };
+    const message = { role: 'toolResult', toolName: width === 320 ? 'staffing_operation_status' : 'staffing_prepare_change', toolCallId: 'call-plan', isError: false,
+        content: [{ type: 'text', text: 'Synthetic plan prepared' }], details: { pivaneStaffing: typed }, timestamp: Date.now() };
     const history = [message];
     const access = new WorkspaceAccessService({ filePath: path.join(agent, 'access.json'), envToken: () => '' }), app = express();
     access.mount(app); app.use(express.json()); const router = express.Router(); router.use(access.middleware());
@@ -94,6 +95,8 @@ async function run(browser, width, raceOnly = false) {
         await card.locator('[data-staffing-person="P1"]').waitFor();
         stage('card loaded');
         if (process.env.PIVANE_TEST_SCREENSHOT_DIR) { fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR, { recursive: true }); await card.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, `staffing-card-plan-${width}.png`) }); }
+        assert.match(await card.locator('label').filter({ has: page.locator('[data-staffing-person="P1"]') }).innerText(), /P1/);
+        assert.match(await card.innerText(), /最低人数：2.*本次选中人数：2/);
         assert.equal(await card.locator('img').count(), 0); assert.match(await card.innerText(), /<img src=x/);
         assert.equal((await service.ledger()).occupancies.length, 0);
         if (width === 393) {

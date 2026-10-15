@@ -2,7 +2,9 @@
 
 ## 人员调配
 
-默认关闭的人员调配能力使用 `/api/pi/staffing`。完整路径、方案字段、来源校验、修订及不确定结果规则见[人员调配接口](STAFFING.md#http-接口)。模型仅能查询和准备方案；具体写入由受认证页面确认，worker 私有认证不能代替确认。
+默认关闭的人员调配能力使用 `/api/pi/staffing`。完整路径、方案字段、来源校验、修订及不确定结果规则见[人员调配接口](STAFFING.md#http-接口)。模型可以查询台账和准备变更方案，台账变更提交由受认证页面确认，worker 私有认证不能代替确认。用户明确要求时，专用工具也可以导出 Excel 并保存到成果中心。
+
+新原生方案卡片使用 `details.pivaneStaffing={version:2,reference:{id,originId,kind,revision,source:{cwd,sessionId}}}`，前端经授权接口获取完整方案。成功准备或原操作状态工具可以携带该引用；旧版 `version:1` 历史方案仍可读取。状态查询仅为已验证的本来源完成回执恢复原方案，不重放写入。模型文字与引用元数据各自最多 64 KiB。
 
 标准 XLSX 的原件上传、差异计划、按需导出及独立成果阶段使用 `/api/pi/staffing/excel/*`；私有受管工具使用对应 `/agent/import`、`/agent/export` 和 `/agent/export-status`。字段与预算见 [Excel 导入与成果](STAFFING.md#excel-导入与成果)。
 
