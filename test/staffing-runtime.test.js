@@ -80,7 +80,7 @@ test('real managed supplier requests isolate staffing resources and reject disab
                 const statusEntries = await worker.request('get_entries'), statusMessage = statusEntries.entries.findLast(entry => entry.message?.toolName === 'staffing_ledger_status')?.message;
                 assert.equal(statusMessage?.isError, false, JSON.stringify(statusMessage));
                 const ledgerStatus = JSON.parse(statusMessage.content.find(item => item.type === 'text').text);
-                assert.equal(ledgerStatus.revision, (await gateway.staffing.status()).revision); assert.equal(ledgerStatus.counts.people, 1);
+                assert.equal(ledgerStatus.revision, (await gateway.staffing.status()).revision); assert.equal(ledgerStatus.counts.people, 1); assert.equal(ledgerStatus.state, 'ready');
                 const project = { id: 'new', name: 'New', owner: 'Owner', department: 'A', start: '2026-11-01', end: '2026-11-02', minimum: 1 };
                 tool = 'staffing_prepare_change'; argumentsForTool = { requestId: 'prepare', expectedRevision: (await gateway.staffing.status()).revision, project, personIds: ['P1'] };
                 await prompt(worker, 'Prepare synthetic plan');

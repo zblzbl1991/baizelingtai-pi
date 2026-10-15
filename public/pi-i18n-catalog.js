@@ -9860,6 +9860,7 @@
         ["打开成果中心", "Open artifacts"],
         ["下载 Excel", "Download Excel"],
         ["高级台账输入", "Advanced ledger input"],
+        ["高级修改初始台账", "Advanced initial ledger editing"],
         ["历史完整性", "History completeness"],
         ["完整", "Complete"],
         ["不完整", "Incomplete"],
