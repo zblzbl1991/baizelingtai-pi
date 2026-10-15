@@ -5,6 +5,55 @@ const path = require('node:path');
 const { createDesktopStartup } = require('../server/pivane-desktop-startup');
 const root = path.resolve(__dirname, '..');
 
+test('startup page retries a denied temporary port and still serves its own status', async t => {
+    const create = http.createServer;
+    const attempts = [];
+    t.mock.method(http, 'createServer', (...args) => {
+        const server = create(...args), listen = server.listen;
+        server.listen = function (port, host) {
+            attempts.push({ port, host });
+            if (attempts.length === 1) {
+                process.nextTick(() => server.emit('error', Object.assign(new Error('listen EACCES: permission denied 127.0.0.1:55572'), { code: 'EACCES' })));
+                return server;
+            }
+            return listen.call(this, port, host);
+        };
+        return server;
+    });
+    const startup = await createDesktopStartup({ root });
+    t.after(() => startup.close());
+    assert.ok(attempts.length >= 2 && attempts.length <= 32);
+    assert.ok(attempts.every(attempt => attempt.host === '127.0.0.1'));
+    assert.notEqual(attempts[1].port, attempts[0].port);
+    assert.deepEqual(await fetch(new URL('status', startup.url)).then(value => value.json()), { state: 'starting' });
+});
+
+test('temporary port retries are bounded, propagate unrelated failures and leave no listeners behind', async t => {
+    const create = http.createServer;
+    let code = 'EACCES', attempts = 0, server, initialListeningListeners;
+    t.mock.method(http, 'createServer', (...args) => {
+        server = create(...args);
+        initialListeningListeners = server.listenerCount('listening');
+        server.listen = function () {
+            attempts++;
+            process.nextTick(() => this.emit('error', Object.assign(new Error('Synthetic bind refusal'), { code })));
+            return this;
+        };
+        return server;
+    });
+    await assert.rejects(createDesktopStartup({ root }), /allocate.*port/i);
+    assert.equal(attempts, 32);
+    assert.equal(server.listening, false);
+    assert.equal(server.listenerCount('listening'), initialListeningListeners);
+    assert.equal(server.listenerCount('error'), 0);
+    code = 'EADDRINUSE'; attempts = 0;
+    await assert.rejects(createDesktopStartup({ root }), /allocate.*port/i);
+    assert.equal(attempts, 32);
+    code = 'EINVAL'; attempts = 0;
+    await assert.rejects(createDesktopStartup({ root }), { code: 'EINVAL' });
+    assert.equal(attempts, 1);
+});
+
 test('startup page is available before readiness and serves only its bounded local assets/status', async t => {
     const startup = await createDesktopStartup({ root });
     t.after(() => startup.close());

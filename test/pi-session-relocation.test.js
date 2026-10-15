@@ -3,8 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const net = require('node:net');
-const { createHash } = require('node:crypto');
+const { acquireInstallationLock } = require('../server/pi-installation-lock');
 const { sessionDirectory, decodeSession, relocateSessionBytes, relocateProjectSessions } = require('../server/pi-session-relocation');
 
 function fixture(t) {
@@ -92,11 +91,9 @@ test('installation lock and existing destinations prevent session writes; indepe
     const before = fs.readFileSync(native.filename);
     const options = { installation: f.old, agentDir: f.agent, sourceCwd: f.old, targetCwd: f.target, evidenceDir: path.join(f.root, 'evidence') };
     await assert.rejects(relocateProjectSessions(options), /writers/);
-    const port = 40000 + createHash('sha256').update(f.old).digest().readUInt32BE(0) % 20000;
-    const guard = net.createServer();
-    await new Promise((resolve, reject) => { guard.once('error', reject); guard.listen(port, '127.0.0.1', resolve); });
+    const guard = await acquireInstallationLock(f.old);
     try { await assert.rejects(relocateProjectSessions({ ...options, externalWritersStopped: true }), { code: 'EADDRINUSE' }); }
-    finally { await new Promise(resolve => guard.close(resolve)); }
+    finally { await guard.close(); }
     assert.equal(fs.existsSync(options.evidenceDir), false);
     assert.deepEqual(fs.readFileSync(native.filename), before);
     fs.mkdirSync(sessionDirectory(f.agent, f.target));

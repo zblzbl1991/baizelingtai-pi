@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const net = require('node:net');
-const { createHash, randomUUID } = require('node:crypto');
+const { randomUUID } = require('node:crypto');
+const { acquireInstallationLock } = require('./pi-installation-lock');
 const { privateDir, readSafe, backupRoots, atomicJson, hash } = require('./pi-maintenance-files');
 const { writePrivateFileSync } = require('./pi-private-files');
 
@@ -70,9 +70,7 @@ async function relocateProjectSessions({ installation, agentDir, sourceCwd, targ
     const sourceDir = sessionDirectory(agentDir, sourceCwd), targetDir = sessionDirectory(agentDir, targetCwd);
     if (sourceDir === targetDir || fs.existsSync(targetDir)) throw new Error('Session destination already exists or collides');
     if (fs.realpathSync.native(sourceDir) !== sourceDir) throw new Error('Session source must be canonical');
-    const port = 40000 + createHash('sha256').update(installation).digest().readUInt32BE(0) % 20000;
-    const guard = net.createServer(socket => socket.destroy());
-    await new Promise((resolve, reject) => { guard.once('error', reject); guard.listen(port, '127.0.0.1', resolve); });
+    const guard = await acquireInstallationLock(installation);
     let quarantine, staging, sourceMoved = false, targetPublished = false;
     try {
         if (fs.existsSync(evidenceDir)) throw new Error('Relocation evidence directory already exists');
@@ -138,7 +136,7 @@ async function relocateProjectSessions({ installation, agentDir, sourceCwd, targ
         if (targetPublished) fs.renameSync(targetDir, staging);
         if (sourceMoved) fs.renameSync(quarantine, sourceDir);
         throw error;
-    } finally { await new Promise(resolve => guard.close(resolve)); }
+    } finally { await guard.close(); }
 }
 
 module.exports = { sessionDirectory, decodeSession, relocateSessionBytes, relocateProjectSessions };
