@@ -35,6 +35,8 @@ Output LF JSON: every controlled event has `generation`; responses echo `id`.
 During startup, no business prompt is accepted yet; explicit stop/exit can request that generation's orderly shutdown (support `{type:'stop',generation,id,action}` for this path only). No legacy unconditional stop bypass once controlled service is ready.
 Transport EOF still triggers one graceful shutdown. UI hiding does not close pipes. The tray owns a new runner per explicit start; old callbacks cannot mutate the current generation.
 
+Review clarification: ready/snapshot/stop-review include `versions:{appVersion,engineVersion}` only from the actual current service handshake. Desktop shutdown additionally requires a nonce/current-child-bound `maintenance-shutdown-complete` after requested HTTP/gateway/worker cleanup and IPC flush, followed by actual exit 0. Missing proof emits `DESKTOP_CLEANUP_UNKNOWN`, retains runner/guard, and never emits clean stopped. A startup-stop/readiness race enters the normal review/confirmation path rather than stranding a live service or bypassing blockers.
+
 ## Stable waiting entry
 
 Tray owns a loopback-only read-only HTTP host for the lifetime of the tray, implemented within the existing .NET/native boundary (not a second long-lived Node service controller). Prefer a public helper in the existing executable, loaded by the PowerShell tray, so source/executable/build-manifest remain consistent. Supports fixed static startup assets and GET/HEAD /status only, strict Host/Origin, bounded headers/connections and response bodies, no credentials or control routes. Must work as a normal Windows user.
