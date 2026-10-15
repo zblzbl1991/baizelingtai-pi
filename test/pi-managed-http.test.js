@@ -83,9 +83,25 @@ test('managed launcher performs authenticated backup and restart with paused sch
         assert.equal((await api('/execute', 'POST', { ...request, command: 'never run' })).status, 400);
         const executed = await api('/execute', 'POST', request); assert.equal(executed.status, 202);
         assert.equal((await executed.json()).id, ticket.id);
+        stage(action + ' accepted');
+        const observation = { action, polls: 0, maxPollMs: 0, changes: [] };
+        t.after(() => t.diagnostic(JSON.stringify({ maintenancePolls: observation,
+            launcherStarts: (output.match(/running at http:\/\/localhost:/g) || []).length, childExit: child.exitCode, childSignal: child.signalCode })));
         const done = await until(async () => {
-            try { const response = await api('/maintenance'); if (!response.ok) return false; const value = await response.json(); return value.job?.id === ticket.id && !value.busy && value; }
-            catch { return false; }
+            const began = performance.now(); observation.polls++;
+            const observed = value => {
+                const previous = observation.changes.at(-1);
+                if (!previous || JSON.stringify(previous.value) !== JSON.stringify(value)) {
+                    if (observation.changes.length === 30) observation.changes.shift();
+                    observation.changes.push({ ms: Math.round(performance.now() - started), value });
+                }
+            };
+            try {
+                const response = await api('/maintenance'); if (!response.ok) { observed({ status: response.status }); return false; }
+                const value = await response.json(); observed({ busy: value.busy, phase: value.job?.phase, currentTicket: value.job?.id === ticket.id, generation: value.generation });
+                return value.job?.id === ticket.id && !value.busy && value;
+            } catch (error) { observed({ error: error.name, code: error.cause?.code }); return false; }
+            finally { observation.maxPollMs = Math.max(observation.maxPollMs, performance.now() - began); }
         });
         assert.equal(done.job.phase, 'succeeded', JSON.stringify(done.job)); assert.notEqual(done.generation, generation); generation = done.generation;
         stage(action + ' complete');
