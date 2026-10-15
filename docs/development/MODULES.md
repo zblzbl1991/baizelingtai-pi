@@ -4,7 +4,7 @@
 
 | 任务 | 实现入口 | 契约与验证入口 |
 |---|---|---|
-| OfficeCLI 原生 MCP、Office 原件工作副本与编辑 | [扩展](../../server/pi-officecli-extension.ts)、[副本模块](../../server/officecli/documents.js)、[原字节传输](../../server/pi-document-source.js)、[stdio 启动器](../../server/officecli/mcp-host.cjs)、[程序清单](../../server/officecli/inventory.js)、[安装](../../scripts/install-officecli.cjs) | [Office 文档](../OFFICE_DOCUMENTS.md)、[API](../API.md#office-工作副本与-mcp)、pi-officecli/runtime、pi-document-uploads、pi-bundled-capabilities；连接与工具调用复用 Pi 原生 MCP |
+| OfficeCLI 原生 MCP、Office 原件工作副本与编辑 | [扩展](../../server/pi-officecli-extension.ts)、[副本模块](../../server/officecli/documents.js)、[原字节传输](../../server/pi-document-source.js)、[stdio 启动器](../../server/officecli/mcp-host.js)、[程序清单](../../server/officecli/inventory.js)、[安装](../../scripts/install-officecli.cjs) | [Office 文档](../OFFICE_DOCUMENTS.md)、[API](../API.md#office-工作副本与-mcp)、pi-officecli/runtime、pi-document-uploads、pi-bundled-capabilities；连接与工具调用复用 Pi 原生 MCP |
 | 实例网络配置、代理与访问页 | [network service](../../server/workspace-network-service.js)、[transport](../../server/workspace-network-transport.js)、[network UI](../../public/workspace-network.js) | [网络与访问](../ACCESS_CONTROL.md)、workspace-network 与 browser/workspace-network；保存与实际启动状态分离 |
 | HTTP 服务、身份和静态入口 | [server.js](../../server.js)、[workspace-access-service](../../server/workspace-access-service.js)、[static assets](../../server/static-assets.js) | [访问控制](../ACCESS_CONTROL.md)、workspace-access 用例 |
 | 主会话 REST/WS 与服务装配 | [pi-agent-routes](../../server/pi-agent-routes.js) | [API](../API.md)、pi-native-integration、pi-activity-api |

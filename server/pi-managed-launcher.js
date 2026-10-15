@@ -11,7 +11,7 @@ const { outputRedactor, appendOutput } = require('./pi-update-output');
 const portable = require('./pi-portable-installer');
 
 class ManagedLauncher {
-    constructor({ root, env = process.env, networkEnvironment = env, stage = stagePi, stageApp = stageApplication, backup = backupRoots, forkServer = fork } = {}) {
+    constructor({ root, env = process.env, networkEnvironment = env, stage = stagePi, stageApp = stageApplication, backup = backupRoots, forkServer = fork, startupTimeoutMs = 45000 } = {}) {
         this.root = fs.realpathSync.native(root);
         this.directory = privateDir(path.join(this.root, '.pivane-runtime'));
         this.stateFile = path.join(this.directory, 'state.json');
@@ -21,6 +21,9 @@ class ManagedLauncher {
         this.stage = stage; this.stageApp = stageApp; this.backup = backup; this.forkServer = forkServer;
         this.child = null; this.operation = null; this.closed = false;
         this.nonce = randomUUID();
+        if (!Number.isSafeInteger(startupTimeoutMs) || startupTimeoutMs <= 0) throw Error('Invalid service startup budget');
+        this.startupTimeoutMs = startupTimeoutMs;
+        this.desktopPending = new Map();
         this.state = { version: 1, active: null, previous: null, job: null };
     }
     loadState() {
@@ -60,6 +63,34 @@ class ManagedLauncher {
             storage: this.directory, backupScope: 'agent-sessions-media-config-history', nodeVersion: process.versions.node };
     }
     send(message) { if (this.child?.connected) this.child.send({ ...message, nonce: this.nonce }, () => {}); }
+    desktopRequest(method, input = {}) {
+        const child = this.child;
+        if (!['snapshot', 'review', 'execute'].includes(method)) return Promise.reject(new Error('Invalid desktop request'));
+        if (this.closed || !child?.connected) return Promise.reject(Object.assign(new Error('Service control connection is unavailable; outcome is unknown'), { code: 'DESKTOP_TRANSPORT_UNKNOWN' }));
+        if (this.desktopPending.size >= 8) return Promise.reject(Object.assign(new Error('A service control request is already pending'), { code: 'DESKTOP_BUSY' }));
+        const id = randomUUID();
+        return new Promise((resolve, reject) => {
+            const fail = () => {
+                this.desktopPending.delete(id); clearTimeout(timer);
+                reject(Object.assign(new Error('Service control response is unavailable; outcome is unknown'), { code: 'DESKTOP_TRANSPORT_UNKNOWN' }));
+            };
+            const timer = setTimeout(fail, 15000);
+            this.desktopPending.set(id, { child, resolve, reject, timer, fail });
+            try { child.send({ type: 'desktop-request', nonce: this.nonce, id, method, input }, error => { if (error) fail(); }); }
+            catch { fail(); }
+        });
+    }
+    receiveDesktop(child, message) {
+        if (message.type !== 'desktop-response') return false;
+        const pending = this.desktopPending.get(message.id);
+        // Even late or unknown private responses are consumed here.
+        if (pending?.child === child) {
+            this.desktopPending.delete(message.id); clearTimeout(pending.timer);
+            if (message.error) pending.reject(Object.assign(new Error(this.redact(String(message.error.message || 'Service control failed')).slice(0, 2048)), { code: String(message.error.code || 'DESKTOP_FAILED').slice(0, 80) }));
+            else pending.resolve(message.result);
+        }
+        return true;
+    }
     start() {
         if (this.closed) return Promise.reject(new Error('Launcher is stopping'));
         if (!this.starting) this.starting = Promise.resolve().then(async () => {
@@ -87,9 +118,10 @@ class ManagedLauncher {
             this.child = child; let ready = false, checking = false, expired = false;
             const timer = setTimeout(() => {
                 if (!ready) { expired = true; this.send({ type: 'maintenance-shutdown' }); reject(new Error('Service startup timed out')); }
-            }, 45000);
+            }, this.startupTimeoutMs);
             child.on('message', async message => {
                 if (message?.nonce !== this.nonce || this.child !== child) return;
+                if (this.receiveDesktop(child, message)) return;
                 if (message.type === 'maintenance-ready' && !ready && !checking && !expired) {
                     if (message.appVersion && message.appVersion !== JSON.parse(readSafe(path.join(root, 'package.json'))).version) {
                         clearTimeout(timer); reject(new Error('Running application version mismatch')); return;
@@ -121,7 +153,10 @@ class ManagedLauncher {
                 }
             });
             child.once('error', () => { clearTimeout(timer); reject(new Error('Service could not start')); });
+            const loseDesktop = () => { for (const pending of [...this.desktopPending.values()]) if (pending.child === child) pending.fail(); };
+            child.once('disconnect', loseDesktop);
             child.once('exit', code => {
+                loseDesktop();
                 clearTimeout(timer);
                 if (this.child === child) this.child = null;
                 if (!ready) reject(new Error('Service exited before becoming ready'));

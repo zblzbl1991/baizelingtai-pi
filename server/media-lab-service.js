@@ -369,6 +369,10 @@ class MediaLabService {
         return this.running.remote < SLOT_LIMITS.remote && (!slot.video || this.running.video < SLOT_LIMITS.video);
     }
 
+    get pendingReviews() {
+        return [...this.tickets.values()].filter(ticket => ticket.status === 'reviewed' && ticket.expiresAt > this.now()).length;
+    }
+
     onSlotFree(listener) { this.slotListeners.add(listener); return () => this.slotListeners.delete(listener); }
 
     // Drop a reviewed ticket that will not be executed (for example, a queued chat request reviews again later).
