@@ -69,21 +69,22 @@ test('exact output import seam rejects unknown versions, changed executor bytes 
 
 test('only exact SDK executor sandbox import is adapted; public sandbox and tool schema stay native', () => {
     // CommonJS eval uses dynamic imports: no --input-type flag reaches native workers.
-    const code = `(async()=>{ await import('./server/pi-codemode-output-loader.mjs');
+    const code = `(async()=>{ const began=Date.now(),mark=phase=>console.error(JSON.stringify({phase,elapsedMs:Date.now()-began}));mark('start');
+        await import('./server/pi-codemode-output-loader.mjs');mark('loader');
         const upstream=await import('@earendil-works/pi-codemode');
-        const adapted=await import('./server/pi-codemode-output.mjs');
+        const adapted=await import('./server/pi-codemode-output.mjs');mark('sandbox-imports');
         if(upstream.CodemodeSandbox===adapted.CodemodeSandbox)throw Error('Public import intercepted');
-        const sdk=await import('@earendil-works/pi-coding-agent');
+        const sdk=await import('@earendil-works/pi-coding-agent');mark('sdk');
         const piRoot=process.cwd()+'/node_modules/@earendil-works/pi-coding-agent/';
         const official=await import((await import('node:url')).pathToFileURL(piRoot+'dist/extensions/codemode/tool.js').href);
         const extension=sdk.createCodemodeExtension({models:false});let tool;extension({registerTool:t=>tool=t,getSettings:()=>({}),getAllTools:()=>[tool],appendEntry:()=>{}});
         if(!official.isCodemodeTool(tool))throw Error('Schema identity lost');
-        const result=await tool.execute('formatter-fixture',{code:'for(let i=0;i<300;i++)text(i);console.log("console-tail");return "end";'});
+        mark('execute-start');const result=await tool.execute('formatter-fixture',{code:'for(let i=0;i<300;i++)text(i);console.log("console-tail");return "end";'});mark('execute-end');
         const text=result.content.filter(i=>i.type==='text').map(i=>i.text).join('');
         if(result.isError||!text.includes('==> text 301/301 <==')||!text.includes('<console_output>\\nconsole-tail\\n</console_output>'))throw Error(text);
-        console.log(JSON.stringify({nativePublicImport:true,nativeSchema:true,adaptedExecution:true}));
+        console.log(JSON.stringify({nativePublicImport:true,nativeSchema:true,adaptedExecution:true}));mark('assertions-complete');
         })().catch(error=>{console.error(error);process.exitCode=1;});`;
-    const child = spawnSync(process.execPath, ['-e', code], { cwd: root, encoding: 'utf8', timeout: 30000 });
-    assert.equal(child.status, 0, child.stderr || child.stdout);
+    const began = Date.now(), child = spawnSync(process.execPath, ['-e', code], { cwd: root, encoding: 'utf8', timeout: 30000 });
+    assert.equal(child.status, 0, JSON.stringify({ elapsedMs: Date.now() - began, error: child.error?.code, signal: child.signal, stderr: child.stderr, stdout: child.stdout }));
     assert.equal(JSON.parse(child.stdout.trim()).adaptedExecution, true);
 });
