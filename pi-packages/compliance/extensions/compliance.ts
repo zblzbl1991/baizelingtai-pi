@@ -38,10 +38,12 @@ export default function compliance(pi: ExtensionAPI) {
             pi.registerTool({ name: operation === 'materials' ? 'compliance_materials' : 'compliance_check', label: operation === 'materials' ? '合规资料' : '合规检查',
                 description: operation === 'materials'
                     ? 'Import explicitly selected files relative to this managed session cwd, or current native attachment IDs. Stable requestId and expectedRevision required for import. list returns opaque document IDs. The reviewer must confirm roles, identity and selected versions in the workbench before checking. Never set human confirmation yourself.'
-                    : 'Run the four deterministic rule groups against reviewer-selected snapshots, or list/get batches and read bounded evidence. run requires projectId, stable requestId and expectedRevision. get requires batchId; evidence requires batchId and fieldId. No model inference, no human confirmation. Unknown and failed checks are not passes.',
-                parameters: Type.Object({ action: StringEnum(operation === 'materials' ? ['import', 'list'] : ['run', 'list', 'get', 'evidence']),
+                    : 'Run the four deterministic rule groups against reviewer-selected snapshots, using the frozen configured image model only for extraction. run requires projectId, stable requestId and expectedRevision; optional budget limits pages, modelCalls and runMs. continue explicitly adds an allowance only for unstarted steps, never resends uncertain calls; pause stops scheduling after the actual current step settles. get requires batchId; evidence requires batchId and fieldId. Unknown, failed and uncertain checks are not passes. Never perform human confirmation.',
+                parameters: Type.Object({ action: StringEnum(operation === 'materials' ? ['import', 'list'] : ['run', 'list', 'get', 'evidence', 'continue', 'pause']),
                     projectId: Type.Optional(Type.String()), batchId: Type.Optional(Type.String()), fieldId: Type.Optional(Type.String()),
                     requestId: Type.Optional(Type.String()), expectedRevision: Type.Optional(Type.Integer({ minimum: 0 })),
+                    offset: Type.Optional(Type.Integer({ minimum:0, maximum:500 })),
+                    budget: Type.Optional(Type.Object({ pages: Type.Integer({ minimum:1, maximum:2000 }), modelCalls: Type.Integer({ minimum:1, maximum:200 }), runMs: Type.Integer({ minimum:1000, maximum:3600000 }) })),
                     sources: Type.Optional(Type.Array(Type.Union([Type.Object({ kind: Type.Literal('file'), path: Type.String() }), Type.Object({ kind: Type.Literal('attachment'), id: Type.String() })]), { maxItems: 32 })) }),
                 execute: async (_id, raw, signal, _update, ctx) => {
                     if (!eligible(ctx)) throw new Error('合规专用会话资格无效'); signal?.throwIfAborted();

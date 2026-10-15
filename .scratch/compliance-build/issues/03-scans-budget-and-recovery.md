@@ -6,7 +6,7 @@
 
 **Blocked by:** [导入文本资料并完成四组规则检查](02-import-and-check.md)。
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
 - [ ] PDF 页在隔离、无凭据的解析进程中按需渲染；缺少原生渲染能力时明确报告，不能伪装识别成功。
 - [ ] 图像签名、像素、页数与传输量有界，模型只接收授权资料及必要页面，输出经 schema 校验。

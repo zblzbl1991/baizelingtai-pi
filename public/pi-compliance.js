@@ -29,7 +29,7 @@
             const title = node('div', undefined, 'settings-panel-header'); title.append(node('h3', '内置能力'));
             root.append(title, node('p', '按需启用。每项能力独立配置，停用后保留已有资料。', 'settings-help'));
             const section = node('section', undefined, 'compliance-settings'), heading = node('h4', '合规审查');
-            const status = node('p', data.enabled ? '已启用' : data.status === 'configuring' ? '配置待核对' : '已停用', 'compliance-status'); status.id = 'compliance-settings-status'; status.setAttribute('role', 'status');
+            const status = node('p', data.status === 'disabling' ? '停用中，等待当前步骤保存' : data.enabled ? '已启用' : data.status === 'configuring' ? '配置待核对' : '已停用', 'compliance-status'); status.id = 'compliance-settings-status'; status.setAttribute('role', 'status');
             const form = node('form'), fields = node('fieldset'), enabled = node('input'); enabled.type = 'checkbox'; enabled.id = 'compliance-enabled'; enabled.checked = data.enabled;
             fields.append(label('启用合规审查', enabled));
             const options = node('div', undefined, 'compliance-fields');
@@ -58,7 +58,7 @@
                 const generation = epoch;
                 const storageKey = 'pivane.compliance.settings-operation';
                 let pending; try { pending = JSON.parse(sessionStorage.getItem(storageKey) || 'null'); } catch {}
-                const input = pending || { requestId: randomId(), expectedRevision: data.revision, enabled: enabled.checked,
+                const input = pending || { requestId: randomId(), expectedRevision: data.revision, expectedSettingsRevision: data.settingsRevision, enabled: enabled.checked,
                     ...(enabled.checked ? { mainModel: toRef(main.value), extractionModel: toRef(extraction.value), ...(!data.profileId && profile.value ? { profileId: profile.value } : {}) } : {}) };
                 sessionStorage.setItem(storageKey, JSON.stringify(input));
                 try {
