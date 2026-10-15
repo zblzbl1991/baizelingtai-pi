@@ -16,7 +16,7 @@ function main() {
     try {
         const version = path.join(temporary, 'VersionInfo.cs'), output = path.join(temporary, 'launcher.exe');
         fs.writeFileSync(version, `using System.Reflection;\n[assembly: AssemblyTitle("白泽灵台")]\n[assembly: AssemblyProduct("白泽灵台")]\n[assembly: AssemblyVersion("${appVersion}.0")]\n[assembly: AssemblyFileVersion("${appVersion}.0")]\n`);
-        execFileSync(compiler, ['/nologo', '/target:winexe', '/platform:anycpu', '/optimize+', '/reference:System.Windows.Forms.dll',
+        execFileSync(compiler, ['/nologo', '/target:winexe', '/platform:anycpu', '/optimize+', '/reference:System.Windows.Forms.dll', '/reference:System.Web.Extensions.dll',
             '/out:' + output, '/win32icon:' + path.join(root, 'public/brand/favicon.ico'),
             '/win32manifest:' + path.join(root, 'native/pivane-desktop-launcher.manifest'),
             path.join(root, 'native/pivane-desktop-launcher.cs'), version], { stdio: 'inherit', windowsHide: true });
