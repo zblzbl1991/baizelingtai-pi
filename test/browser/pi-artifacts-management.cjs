@@ -1,11 +1,14 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const express = require('express'), { once } = require('node:events'), { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const { browserFailureDiagnostics } = require('./pi-failure-diagnostics.cjs');
 const root = path.resolve(__dirname, '../..'), key = n => n.toString(16).padStart(64, '0'), cwd = '/projects/library-fixture';
 const source = { key: key(1), source: 'delivery', title: 'Delivered bundle', project: { key: 'project', name: 'Demo' }, origin: { sessionId: 'source-session' }, createdAt: '2026-10-08T01:00:00.000Z', saved: true,
  types: ['document', 'web'], files: [{ key: key(1), name: 'report.md', kind: 'document', size: 9 }, { key: key(2), name: 'site.html', kind: 'web', size: 20 }] };
 async function run(browser, base, width, locale, theme) {
  const context = await browser.newContext({ viewport: { width, height: width < 900 ? 852 : 1000 }, locale, hasTouch: width < 900 });
  const page = await context.newPage(), errors = [], writes = [], reconciliations = [], previews = [];
+ const diagnostic = await browserFailureDiagnostics(page, { name: 'artifacts-management', width, locale });
+ try {
  let saved = [], collections = [], sourceDeleted = false, revision = 0, loseReply = false, failFavorite = false, nextLibraryId = 101;
  const outcomes = new Map();
  page.on('pageerror', e => errors.push(e.message));
@@ -55,7 +58,9 @@ async function run(browser, base, width, locale, theme) {
   if (u.pathname === '/api/pi/activity') return route.fulfill({ json: { runtimes: [], pinnedProjects: [], hiddenProjects: [], replyNotices: [] } });
   return route.fulfill({ json: {} });
  });
+ diagnostic.phase('goto:begin');
  await page.goto(base + '/#/artifacts', { waitUntil: 'domcontentloaded' });
+ diagnostic.phase('goto:done');
  const secure = new URL(base).hostname === '127.0.0.1';
  assert.deepEqual(await page.evaluate(() => ({ secure: isSecureContext, uuid: typeof crypto.randomUUID, random: typeof crypto.getRandomValues })),
   { secure, uuid: secure ? 'function' : 'undefined', random: 'function' }, 'exercise the actual HTTP browser capabilities without stubbing crypto');
@@ -141,9 +146,13 @@ async function run(browser, base, width, locale, theme) {
  assert.equal(await toastAction().textContent(), locale === 'en' ? 'View' : '查看'); await toastAction().click();
  await page.locator('.artifacts-views [data-view=saved][aria-current=page]').waitFor(); assert.equal(await page.locator('.artifacts-card').count(), 2);
  const second = saved.find(i => i.key !== kept).key;
+ diagnostic.phase('star:first:begin', [`.artifacts-card-wrap[data-key="${second}"] .artifacts-star`, '#artifacts-tab', '.artifacts-grid']);
  await wrap(second).locator('.artifacts-star').click(); await page.waitForFunction(id => document.querySelector(`.artifacts-card-wrap[data-key="${id}"] .artifacts-star`)?.getAttribute('aria-pressed') === 'true', second);
+ diagnostic.phase('star:first:done');
  assert.equal(writes.at(-1).action, 'favorite'); assert.equal(saved.find(i => i.key === second).favorite, true);
+ diagnostic.phase('star:second:begin');
  await wrap(second).locator('.artifacts-star').click(); await page.waitForFunction(id => document.querySelector(`.artifacts-card-wrap[data-key="${id}"] .artifacts-star`)?.getAttribute('aria-pressed') === 'false', second);
+ diagnostic.phase('star:second:done');
  assert.equal(saved.find(i => i.key === second).favorite, false);
  // Undo reverses only what the request changed: kept was already starred and stays starred.
  assert.equal(saved.find(i => i.key === kept).favorite, true);
@@ -218,6 +227,7 @@ async function run(browser, base, width, locale, theme) {
  assert.deepEqual(errors, []);
  console.log(`artifact management ${width}px ${locale} ${theme} ${secure ? 'localhost' : 'insecure HTTP'}: per-file save/favorite, collections, drawer toasts/Undo, rename, deleted origin, location, selection, quick save/View, direct delete, trash/restore and uncertain-response no replay passed`);
  await context.close();
+ } catch (error) { try { await diagnostic.failure(); } catch { /* Preserve the original failure. */ } throw error; }
 }
 async function widths(page) {
  await page.waitForFunction(() => document.getAnimations().filter(a => a.effect?.target?.matches('.artifacts-manage-dialog, #artifacts-detail')).every(a => a.playState === 'finished'));
