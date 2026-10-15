@@ -203,7 +203,7 @@ async function run(browser, viewport) {
     await page.waitForTimeout(100);
     assert.equal(await page.locator('#pi-context-tokens').textContent(), '9.0k / 128k');
     assert.equal(await page.evaluate(() => document.body.scrollWidth > document.body.clientWidth), false);
-    // Narrow layouts reach the media tab through the grouped "more" menu.
+    // The retained media route hides the chat without adding a media menu entry.
     await require('./pi-mobile-view-helper.cjs').openWorkspaceTab(page, 'media');
     await page.locator('[data-tab="chat"]').click();
     assert.deepEqual(errors, []);
