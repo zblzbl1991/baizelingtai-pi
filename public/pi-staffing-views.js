@@ -31,7 +31,7 @@
                         node('p',tr(project.coverage.inactive?'项目已取消':project.coverage.satisfied?'人数和直签已达标':'人员安排有缺口')),node('p',project.coverage.inactive?'':tr(project.coverage.allConfirmed?'全部人员已正式确认':'尚未全部正式确认')));
                     if(project.lifecycle&&project.lifecycle.state!=='active')row.append(node('p',tr(project.lifecycle.state==='ended'?'项目提前结束':'项目已取消')+' · '+tr('释放开始日')+' '+project.lifecycle.effectiveDate));
                     for(const segment of project.coverage.segments)row.append(node('p',segment.start+' 至 '+segment.end+' · '+tr('已安排人数')+' '+segment.count+' · '+tr('还缺人数')+' '+segment.missing+' · '+tr(segment.missingDirect?'缺直签':'直签已满足')));
-                    const names=new Map(status.people.map(p=>[p.id,p.name]));row.append(node('p',tr('已安排人员')+'：'+project.team.map(o=>(names.get(o.personId)||o.personId)+' ('+tr(kindLabels[o.state])+')').join('，')));
+                    const names=new Map(status.people.map(p=>[p.id,p.name]));row.append(node('p',tr('已安排人员')+'：'+project.team.map(o=>(names.get(o.personId)||o.personId)+' · '+o.personId+' · '+o.start+' 至 '+o.end+' · '+tr(kindLabels[o.state])).join('，')));
                     const adjust=node('button',tr('调整此项目'),{type:'button'});adjust.addEventListener('click',()=>{projectSelect.value=project.id;updateFields();editor.scrollIntoView({block:'nearest'});});row.append(adjust);results.append(row);
                 }
                 else for(const person of rows) {
@@ -54,7 +54,7 @@
         const personSelect=select(form,'人员','staffing-change-person',status.people.map(p=>[p.id,p.name+' · '+p.id]));
         const absenceKind=select(form,'无法参加的原因','staffing-change-absence-kind',[['leave',tr('请假')],['training',tr('培训')],['unavailable',tr('不可用')]]);
         const occupancy=select(form,'原安排','staffing-change-occupancy',[]);
-        const replacement=select(form,'替换人员','staffing-change-replacement',status.people.map(p=>[p.id,p.name+' · '+p.department]));
+        const replacement=select(form,'替换人员','staffing-change-replacement',status.people.map(p=>[p.id,p.name+' · '+p.id+' · '+p.department]));
         const changeStart=field(form,'开始日','staffing-change-start','date',first?.start||today),changeEnd=field(form,'结束日','staffing-change-end','date',first?.end||today);
         const effective=field(form,'释放开始日','staffing-change-effective','date',today),reason=field(form,'变更原因','staffing-change-reason');
         const borrowWrap=node('label',undefined,{class:'staffing-person-choice'}),borrow=node('input',undefined,{type:'checkbox',id:'staffing-change-borrow'});borrowWrap.append(borrow,node('span',tr('仅此方案允许跨事业部借人')));form.append(borrowWrap);
@@ -65,11 +65,11 @@
             const action=operation.value,p=status.projects.find(p=>p.id===projectSelect.value);projectSelect.closest('label').hidden=action==='absence';
             show(personSelect,action==='absence');show(absenceKind,action==='absence');show(occupancy,['replace','withdraw'].includes(action));show(replacement,action==='replace');
             show(changeStart,['absence','replace','reschedule'].includes(action));show(changeEnd,['absence','replace','reschedule','extend'].includes(action));show(effective,['withdraw','cancel','early-end'].includes(action));show(reason,!['add','formalize'].includes(action));borrowWrap.hidden=action!=='replace';candidates.hidden=action!=='add';
-            occupancy.replaceChildren();for(const o of status.occupancies.filter(o=>o.projectId===p?.id&&o.kind==='project'&&o.state!=='cancelled'))occupancy.append(node('option',(status.people.find(p=>p.id===o.personId)?.name||o.personId)+' · '+o.start+' 至 '+o.end,{value:o.id}));
+            occupancy.replaceChildren();for(const o of status.occupancies.filter(o=>o.projectId===p?.id&&o.kind==='project'&&o.state!=='cancelled'))occupancy.append(node('option',(status.people.find(p=>p.id===o.personId)?.name||o.personId)+' · '+o.personId+' · '+o.start+' 至 '+o.end,{value:o.id}));
             if(p){changeStart.value=p.start;changeEnd.value=p.end;}
             if(action==='add'&&p){try{const data=await request('/recommend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'recommend',project:p})});if(!root.isConnected||operation.value!=='add'||projectSelect.value!==p.id)return;
                 candidates.replaceChildren(node('legend',tr('本次新增人员')),node('p',tr('已安排人数')+' '+new Set(data.existingTeam.map(o=>o.personId)).size+' · '+tr('还需新增')+' '+data.additionalNeeded));const selected=new Set(data.selected.map(p=>p.id));
-                for(const person of new Map([...data.candidates,...data.selected].map(p=>[p.id,p])).values()){const label=node('label',undefined,{class:'staffing-person-choice'}),input=node('input',undefined,{type:'checkbox','data-staffing-add-person':person.id});input.checked=selected.has(person.id);label.append(input,node('span',person.name+' · '+tr(person.direct?'直签':'非直签')));candidates.append(label);}
+                for(const person of new Map([...data.candidates,...data.selected].map(p=>[p.id,p])).values()){const label=node('label',undefined,{class:'staffing-person-choice'}),input=node('input',undefined,{type:'checkbox','data-staffing-add-person':person.id});input.checked=selected.has(person.id);label.append(input,node('span',person.name+' · '+person.id+' · '+tr(person.direct?'直签':'非直签')));candidates.append(label);}
             }catch(error){if(root.isConnected)notice.textContent=error.message;}}
         }
         operation.addEventListener('change',()=>void updateFields());projectSelect.addEventListener('change',()=>void updateFields());

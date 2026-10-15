@@ -5,8 +5,7 @@ const fs = require('node:fs'), path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
 const { isDeepStrictEqual: same } = require('node:util');
 const { getSdk } = require('../pi-session-store');
-const { privateDir, atomicJson } = require('../pi-maintenance-files');
-const { writePrivateFileSync } = require('../pi-private-files');
+const { prepareStorage, privateChild } = require('./excel-storage');
 const { readVerifiedFile } = require('../pi-file-bytes');
 const { keys, id, fail } = require('./validation');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -33,20 +32,34 @@ class StaffingExcelService {
     projection(...args) { return require('./import-domain').projection(...args); }
     check(...args) { return require('./import-domain').check(...args); }
     commit(...args) { return require('./import-domain').commit(...args); }
-    async importRoot() { const root = path.join(await this.root(), 'imports'); if (privateDir(root) !== root || fs.realpathSync.native(root) !== root) fail('Import storage changed', 409); return root; }
+    async importRoot() {
+        const parent = await this.root(true); let storage;
+        try { storage = privateChild(parent, 'imports'); storage.check(); parent.check(); return storage.root; }
+        finally { storage?.close(); parent.close(); }
+    }
+    async publication(action, imports = false) {
+        const parent = await this.root(true); let storage = parent;
+        try {
+            if (imports) storage = privateChild(parent, 'imports');
+            const result = await action(storage); storage.check(); parent.check(); return result;
+        } finally { if (storage !== parent) storage.close(); parent.close(); }
+    }
     async upload(bytes, input, source) {
         bytes = Buffer.from(bytes); input = structuredClone(input); source = structuredClone(source); keys(input, ['requestId']);
         if (!id(input.requestId) || !bytes.length || bytes.length > 20 * 1024 ** 2) fail('Invalid Excel upload or upload exceeds 20 MiB', 413);
         if (this.stopping) fail('Staffing Excel is stopping', 503);
         return this.staffing.reserve(async () => {
             const state = await this.staffing.requireSource(source, { phase: source.kind === 'page' ? 'initial' : 'ready' });
+            return this.publication(async storage => {
             await this.inspect(bytes);
+            storage.check();
             const after = await this.staffing.requireSource(source, { phase: source.kind === 'page' ? 'initial' : 'ready' }); if (after.epoch !== state.epoch) fail('Upload source changed', 409);
-            const root = await this.importRoot(), uploadId = hash(JSON.stringify(['staffing-import', input.requestId, stable(source)])), revision = hash(bytes), file = path.join(root, uploadId + '.xlsx');
-            if (fs.existsSync(file)) { const existing = await this.uploadObject(uploadId, source); if (existing.record.revision !== revision) fail('Upload request ID has different bytes', 409); return { id: uploadId, revision }; }
+            storage.check(); const root = storage.root, uploadId = hash(JSON.stringify(['staffing-import', input.requestId, stable(source)])), revision = hash(bytes), file = path.join(root, uploadId + '.xlsx');
+            if (fs.existsSync(file)) { const existing = await this.uploadObject(uploadId, source); storage.check(); if (existing.record.revision !== revision) fail('Upload request ID has different bytes', 409); return { id: uploadId, revision }; }
             if (fs.readdirSync(root).length >= 1000 || fs.readdirSync(root).reduce((n, name) => n + fs.lstatSync(path.join(root, name)).size, 0) + bytes.length > 256 * 1024 ** 2) fail('Staffing upload quota reached', 413);
-            writePrivateFileSync(file, bytes, true); atomicJson(path.join(root, uploadId + '.json'), { id: uploadId, revision, source: stable(source), epoch: state.epoch });
+            storage.writeFile(uploadId + '.xlsx', bytes, 20 * 1024 ** 2); storage.writeJson(uploadId + '.json', { id: uploadId, revision, source: stable(source), epoch: state.epoch }, 32000);
             return { id: uploadId, revision };
+            }, true);
         });
     }
     async uploadObject(uploadId, source) {
@@ -89,9 +102,10 @@ class StaffingExcelService {
         const object = await this.uploadObject(plan.import.upload.id, source);
         if (object.record.revision !== plan.import.upload.revision) fail('Import plan original changed', 409);
     }
-    async root() {
-        const root = path.join(fs.realpathSync.native((await getSdk()).getAgentDir()), 'pivane-staffing', 'exports');
-        if (privateDir(root) !== root || fs.realpathSync.native(root) !== root) fail('Staffing export storage changed', 409); return root;
+    async root(retain = false) {
+        const storage = prepareStorage(fs.realpathSync.native((await getSdk()).getAgentDir()), ['pivane-staffing', 'exports']);
+        if (retain) return storage;
+        try { storage.check(); return storage.root; } finally { storage.close(); }
     }
     async record(exportId) {
         if (!/^[a-f0-9]{64}$/.test(exportId)) fail('Invalid export ID');
@@ -110,19 +124,23 @@ class StaffingExcelService {
     async operation(requestId, source) {
         if (!id(requestId)) fail('Invalid staffing export request');
         return this.track(async () => {
+        return this.publication(async storage => {
         try {
             const record = await this.record(this.exportId(requestId, source));
+            storage.check();
             if (record.phase !== 'saved' && record.saveRequestId && this.artifacts) {
                 try {
                     const result = await this.artifacts.management.result(record.saveRequestId);
                     const item = result.results?.find(row => row.key === record.sourceKey && row.ok);
-                    if (item) { record.phase = 'saved'; record.artifactKey = item.item.key; delete record.saveError; atomicJson(path.join(await this.root(), record.exportId + '.json'), record); }
+                    storage.check();
+                    if (item) { record.phase = 'saved'; record.artifactKey = item.item.key; delete record.saveError; storage.writeJson(record.exportId + '.json', record, 128 * 1024); }
                     else record.noReplay = true;
-                } catch { record.noReplay = true; record.saveError ||= 'Artifact result requires review; do not replay'; }
+                } catch (error) { if (error.outcomeUnknown) throw error; record.noReplay = true; record.saveError ||= 'Artifact result requires review; do not replay'; }
             }
             return this.receipt(record);
         }
         catch (error) { if (error.code === 'ENOENT') return { requestId, state: 'unknown', noReplay: true }; throw error; }
+        });
         });
     }
     async source(locator) {
@@ -147,28 +165,33 @@ class StaffingExcelService {
         if (this.jobs.size) fail('Staffing export is busy', 409);
         let done; const job = new Promise(resolve => { done = resolve; }); this.jobs.add(job);
         try { return await this.staffing.reserve(async () => {
-            const state = await this.staffing.requireSource(source), root = await this.root(), recordPath = path.join(root, exportId + '.json');
-            try { const prior = await this.record(exportId); if (prior.requestHash !== requestHash) fail('Export request ID has different parameters', 409); return this.receipt(prior); }
+            const state = await this.staffing.requireSource(source);
+            return this.publication(async storage => {
+            const root = storage.root;
+            try { const prior = await this.record(exportId); storage.check(); if (prior.requestHash !== requestHash) fail('Export request ID has different parameters', 409); return this.receipt(prior); }
             catch (error) { if (error.code !== 'ENOENT') throw error; }
+            storage.check();
             if (state.revision !== input.expectedRevision) fail('Staffing ledger changed before export', 409);
             const entries = fs.readdirSync(root).filter(name => name !== 'imports');
             if (entries.length >= 2000 || entries.reduce((n, name) => n + fs.lstatSync(path.join(root, name)).size, 0) >= 256 * 1024 ** 2) fail('Staffing export storage quota reached', 413);
             const generatedAt = new Date().toISOString(), bytes = this.workbook({ people: state.people, projects: state.projects, occupancies: state.occupancies, historyComplete: state.historyComplete }, { revision: state.revision, generatedAt, ledgerId: state.profileId });
             if (entries.reduce((n, name) => n + fs.lstatSync(path.join(root, name)).size, 0) + bytes.length > 256 * 1024 ** 2) fail('Staffing export storage quota reached', 413);
             // Exclusive original publication: unfinished objects remain evidence and are never overwritten.
-            writePrivateFileSync(path.join(root, exportId + '.xlsx'), bytes, true);
+            storage.writeFile(exportId + '.xlsx', bytes, 16 * 1024 ** 2);
             const record = { exportId, requestId: input.requestId, requestHash, source: stable(source), epoch: state.epoch, phase: 'generated', name: `staffing-${state.revision}-${exportId.slice(0, 12)}.xlsx`, ledgerRevision: state.revision, generatedAt, sha256: hash(bytes), size: bytes.length };
-            atomicJson(recordPath, record);
+            storage.writeJson(exportId + '.json', record, 128 * 1024);
             try {
                 const key = this.artifacts.addLocator({ source: 'generated-staffing', exportId, revision: record.sha256 });
-                await this.source({ exportId, revision: record.sha256 }); record.phase = 'available'; record.sourceKey = key; atomicJson(recordPath, record);
-                const saveRequestId = 'staffing-' + exportId; record.saveRequestId = saveRequestId; atomicJson(recordPath, record);
+                await this.source({ exportId, revision: record.sha256 }); storage.check(); record.phase = 'available'; record.sourceKey = key; storage.writeJson(exportId + '.json', record, 128 * 1024);
+                const saveRequestId = 'staffing-' + exportId; record.saveRequestId = saveRequestId; storage.writeJson(exportId + '.json', record, 128 * 1024);
                 const result = await this.artifacts.management.batch({ requestId: saveRequestId, action: 'save', files: [{ key }] });
+                storage.check();
                 const item = result.results?.find(row => row.key === key && row.ok);
                 if (item) { record.phase = 'saved'; record.artifactKey = item.item.key; } else record.saveError = result.results?.[0]?.error || result.error || 'Artifact save outcome requires review';
-                atomicJson(recordPath, record);
-            } catch (error) { record.saveError = error.status ? error.message : 'Export save outcome requires review'; atomicJson(recordPath, record); }
+                storage.writeJson(exportId + '.json', record, 128 * 1024);
+            } catch (error) { if (error.outcomeUnknown) throw error; record.saveError = error.status ? error.message : 'Export save outcome requires review'; storage.writeJson(exportId + '.json', record, 128 * 1024); }
             return this.receipt(record);
+            });
         }); } finally { this.jobs.delete(job); done(); }
     }
     async dispose() { this.stopping = true; await Promise.allSettled([...this.jobs]); await this.pool.dispose(); }
