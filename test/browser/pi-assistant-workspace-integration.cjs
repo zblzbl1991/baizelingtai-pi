@@ -116,7 +116,7 @@ async function main() {
         app.use(express.static(path.join(sourceRoot, 'public')));
         server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
         wss = gateway.attachWebSocket(server);
-        browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+        browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
 
         const desktop = await open(1440, 'en', 'dark');
         const { page } = desktop;
