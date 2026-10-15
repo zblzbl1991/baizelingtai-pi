@@ -80,8 +80,11 @@ function validateRpcPayload(command, payload) {
 }
 
 function createPiAgentGateway(options = {}) {
+    const socketServers = new Set();
+    let disposing = false, disposal;
     const access = options.accessService || new (require('./workspace-access-service').WorkspaceAccessService)();
-    const supervisor = new PiAgentSupervisor();
+    const maintenance = options.maintenance || new (require('./pi-maintenance-client').MaintenanceClient)({ managed: false });
+    const supervisor = new PiAgentSupervisor({ isSuspended: () => maintenance.locked, onActivity: () => maintenance.touch() });
     const store = new PiSessionStore();
     const profiles = new (require('./pi-profile-registry').PiProfileRegistry)(store);
     store.profiles = profiles;
@@ -93,7 +96,8 @@ function createPiAgentGateway(options = {}) {
     const files = new (require('./pi-file-service').PiFileService)(store);
     const fileBrowser = new (require('./pi-file-browser').PiFileBrowser)(store);
     const fileRoots = new (require('./pi-file-roots').PiFileRoots)({ store, browser: fileBrowser, preferences, isSuspended: () => maintenance.locked });
-    const usage = new (require('./pi-usage-service').PiUsageService)(store);
+    const projectDirectories = new (require('./pi-project-directories').PiProjectDirectories)({ store, isSuspended: () => maintenance.locked });
+    const usage = new (require('./pi-usage-service').PiUsageService)(store, { isSuspended: () => maintenance.locked, onActivity: () => maintenance.touch() });
     usage.start();
     const sessionSearch = new (require('./pi-session-search').PiSessionSearch)(store, preferences);
     const settingsService = new PiSettingsService({ workspacePreferencesService: preferences });
@@ -103,7 +107,7 @@ function createPiAgentGateway(options = {}) {
         blocked: () => settingsService.mutating || maintenance?.locked
     });
     const titles = new (require('./pi-session-title-service').PiSessionTitleService)({ preferences,
-        createModelRuntime: () => settingsService.createModelRuntime() });
+        createModelRuntime: () => settingsService.createModelRuntime(), isSuspended: () => maintenance.locked, onActivity: () => maintenance.touch() });
     let learning;
     const auxiliaryModels = new (require('./pi-auxiliary-models-service').PiAuxiliaryModelsService)({ preferences, titles,
         createModelRuntime: () => settingsService.createModelRuntime() });
@@ -116,11 +120,10 @@ function createPiAgentGateway(options = {}) {
     settingsService.nativeService = nativeService;
     const mediaAgentService = options.mediaAgentService || null;
     const router = express.Router();
-    const maintenance = options.maintenance || new (require('./pi-maintenance-client').MaintenanceClient)({ managed: false });
     const documents = new (require('./pi-document-uploads').DocumentUploads)({ store, supervisor,
         isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running) });
     Object.assign(profiles, { nativeService, settingsService, maintenance });
-    const deferred = new PiDeferredMessages({ store, supervisor, filePath: options.deferredFilePath, isSuspended: () => maintenance.locked });
+    const deferred = new PiDeferredMessages({ store, supervisor, filePath: options.deferredFilePath, isSuspended: () => maintenance.locked, onActivity: () => maintenance.touch() });
     const sideChat = new PiSideChatService({ store, supervisor, usage });
     const notifications = new (require('./pi-notification-service').PiNotificationService)({ access, store });
     supervisor.on('attention', event => { void notifications.notify(event); });
@@ -140,16 +143,15 @@ function createPiAgentGateway(options = {}) {
     });
 
     router.use(access.middleware());
-    require('./pi-update-service').mountUpdateRoutes(router, undefined, {
+    const updateService = new (require('./pi-update-service').UpdateService)();
+    require('./pi-update-service').mountUpdateRoutes(router, updateService, {
         maintenance, preferences,
-        idle: () => !artifacts.busy && !fileRoots.jobs.size && !documents.active && !profiles.busy && !agentThreads.jobs.size && !agentThreads.catalogIndex.busy && !agentThreads.returns.busy && !agentThreads.messages.busy && !settingsService.mutating && !settingsService.loginService.busy && !nativeService.busy && !mcpSettingsService.busy && !sessionTransfer.running && !sessionMoves.running
-            && !titles.jobs.size && !titles.savingModel && !transcription.active && !learning?.busy && !cron.busy && !deferred.running && !sideChat.connections.size && !sideChat.tickets.size
-            && ![...sideChat.parents.values()].some(parent => parent.preparing) && supervisor.isIdle()
-            && !options.mediaLabService?.inFlight && !options.mediaLabService?.chatRequests?.preparing && !options.mediaLabService?.chatRequests?.waiting?.length && !options.mediaLabService?.providerService?.busy && !options.mediaLabService?.providerService?.active,
+        idle: () => desktopStop.idle(),
         pause: () => deferred.pauseAll()
     });
     require('./pi-file-routes').mountFilePreviews(router, { files, store, supervisor });
     require('./pi-file-roots').mountFileRoots(router, fileRoots);
+    require('./pi-project-directories').mountProjectDirectories(router, projectDirectories);
     const artifacts = require('./pi-artifacts-routes').mountArtifacts(router, { store, supervisor, preferences, mediaRoot: options.artifactMediaRoot,
         isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running) || Boolean(sessionTransfer.running) });
     require('./pi-document-uploads').mountDocumentUploads(router, documents);
@@ -195,6 +197,7 @@ function createPiAgentGateway(options = {}) {
     learning = new (require('./profile-memory/learning-service').ProfileLearningService)({ profiles, store, preferences,
         knowledge: knowledgeService, getAgentDir, createModelRuntime: () => settingsService.createModelRuntime(),
         idle: job => !maintenance.locked && (job ? supervisor.isSessionIdle(job.sessionPath) : supervisor.isIdle()),
+        isSuspended: () => maintenance.locked, onActivity: () => maintenance.touch(),
         auxiliaryModels, legacyReviewModel: async () => (await profileMemory.snapshot()).reviewModel });
     learning.resumePromise = learning.resume();
     router.get('/profiles/:id/learning', profileRoute(req => learning.snapshot(req.params.id)));
@@ -208,7 +211,7 @@ function createPiAgentGateway(options = {}) {
         isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running) });
 
     const cron = new (require('./pi-cron-service').CronService)({ store, supervisor, profiles,
-        catalog: cwd => agentThreads.catalog(cwd), isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running), filename: options.cronFilePath });
+        catalog: cwd => agentThreads.catalog(cwd), isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running), onActivity: () => maintenance.touch(), filename: options.cronFilePath });
     require('./pi-cron-service').mountCron(router, cron);
 
     router.get('/status', async (req, res) => {
@@ -266,6 +269,7 @@ function createPiAgentGateway(options = {}) {
             fileViewer: descriptorBackendAvailable(),
             fileBrowser: descriptorBackendAvailable(),
             fileRoots: descriptorBackendAvailable(),
+            createDirectories: descriptorBackendAvailable(),
             filePreviews: descriptorBackendAvailable(),
             deliverables: descriptorBackendAvailable(),
             artifacts: descriptorBackendAvailable(),
@@ -443,7 +447,7 @@ function createPiAgentGateway(options = {}) {
 
     router.get('/activity', (req, res) => {
         res.set('Cache-Control', 'no-store');
-        res.json({ cronBusy: cron.busy, agentThreadLaunches: agentThreads.jobs.size, agentTaskIndexing: agentThreads.catalogIndex.busy, agentTaskReturns: agentThreads.returns.busy, agentMessages: agentThreads.messages.busy, learningBusy: learning.busy, learningRuns: learning.active.size, archives: archives(), titleRevision: titles.revisionId, titleGenerations: titles.jobs.size, transcriptionActive: transcription.active, documentOperations: documents.active, artifactOperations: artifacts.jobs.size, runtimes: supervisor.getActivity(), profilesBusy: profiles.busy, nativeSettingsBusy: nativeService.busy || settingsService.mutating || Boolean(titles.savingModel) || auxiliaryModels.busy, sessionTransfers: sessionTransfer.running, sessionMoves: sessionMoves.running, pinnedProjects: pinnedProjects(), hiddenProjects: hiddenProjects(), replyNotices: replyNotices(), deferred: deferred.summary() });
+        res.json({ projectDirectoryOperations: projectDirectories.jobs.size, cronBusy: cron.busy, agentThreadLaunches: agentThreads.jobs.size, agentTaskIndexing: agentThreads.catalogIndex.busy, agentTaskReturns: agentThreads.returns.busy, agentMessages: agentThreads.messages.busy, learningBusy: learning.busy, learningRuns: learning.active.size, archives: archives(), titleRevision: titles.revisionId, titleGenerations: titles.jobs.size, transcriptionActive: transcription.active, documentOperations: documents.active, artifactOperations: artifacts.jobs.size, runtimes: supervisor.getActivity(), profilesBusy: profiles.busy, nativeSettingsBusy: nativeService.busy || settingsService.mutating || Boolean(titles.savingModel) || auxiliaryModels.busy, sessionTransfers: sessionTransfer.running, sessionMoves: sessionMoves.running, pinnedProjects: pinnedProjects(), hiddenProjects: hiddenProjects(), replyNotices: replyNotices(), deferred: deferred.summary() });
     });
 
     router.patch('/projects/pin', (req, res) => {
@@ -593,6 +597,32 @@ function createPiAgentGateway(options = {}) {
             || titles.jobs.size || cron.busy || deferred.running || profiles.busy || sessionTransfer.running
             || [...sideChat.parents.values()].some(parent => parent.preparing)) });
 
+    const count = value => Number(Boolean(value));
+    const source = (type, label, read) => ({ type, label, read });
+    const desktopStop = new (require('./pivane-desktop-stop').DesktopStop)({ maintenance, sources: [
+        source('worker', '会话运行阻碍（含 Shell／队列／后台）', () => supervisor.stopReadiness()),
+        source('artifacts', '成果处理', () => count(artifacts.busy)),
+        source('files', '文件或项目目录处理', () => fileRoots.jobs.size + projectDirectories.jobs.size),
+        source('documents', '文档解析', () => documents.active),
+        source('profiles', '助手档案变更', () => count(profiles.busy)),
+        source('tasks', '任务线程或任务目录', () => agentThreads.jobs.size + count(agentThreads.catalogIndex.busy) + count(agentThreads.returns.busy) + count(agentThreads.messages.busy)),
+        source('settings', '模型、认证或原生配置', () => count(settingsService.mutating) + count(settingsService.loginService.busy) + count(nativeService.busy) + count(mcpSettingsService.busy) + count(auxiliaryModels.busy)),
+        source('transfer', '会话导入导出或移动', () => count(sessionTransfer.running) + count(sessionMoves.running)),
+        source('titles', '辅助标题', () => titles.stopReadiness()),
+        source('transcription', '语音转录', () => transcription.active),
+        source('learning', '后台学习', () => count(learning.busy)),
+        source('cron', '定时任务派发', () => cron.stopReadiness()),
+        source('deferred', '延迟消息派发', () => deferred.stopReadiness()),
+        source('side-chat', '侧聊连接、确认或启动', () => sideChat.stopReadiness()),
+        source('media', '媒体任务或待确认请求', () => options.mediaLabService ? options.mediaLabService.stopReadiness() : 0),
+        source('updates', '版本检查或提醒设置', () => updateService.stopReadiness()),
+        source('usage', '用量记录保存', () => usage.stopReadiness()),
+        source('search', '会话搜索', () => sessionSearch.stopReadiness())
+    ], scheduled: () => {
+        const scheduled = cron.scheduledReadiness(), delayed = deferred.scheduledReadiness();
+        return { futureCount: scheduled.futureCount + delayed.futureCount, latestCount: scheduled.latestCount };
+    } });
+
     require('./pi-transcription-service').mountTranscriptionRoutes(router, transcription, store);
     require('./routes/settings').mountSettingsRoutes(router, { settingsService, nativeService, auxiliaryModels, titles, preferences, usage, store });
 
@@ -603,9 +633,12 @@ function createPiAgentGateway(options = {}) {
     }
 
     function attachWebSocket(server) {
+        if (disposing) throw new Error('Pi gateway is shutting down');
         const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });
+        socketServers.add(wss);
 
         server.on('upgrade', (req, socket, head) => {
+            if (disposing) { socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n'); return; }
             let pathname;
             try {
                 pathname = new URL(req.url, 'http://localhost').pathname;
@@ -1040,32 +1073,51 @@ function createPiAgentGateway(options = {}) {
         return wss;
     }
 
-    return { mount, attachWebSocket, dispose: async () => {
-        const stoppingFileRoots = fileRoots.dispose();
-        const stoppingArtifacts = artifacts.dispose();
-        sessionSearch.dispose();
-        if (!options.accessService) access.dispose();
-        await settingsService.loginService.dispose();
-        const stoppingAuxiliaryModels = auxiliaryModels.dispose();
-        const stoppingTitles = titles.dispose();
-        const stoppingTranscription = transcription.dispose();
-        const stoppingDocuments = documents.dispose();
-        cron.stopping = true;
-        const stoppingDeferred = deferred.dispose();
-        const stoppingMoves = sessionMoves.dispose();
-        const stoppingThreads = agentThreads.dispose();
-        const stoppingSide = sideChat.dispose();
-        await stoppingArtifacts; // Finish native source reads before shutting down their workers.
-        await stoppingSide; // Keep side workers alive until their in-memory usage is saved.
-        await supervisor.dispose();
-        await learning.flushRegistrations();
-        await learning.dispose();
-        await profiles.dispose();
-        await usage.dispose();
-        await stoppingThreads;
-        await Promise.all([stoppingFileRoots, stoppingDeferred, stoppingTitles, stoppingAuxiliaryModels, stoppingMoves, stoppingTranscription, stoppingDocuments]);
-        await cron.dispose();
-    }, store, supervisor, cron, deferred, sideChat, titles, auxiliaryModels, learning, knowledgeService, agentThreads, sessionMoves, transcription, documents, artifacts };
+    function closeSocketServer(wss) {
+        return new Promise((resolve, reject) => {
+            // A peer may ignore the normal close handshake. Bound disposal of
+            // our transport only; native workers retain their own graceful path.
+            const drain = setTimeout(() => { for (const socket of wss.clients) socket.terminate(); }, 2000);
+            wss.close(error => { clearTimeout(drain); socketServers.delete(wss); error ? reject(error) : resolve(); });
+            for (const socket of wss.clients) socket.close(1001, 'Service shutdown');
+        });
+    }
+    function dispose() {
+        if (disposal) return disposal;
+        disposing = true; maintenance.locked = true;
+        disposal = Promise.resolve().then(async () => {
+            const stoppingSockets = Promise.all([...socketServers].map(closeSocketServer));
+            void stoppingSockets.catch(() => {}); // Preserve rejection for the final await while other owners drain.
+            const stoppingProjectDirectories = projectDirectories.dispose();
+            const stoppingFileRoots = fileRoots.dispose();
+            const stoppingArtifacts = artifacts.dispose();
+            sessionSearch.dispose();
+            if (!options.accessService) access.dispose();
+            await settingsService.loginService.dispose();
+            const stoppingAuxiliaryModels = auxiliaryModels.dispose();
+            const stoppingTitles = titles.dispose();
+            const stoppingTranscription = transcription.dispose();
+            const stoppingDocuments = documents.dispose();
+            cron.stopping = true;
+            const stoppingDeferred = deferred.dispose();
+            const stoppingMoves = sessionMoves.dispose();
+            const stoppingThreads = agentThreads.dispose();
+            const stoppingSide = sideChat.dispose();
+            await stoppingArtifacts; // Finish native source reads before shutting down their workers.
+            await stoppingSide; // Keep side workers alive until their in-memory usage is saved.
+            await supervisor.dispose();
+            await learning.flushRegistrations();
+            await learning.dispose();
+            await profiles.dispose();
+            await usage.dispose();
+            await stoppingThreads;
+            await Promise.all([stoppingProjectDirectories, stoppingFileRoots, stoppingDeferred, stoppingTitles, stoppingAuxiliaryModels, stoppingMoves, stoppingTranscription, stoppingDocuments]);
+            await cron.dispose();
+            await stoppingSockets;
+        });
+        return disposal;
+    }
+    return { mount, attachWebSocket, desktopStop, dispose, store, supervisor, cron, deferred, sideChat, titles, auxiliaryModels, learning, knowledgeService, agentThreads, sessionMoves, transcription, documents, artifacts };
 }
 
 module.exports = { createPiAgentGateway };

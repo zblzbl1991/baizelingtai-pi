@@ -11,7 +11,7 @@ const { outputRedactor, appendOutput } = require('./pi-update-output');
 const portable = require('./pi-portable-installer');
 
 class ManagedLauncher {
-    constructor({ root, env = process.env, networkEnvironment = env, stage = stagePi, stageApp = stageApplication, backup = backupRoots, forkServer = fork } = {}) {
+    constructor({ root, env = process.env, networkEnvironment = env, stage = stagePi, stageApp = stageApplication, backup = backupRoots, forkServer = fork, startupTimeoutMs = 45000, requireShutdownProof = false, onCleanupUnknown = () => {} } = {}) {
         this.root = fs.realpathSync.native(root);
         this.directory = privateDir(path.join(this.root, '.pivane-runtime'));
         this.stateFile = path.join(this.directory, 'state.json');
@@ -21,6 +21,10 @@ class ManagedLauncher {
         this.stage = stage; this.stageApp = stageApp; this.backup = backup; this.forkServer = forkServer;
         this.child = null; this.operation = null; this.closed = false;
         this.nonce = randomUUID();
+        if (!Number.isSafeInteger(startupTimeoutMs) || startupTimeoutMs <= 0) throw Error('Invalid service startup budget');
+        this.startupTimeoutMs = startupTimeoutMs;
+        this.desktopPending = new Map();
+        this.requireShutdownProof = requireShutdownProof; this.childFacts = new WeakMap(); this.onCleanupUnknown = onCleanupUnknown;
         this.state = { version: 1, active: null, previous: null, job: null };
     }
     loadState() {
@@ -59,7 +63,40 @@ class ManagedLauncher {
             activeRelease: this.state.active, previousRelease: this.state.previous, busy: Boolean(this.operation), job: this.state.job,
             storage: this.directory, backupScope: 'agent-sessions-media-config-history', nodeVersion: process.versions.node };
     }
-    send(message) { if (this.child?.connected) this.child.send({ ...message, nonce: this.nonce }, () => {}); }
+    send(message) {
+        if (this.child?.connected) {
+            if (message.type === 'maintenance-shutdown') { const facts = this.childFacts.get(this.child); if (facts) facts.requested = true; }
+            this.child.send({ ...message, nonce: this.nonce }, () => {});
+        }
+    }
+    desktopRequest(method, input = {}) {
+        const child = this.child;
+        if (!['snapshot', 'review', 'execute'].includes(method)) return Promise.reject(new Error('Invalid desktop request'));
+        if (this.closed || !child?.connected) return Promise.reject(Object.assign(new Error('Service control connection is unavailable; outcome is unknown'), { code: 'DESKTOP_TRANSPORT_UNKNOWN' }));
+        if (this.desktopPending.size >= 8) return Promise.reject(Object.assign(new Error('A service control request is already pending'), { code: 'DESKTOP_BUSY' }));
+        const id = randomUUID();
+        return new Promise((resolve, reject) => {
+            const fail = () => {
+                this.desktopPending.delete(id); clearTimeout(timer);
+                reject(Object.assign(new Error('Service control response is unavailable; outcome is unknown'), { code: 'DESKTOP_TRANSPORT_UNKNOWN' }));
+            };
+            const timer = setTimeout(fail, 15000);
+            this.desktopPending.set(id, { child, resolve, reject, timer, fail });
+            try { child.send({ type: 'desktop-request', nonce: this.nonce, id, method, input }, error => { if (error) fail(); }); }
+            catch { fail(); }
+        });
+    }
+    receiveDesktop(child, message) {
+        if (message.type !== 'desktop-response') return false;
+        const pending = this.desktopPending.get(message.id);
+        // Even late or unknown private responses are consumed here.
+        if (pending?.child === child) {
+            this.desktopPending.delete(message.id); clearTimeout(pending.timer);
+            if (message.error) pending.reject(Object.assign(new Error(this.redact(String(message.error.message || 'Service control failed')).slice(0, 2048)), { code: String(message.error.code || 'DESKTOP_FAILED').slice(0, 80) }));
+            else pending.resolve(message.result);
+        }
+        return true;
+    }
     start() {
         if (this.closed) return Promise.reject(new Error('Launcher is stopping'));
         if (!this.starting) this.starting = Promise.resolve().then(async () => {
@@ -75,6 +112,8 @@ class ManagedLauncher {
     }
     boot(release) {
         if (this.closed) throw new Error('Launcher is stopping');
+        if (this.requireShutdownProof && this.lastChildFacts && (!this.lastChildFacts.acknowledged || this.lastChildFacts.code !== 0))
+            throw Object.assign(new Error('The previous service cleanup could not be confirmed; another service will not be started'), { code: 'DESKTOP_CLEANUP_UNKNOWN' });
         const root = this.releasePath(release);
         return new Promise((resolve, reject) => {
             const child = this.forkServer(path.join(root, 'server.js'), [], {
@@ -85,12 +124,18 @@ class ManagedLauncher {
                 stdio: ['inherit', 'inherit', 'inherit', 'ipc'], windowsHide: true
             });
             this.child = child; let ready = false, checking = false, expired = false;
+            const facts = { requested: false, acknowledged: false, code: null }; this.childFacts.set(child, facts); this.lastChildFacts = facts;
             const timer = setTimeout(() => {
                 if (!ready) { expired = true; this.send({ type: 'maintenance-shutdown' }); reject(new Error('Service startup timed out')); }
-            }, 45000);
+            }, this.startupTimeoutMs);
             child.on('message', async message => {
                 if (message?.nonce !== this.nonce || this.child !== child) return;
+                if (message.type === 'maintenance-shutdown-complete') { if (facts.requested) facts.acknowledged = true; return; }
+                if (this.receiveDesktop(child, message)) return;
                 if (message.type === 'maintenance-ready' && !ready && !checking && !expired) {
+                    if (this.requireShutdownProof && message.capabilities?.shutdownProof !== true) {
+                        clearTimeout(timer); reject(new Error('Running service does not support verified desktop cleanup; update it through the existing maintenance entry before using desktop management')); return;
+                    }
                     if (message.appVersion && message.appVersion !== JSON.parse(readSafe(path.join(root, 'package.json'))).version) {
                         clearTimeout(timer); reject(new Error('Running application version mismatch')); return;
                     }
@@ -105,6 +150,8 @@ class ManagedLauncher {
                     }
                     if (expired || this.child !== child || child.exitCode !== null) return;
                     ready = true; clearTimeout(timer); this.backupInputs = message.backupInputs;
+                    const version = value => typeof value === 'string' && /^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$/.test(value) && value.length <= 80 ? value : null;
+                    this.runningVersions = { appVersion: version(message.appVersion), engineVersion: version(message.engineVersion) };
                     // Resolve defaults once in the original service and pin them for
                     // every candidate. Never let a new release choose a new identity.
                     for (const key of ['PI_CODING_AGENT_DIR', 'PI_MEDIA_DATA_DIR', 'PI_MEDIA_CONFIG_DIR', 'PI_WEB_DEFERRED_FILE', 'BAIZELINGTAI_UPDATE_FEED_URL', 'BAIZELINGTAI_UPDATE_RELEASES_URL']) {
@@ -121,18 +168,32 @@ class ManagedLauncher {
                 }
             });
             child.once('error', () => { clearTimeout(timer); reject(new Error('Service could not start')); });
+            const loseDesktop = () => { for (const pending of [...this.desktopPending.values()]) if (pending.child === child) pending.fail(); };
+            child.once('disconnect', loseDesktop);
             child.once('exit', code => {
+                facts.code = code;
+                loseDesktop();
                 clearTimeout(timer);
                 if (this.child === child) this.child = null;
                 if (!ready) reject(new Error('Service exited before becoming ready'));
-                else if (!this.closed && !this.operation) { console.error('白泽灵台 child exited; launcher will not replay tasks'); void this.close().finally(() => process.exit(code || 1)); }
+                else if (!this.closed && !this.operation) {
+                    console.error('白泽灵台 child exited; launcher will not replay tasks');
+                    if (this.requireShutdownProof) void this.close().catch(error => this.onCleanupUnknown(error));
+                    else void this.close().finally(() => process.exit(code || 1));
+                }
             });
         });
     }
     async stopChild() {
         const child = this.child;
-        if (!child || child.exitCode !== null || child.signalCode !== null) return;
-        const exited = new Promise((resolve, reject) => child.once('exit', code => code === 0 ? resolve() : reject(new Error('Service shutdown did not complete cleanly'))));
+        const facts = child ? this.childFacts.get(child) : this.lastChildFacts;
+        const proven = () => !this.requireShutdownProof || !child && !facts || facts?.acknowledged && facts.code === 0;
+        if (!child || child.exitCode !== null || child.signalCode !== null) {
+            if (!proven()) throw Object.assign(Error('Service cleanup could not be confirmed'), { code: 'DESKTOP_CLEANUP_UNKNOWN' });
+            return;
+        }
+        if (facts) facts.requested = true;
+        const exited = new Promise((resolve, reject) => child.once('exit', code => code === 0 && proven() ? resolve() : reject(Object.assign(new Error('Service cleanup could not be confirmed'), { code: 'DESKTOP_CLEANUP_UNKNOWN' }))));
         this.send({ type: 'maintenance-shutdown' });
         // No timeout is treated as cancellation. Never start another identity owner before exit.
         await exited;
@@ -195,10 +256,20 @@ class ManagedLauncher {
             job.phase = 'failed'; job.error = failedPhase; job.finishedAt = new Date().toISOString();
             this.state.active = previous;
             this.save();
+            if (this.requireShutdownProof && error.code === 'DESKTOP_CLEANUP_UNKNOWN') {
+                this.closed = true; this.state.needsRecovery = true; job.recoveryFailed = true;
+                this.log(job, 'system', 'Service cleanup is unknown; ownership is retained and automatic recovery is disabled.'); this.save();
+                this.onCleanupUnknown(error); return;
+            }
             if (!this.closed) {
                 if (failedPhase === 'starting') {
                     // Candidate startup is gated before any browser work. Wait for its exit before fallback.
-                    try { await this.stopChild(); } catch { /* The process has exited; record failure, do not reuse it. */ }
+                    try { await this.stopChild(); } catch (cleanup) {
+                        if (this.requireShutdownProof) {
+                            this.closed = true; this.state.needsRecovery = true; job.recoveryFailed = true; this.save(); this.onCleanupUnknown(cleanup); return;
+                        }
+                        // Legacy maintenance retains its existing recovery contract.
+                    }
                     if (message.release?.format === 'windows-portable-zip' && job.backup) {
                         try {
                             const restored = require('./pi-maintenance-restore').restoreStoppedBackup(this.root, job.id);

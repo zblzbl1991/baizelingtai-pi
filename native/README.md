@@ -2,11 +2,15 @@
 
 ## Windows desktop entry
 
-`pivane-desktop-launcher.cs` builds the small `白泽灵台.exe` entry with the Windows .NET Framework compiler. It runs the existing PowerShell tray without a console and can create a native desktop shortcut through Windows Shell COM. It does not change the filesystem backends below. Rebuild on Windows with `node scripts/build-desktop-launcher.cjs`; commit the source, executable and `pivane-desktop-launcher-build.json` together. The distribution inventory verifies source, execution-level manifest, icon, binary and application version before packaging. Target execution is covered by the isolated native tray/browser smoke script.
+`pivane-desktop-launcher.cs` builds `白泽灵台.exe` with the Windows .NET Framework compiler. The entry starts the PowerShell tray without a console and can create a native desktop shortcut through Windows Shell COM. Its public helper also provides the tray's bounded, read-only loopback waiting host; PowerShell loads this reviewed assembly in its existing process. The compact service window is hidden by default and closing it keeps the tray running. Each explicit service start uses a new controlled Node runner; cleanup proof and actual exit are both required before restarting. It does not change the filesystem backends below. Rebuild on Windows with `node scripts/build-desktop-launcher.cjs`; commit the source, executable and `pivane-desktop-launcher-build.json` together. The distribution inventory verifies source, execution-level manifest, icon, binary and application version before packaging. Tests use isolated synthetic runner identities and the actual native host/UI; browser waiting-page checks cover desktop and mobile separately.
 
 `server/pi-file-descriptor.js` supplies opened-object final paths for file preview, session text search and usage scanning. Linux retains `/proc/self/fd`. The macOS Node-API 8 bundle calls `fcntl(fd, F_GETPATH)`. The Windows x64 Node-API 8 DLL calls Node's exported libuv descriptor conversion API, then Win32 filesystem APIs. No backend substitutes the requested path for a failed descriptor lookup.
 
 白泽灵台's native artifacts ship with source and SHA256 build manifests, so normal installation does not compile these components. SQLite's separate platform requirements are documented under [bundled capabilities](../docs/BUNDLED_CAPABILITIES.md). The loaders check binary/source hashes; missing or mismatched modules fail closed. The Windows module is also required for private filesystem writes, so a damaged component can prevent configuration initialization.
+
+## OfficeCLI
+
+The third-party OfficeCLI program is pinned separately in `config/officecli.json`, including its official source commit and platform SHA256 values. `scripts/install-officecli.cjs` prepares only the host binary under `native/officecli/bin/` without a global install; archive discovery and runtime use the same verified inventory. The Apache license, NOTICE and dependency notices remain under `native/officecli/`. Pi owns the stdio connection; the host launcher filters the program environment and disables upstream updates/residents. See [Office documents](../docs/OFFICE_DOCUMENTS.md) for installation, supported targets and the Windows-only execution validation scope. This does not change the native filesystem backends below.
 
 ## macOS
 

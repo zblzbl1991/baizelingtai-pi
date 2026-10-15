@@ -790,6 +790,7 @@ document.addEventListener('DOMContentLoaded', () => {
             nativeContext.sync();
             state.roots = status.projectRoots || [];
             state.defaultProject = status.defaultProject || state.roots[0] || null;
+            projectDirectories.setEnabled(status.createDirectories === true);
             state.projectIdentity = status.projectIdentity === true;
             state.manualUnread = status.manualUnread === true;
             state.archiveEnabled = status.archives === true;
@@ -4364,6 +4365,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    const projectDirectories = window.PiProjectDirectories.create({ apiFetch,
+        opened: () => !elements.projectDialog.classList.contains('hidden'),
+        browse: directory => { elements.projectInput.value = directory; return browseDirectories(directory); } });
+    for (const id of ['pi-directory-name-label', 'pi-directory-create-cancel', 'pi-directory-create-submit']) $(id).textContent = translateUi($(id).textContent);
+    document.querySelector('[data-project-directory-label]').textContent = translateUi('新建文件夹');
+
     function openProjectDialog() {
         elements.projectDialog.classList.remove('hidden');
         const start = state.cwd || state.defaultProject;
@@ -4376,10 +4383,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function closeProjectDialog() {
         state.directoryRequest++;
+        projectDirectories.close();
         elements.projectDialog.classList.add('hidden');
     }
 
     async function browseDirectories(directory) {
+        projectDirectories.browseStart();
         const revision = ++state.directoryRequest, draft = elements.projectInput.value;
         elements.directoryUp.disabled = true;
         try {
@@ -4395,6 +4404,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.directoryList.innerHTML = (data.directories || []).map(item => `
                 <button type="button" data-path="${escapeHtml(item.path)}"><i class="fa-solid fa-folder"></i><span>${escapeHtml(item.name)}</span><i class="fa-solid fa-chevron-right"></i></button>
             `).join('') || `<div class="pi-list-state">${translateUi("没有子目录")}</div>`;
+            projectDirectories.browsed(data.current);
         } catch (error) {
             if (revision !== state.directoryRequest || elements.projectDialog.classList.contains('hidden')) return;
             elements.directoryUp.disabled = !state.currentDirectory;
@@ -4622,6 +4632,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     elements.projectForm.addEventListener('submit', async event => {
         event.preventDefault();
+        if (projectDirectories.busy) return;
         const cwd = elements.projectInput.value.trim();
         if (!cwd) return;
         try {
@@ -4633,16 +4644,16 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.showHiddenProjects.addEventListener('change', renderProjects);
     elements.projectList.addEventListener('click', event => {
         const button = event.target.closest('[data-cwd]');
-        if (button) selectProject(button.dataset.cwd).catch(error => toast(error.message, 'error'));
+        if (button && !projectDirectories.busy) selectProject(button.dataset.cwd).catch(error => toast(error.message, 'error'));
     });
     elements.directoryList.addEventListener('click', event => {
         const button = event.target.closest('[data-path]');
-        if (!button) return;
+        if (!button || projectDirectories.busy) return;
         elements.projectInput.value = button.dataset.path;
         browseDirectories(button.dataset.path);
     });
     elements.directoryUp.addEventListener('click', () => {
-        if (state.currentDirectory) {
+        if (state.currentDirectory && !projectDirectories.busy) {
             elements.projectInput.value = state.directoryParent || '';
             browseDirectories(state.directoryParent);
         }

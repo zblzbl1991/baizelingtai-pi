@@ -27,8 +27,9 @@ function directory(parent, check, action) {
     const proof = openDirectory(parent, check);
     try { const result = action(proof.verify); proof.verify(); return result; } finally { proof.close(); }
 }
-function ensureRoot(cwd, check) {
-    const root = path.join(cwd, '.pivane-gongwen');
+function ensureRoot(cwd, check, name = '.pivane-gongwen') {
+    if (!['.pivane-gongwen', '.pivane-office'].includes(name)) throw changed();
+    const root = path.join(cwd, name);
     directory(cwd, check, () => {
         try { fs.mkdirSync(root, { mode: 0o700 }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
         if (!fs.lstatSync(root).isDirectory() || fs.lstatSync(root).isSymbolicLink() || fs.realpathSync.native(root) !== root) throw changed();

@@ -1,11 +1,12 @@
 const http = require('node:http');
 const path = require('node:path');
-const { randomInt } = require('node:crypto');
+const { randomInt, randomUUID } = require('node:crypto');
 const { readSafe } = require('./pi-maintenance-files');
 
 // A loopback-only waiting page belongs to this desktop launch, not the workspace
 // port. It never discovers an existing process or accepts service control commands.
 async function createDesktopStartup({ root, reservedPorts = [], failureViewMs = 5000, readyLifetimeMs = 120000 } = {}) {
+    const instance = randomUUID(), generation = randomUUID();
     const files = new Map([
         ['/', ['desktop-startup.html', 'text/html; charset=utf-8']],
         ['/startup.css', ['desktop-startup.css', 'text/css; charset=utf-8']],
@@ -14,7 +15,9 @@ async function createDesktopStartup({ root, reservedPorts = [], failureViewMs = 
         ['/brand-horizontal.svg', ['brand/logo-horizontal.svg', 'image/svg+xml']],
         ['/brand-horizontal-dark.svg', ['brand/logo-horizontal-dark.svg', 'image/svg+xml']]
     ].map(([route, [file, type]]) => [route, { bytes: readSafe(path.join(root, 'public', file), 128 * 1024), type }]));
-    let state = { state: 'starting' }, url, closing, retirement;
+    const html = files.get('/');
+    html.bytes = Buffer.from(html.bytes.toString('utf8').replace('<meta charset="utf-8">', `<meta charset="utf-8"><meta name="startup-instance" content="${instance}">`));
+    let state = { state: 'starting', instance, generation }, url, closing, retirement;
     let viewed;
     const failureViewed = new Promise(resolve => { viewed = resolve; });
     const server = http.createServer({ maxHeaderSize: 8192 }, (request, response) => {
@@ -78,16 +81,16 @@ async function createDesktopStartup({ root, reservedPorts = [], failureViewMs = 
         return closing;
     }
     return {
-        url,
+        url, instance, generation,
         ready(target) {
             const parsed = new URL(target);
             if (parsed.protocol !== 'http:' || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) throw Error('Invalid workspace URL.');
             if (state.state !== 'starting' || closing) return;
-            state = { state: 'ready', url: parsed.href };
+            state = { state: 'ready', instance, generation, url: parsed.href };
             retirement = setTimeout(() => { void close().catch(() => {}); }, readyLifetimeMs);
             retirement.unref();
         },
-        fail(message) { if (state.state === 'starting') state = { state: 'error', message: String(message).slice(0, 2048) }; },
+        fail(message) { if (state.state === 'starting') state = { state: 'error', instance, generation, message: String(message).slice(0, 2048) }; },
         close
     };
 }

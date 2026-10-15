@@ -170,7 +170,7 @@ class DocumentUploads {
         const input = { cwd: worker.cwd, sessionId: worker.sessionId, id }, authorized = await this.authorized(input);
         if (authorized.initial.worker !== worker) throw fail('会话运行身份已变化', 409, 'DOCUMENT_CONTEXT');
         signal?.throwIfAborted();
-        if (source && (authorized.reference.format !== 'docx' || authorized.bytes.length > 16 * 1024 * 1024)) throw fail('公文修订仅支持不超过 16 MiB 的 DOCX', 415, 'DOCUMENT_FORMAT');
+        if (source && (!['docx', 'xlsx', 'pptx'].includes(authorized.reference.format) || authorized.bytes.length > 16 * 1024 * 1024)) throw fail('Office 编辑仅支持不超过 16 MiB 的 DOCX、XLSX 或 PPTX', 415, 'DOCUMENT_FORMAT');
         // Private worker transport only: bytes stay outside model/tool output.
         const result = source ? { encoding: 'base64', base64: authorized.bytes.toString('base64') }
             : await this.pool.run(authorized.bytes, authorized.reference.format, args, { signal });

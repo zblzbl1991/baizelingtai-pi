@@ -46,8 +46,8 @@ function validateJob(input, now) {
         misfire: { policy: misfire.policy, graceMinutes: misfire.graceMinutes }, execution, budget: limits(input.budget) };
 }
 class CronService {
-    constructor({ store, supervisor, profiles, catalog, isSuspended = () => false, now = Date.now, filename }) {
-        Object.assign(this, { store, supervisor, profiles, catalog, isSuspended, now, filename });
+    constructor({ store, supervisor, profiles, catalog, isSuspended = () => false, onActivity = () => {}, now = Date.now, filename }) {
+        Object.assign(this, { store, supervisor, profiles, catalog, isSuspended, onActivity, now, filename });
         this.stopping = false; this.running = null; this.mutating = null; this.db = null; this.error = null;
         this.ready = this.initialize();
         this.timer = setInterval(() => { void this.tick(); }, 1000); this.timer.unref?.();
@@ -72,9 +72,16 @@ class CronService {
         } catch (error) { this.error = error.message; }
     }
     get busy() { return Boolean(this.running || this.mutating); }
+    stopReadiness() { this.healthy(); if (this.lastError) throw new Error('Scheduler state unknown'); return Number(this.busy); }
+    scheduledReadiness(now = this.now()) {
+        this.healthy();
+        const jobs = this.db.jobs().filter(job => job.enabled && !job.deleted);
+        return { futureCount: jobs.filter(job => job.nextAt > now).length, latestCount: jobs.filter(job => job.misfire.policy === 'latest').length };
+    }
     healthy() { if (this.error) fail(this.error, 503); if (!this.db) fail('Scheduler is loading', 503); }
     reserve(action) {
         if (this.stopping || this.isSuspended() || this.mutating) fail('Scheduler is busy or workspace is stopping', 409);
+        this.onActivity();
         const pending = Promise.resolve().then(async () => { await this.ready; this.healthy(); return action(); });
         this.mutating = pending;
         return pending.finally(() => { if (this.mutating === pending) this.mutating = null; });
@@ -229,9 +236,12 @@ class CronService {
         if (this.running || this.mutating || this.stopping || this.isSuspended()) return;
         this.running = Promise.resolve().then(async () => {
             await this.ready; this.healthy();
+            if (this.stopping || this.isSuspended()) return;
             await this.reconcile();
+            if (this.stopping || this.isSuspended()) return;
             const now = this.now();
             for (const job of this.db.jobs()) if (job.enabled && job.nextAt !== null && job.nextAt <= now) {
+                this.onActivity();
                 const at = job.misfire.policy === 'latest' ? latestTime(job.schedule, job.nextAt - 1, now, job.misfire.graceMinutes) : job.nextAt;
                 const late = at === null ? Infinity : now - at;
                 if (late > (job.misfire.policy === 'skip' ? 60000 : job.misfire.graceMinutes * 60000)) this.recordSkip(job, job.nextAt, 'expired');
@@ -247,12 +257,15 @@ class CronService {
         return this.running;
     }
     async dispatch(run) {
+        if (this.stopping || this.isSuspended()) return;
+        this.onActivity();
         let handedOff = false;
         try {
             const job = run.job, now = this.now();
             const grace = job.misfire.policy === 'skip' ? 60000 : job.misfire.graceMinutes * 60000;
             if (now - run.scheduledAt > grace) { this.db.saveRun({ ...run, status: 'skipped', reason: 'expired', completedAt: now }); return; }
             const session = await this.target(job.target);
+            if (this.stopping || this.isSuspended()) return;
             if (!this.supervisor.isSessionIdle(session.path)) return;
             const worker = await this.supervisor.getWorker({ cwd: session.cwd, sessionId: session.id, sessionPath: session.path });
             if (session.agentProfile) {

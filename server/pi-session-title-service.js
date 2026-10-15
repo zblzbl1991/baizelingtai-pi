@@ -15,11 +15,13 @@ Return ONLY a JSON object {"title":"..."}, or {"title":null} if there is no conc
 Use the language of the user's substantive question. Prefer 10–20 Chinese characters or 4–9 English words, at most 80 characters. Describe the specific subject and question/goal. Keep distinctive technical names. Avoid generic titles, markdown, quotes, prefixes, secrets, personal identifiers and full filesystem paths. Do not claim a task was completed merely because it was requested. Focus on the latest substantive topic in the excerpts.`;
 
 class PiSessionTitleService {
-    constructor({ preferences, createModelRuntime, timeoutMs = 45000, maxConcurrent = 2 }) {
+    stopReadiness() { return this.jobs.size + Number(Boolean(this.savingModel)); }
+    constructor({ preferences, createModelRuntime, timeoutMs = 45000, maxConcurrent = 2, isSuspended = () => false, onActivity = () => {} }) {
         this.preferences = preferences;
         this.createModelRuntime = createModelRuntime;
         this.timeoutMs = timeoutMs;
         this.maxConcurrent = maxConcurrent;
+        this.isSuspended = isSuspended; this.onActivity = onActivity;
         this.jobs = new Map();
         this.closed = false;
         this.epoch = randomUUID();
@@ -102,10 +104,12 @@ class PiSessionTitleService {
     }
 
     run(worker, automatic = false) {
+        if (this.isSuspended()) return Promise.reject(titleError('实例正在维护，请等待完成'));
         const settings = this.preferences.getSessionTitles();
         if (automatic && !settings.enabled) return Promise.resolve(null);
         if (this.closed || worker.disposed || worker.noSession) return Promise.reject(titleError('标题生成不可用'));
         if (this.jobs.has(worker.sessionPath) || this.jobs.size >= this.maxConcurrent) return Promise.reject(titleError('标题正在生成，请稍后重试'));
+        this.onActivity();
         const controller = new AbortController();
         const job = { controller, promise: null };
         const settingsRevision = this.settingsRevision;

@@ -4,6 +4,8 @@
 
 ## 配置与使用
 
+内置 OfficeCLI 由独立资源扩展使用公开 `registerMcpServer` 在会话注册，不写用户 `mcp.json`。它沿用本文的原生连接、工具暴露与停机机制；附件副本、文本／视觉检查和程序安装见[Office 文档](OFFICE_DOCUMENTS.md)。OfficeCLI 的一个通用工具包含读写动作，逐工具 exposure 不能进一步按命令拆分权限。
+
 主线程加载 Pi 官方内置 `mcp`、`codemode`、`tool-search` 和 `llama.cpp` 扩展。全局服务器配置为 `<agentDir>/mcp.json`；受信项目可以使用 `.pi/mcp.json`，完整同名项目条目替换全局。项目条目没有 `command`、`url`、`type` 时，只能包含 `enabled`、`exposure`、`toolExposure`，覆盖同名有效全局配置的这三项；其他连接、环境和凭据仍来自全局，逐工具映射整体替换而非逐键合并。没有有效全局基础或含其他键的部分覆盖无效，不改变全局条目。项目不受信时不连接项目服务器。stdio 执行部署机器上的程序，HTTP 使用 Streamable HTTP；旧 SSE 不支持。
 
 ```json

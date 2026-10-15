@@ -22,6 +22,8 @@ flowchart TD
 
 ## 职责和依赖方向
 
+- Office 编辑由 `pi-officecli-extension` 注册 Pi 原生 MCP 服务器及工作副本工具；`officecli/documents` 复用项目范围、目录身份、私有文件与原字节传输，原生分支记录副本索引。`mcp-host` 校验固定程序、过滤其环境并转发 stdio，不实现另一个 MCP 客户端；Pi 拥有连接及会话生命周期。文档语义由当前 Agent 与 Skill 决定，批准来自聊天，原件保持不可变。程序清单、安装及发行共用 `officecli/inventory`，详见 [Office 文档](../OFFICE_DOCUMENTS.md)。
+
 - `server.js` 装配访问验证、网关、媒体适配与静态资源，再监听 HTTP。旧媒体执行器仍在此入口，修改这些旧适配器时逐项迁移职责，不向入口添加新的业务存储。
 - `pi-agent-routes` 负责网关装配、项目/会话 HTTP 和连接协议。`server/routes/settings`、`server/routes/media` 只适配 HTTP；配置锁、修订、票据和持久化仍由服务拥有。
 - `PiAgentSupervisor` 拥有 worker 注册表、启动互斥、重开和回收。删除通过 `withSessionRemoval` 在 await 前预占规范会话路径，等待已有启动，在 worker 独占区停止并执行文件删除；删除未结束前禁止 `getWorker` 重建 worker，并计入全局停机等待。路由使用其生命周期接口，不复制 worker 内部字段清单。
@@ -66,6 +68,8 @@ Pi 1.1.0 原生 MCP/Codemode 经 `pi-native-mcp.mjs` 和受管 ResourceLoader �
 - 工具来源是调用时捕获的有界展示元数据，绑定调用 ID/工具名；旧记录不按当前清单追认来源，也不把来源标记当成权限验证。
 
 相关契约：[辅助模型](../AUXILIARY_MODELS.md)、[记忆适配](../PROFILE_MEMORY.md)、[任务线程](../AGENT_THREADS.md)、[侧聊](../SIDE_CHAT.md)、[原生设置](../NATIVE_SETTINGS.md)。
+
+文档一致性审查以独立 `pivane-document-review` 包提供原生 Skill，复用受管资源选择、启停和重载。当前模型按技能约定读取材料、报告原文证据与修改方案，等待聊天批准后使用已有工具生成修订副本；原生会话保留报告与用户确认，任务文件和交付快照只属于成果。没有新增审查数据库、worker 工作类型或执行票据；Skill 的确认步骤是行为约定，不是服务端权限校验。Office/PDF 的只读提取与实际编辑能力分开，见[文档一致性审查](../DOCUMENT_REVIEW.md)。
 
 公文生成通过 `pivane-gongwen` 登记 Skill 与受管原生工具。`server/gongwen` 将结构化输入、上游版式构件、检查和规范修正放在无凭据独立进程中；生成器不执行模型提供的代码，也不直接载入上游 CLI。最终 DOCX 先经有界 ZIP/XML 与结构校验，再检查体例、数字和文风；已验证字节作为检查故障时的草稿检查点。父侧占位在 await 前登记，取消／超时等待真实退出。项目输出目录持有完整目录／文件描述符证明并独占写入；完整请求可复用，残缺意图不重放。目录内数据属于任务成果，原生 `pivane-deliverable` 引用仍由唯一 worker 追加，未新增会话事实库、worker 工作类型或 HTTP 生成接口。
 
@@ -161,7 +165,13 @@ POSIX 私密权限和目录刷盘、Windows 受保护 DACL 和写透替换分别
 
 `pi-installation-lock` 统一拥有受管启动、备份恢复与离线会话迁移的安装级互斥。Windows 使用规范安装目录 SHA256 命名的机器级独占管道，不依赖 TCP 端口；其他系统保留原来的确定性 loopback 端口锁。内核持有锁的生命周期，连接到管道不能提交任何控制命令。ManagedLauncher 在 await 前预占启动／关闭状态，关闭等待在途锁分配，并在子服务实际退出后释放锁。旧 Windows TCP 锁与新管道锁属于不同协议，升级必须停旧版并使用匹配版本的运行与维护脚本，不能混用。
 
-Windows 桌面入口由 `pivane-desktop-startup` 先提供仅限 loopback 的临时等待页，浏览器只读轮询本次启动的投影；就绪事实仍来自 ManagedLauncher 的子服务 IPC 与 HTTP 检查。等待页不启动 worker、不建立聊天副本、不复用被占用端口上的未知服务。就绪后同一标签页跳转到工作台，临时监听有界退役；失败先向等待页交付脱敏错误，再随启动清理关闭。
+Windows 桌面托盘拥有管理窗口和稳定只读等待入口，每轮启动创建新代次的短命 Node runner 与 ManagedLauncher。关闭/最小化窗口只隐藏；停止保留托盘，退出在同样的有序停机后结束托盘。运行锁在所属服务和 worker 实际退出后释放；桌面互斥保持到托盘退出。迟到回调核对实际 runner 对象和代次；没有清理证明时禁止新启动，不按 PID 消失或端口空闲推断成功。
+
+Gateway 拥有所装配的 WebSocketServer，异步收尾前同步封闭新连接入口；重复 dispose 等待同一个 Promise。所属连接先正常关闭，2 秒后仅终止未响应的传输。HTTP 关闭与服务清理证明必须等待网关及登记 worker 清理完成，不能要求用户先手动关闭工作台。
+
+稳定入口由既有 EXE 中的 .NET helper 在托盘进程内提供固定 loopback HTTP；不增加长期 Node 控制服务。浏览器核对页面实例标记后只读轮询投影，断线退避查询，不触发启动或变更；同一托盘的新服务代次可让旧等待页恢复。就绪事实仍来自 ManagedLauncher 当前子服务的 nonce IPC 与 HTTP 检查；等待页不启动 worker、不建立聊天副本、不接管未知占用者。整体桌面启动预算默认 180 秒，单独校验配置；worker 和其他启动方式保持各自预算。直接 Node 兼容入口仍由 `pivane-desktop-startup` 提供单轮临时页面。
+
+桌面停止由服务端统一就绪投影决定，复用各服务的工作状态和 worker lifecycle；维护空闲也读取同一投影。投影失败或覆盖未知时不可确认。检查生成绑定服务代次和活动修订的票据，等待用户保存草稿时工作台仍可使用；最终提交在 await 前预占互斥，建立 HTTP/WS/后台派发闸门并重查，期间发生工作后恢复空闲也使旧票据失效。拒绝只释放本次闸门；接受后绑定单次操作，重复输入不重放。桌面不调用 deferred 的持久暂停，保留原有 skip/latest 和不确定请求语义。控制只经继承 LF 管道与私有服务 IPC，不增加公开停止接口。
 
 临时等待页分配端口遇到 `EADDRINUSE` 或 `EACCES` 时最多尝试 32 次，其他监听错误立即失败。重试只分配临时 HTTP 监听，不重试受管服务启动、模型请求或维护操作，也不改工作台保存的监听配置。
 

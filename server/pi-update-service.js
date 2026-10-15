@@ -41,6 +41,7 @@ function relation(current, latest) {
 }
 
 class UpdateService {
+    stopReadiness() { return this.inflight.size + Number(Boolean(this.notifications?.pending)); }
     constructor(options = {}) {
         this.fetch = options.fetch || fetch;
         this.env = options.env || process.env;

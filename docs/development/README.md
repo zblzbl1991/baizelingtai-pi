@@ -18,6 +18,7 @@
 | 字段和协议 | [API](../API.md)、对应功能文档（索引见 [文档目录](../README.md)） |
 | 平台原生组件 | [native](../../native/README.md) |
 | guizang-ppt 与内网 SkillHub 来源、CLI 和接口依据 | [SkillHub 接入核查](research/skillhub-guizang-ppt.md) |
+| pi-web-keeper 的 Windows PWA 入口与集成取舍 | [桌面入口集成评估](research/pi-web-keeper.md) |
 | gongwen-kit 公文生成、机检与修订的接入建议 | [gongwen-kit 接入评估](research/gongwen-kit.md) |
 
 用户可见行为以功能文档为准；实现细节以本目录为准；两者都不记录某台机器的部署状态。

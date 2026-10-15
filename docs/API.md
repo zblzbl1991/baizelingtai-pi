@@ -2,9 +2,17 @@
 
 ## 桌面启动私有通道
 
-Windows 托盘与 `scripts/start-desktop.cjs` 使用继承的 stdin/stdout LF 通道。新增 `waiting` 响应 `{type:"waiting",url}`，允许浏览器先打开本次启动的本地等待页；`ready` 的 `url` 才是经受管子服务 IPC 和 HTTP 检查确认的工作台地址。`starting`、`error`、`stopping` 和私有 stdin 的 `stop` 继续沿用原语义，不增加工作台的公开控制接口。
+Windows 托盘以 `scripts/start-desktop.cjs --controlled --generation <UUID>` 创建每轮 runner，使用继承的 stdin/stdout LF JSON 通道，日志走 stderr。所有受控事件带 `generation`，响应回显 `id`；迟到或其他代次无权改变状态。`ready.url` 必须经受管子服务 IPC 和 HTTP 检查。单轮旧 Node 入口仍兼容 `waiting` 与私有 `stop`；受控模式就绪后不允许用 `stop` 绕过最终检查。
 
-临时等待页的只读 `GET /status` 返回 `{state:"starting"}`、`{state:"ready",url}` 或 `{state:"error",message}`，仅监听本机 `127.0.0.1` 并校验 Host/Origin。它不属于 `/api/pi`，不读取会话或凭据，不接受启动重试、停机或配置写入；生命周期与用户操作见 [托盘启动器](DESKTOP_LAUNCHER.md)。
+受控请求包括 `snapshot`、`review-stop`（`action:"stop"|"exit"`）、`execute-stop`（`ticket,draftsSaved:true,externalWritersStopped:true`）。快照/检查响应 `snapshot` / `stop-review` 包含 `complete,revision,blockers,scheduled`；只有完整空闲检查才提供有效期内的一次性 `ticket`。阻碍项为有界 `type,count,label` 和可选的安全定位，不包含会话正文。执行原子复核代次、修订和空闲，预占新工作闸门后接受，返回 `stop-accepted` 与 `operationId`。接受后重复查询只观察同一操作；清理完成返回 `stopped,clean:true`，托盘还须等待实际 runner 退出。启动中可请求同一代次的有序 `stop`；未知或失败不表示取消或清理成功。
+
+`ready`、`snapshot` 和 `stop-review` 可附带 `versions:{appVersion,engineVersion}`，取自当前实际受管子服务的就绪消息；缺失时显示尚未核实，不能用安装目录版本代替实际运行版。管理窗口的维护入口只打开现有工作台并提示“设置 → 版本与更新”，不提交升级。
+
+桌面 ManagedLauncher 要求就绪消息声明 `capabilities.shutdownProof:true`；所属子服务在 HTTP、网关和登记 worker 清理结束后通过 nonce IPC 发送 `maintenance-shutdown-complete` 并完成发送，再实际退出 0。网关先封闭新连接并向所属 WebSocket 发送 1001；2 秒后仅终止未响应的连接传输，仍等待 worker 和 HTTP 完成清理。父进程只接受自己请求停机之后、实际当前子进程发来的证明。缺少证明或清理失败产生 `DESKTOP_CLEANUP_UNKNOWN`，保留受控 runner 与运行锁，不发送 `clean:true`；其他启动方式默认保持原兼容契约。已接受的操作可只读查询同一 `operationId`，收尾期间返回 `complete:false,cleanup:"pending"|"unknown"`，重复执行同一票据只返回现有进度，不重跑清理。启动停止与就绪交错时转入正常检查和保存草稿确认，不能绕过已就绪服务的阻碍检查。
+
+runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,method:"snapshot"|"review"|"execute",input`），响应为 `desktop-response`（`id,result` 或 `error:{code,message}`）。检查不长期锁住工作台；最终接受后沿统一异步停机，桌面停止采用可逆内存派发闸门，不调用持久预约暂停。此私有协议不扩展现有公开维护 action 列表，不新增 HTTP 停机接口。
+
+托盘的稳定只读 `GET /status` 返回 `state,instance,generation` 和可选 `url,message`，状态包括 `starting,ready,error,stopped,stopping,unknown`。页面的 `startup-instance` 标记必须与实例相符。入口仅监听本机 `127.0.0.1`、校验 Host/Origin 并限制请求，随托盘退出关闭；单次读取失败退避重试，读取本身不启动服务或重放操作。它不属于 `/api/pi`，不读取会话或凭据，不接受启动、停机或配置写入。旧单轮临时页保持原有精简状态；生命周期与用户操作见 [托盘启动器](DESKTOP_LAUNCHER.md)。
 
 ## 成果中心（artifacts）
 
@@ -26,6 +34,14 @@ Windows 托盘与 `scripts/start-desktop.cjs` 使用继承的 stdin/stdout LF �
 
 工具结果的可选 `details.pi5ToolProvenance` 包含 `{version:1,toolName,toolCallId,source?:{source,path,scope,origin},skill?:{name,path}}`，由受管 worker 的调用前元数据生成，随原生 toolResult 和原有 WS 工具结果传递。缺失即未知，不通过设置清单补填；前端核对名称与调用 ID，仅作来源显示。扩展助手包确认取消时提供 `details.pi5PackageOperation.status='cancelled'`。不新增 REST 或改动原始正文、错误和用量，详见[执行来源](NATIVE_SETTINGS.md#执行记录中的技能与扩展来源)。
 
+## Office 工作副本与 MCP
+
+内置 `pivane-officecli` 扩展在启用 Pi 原生 MCP 的持久受管 RPC 会话注册 `prepare_office_document {id,requestId}`。id 为当前分支已发送 DOCX/XLSX/PPTX 附件标识，原件最大 16 MiB；requestId 沿用 1–160 字符请求标识格式。不接受原件路径。工具 details.pivaneOffice 为 `{version:1,id,requestId,source,path,revision,size,reused}`；source 是原附件元数据，path 是项目工作副本实际路径，revision/size 是本次读取时副本的状态，不是之后所有编辑的预期版本。
+
+同一规范项目／原生会话／requestId 复用当前副本且不重置修改；原件冲突为 OFFICE_CONFLICT，准备残缺为 OFFICE_INCOMPLETE，并发／关闭为 OFFICE_BUSY，无效参数为 OFFICE_INPUT。来源资格和变化沿用 DOCUMENT_SCOPE／DOCUMENT_CONTEXT／DOCUMENT_CHANGED；工作文件沿用现有描述符检查及文件错误。原生 custom entry `pivane-office-document` 只保存副本索引，分支及会话事实仍归 SessionManager。
+
+扩展通过 `registerMcpServer` 注册运行时 `pivane-officecli` stdio 服务器，默认 codemode 暴露，原始工具名为 officecli；command 必须为字符串数组，文档命令由同一 native tool_call hook 检查，嵌套 Codemode 调用也经过该 hook。程序连接及清理由 Pi 官方 MCP 管理，不增加 HTTP 编辑接口或第二个 MCP 客户端。原件准备不是修改授权，聊天确认及可选视觉检查见[Office 文档](OFFICE_DOCUMENTS.md)。
+
 ## 公文生成工具
 
 内置资源 `pivane-gongwen` 在持久受管 RPC 会话注册 `generate_gongwen`，没有独立 HTTP 生成接口。输入为结构化 JSON：必填 `requestId/kind/title/body`；kind 为 `notice|report|request|letter|minutes|rules|enterprise`，正文构件为 `paragraph {text}`、`heading {level:1..4,text}`、`table {head,rows,widths?,caption?,numeric?}`。数字列为 `{column:1-based,kind:money|integer|decimal|percent,complete?:boolean}`。其他字段覆盖 `recipient/unit/date/redhead/agency/docNo/signers/copyNo/secret/urgency/preprinted/mark/issue/attendees/copyTo/issuer/printDate/note/sealed/attachments/missing`，精确范围由工具 schema 给出；未知字段和文件路径／代码输入拒绝。
@@ -38,7 +54,7 @@ Windows 托盘与 `scripts/start-desktop.cjs` 使用继承的 stdin/stdout LF �
 
 ## 办公文档附件（documentUploads）
 
-受管 worker 可通过既有私有 `POST /uploads/read {id,action:"source"}` 取得 `{reference,encoding:"base64",base64}`，供公文工具内部传输原字节。此动作仅接受 id/action，须为当前分支已发送的 DOCX 且不超过 16 MiB；工作台访问身份不能代替绑定 worker。原字节不进入模型工具输出；授权、描述符核验、变更复查、document-read 生命周期及 documentOperations 沿用附件链路。其他读取动作和 `read_document` 参数不变。
+受管 worker 可通过既有私有 `POST /uploads/read {id,action:"source"}` 取得 `{reference,encoding:"base64",base64}`，供公文与 Office 工作副本工具内部传输原字节。此动作仅接受 id/action，须为当前分支已发送的 DOCX、XLSX 或 PPTX 且不超过 16 MiB，PDF 拒绝；公文工具仍只接受 DOCX。工作台访问身份不能代替绑定 worker。原字节不进入模型工具输出；授权、描述符核验、变更复查、document-read 生命周期及 documentOperations 沿用附件链路。其他读取动作和 `read_document` 参数不变。
 
 状态 `GET /api/pi/status` 返回 `documentUploads` 和 `documentUploadLimits:{fileBytes:20971520,files:5}`；原生描述符组件不可用时能力为 false，接口拒绝。格式、存储与解析预算见[办公附件](COMPOSER_TOOLS.md#上传办公文档与-pdf)。
 
@@ -310,6 +326,14 @@ Body: `{ "cwd": "/workspace/demo" }`。先经过 token/Origin/realpath 根检查
   "directories": [{ "name": "demo", "path": "/workspace/demo" }]
 }
 ```
+
+### `POST /directories`
+
+`GET /status.createDirectories=true` 表示支持创建项目文件夹。Body 为 `{ "parent": "/workspace", "name": "新项目" }`，仅允许这两个字段；`parent` 必须是已存在、允许根范围内且可访问的服务器绝对目录。`name` 为非空单个名称，UTF-8 最多 255 字节；拒绝 `.`、`..`、路径分隔符、控制字符与平台非法名称。父目录与目标遵循私密路径规则，包括实际 Agent 身份目录；不递归创建，不复用已有文件、目录或链接。
+
+成功返回 HTTP 201：`{ "parent": "/workspace", "path": "/workspace/新项目", "name": "新项目" }`，路径为规范服务器路径。不启动 worker、不创建会话、不切换当前项目。复用鉴权与 Origin 校验，响应带 `no-store`、`nosniff`。
+
+错误包括 400 `DIRECTORY_NAME`、403 `DIRECTORY_PRIVATE` / `FILE_PROJECT` / `FILE_PRIVATE` / `DIRECTORY_DENIED`、409 `DIRECTORY_EXISTS` / `DIRECTORY_CHANGED` / `DIRECTORY_BUSY`。创建后无法完成位置／身份验证时返回 409 `DIRECTORY_UNCERTAIN`，保留磁盘结果并要求重新浏览核对；断连或超时不表示取消，也不自动重放。最多一个创建操作，await 前预占；`GET /activity.projectDirectoryOperations` 投影运行数量，维护空闲判断与异步停机等待该操作完成。创建前后检查父目录和新目录的内核路径、完整身份、类型与变化状态，Linux 通过已打开父目录的 `/proc/self/fd` 创建；其他平台使用描述符确认的内核路径并重新核验。
 
 ### `GET /sessions?cwd=<absolute-path>`
 

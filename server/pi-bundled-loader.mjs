@@ -25,12 +25,15 @@ export async function managedLoaderOptions({ cwd, agentDir, settings, parsed }) 
         ['../vendor/pi-computer-use/extensions/computer-use.ts', './pi-bundled-computer-use.ts'],
     ].map(([source, adapter]) => [fileURLToPath(new URL(source, import.meta.url)), fileURLToPath(new URL(adapter, import.meta.url))]));
     const extensionPath = file => adapters.get(file) || file;
+    const builtins = selectedNativeBuiltins(settingsView, parsed);
+    const officeExtension = fileURLToPath(new URL('./pi-officecli-extension.ts', import.meta.url));
     return { settingsView, options: {
         noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
         extensionFactories: [...await nativeExtensionFactories(parsed), bundledGuidance],
         disabledBuiltinExtensions: parsed.noMcp ? ['mcp'] : undefined,
         noContextFiles: parsed.noContextFiles, systemPrompt: parsed.systemPrompt, appendSystemPrompt: parsed.appendSystemPrompt,
-        additionalExtensionPaths: [...new Set([...selectedNativeBuiltins(settingsView, parsed), ...explicit(parsed.extensions), ...(parsed.noExtensions ? [] : paths('extensions'))])].map(extensionPath),
+        additionalExtensionPaths: [...new Set([...builtins, ...explicit(parsed.extensions), ...(parsed.noExtensions ? [] : paths('extensions'))])]
+            .filter(file => file !== officeExtension || builtins.includes('builtin:mcp')).map(extensionPath),
         additionalSkillPaths: [...explicit(parsed.skills), ...(parsed.noSkills ? [] : paths('skills'))],
         additionalPromptTemplatePaths: [...explicit(parsed.promptTemplates), ...(parsed.noPromptTemplates ? [] : paths('prompts'))],
         additionalThemePaths: [...explicit(parsed.themes), ...(parsed.noThemes ? [] : paths('themes'))],

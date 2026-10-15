@@ -130,7 +130,7 @@ npm start
 
 Open <http://127.0.0.1:11408>, check **Settings → Providers and models**, pick a project folder and start a new chat.
 
-On Windows, after installing dependencies, double-click **白泽灵台.exe** to start the workspace and open your default browser. It can also create a desktop shortcut. Use the tray menu to view logs or shut down cleanly; see the [tray launcher guide](docs/DESKTOP_LAUNCHER.md).
+On Windows, after installing dependencies, double-click **白泽灵台.exe** to start the workspace and open your default browser. Double-click its tray icon to open service management; stopping the service keeps the tray available for a later start. It can also create a desktop shortcut. See the [tray launcher guide](docs/DESKTOP_LAUNCHER.md) for logs, startup recovery and checked shutdown.
 
 Maintainers can run `npm run pack:windows` on Windows x64 to build a portable ZIP with the runtime and application dependencies. Recipients extract it and double-click the EXE; see [portable packaging and validation](docs/DESKTOP_LAUNCHER.md#windows-x64-便携版).
 

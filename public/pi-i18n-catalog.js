@@ -9719,5 +9719,22 @@
         ['当前启动方式不支持 Windows 内网整包自动更新，请使用便携版受管启动器或独立维护窗口', 'This launcher does not support Windows intranet package updates. Use the managed portable launcher or independent maintenance.'],
         ['无法核对更新版本，请稍后再试', 'Unable to verify the update. Please try again later.']
     );
+    rows.push(
+        ['新建文件夹', 'New folder'], ['文件夹名称', 'Folder name'], ['创建中…', 'Creating…'],
+        ['创建位置：{0}', 'Create in: {0}'],
+        ['请输入有效的单个文件夹名称，不要包含路径分隔符', 'Enter a single valid folder name without path separators'],
+        ['创建结果尚未确认，请重新浏览目录核对，不要重复提交。', 'Creation has not been confirmed. Browse the directory to check before submitting again.'],
+        ['文件夹名称或父目录路径无效', 'The folder name or parent path is invalid'],
+        ['此位置不允许通过网页新建文件夹', 'Folders cannot be created here through the web interface'],
+        ['正在处理目录或实例维护，请稍后核对', 'A directory operation or maintenance is in progress. Check again shortly'],
+        ['实例正在维护，请稍后再创建', 'Maintenance is in progress. Try creating the folder later'],
+        ['文件夹路径过长，请缩短名称', 'The folder path is too long. Use a shorter name'],
+        ['目录已变化，请重新浏览后再创建', 'The directory has changed. Browse it again before creating a folder'],
+        ['已存在同名文件或文件夹，请修改名称', 'A file or folder with this name already exists. Choose another name'],
+        ['当前目录没有创建权限，请选择其他目录', 'You do not have permission to create folders here. Choose another directory'],
+        ['文件夹名称或路径无效，请修改后重试', 'The folder name or path is invalid. Correct it and try again'],
+        ['暂时无法创建文件夹，请核对目录后重试', 'Unable to create the folder. Check the directory before trying again'],
+        ['文件夹可能已创建，但位置校验未完成。请重新浏览目录核对，不要重复提交', 'The folder may have been created, but its location could not be verified. Browse the directory to check before submitting again']
+    );
     globalThis.PiI18nCatalog = Object.freeze(rows.map(row => Object.freeze(row)));
 })();

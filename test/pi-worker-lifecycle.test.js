@@ -63,6 +63,20 @@ test('supervisor idle includes starting and temporary workers without exposing t
     assert.equal(supervisor.isIdle(), false);
 });
 
+test('supervisor shutdown waits for all workers and reports incomplete cleanup instead of success', async () => {
+    const supervisor = new PiAgentSupervisor(); let release, secondFinished = false;
+    supervisor.workers.set('one', { dispose: async () => { throw Error('Synthetic cleanup failure'); } });
+    supervisor.workers.set('two', { dispose: () => new Promise(resolve => { release = () => { secondFinished = true; resolve(); }; }) });
+    let finished = false;
+    const stopping = supervisor.dispose();
+    stopping.then(() => { finished = true; }, () => { finished = true; });
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(finished, false);
+    release();
+    await assert.rejects(stopping, /worker cleanup/i);
+    assert.equal(secondFinished, true);
+});
+
 test('isSessionIdle checks only the realpath-matched worker of one native session', async t => {
     const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'session-idle-'));

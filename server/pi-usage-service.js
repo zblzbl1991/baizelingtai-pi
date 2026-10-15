@@ -16,15 +16,19 @@ function usageQuery(query = {}) {
 }
 
 class PiUsageService {
-    constructor(store) { this.store = store; this.pending = null; this.cache = null; this.stopped = false; this.sideWrites = new Set(); }
+    stopReadiness() { return Number(Boolean(this.pending)) + this.sideWrites.size; }
+    constructor(store, { isSuspended = () => false, onActivity = () => {} } = {}) {
+        Object.assign(this, { store, isSuspended, onActivity }); this.pending = null; this.cache = null; this.stopped = false; this.sideWrites = new Set();
+    }
     start() {
         if (this.timer || this.stopped) return;
         this.timer = setInterval(() => {
-            if (!this.pending && !this.stopped) void this.sync().catch(() => {});
+            if (!this.pending && !this.stopped && !this.isSuspended()) void this.sync().catch(() => {});
         }, 5 * 60000);
         this.timer.unref();
     }
     sync(onlyFile, sideBatch, move) {
+        this.onActivity();
         if (this.pending) return this.pending.promise.then(() => this.sync(onlyFile, sideBatch, move));
         // Reserve before SDK initialization or worker creation.
         const promise = this.scan(null, onlyFile, sideBatch, move).finally(() => { if (this.pending?.promise === promise) this.pending = null; this.cache = null; });

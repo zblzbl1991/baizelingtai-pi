@@ -4,6 +4,7 @@ const { Worker } = require('node:worker_threads');
 const { getSdk } = require('./pi-session-store');
 const fail = (text, status = 400) => Object.assign(new Error(text), { status });
 class PiSessionSearch {
+    stopReadiness() { return Number(Boolean(this.pending)); }
     constructor(store, preferences) { this.store = store; this.preferences = preferences; this.cache = null; this.pending = null; this.disposed = false; }
     async search(query, signal) {
         if (this.disposed) throw fail('服务正在关闭', 503);

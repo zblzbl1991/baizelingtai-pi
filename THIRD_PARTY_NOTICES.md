@@ -14,6 +14,10 @@ Pivane自身的代码使用[ISC许可证](LICENSE)。第三方软件、字体、
 
 Windows 托盘启动器的交互设计参考 [dsh-tray-launcher](https://github.com/fancr-code/dsh-tray-launcher)（MIT，© 2026 fancr-code）；本项目独立实现，未复制其脚本或图标素材。
 
+## OfficeCLI 原生程序
+
+[OfficeCLI](https://github.com/iOfficeAI/OfficeCLI) 1.0.157，官方源码提交 `b65272a18aef891941451705ff93e8a287f3eb72`，Apache-2.0。各平台官方 Release 程序 SHA256 及来源固定在 `config/officecli.json`；应用归档携带构建平台程序，源码安装按平台准备，不改写上游二进制。保留 [许可证](native/officecli/LICENSE)、[NOTICE](native/officecli/NOTICE) 和[传递依赖声明](native/officecli/THIRD-PARTY-NOTICES.txt)。宿主模块与技能为本项目 ISC 实现。上游源码可从[固定提交](https://github.com/iOfficeAI/OfficeCLI/tree/b65272a18aef891941451705ff93e8a287f3eb72)获取。
+
 ## 通过npm安装的直接依赖
 
 源码发布归档不包含node_modules。npm ci按package-lock.json取得以下依赖及其传递依赖，安装目录保留各自的许可证。Windows 便携 ZIP 包含锁定安装的依赖并完整保留包内许可证。下表列出本候选版本直接依赖的声明，不把传递依赖归为同一种许可。

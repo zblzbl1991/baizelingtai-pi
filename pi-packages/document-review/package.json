@@ -1,0 +1,8 @@
+{
+  "name": "pivane-document-review",
+  "version": "1.0.0",
+  "private": true,
+  "license": "ISC",
+  "description": "白泽灵台文档一致性审查：先报告问题，聊天确认后按项修改",
+  "pi": { "skills": ["./skills/document-consistency-review"] }
+}
