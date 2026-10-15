@@ -8,7 +8,8 @@ $script:result = 0; $script:service = $null; $script:generation = ''; $script:in
 $script:state = 'stopped'; $script:url = $null; $script:logFile = $null; $script:lastError = ''; $script:readTask = $null; $script:errorTask = $null
 $script:tickBusy = $false; $script:clean = $true; $script:exitIntent = $false; $script:pending = $null; $script:review = $null
 $script:events = [Collections.Generic.List[object]]::new(); $script:smokeValidated = $false; $script:smokeCommand = ''; $script:lastSnapshot = [DateTime]::MinValue
-$script:confirmationShown=$false; $script:uiScale=1; $script:recoverStop=$false; $script:readyAt = $null; $script:smokeStopSent = $false; $script:recent = [Collections.Generic.Queue[string]]::new(); $script:lastReport = ''
+$script:confirmationShown=$false; $script:uiScale=1; $script:recoverStop=$false; $script:readyAt = $null; $script:smokeStopSent = $false; $script:lastReport = ''; $script:startupStopReview=$false
+$script:versions=$null; $script:maintenanceHint=$false
 $mutex = $null; $ownsMutex = $false; $openEvent = $null; $tray = $null; $timer = $null; $context = $null; $window = $null; $hoster = $null
 function Record-Event($Value) {
     if($script:events.Count -ge 256){$script:events.RemoveAt(0)}
@@ -71,7 +72,7 @@ function Send-Request([string]$Type, $Extra) {
 function Start-Run {
     if ($script:service -or -not $script:clean -or $script:state -notin @('stopped','error')) { Show-Management; return }
     $script:recoverStop=$false; $script:generation = [Guid]::NewGuid().ToString(); $script:clean = $false; $script:exitIntent = $false; $script:pending = $null; $script:review = $null
-    $script:lastError = ''; $script:logFile = $null; $script:url = $null; $script:readyAt = $null; $script:smokeStopSent = $false; $script:recent.Clear()
+    $script:lastError = ''; $script:logFile = $null; $script:url = $null; $script:readyAt = $null; $script:smokeStopSent = $false; $script:startupStopReview=$false; $script:versions=$null; $script:maintenanceHint=$false
     Set-State 'starting'
     try {
         $start = [Diagnostics.ProcessStartInfo]::new(); $start.FileName = $NodePath
@@ -90,7 +91,7 @@ function Request-Stop([string]$Action) {
     if ($script:state -in @('stopped','error') -and $script:clean -and -not $script:service) { if ($Action -eq 'exit') { $context.ExitThread() }; return }
     if ($script:review) { Show-Management; return }
     if ($script:state -eq 'starting') {
-        $script:exitIntent = $Action -eq 'exit'; Set-State 'stopping'
+        $script:stopAction=$Action; $script:exitIntent = $Action -eq 'exit'; Set-State 'stopping'
         Send-Request 'stop' @{action=$Action} | Out-Null; return
     }
     if ($script:state -eq 'ready') { $script:stopAction = $Action; Show-Management; Send-Request 'review-stop' @{action=$Action} | Out-Null }
@@ -106,13 +107,13 @@ function Show-Blockers($Message) {
     foreach ($item in @($Message.blockers | Select-Object -First 20)) {
         if ($null -eq $item) { continue }
         $label = [string]$item.label; if ($label.Length -gt 160) { $label = $label.Substring(0,160) }
-        $line = $label + ' × ' + [string]$item.count
+        $line = $label + ' × ' + [string]$item.count + $(if($item.type -eq 'worker'){' 项阻碍原因'}else{''})
         if ($item.cwd) { $line += ' · ' + ([string]$item.cwd).Substring(0,[Math]::Min(160,([string]$item.cwd).Length)) }
         if ($item.sessionId) { $line += ' · 会话 ' + ([string]$item.sessionId).Substring(0,[Math]::Min(64,([string]$item.sessionId).Length)) }
         $lines.Add($line)
     }
     if ($lines.Count -eq 0) { $lines.Add('当前没有阻碍事项。') } else { $lines.Add('请在工作台处理后，再次点击停止服务或退出。') }
-    if ($Message.scheduled) { $lines.Add(('预约提示：未来 ' + $Message.scheduled.futureCount + ' 项，latest 策略 ' + $Message.scheduled.latestCount + ' 项；停止期间沿用各预约的漏执行策略。')) }
+    if ($Message.scheduled) { $lines.Add(('预约提示：未来 ' + $Message.scheduled.futureCount + ' 项，latest 策略 ' + $Message.scheduled.latestCount + ' 项。服务停止期间无法执行；配置 latest 的预约在重启后可能按原宽限补最近一次。')) }
     $blockerText.Text = $lines -join "`r`n"
 }
 function Handle-Message([string]$Line, $Owner, [string]$Generation) {
@@ -123,12 +124,15 @@ function Handle-Message([string]$Line, $Owner, [string]$Generation) {
     if ($message.id -and (-not $script:pending -or $message.id -ne $script:pending.id)) { return }
     $pendingType = if ($script:pending) { $script:pending.type } else { '' }
     if ($message.id) { $script:pending = $null }
+    if ($message.versions -and $message.type -in @('ready','snapshot','stop-review')) { $script:versions=$message.versions }
     switch ($message.type) {
         'starting' { $script:logFile = $message.logFile }
         'ready' {
+            if ($script:state -eq 'stopping' -and $pendingType -eq 'stop') { $script:url=$message.url; $script:logFile=$message.logFile; return }
             if ($script:state -in @('stopping','unknown')) { return }
             $script:url = $message.url; $script:logFile = $message.logFile; $script:readyAt = [DateTime]::UtcNow
             Set-State 'ready'; Record-Event @{type='ready';url=$script:url;generation=$Generation;pid=$Owner.Id}
+            if ($script:startupStopReview) { $script:startupStopReview=$false; Show-Management; Send-Request 'review-stop' @{action=$script:stopAction} | Out-Null }
         }
         'snapshot' { Show-Blockers $message }
         'stop-review' {
@@ -142,8 +146,16 @@ function Handle-Message([string]$Line, $Owner, [string]$Generation) {
         'stopping' { Set-State 'stopping' }
         'stopped' { if ($message.clean -eq $true) { $script:clean=$true }; Record-Event @{type='stopped';generation=$Generation;clean=$script:clean} }
         'error' {
+            if ($pendingType -eq 'stop' -and $message.code -eq 'DESKTOP_REVIEW_REQUIRED') {
+                # The service became ready before the queued startup stop arrived.
+                # Keep the same user intent, but require the normal review and confirmation.
+                if ($script:url) { Set-State 'ready'; Show-Management; Send-Request 'review-stop' @{action=$script:stopAction} | Out-Null }
+                else { $script:startupStopReview=$true; Set-State 'starting' }
+                break
+            }
             Show-Failure ([string]$message.message); $script:review=$null; Set-Confirmation $false
-            if ($pendingType -eq 'execute-stop' -and $message.code -eq 'DESKTOP_TRANSPORT_UNKNOWN') { $script:recoverStop=$true; Set-State 'unknown' }
+            if ($message.code -eq 'DESKTOP_CLEANUP_UNKNOWN') { Set-State 'unknown' }
+            elseif ($pendingType -eq 'execute-stop' -and $message.code -eq 'DESKTOP_TRANSPORT_UNKNOWN') { $script:recoverStop=$true; Set-State 'unknown' }
             elseif ($script:recoverStop -and $pendingType -eq 'snapshot') { $blockerText.Text=$script:lastError }
             elseif ($message.id -and $pendingType -in @('review-stop','execute-stop','snapshot') -and $script:state -eq 'ready') { $script:exitIntent=$false; $blockerText.Text=$script:lastError }
             else { if ($message.clean -eq $true) { $script:clean=$true }; Set-State 'error' }
@@ -174,6 +186,11 @@ function Update-Window {
         'unknown' {'无法核实清理是否完成。为避免重复所有者，禁止再次启动。请查看日志。'}
     }
     if ($script:pending) { $detailLabel.Text='正在核对服务状态，请稍候。' }
+    elseif ($script:maintenanceHint -and $script:state -eq 'ready') { $detailLabel.Text='在工作台打开 设置 → 版本与更新，使用现有独立维护入口。' }
+    $appVersion=if($script:versions.appVersion){[string]$script:versions.appVersion}else{'未核实'}
+    $engineVersion=if($script:versions.engineVersion){[string]$script:versions.engineVersion}else{'未核实'}
+    $versionLabel.Text='白泽灵台 '+$appVersion+' · Pi Coding Agent '+$engineVersion
+    $maintenanceButton.Enabled=$script:state -eq 'ready' -and -not $script:pending
     $addressBox.Text=if ($script:url) {$script:url} elseif ($hoster) {$hoster.Url} else {''}
     $canStart=($script:state -in @('stopped','error') -and $script:clean -and -not $script:service)
     $mainButton.Text=if ($canStart) {'启动服务'} else {'打开工作台'}
@@ -187,15 +204,15 @@ function Update-Window {
 }
 function Report-Smoke {
     if (-not $SmokeTest) { return }
-    $value=@{state=$script:state;generation=$script:generation;instance=$script:instance;visible=$window.Visible;canStart=($mainButton.Enabled -and $mainButton.Text -eq '启动服务');pending=[bool]$script:pending;confirm=$confirmPanel.Visible;blockers=$blockerText.Text;waitingUrl=$hoster.Url;pid=if($script:service){$script:service.Id}else{$null}}
+    $value=@{state=$script:state;generation=$script:generation;instance=$script:instance;visible=$window.Visible;canStart=($mainButton.Enabled -and $mainButton.Text -eq '启动服务');pending=[bool]$script:pending;confirm=$confirmPanel.Visible;blockers=$blockerText.Text;versions=$versionLabel.Text;detail=$detailLabel.Text;waitingUrl=$hoster.Url;pid=if($script:service){$script:service.Id}else{$null}}
     $json=ConvertTo-Json -Compress $value
     if ($json -ne $script:lastReport) { [IO.File]::WriteAllText((Join-Path $AppRoot '.pivane-runtime\desktop\smoke-state.json'),$json,[Text.UTF8Encoding]::new($false)); $script:lastReport=$json }
 }
 function Make-Window {
     $script:window=[Windows.Forms.Form]::new(); $window.Text='白泽灵台 · 服务管理'; $window.Icon=$tray.Icon
-    $window.Size=[Drawing.Size]::new(610,534); $window.MinimumSize=[Drawing.Size]::new(540,480); $window.StartPosition='CenterScreen'; $window.MaximizeBox=$false; $window.AutoScaleMode='None'; $window.Font=[Drawing.Font]::new('Microsoft YaHei UI',9)
+    $window.Size=[Drawing.Size]::new(610,554); $window.MinimumSize=[Drawing.Size]::new(540,500); $window.StartPosition='CenterScreen'; $window.MaximizeBox=$false; $window.AutoScaleMode='None'; $window.Font=[Drawing.Font]::new('Microsoft YaHei UI',9)
     $script:layout=[Windows.Forms.TableLayoutPanel]::new(); $layout.Dock='Fill'; $layout.Padding=[Windows.Forms.Padding]::new(22); $layout.ColumnCount=1; $layout.RowCount=10
-    foreach($height in @(42,50,102,44,105,0,38,0,38,28)) { $layout.RowStyles.Add([Windows.Forms.RowStyle]::new('Absolute',$height)) | Out-Null }; $window.Controls.Add($layout)
+    foreach($height in @(42,50,122,44,105,0,38,0,38,28)) { $layout.RowStyles.Add([Windows.Forms.RowStyle]::new('Absolute',$height)) | Out-Null }; $window.Controls.Add($layout)
     $script:stateLabel=[Windows.Forms.Label]::new(); $stateLabel.Font=[Drawing.Font]::new($window.Font.FontFamily,17,[Drawing.FontStyle]::Bold); $stateLabel.Dock='Fill'; $layout.Controls.Add($stateLabel,0,0)
     $script:detailLabel=[Windows.Forms.Label]::new(); $detailLabel.Dock='Fill'; $layout.Controls.Add($detailLabel,0,1)
     $details=[Windows.Forms.TableLayoutPanel]::new(); $details.Dock='Fill'; $details.ColumnCount=2; $details.ColumnStyles.Add([Windows.Forms.ColumnStyle]::new('Absolute',94)) | Out-Null; $details.ColumnStyles.Add([Windows.Forms.ColumnStyle]::new('Percent',100)) | Out-Null
@@ -203,10 +220,12 @@ function Make-Window {
     $script:addressBox=[Windows.Forms.TextBox]::new();$addressBox.ReadOnly=$true;$addressBox.Dock='Fill';$details.Controls.Add($addressBox,1,0)
     $label=[Windows.Forms.Label]::new();$label.Text='程序目录';$label.AutoSize=$true;$details.Controls.Add($label,0,1)
     $rootBox=[Windows.Forms.TextBox]::new();$rootBox.Text=$AppRoot;$rootBox.ReadOnly=$true;$rootBox.Dock='Fill';$details.Controls.Add($rootBox,1,1)
-    $label=[Windows.Forms.Label]::new();$label.Text='系统默认浏览器 · 服务管理仅控制当前安装目录';$label.AutoSize=$true;$details.Controls.Add($label,1,2);$layout.Controls.Add($details,0,2)
+    $script:versionLabel=[Windows.Forms.Label]::new();$versionLabel.Dock='Fill';$versionLabel.AutoEllipsis=$true;$details.Controls.Add($versionLabel,1,2)
+    $label=[Windows.Forms.Label]::new();$label.Text='系统默认浏览器 · 服务管理仅控制当前安装目录';$label.AutoSize=$true;$details.Controls.Add($label,1,3);$layout.Controls.Add($details,0,2)
     $actions=[Windows.Forms.FlowLayoutPanel]::new();$actions.Dock='Fill'
     $script:mainButton=[Windows.Forms.Button]::new();$mainButton.Size=[Drawing.Size]::new(132,32);$mainButton.add_Click({if($mainButton.Text -eq '启动服务'){Start-Run}else{Open-Workspace}});$actions.Controls.Add($mainButton)
     $script:stopButton=[Windows.Forms.Button]::new();$stopButton.Text='停止服务';$stopButton.Size=[Drawing.Size]::new(112,32);$stopButton.add_Click({Request-Stop 'stop'});$actions.Controls.Add($stopButton);$layout.Controls.Add($actions,0,3)
+    $script:maintenanceButton=[Windows.Forms.Button]::new();$maintenanceButton.Text='版本与更新…';$maintenanceButton.Size=[Drawing.Size]::new(132,32);$maintenanceButton.add_Click({$script:maintenanceHint=$true;Open-Workspace;Update-Window});$actions.Controls.Add($maintenanceButton)
     $script:blockerText=[Windows.Forms.TextBox]::new();$blockerText.Multiline=$true;$blockerText.ReadOnly=$true;$blockerText.ScrollBars='Vertical';$blockerText.Dock='Fill';$blockerText.Text='停止前会检查当前任务、Shell、侧聊和预约。';$layout.Controls.Add($blockerText,0,4)
     $script:confirmPanel=[Windows.Forms.FlowLayoutPanel]::new();$confirmPanel.Dock='Fill';$confirmPanel.FlowDirection='TopDown';$confirmPanel.WrapContents=$false;$confirmPanel.Visible=$false
     $script:savedCheck=[Windows.Forms.CheckBox]::new();$savedCheck.Text='已保存浏览器中的草稿';$savedCheck.AutoSize=$true;$savedCheck.add_CheckedChanged({Update-Window});$confirmPanel.Controls.Add($savedCheck)
@@ -328,9 +347,9 @@ try {
                     if(Test-Path -LiteralPath $commandFile){
                         $command=Get-Content -LiteralPath $commandFile -Raw | ConvertFrom-Json
                         if($command.id -ne $script:smokeCommand){$script:smokeCommand=$command.id;switch($command.action){
-                            'finish'{$context.ExitThread()};'show'{Show-Management};'hide'{$window.Close()};'minimize'{$window.WindowState='Minimized'};'open'{Open-Workspace};'start'{Start-Run};'stop'{Request-Stop 'stop'};'exit'{Request-Stop 'exit'}
+                            'finish'{$context.ExitThread()};'show'{Show-Management};'hide'{$window.Close()};'minimize'{$window.WindowState='Minimized'};'open'{Open-Workspace};'start'{Start-Run};'stop'{Request-Stop 'stop'};'exit'{Request-Stop 'exit'};'updates'{$maintenanceButton.PerformClick()}
                             'confirm'{$savedCheck.Checked=$true;$externalCheck.Checked=$true;Confirm-Stop}
-                            'capture'{Show-Management;$bitmap=[Drawing.Bitmap]::new($window.Width,$window.Height);try{$window.DrawToBitmap($bitmap,[Drawing.Rectangle]::new(0,0,$window.Width,$window.Height));$bitmap.Save((Join-Path $AppRoot '.pivane-runtime\desktop\management.png'))}finally{$bitmap.Dispose()}}
+                            'capture'{Show-Management;$bitmap=[Drawing.Bitmap]::new($window.Width,$window.Height);try{$window.DrawToBitmap($bitmap,[Drawing.Rectangle]::new(0,0,$window.Width,$window.Height));$capture=Join-Path $AppRoot '.pivane-runtime\desktop\management.png';$temporary=$capture+'.tmp';$bitmap.Save($temporary,[Drawing.Imaging.ImageFormat]::Png);if([IO.File]::Exists($capture)){[IO.File]::Replace($temporary,$capture,$null)}else{[IO.File]::Move($temporary,$capture)}}finally{$bitmap.Dispose()}}
                         }}
                     }
                     if(-not $script:smokeStopSent -and $script:readyAt -and ((Test-Path -LiteralPath (Join-Path $AppRoot '.pivane-launcher-stop')) -or ([DateTime]::UtcNow-$script:readyAt).TotalSeconds -ge 120)){$script:smokeStopSent=$true;Request-Stop 'exit'}

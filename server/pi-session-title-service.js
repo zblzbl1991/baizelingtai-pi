@@ -15,6 +15,7 @@ Return ONLY a JSON object {"title":"..."}, or {"title":null} if there is no conc
 Use the language of the user's substantive question. Prefer 10–20 Chinese characters or 4–9 English words, at most 80 characters. Describe the specific subject and question/goal. Keep distinctive technical names. Avoid generic titles, markdown, quotes, prefixes, secrets, personal identifiers and full filesystem paths. Do not claim a task was completed merely because it was requested. Focus on the latest substantive topic in the excerpts.`;
 
 class PiSessionTitleService {
+    stopReadiness() { return this.jobs.size + Number(Boolean(this.savingModel)); }
     constructor({ preferences, createModelRuntime, timeoutMs = 45000, maxConcurrent = 2, isSuspended = () => false, onActivity = () => {} }) {
         this.preferences = preferences;
         this.createModelRuntime = createModelRuntime;

@@ -10,6 +10,8 @@ const ACTIVE = new Set(['scheduled', 'waiting', 'paused', 'expired', 'failed', '
 const READY = new Set(['scheduled', 'waiting']);
 
 class PiDeferredMessages {
+    stopReadiness() { this.assertHealthy(); return Number(Boolean(this.running)); }
+    scheduledReadiness(now = this.now()) { this.assertHealthy(); return { futureCount: this.jobs.filter(job => READY.has(job.status) && job.dueAt > now).length }; }
     constructor({ store, supervisor, filePath, now = Date.now, intervalMs = 1000, isSuspended = () => false, onActivity = () => {} }) {
         this.isSuspended = isSuspended;
         this.onActivity = onActivity;

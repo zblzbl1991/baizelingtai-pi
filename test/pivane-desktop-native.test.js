@@ -20,7 +20,7 @@ function rootFixture(t) {
 }
 function powershell(script, env = {}) {
     return spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-STA', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
-        env: { SystemRoot: process.env.SystemRoot, PATH: process.env.PATH, TEMP: process.env.TEMP, TMP: process.env.TMP, ...env }, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+        env: { SystemRoot: process.env.SystemRoot, SystemDrive: process.env.SystemDrive, PATH: process.env.PATH, TEMP: process.env.TEMP, TMP: process.env.TMP, ...env }, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
 }
 async function waitFor(fn, child, output, timeout = 10000) {
     const end = Date.now() + timeout;
@@ -49,6 +49,25 @@ test('native waiting host keeps one read-only address across service generations
     await assert.rejects(fetch(url));
 });
 
+test('native startup assets reject ancestor junctions, excess bytes and concurrent writers', { skip: process.platform !== 'win32', timeout: 20000 }, async t => {
+    for (const mode of ['junction', 'budget', 'writer']) {
+        const root = rootFixture(t);
+        if (mode === 'junction') {
+            const original = path.join(root, 'public', 'brand'), elsewhere = path.join(root, 'outside-brand');
+            fs.renameSync(original, elsewhere); fs.symlinkSync(elsewhere, original, 'junction');
+        }
+        if (mode === 'budget') fs.writeFileSync(path.join(root, 'public/desktop-startup.js'), Buffer.alloc(131073));
+        const script = `$ErrorActionPreference='Stop'; [Reflection.Assembly]::LoadFrom($env:FIXTURE_ROOT+'\\白泽灵台.exe') | Out-Null; $writer=$null; try {
+            ${mode === 'writer' ? "$writer=[IO.File]::Open(($env:FIXTURE_ROOT+'\\public\\desktop-startup.js'),'Open','Write','ReadWrite'); $writer.WriteByte(65); $writer.Flush()" : ''}
+            try { $hoster=[PivaneStartupHost]::new($env:FIXTURE_ROOT,[Guid]::NewGuid().ToString()); $hoster.Dispose(); [Console]::WriteLine('accepted') } catch { [Console]::WriteLine('rejected') }
+        } finally { if($writer){$writer.Dispose()} }`;
+        const child = powershell(script, { FIXTURE_ROOT: root }); let output = '';
+        child.stdout.on('data', bytes => output += bytes); child.stderr.on('data', bytes => output += bytes);
+        assert.equal((await once(child, 'close'))[0], 0, output);
+        assert.match(output, /rejected/, mode + ': ' + output);
+    }
+});
+
 
 function trayFixture(t, mode = 'ready') {
     const root = rootFixture(t); fs.mkdirSync(path.join(root, 'scripts'));
@@ -62,7 +81,7 @@ function trayFixture(t, mode = 'ready') {
             const generation = process.argv[process.argv.indexOf('--generation')+1];
             const event = (type, rest={}) => emit({ type, generation, ...rest });
             event('starting', {logFile:${JSON.stringify(path.join(root, 'service.log'))}});
-            setTimeout(() => { event('ready', {url:'http://127.0.0.1:12345/'}); ${mode === 'unknown' ? 'setTimeout(() => process.exit(0),400)' : ''} }, ${mode === 'slow' ? 2000 : 200});
+            setTimeout(() => { event('ready', {url:'http://127.0.0.1:12345/',versions:{appVersion:'9.8.7',engineVersion:'0.85.1'}}); ${mode === 'unknown' ? 'setTimeout(() => process.exit(0),400)' : ''} }, ${['slow','race'].includes(mode) ? 2000 : 200});
             let uncertain=false;let executeCount=0; let buffer=''; process.stdin.on('data', chunk => {
                 buffer += chunk; let at; while((at=buffer.indexOf('\\n'))>=0) {
                     const value=JSON.parse(buffer.slice(0,at));buffer=buffer.slice(at+1);
@@ -70,6 +89,7 @@ function trayFixture(t, mode = 'ready') {
                     if(value.type==='snapshot'&&uncertain){event('stop-accepted',{id:value.id,operationId:'synthetic-operation'});setTimeout(()=>{event('stopped',{clean:true});process.exit(0)},200);continue;}
                     if(value.type==='snapshot') event('snapshot',{id:value.id,complete:true,revision:'one',blockers:[],scheduled:{futureCount:2,latestCount:1}});
                     if(value.type==='review-stop') event('stop-review',{id:value.id,complete:true,revision:'one',blockers:${mode === 'blocked' ? "[{type:'sidechat',count:1,label:'侧聊连接',cwd:'synthetic-project',sessionId:'synthetic-session'}]" : '[]'},scheduled:{futureCount:2,latestCount:1},${mode === 'blocked' ? '' : "ticket:'synthetic-ticket',"}expiresAt:Date.now()+30000});
+                    if(value.type==='stop'&&${mode === 'race'}){event('ready',{url:'http://127.0.0.1:12345/'});event('error',{id:value.id,code:'DESKTOP_REVIEW_REQUIRED',message:'Review service blockers before stopping.'});continue;}
                     if(value.type==='execute-stop'||value.type==='stop') {
                         executeCount++;if(${mode === 'uncertain'}&&value.type==='execute-stop'){uncertain=true;event('error',{id:value.id,code:'DESKTOP_TRANSPORT_UNKNOWN',message:'Synthetic unknown acknowledgement'});continue;}
                         event('stop-accepted',{id:value.id,operationId:'synthetic-operation'});
@@ -82,7 +102,7 @@ function trayFixture(t, mode = 'ready') {
         }
     `);
     const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', path.join(source,'scripts/desktop-tray.ps1'), '-AppRoot', root, '-NodePath', process.execPath, '-NoOpen', '-SmokeTest'], {
-        env:{SystemRoot:process.env.SystemRoot,PATH:process.env.PATH,TEMP:process.env.TEMP,TMP:process.env.TMP,PI_CODING_AGENT_DIR:path.join(root,'agent'),PI_MEDIA_DATA_DIR:path.join(root,'media'),PI_WEB_DEFERRED_FILE:path.join(root,'deferred.json')},windowsHide:true,stdio:['ignore','pipe','pipe']});
+        env:{SystemRoot:process.env.SystemRoot,SystemDrive:process.env.SystemDrive,PATH:process.env.PATH,TEMP:process.env.TEMP,TMP:process.env.TMP,PI_CODING_AGENT_DIR:path.join(root,'agent'),PI_MEDIA_DATA_DIR:path.join(root,'media'),PI_WEB_DEFERRED_FILE:path.join(root,'deferred.json')},windowsHide:true,stdio:['ignore','pipe','pipe']});
     let output=''; child.stdout.on('data', chunk => output+=chunk);child.stderr.on('data',chunk=>output+=chunk);
     const exited=once(child,'close');
     const read=()=>{try{return JSON.parse(fs.readFileSync(path.join(root,'.pivane-runtime/desktop/smoke-state.json'),'utf8'))}catch{return null}};
@@ -93,8 +113,11 @@ function trayFixture(t, mode = 'ready') {
 test('native compact management stays hidden, preserves tray through two runs, and requires a separate stop confirmation', {skip:process.platform!=='win32',timeout:30000},async t=>{
     const run=trayFixture(t), first=await run.wait(s=>s.state==='ready'&&!s.pending);
     assert.equal(first.visible,false,'default entry leaves management hidden');
+    assert.match(first.versions,/9\.8\.7/); assert.match(first.versions,/0\.85\.1/);
+    run.command('show');await run.wait(s=>s.visible);
+    run.command('updates');await run.wait(s=>s.detail.includes('设置 → 版本与更新'));
     const address=first.waitingUrl;
-    const duplicate=spawn('powershell.exe',['-NoLogo','-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(source,'scripts/desktop-tray.ps1'),'-AppRoot',run.root,'-NodePath',process.execPath,'-SmokeTest'],{env:{SystemRoot:process.env.SystemRoot,PATH:process.env.PATH,TEMP:process.env.TEMP,TMP:process.env.TMP,PI_CODING_AGENT_DIR:path.join(run.root,'agent'),PI_MEDIA_DATA_DIR:path.join(run.root,'media'),PI_WEB_DEFERRED_FILE:path.join(run.root,'deferred.json')},windowsHide:true,stdio:'ignore'});
+    const duplicate=spawn('powershell.exe',['-NoLogo','-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(source,'scripts/desktop-tray.ps1'),'-AppRoot',run.root,'-NodePath',process.execPath,'-SmokeTest'],{env:{SystemRoot:process.env.SystemRoot,SystemDrive:process.env.SystemDrive,PATH:process.env.PATH,TEMP:process.env.TEMP,TMP:process.env.TMP,PI_CODING_AGENT_DIR:path.join(run.root,'agent'),PI_MEDIA_DATA_DIR:path.join(run.root,'media'),PI_WEB_DEFERRED_FILE:path.join(run.root,'deferred.json')},windowsHide:true,stdio:'ignore'});
     assert.equal((await once(duplicate,'close'))[0],0);
     await waitFor(()=>fs.existsSync(path.join(run.root,'.pivane-runtime/desktop/smoke-open-1.json')),run.child,run.output);
     assert.equal(run.read().generation,first.generation,'duplicate entry uses current runner');
@@ -124,6 +147,7 @@ test('native stop blockers end the request without waiting or queuing shutdown',
     const run=trayFixture(t,'blocked');await run.wait(s=>s.state==='ready'&&!s.pending);run.command('stop');
     const blocked=await run.wait(s=>s.blockers.includes('synthetic-session')&&!s.pending);
     assert.equal(blocked.confirm,false);assert.equal(blocked.state,'ready');assert.match(blocked.blockers,/latest/);
+    assert.match(blocked.blockers,/服务停止期间无法执行/);assert.match(blocked.blockers,/按原宽限补最近一次/);
 });
 test('native unexpected runner exit remains unknown and disables new starts', {skip:process.platform!=='win32',timeout:15000},async t=>{
     const run=trayFixture(t,'unknown');const unknown=await run.wait(s=>s.state==='unknown');
@@ -137,6 +161,13 @@ test('native startup stop waits for runner cleanup without entering the ready wo
     run.command('exit');assert.equal((await run.exited)[0],0,run.output());
     const report=JSON.parse(fs.readFileSync(path.join(run.root,'.pivane-runtime/desktop/smoke-result.json'),'utf8'));
     assert.equal(report.filter(e=>e.type==='ready').length,0);
+});
+
+test('native startup stop handed to an already-ready runner continues through review and confirmation', {skip:process.platform!=='win32',timeout:15000},async t=>{
+    const run=trayFixture(t,'race');await run.wait(s=>s.state==='starting');run.command('exit');
+    const review=await run.wait(s=>s.confirm&&!s.pending);
+    assert.equal(review.state,'ready');assert.equal(review.canStart,false);
+    run.command('confirm');assert.equal((await run.exited)[0],0,run.output());
 });
 
 

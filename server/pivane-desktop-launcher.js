@@ -155,7 +155,9 @@ async function startDesktopService({ root, environment = process.env, emit, log 
         if (logFd !== undefined) fs.writeSync(logFd, new Date().toISOString() + ' ' + safe + '\n');
         log(safe);
     }
-    const launcher = new Manager({ root, env, networkEnvironment, startupTimeoutMs, forkServer: (file, args, options) => {
+    const launcher = new Manager({ root, env, networkEnvironment, startupTimeoutMs, requireShutdownProof: true,
+        onCleanupUnknown: error => { cleanupUnknown=true; emit({ type: 'error', code: 'DESKTOP_CLEANUP_UNKNOWN', message: redact(error.message), clean: false }); },
+        forkServer: (file, args, options) => {
         const child = forkServer(file, args, { ...options, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], windowsHide: true });
         for (const name of ['stdout', 'stderr']) {
             const lines = outputLines(name, (_stream, text) => writeLog(text), redact);
@@ -163,7 +165,7 @@ async function startDesktopService({ root, environment = process.env, emit, log 
         }
         return child;
     } });
-    let stopping, ready = false, operationId, commandPending = false;
+    let stopping, ready = false, operationId, commandPending = false, cleanupUnknown = false;
     const stop = () => {
         if (!stopping) stopping = Promise.resolve().then(async () => {
             emit({ type: 'stopping' });
@@ -176,10 +178,16 @@ async function startDesktopService({ root, environment = process.env, emit, log 
         });
         return stopping;
     };
-    const shutdown = require('./pi-process-shutdown').registerProcessShutdown(stop);
+    const shutdown = require('./pi-process-shutdown').registerProcessShutdown(stop, { exitOnFailure: !controlled,
+        onFailure: error => { cleanupUnknown=true; if (controlled) emit({ type: 'error', code: 'DESKTOP_CLEANUP_UNKNOWN', message: redact(error.message), clean: false }); } });
     if (controlled) {
         listenForDesktopCommands(input, generation, async command => {
             const response = value => emit({ ...value, id: command.id });
+            if (operationId && stopping && ['snapshot','execute-stop'].includes(command.type)) {
+                response({ type: 'snapshot', accepted: true, operationId, cleanup: cleanupUnknown ? 'unknown' : 'pending', complete: false,
+                    revision: `desktop:${generation}`, blockers: [{ type: 'cleanup', count: 1, label: cleanupUnknown ? '服务清理尚未获确认' : '服务清理仍在进行' }], scheduled: { futureCount: 0, latestCount: 0 } });
+                return;
+            }
             if (commandPending) { response({ type: 'error', code: 'DESKTOP_BUSY', message: 'A service control request is already pending.' }); return; }
             commandPending = true;
             try {
@@ -198,7 +206,7 @@ async function startDesktopService({ root, environment = process.env, emit, log 
                     response({ type: 'stop-accepted', operationId });
                     await shutdown(); return;
                 }
-                response({ ...result, type: method === 'review' ? 'stop-review' : 'snapshot' });
+                response({ ...result, versions: launcher.runningVersions, type: method === 'review' ? 'stop-review' : 'snapshot' });
             } catch (error) { response({ type: 'error', code: error.code || 'DESKTOP_FAILED', message: redact(error.message) }); }
             finally { commandPending = false; }
         }, () => { void shutdown(); });
@@ -212,7 +220,7 @@ async function startDesktopService({ root, environment = process.env, emit, log 
         if (!stopping) {
             ready = true;
             startup?.ready(url);
-            emit({ type: 'ready', url, logFile, agentDir: env.PI_CODING_AGENT_DIR, mediaDir: env.PI_MEDIA_DATA_DIR });
+            emit({ type: 'ready', url, logFile, versions: launcher.runningVersions, agentDir: env.PI_CODING_AGENT_DIR, mediaDir: env.PI_MEDIA_DATA_DIR });
         }
     } catch (error) {
         if (stopping) { await stopping; return; }
@@ -220,7 +228,10 @@ async function startDesktopService({ root, environment = process.env, emit, log 
         startup?.fail(error.desktopMessage);
         emit({ type: 'error', message: error.desktopMessage });
         error.desktopReported = true;
-        try { await stop(); } catch (cleanup) { log(redact(cleanup.message)); }
+        try { await stop(); } catch (cleanup) {
+            log(redact(cleanup.message));
+            if (controlled) { error.desktopCleanupUnknown = true; emit({ type: 'error', code: 'DESKTOP_CLEANUP_UNKNOWN', message: redact(cleanup.message), clean: false }); }
+        }
         throw error;
     }
     return { launcher, stop, shutdown };

@@ -1,12 +1,13 @@
 // Keep signal listeners registered while asynchronous disposal is pending.
 // Removing a once-listener early lets signal-exit re-send the signal mid-cleanup.
-function registerProcessShutdown(dispose) {
+function registerProcessShutdown(dispose, { exitOnFailure = true, onFailure } = {}) {
     let pending;
     function shutdown() {
         if (!pending) {
             pending = Promise.resolve().then(dispose).then(() => process.exit(0), error => {
                 console.error('baizelingtai shutdown failed:', error?.message || String(error));
-                process.exit(1);
+                onFailure?.(error);
+                if (exitOnFailure) process.exit(1);
             });
         }
         return pending;

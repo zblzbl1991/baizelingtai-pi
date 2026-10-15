@@ -18,7 +18,7 @@ const { MaintenanceClient } = require('../server/pi-maintenance-client');
 test('assembled stop projection covers conservative side chat and private confirmation gates HTTP and WebSocket', async t => {
     const maintenance = new MaintenanceClient({ managed: true, nonce: 'synthetic' });
     maintenance.receive({ type: 'maintenance-activate', nonce: 'synthetic' });
-    const mediaLabService = { pendingReviews: 0 };
+    const mediaLabService = { pendingReviews: 0, stopReadiness() { return this.pendingReviews; } };
     const gateway = createPiAgentGateway({ maintenance, mediaLabService });
     const app = express(); app.use(express.json());
     app.use((req, res, next) => maintenance.http(req, res, next));
