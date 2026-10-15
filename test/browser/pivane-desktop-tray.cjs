@@ -1,0 +1,81 @@
+// Real Windows tray + controlled runner + service + browser, synthetic identity only.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { randomUUID } = require('node:crypto');
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const { createApplication } = require('../desktop-launcher-fixture.cjs');
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+async function main() {
+    if (process.platform !== 'win32') { console.log('SKIP Windows native tray assembly'); return; }
+    const { root, base, env } = createApplication();
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true });
+    fs.writeFileSync(path.join(root, '.pivane-launcher-stay'), 'synthetic assembly');
+    const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File',
+        path.join(root, 'scripts/desktop-tray.ps1'), '-AppRoot', root, '-NodePath', process.execPath, '-NoOpen', '-SmokeTest'],
+    { cwd: root, env: { ...env, PSModulePath: path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/Modules') }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let diagnostic = '';
+    for (const stream of [child.stdout, child.stderr]) stream.on('data', value => { diagnostic = (diagnostic + value).slice(-8192); });
+    const exited = new Promise(resolve => child.once('close', code => resolve(code)));
+    const state = () => { try { return JSON.parse(fs.readFileSync(path.join(root, '.pivane-runtime/desktop/smoke-state.json'), 'utf8')); } catch { return null; } };
+    const command = action => fs.writeFileSync(path.join(root, '.pivane-launcher-command.json'), JSON.stringify({ id: randomUUID(), action }));
+    async function wait(predicate) {
+        const until = Date.now() + 45000;
+        while (Date.now() < until) {
+            const current = state();
+            if (current && predicate(current)) return current;
+            if (child.exitCode !== null) throw Error(`Tray exited ${child.exitCode}: ${diagnostic}`);
+            await pause(40);
+        }
+        throw Error(`Tray state timeout: ${JSON.stringify(state())} ${diagnostic}`);
+    }
+    const pageErrors = [];
+    try {
+        const initial = await wait(value => value.waitingUrl);
+        for (const width of [1440, 390]) {
+            const context = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
+            try {
+                const page = await context.newPage(); page.on('pageerror', error => pageErrors.push(error.message));
+                let reads = 0;
+                await page.route(new URL('status', initial.waitingUrl).href, async route => {
+                    reads++; if (reads === 1) await route.abort('timedout'); else await route.continue();
+                });
+                await page.goto(initial.waitingUrl, { waitUntil: 'domcontentloaded' });
+                await page.waitForFunction(() => document.getElementById('startup-title')?.textContent === '正在重新连接');
+                assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+                const ready = await wait(value => value.state === 'ready' && !value.pending);
+                const actual = await fetch(new URL('status', initial.waitingUrl)).then(response => response.json());
+                assert.equal(actual.generation, ready.generation);
+                await page.waitForURL(actual.url);
+                assert.equal(await page.title(), '白泽灵台');
+                assert.ok(reads >= 2, 'read-only recovery reaches actual current service');
+            } finally { await context.close(); }
+        }
+        const first = await wait(value => value.state === 'ready' && !value.pending);
+        command('stop'); await wait(value => value.confirm && !value.pending);
+        command('confirm'); await wait(value => value.state === 'stopped');
+        assert.equal(child.exitCode, null, 'actual service stop retains the native tray');
+        const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true });
+        try {
+            const page = await context.newPage(); page.on('pageerror', error => pageErrors.push(error.message));
+            await page.goto(initial.waitingUrl);
+            await page.waitForFunction(() => document.body.dataset.state === 'stopped');
+            command('start');
+            const second = await wait(value => value.state === 'ready' && value.generation !== first.generation);
+            assert.equal(second.waitingUrl, initial.waitingUrl);
+            const actual = await fetch(new URL('status', initial.waitingUrl)).then(response => response.json());
+            await page.waitForURL(actual.url);
+            assert.equal(await page.title(), '白泽灵台');
+        } finally { await context.close(); }
+        assert.deepEqual(pageErrors, []);
+        console.log(JSON.stringify({ ok: true, realNativeTray: true, realControlledService: true, viewports: [1440, 390], stableEntryAcrossRestart: true, pageErrors }));
+    } finally {
+        await browser.close();
+        if (child.exitCode === null) command('finish');
+        await exited;
+        fs.rmSync(base, { recursive: true, force: true });
+    }
+}
+main().catch(error => { console.error(error.stack); process.exitCode = 1; });
