@@ -6,6 +6,8 @@ import { configureComputerHelpers, setComputerConfigScope } from './pi-bundled-c
 import bundledGuidance from './pi-bundled-guidance.mjs';
 import { nativeExtensionFactories, selectedNativeBuiltins } from './pi-native-mcp.mjs';
 import staffing from './staffing/runtime-scope.js';
+// Use the locked native loader's path grammar before the realpath ownership gate.
+const { resolvePath } = await import(new URL('./utils/paths.js', import.meta.resolve('@earendil-works/pi-coding-agent')).href);
 
 // Build the same native resource inventory used by Settings, then let Pi load
 // only selected paths. Filtering happens before any third-party factory runs.
@@ -15,7 +17,13 @@ export async function managedLoaderOptions({ cwd, agentDir, settings, parsed, se
     const { resolved, settingsView } = await bundled.resolveManagedResources(sdk, { cwd, agentDir, settings });
     const scope = await staffing.runtimeScope({ cwd, agentDir, sessionManager });
     // Application staffing resources are selected here, never put in the global catalog/guidance.
-    const permitted = file => scope.eligible || !staffing.ownedResource(file, cwd);
+    const permitted = file => {
+        if (scope.eligible) return true;
+        const source = file.trim().replace(/^[!+-]/, ''), resolved = resolvePath(source, cwd, { trim: true });
+        if (staffing.ownedResource(resolved, cwd)) return false;
+        const unicode = resolvePath(source, cwd, { trim: true, normalizeUnicodeSpaces: true });
+        return unicode === resolved || !staffing.ownedResource(unicode, cwd);
+    };
     const paths = type => resolved[type].filter(item => item.enabled && permitted(item.path)).map(item => item.path);
     const explicit = values => (values || []).filter(file => {
         if (!permitted(file)) return false;

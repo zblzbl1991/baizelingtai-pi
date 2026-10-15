@@ -60,7 +60,7 @@ test('exact output import seam rejects unknown versions, changed executor bytes 
     const host = JSON.parse(fs.readFileSync(hostRoot + '/package.json'));
     const sandbox = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@earendil-works/pi-codemode/package.json')));
     const source = fs.readFileSync(hostRoot + '/dist/extensions/codemode/execute.js');
-    const resolved = pathToFileURL(path.join(root, 'node_modules/@earendil-works/pi-codemode/dist/index.js')).href;
+    const resolved = pathToFileURL(fs.realpathSync.native(path.join(root, 'node_modules/@earendil-works/pi-codemode/dist/index.js'))).href;
     verifyCodemodeOutputHost(host, sandbox, source, resolved);
     for (const args of [[{ ...host, version: '1.1.1' }, sandbox, source, resolved], [host, { ...sandbox, version: '1.0.2' }, source, resolved], [host, sandbox, Buffer.concat([source, Buffer.from(' ')]), resolved], [host, sandbox, source, resolved + '?unexpected=1']]) {
         assert.throws(() => verifyCodemodeOutputHost(...args), /Unreviewed Pi Codemode output host/);

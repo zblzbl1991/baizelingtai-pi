@@ -22,10 +22,15 @@ test('activity and pins are protected, root-checked and do not launch workers', 
     const wss = gateway.attachWebSocket(server);
     await once(server, 'listening');
     t.after(async () => {
-        for (const socket of wss.clients) socket.terminate();
+        await Promise.all([...wss.clients].map(socket => {
+            const closed = once(socket, 'close'); socket.terminate(); return closed;
+        }));
         await gateway.dispose();
         await new Promise(resolve => server.close(resolve));
-        fs.rmSync(root, { recursive: true, force: true });
+        assert.equal(fs.realpathSync.native(root), root);
+        assert.equal(path.dirname(root), fs.realpathSync.native(os.tmpdir()));
+        assert.match(path.basename(root), /^pi-activity-api-[A-Za-z0-9]+$/);
+        await fs.promises.rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     });
     const url = `http://127.0.0.1:${server.address().port}/api/pi`;
     const request = (endpoint, options = {}) => fetch(`${url}${endpoint}`, {
