@@ -29,7 +29,8 @@
             const title = node('div', undefined, 'settings-panel-header'); title.append(node('h3', '内置能力'));
             root.append(title, node('p', '按需启用。每项能力独立配置，停用后保留已有资料。', 'settings-help'));
             const section = node('section', undefined, 'compliance-settings'), heading = node('h4', '合规审查');
-            const status = node('p', data.status === 'disabling' ? '停用中，等待当前步骤保存' : data.enabled ? '已启用' : data.status === 'configuring' ? '配置待核对' : '已停用', 'compliance-status'); status.id = 'compliance-settings-status'; status.setAttribute('role', 'status');
+            const readiness = { 'configuration-insufficient': '配置不足', partial: '部分可用', available: '本地条件可用' }[data.availability?.status] || '可用条件待核对';
+            const status = node('p', data.status === 'disabling' ? '停用中，等待当前步骤保存' : data.status === 'configuring' ? '配置待核对' : data.enabled ? '已启用，' + readiness : '已停用', 'compliance-status'); status.id = 'compliance-settings-status'; status.setAttribute('role', 'status');
             const form = node('form'), fields = node('fieldset'), enabled = node('input'); enabled.type = 'checkbox'; enabled.id = 'compliance-enabled'; enabled.checked = data.enabled;
             fields.append(label('启用合规审查', enabled));
             const options = node('div', undefined, 'compliance-fields');
@@ -85,7 +86,9 @@
                     }
                 } finally { busy = false; if (fields.isConnected) fields.disabled = false; if (save.isConnected) save.disabled = false; }
             };
-            section.append(heading, status, node('p', '一个专用助手负责工程资料、四组规则、问题复核与报告。工程项目档案独立保存，可跨聊天继续使用。', 'settings-help'), form);
+            section.append(heading, status);
+            if (data.enabled && data.availability?.reasons?.length) section.append(node('p', data.availability.reasons.join('；') + '。', 'settings-help'));
+            section.append(node('p', '一个专用助手负责工程资料、四组规则、问题复核与报告。工程项目档案独立保存，可跨聊天继续使用。', 'settings-help'), form);
             const start = button('打开合规对话', 'compliance-open-chat', async () => {
                 if (busy) return;
                 const cwd = currentCwd(); if (!cwd) { status.textContent = t('请先选择工作目录。'); return; }

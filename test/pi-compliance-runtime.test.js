@@ -101,6 +101,15 @@ test('managed compliance tools and four skills reach only verified dedicated ses
         operation = { name: 'compliance_review', input: { action: 'operation', requestId: 'actual-human-confirm' } }; await prompt(worker, 'fixture operate query human receipt');
         const humanReceipt = (await worker.request('get_entries')).entries.findLast(entry => entry.message?.toolName === 'compliance_review')?.message;
         assert.ok(humanReceipt && !humanReceipt.isError, JSON.stringify(humanReceipt)); assert.equal(humanReceipt.details.pivaneCompliance.proposalId, reviewCard.id);
+        assert.match(reviewCard.origin.nativeKey,/^[a-f0-9]{64}$/);
+        const image=require('@napi-rs/canvas').createCanvas(60,40);image.getContext('2d').fillRect(5,5,20,20);fs.writeFileSync(path.join(cwd,'批复首页.png'),image.toBuffer('image/png'));
+        const absenceDoc=(await api('POST','/compliance/projects/'+project.id+'/documents',{requestId:'absence-original',expectedRevision:(await api('GET','/compliance')).revision,cwd,sources:[{kind:'file',path:'批复首页.png'}]})).documents[0];
+        await api('PUT','/compliance/documents/'+absenceDoc.id+'/assignment',{requestId:'absence-assignment',expectedRevision:(await api('GET','/compliance')).revision,role:'feasibility-approval',identityConfirmed:true,selected:true});
+        const absenceBatch=(await api('POST','/compliance/projects/'+project.id+'/batches',{requestId:'absence-batch',expectedRevision:(await api('GET','/compliance')).revision})).batch;
+        operation={name:'compliance_review',input:{action:'prepare',batchId:absenceBatch.id,batchRevision:absenceBatch.revision,requestId:'native-absence-card',expectedRevision:(await api('GET','/compliance')).revision,change:{kind:'field',documentId:absenceDoc.id,key:'documentNumber',raw:null,absent:true,location:{page:1,region:'upper',excerpt:'人工待核对的发文首页上方'},reason:'只准备明确缺失候选，模型不作人工确认'}}};
+        await prompt(worker,'fixture operate explicit absence');const absentResult=(await worker.request('get_entries')).entries.findLast(e=>e.message?.toolName==='compliance_review')?.message;assert.ok(absentResult&&!absentResult.isError,JSON.stringify(absentResult));
+        const absentCard=absentResult.details.pivaneCompliance.proposal;assert.equal(absentCard.change.raw,null);assert.equal(absentCard.change.absent,true);assert.equal(absentCard.origin.nativeKey,reviewCard.origin.nativeKey);
+        const absenceConfirmed=await api('POST','/compliance/review-proposals/'+absentCard.id+'/confirm',{requestId:'human-absence-confirm',expectedRevision:(await api('GET','/compliance')).revision,contentHash:absentCard.contentHash,cwd,sessionId:dedicated.id});assert.equal(absenceConfirmed.batch.fields.find(f=>f.documentId===absenceDoc.id&&f.key==='documentNumber').humanValue.status,'absent');
         assert.ok(calls.some(payload => JSON.stringify(payload.tools).includes('compliance_materials') && JSON.stringify(payload.tools).includes('compliance_check')));
         operation = { name:'compliance_project',input:{action:'update',projectId:project.id,requestId:'spoof-confirmation',expectedRevision:(await api('GET','/compliance')).revision,project:{name:project.name,identityConfirmed:true,applicability:{'contract-deadline':true}}} };
         await prompt(worker,'fixture operate spoof confirmation');
@@ -123,6 +132,8 @@ test('managed compliance tools and four skills reach only verified dedicated ses
         const disabledCall = await prompt(worker, 'fixture after disable');
         assert.ok(!(disabledCall.tools || []).some(tool => tool.function?.name === 'compliance_project'));
         await worker.reloadResources(); assert.equal((await resources(worker)).skills.filter(skill => skill.name.startsWith('compliance-')).length, 0);
+        noCompliance(await prompt(normalWorker,'fixture ordinary after disable'));
+        assert.ok((await normalWorker.request('get_entries')).entries.some(entry=>entry.message?.role==='user'&&JSON.stringify(entry.message).includes('fixture ordinary before enable')),'existing native user history remains');
         assert.equal((await api('GET', '/compliance/projects')).projects[0].id, project.id);
     } finally {
         await gateway.dispose(); access.dispose(); server.closeAllConnections(); provider.closeAllConnections();

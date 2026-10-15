@@ -18,7 +18,8 @@ async function run(browser, origin, width, theme) {
     const fixtureFiles=files=>files.map(file=>{const target=path.join(fixtureDirectory,file.name);fs.writeFileSync(target,file.buffer);return target;});
     const context = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: width < 900 ? 852 : 1000 }, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [], sessions = [{ id: 'ordinary', cwd, name: '普通会话', messageCount: 0 }]; let active = 'ordinary', loseImport = false, holdEvidence = false, releaseEvidence, importPosts = 0;
-    const pendingFonts=new Map();
+    const pendingFonts=new Map(), businessResponses=[];
+    page.on('response',async response=>{const request=response.request(),pathname=new URL(response.url()).pathname;if(request.method()!=='GET'&&pathname.startsWith('/api/pi/compliance'))try{const value=await response.json();businessResponses.push({path:pathname,status:response.status(),input:pathname.endsWith('/batches')?JSON.parse(request.postData()):undefined,revision:value.revision,error:value.error,settings:value.extractionModel,batch:value.batch&&{id:value.batch.id,revision:value.batch.revision,configuration:value.batch.configurationSnapshot,execution:value.batch.execution,documents:value.batch.documents.map(d=>({id:d.id,name:d.name,assignment:d.assignment,processing:d.processing}))}});}catch{}});
     page.on('request',request=>{if(request.resourceType()==='font'){const url=new URL(request.url());pendingFonts.set(request,url.origin+url.pathname);}});
     for(const event of ['requestfinished','requestfailed'])page.on(event,request=>pendingFonts.delete(request));
     page.setDefaultTimeout(60000);
@@ -64,17 +65,18 @@ async function run(browser, origin, width, theme) {
         assert.equal(await page.locator('html').getAttribute('data-theme'), theme);
         console.log(`compliance ${width}: settings ready`);
         await page.locator('#compliance-enabled').waitFor(); assert.equal(await page.locator('#compliance-enabled').isChecked(), false);
-        await page.locator('#compliance-enabled').check(); await page.locator('#compliance-main-model').selectOption('fixture/text');
+        await page.locator('#compliance-enabled').check(); await page.locator('#compliance-main-model').selectOption('fixture/text'); await page.locator('#compliance-extraction-model').selectOption('');
         await page.locator('#compliance-save').click(); await page.locator('#compliance-open-chat').waitFor({ state: 'visible' });
         console.log(`compliance ${width}: enabled`);
         assert.match(await page.locator('#compliance-settings-status').textContent(), /已启用/);
+        assert.match(await page.locator('#compliance-settings-status').textContent(), /部分可用/);
         const auth = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
         const setting = await (await fetch(origin + '/api/pi/compliance', { headers: auth })).json();
         assert.equal((await fetch(origin + '/api/pi/compliance/settings', { method: 'PUT', headers: auth, body: JSON.stringify({ requestId: 'other-settings-' + width, expectedRevision: setting.revision, enabled: true }) })).status, 200);
         await page.locator('#compliance-extraction-model').selectOption('fixture/vision'); await page.locator('#compliance-save').click();
         await page.waitForFunction(() => document.querySelector('#compliance-settings-status')?.textContent.includes('已变化'));
         await page.locator('#compliance-save').click();
-        await page.waitForFunction(() => document.querySelector('#compliance-settings-status')?.textContent === '已启用');
+        await page.waitForFunction(() => document.querySelector('#compliance-settings-status')?.textContent.includes('已启用') && document.querySelector('#compliance-settings-status')?.textContent.includes('本地条件可用'));
         assert.equal((await (await fetch(origin + '/api/pi/compliance', { headers: auth })).json()).extractionModel.modelId, 'vision');
         await page.locator('#compliance-open-chat').click();
         await page.locator('#pi-compliance-open').waitFor({ state: 'visible' }); assert.notEqual(active, 'ordinary');
@@ -148,6 +150,7 @@ async function run(browser, origin, width, theme) {
         await configure(null);await page.waitForFunction(()=>document.querySelector('#compliance-results')?.textContent.includes('未配置扫描识别模型'));
         await page.locator('#compliance-budget-calls').fill('1');await configure({provider:'fixture',modelId:'vision'});
         await page.waitForFunction(()=>document.querySelector('#compliance-execution')?.textContent.includes('模型调用预算已用完'));
+        await page.locator('#compliance-execution').scrollIntoViewIfNeeded();
         await page.screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-scan-budget-'+width+'.png')});
         await page.locator('#compliance-continue').click();await page.waitForFunction(()=>document.querySelector('#compliance-results')?.textContent.includes('合同签订期限：通过'));
         await page.locator('#compliance-results').getByRole('button',{name:'查看证据'}).first().click();await page.waitForFunction(()=>document.querySelector('#compliance-evidence')?.textContent.includes('扫描')&&document.querySelector('#compliance-evidence')?.textContent.includes('第 1 页'));assert.match(await page.locator('#compliance-evidence').textContent(),/第 1 页/);
@@ -166,7 +169,7 @@ async function run(browser, origin, width, theme) {
         assert.equal(await page.locator('#compliance-open-chat').isVisible(), false);
         await page.evaluate(() => { location.hash = '#/chat'; }); assert.equal(await page.locator('#pi-compliance-open').isVisible(), false);
         assert.deepEqual(errors, []); console.log(`compliance ${width} ${theme}: actual authenticated settings, dedicated session, project drawer, persistence and disable passed`);
-    } catch (error) { console.error({ errors, url: page.url(), message: error.message, status:await page.locator('#compliance-material-status').textContent().catch(()=>null),fileErrors:await page.evaluate(()=>window.syntheticReadErrors).catch(()=>null) }); await page.screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-failure-'+width+'.png'),timeout:10000}).catch(()=>{});throw error; }
+    } catch (error) {fs.writeFileSync(path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-business-'+width+'.json'),JSON.stringify({businessResponses,execution:await page.locator('#compliance-execution').textContent().catch(()=>null)},null,2)); console.error({ errors, url: page.url(), message: error.message, status:await page.locator('#compliance-material-status').textContent().catch(()=>null),fileErrors:await page.evaluate(()=>window.syntheticReadErrors).catch(()=>null) }); await page.screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-failure-'+width+'.png'),timeout:10000}).catch(()=>{});throw error; }
     finally { await context.close(); }
 }
 (async () => {

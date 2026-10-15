@@ -31,7 +31,7 @@ class ComplianceChecks {
     }
     async extract(document) {
         if (!this.documents?.pool) throw fail('共享文档解析服务不可用', 503);
-        const { base64 } = await this.service.materials.content(document.id), bytes = Buffer.from(base64, 'base64'), entries = [], pool = this.documents.pool;
+        const { base64 } = await this.service.materials.readContent(document.id), bytes = Buffer.from(base64, 'base64'), entries = [], pool = this.documents.pool;
         if (!['pdf', 'xlsx', 'csv'].includes(document.format)) return { fields: [], processing: { status: 'unreadable', reason: '图片需要配置扫描识别；当前没有执行 OCR' } };
         const info = await pool.run(bytes, document.format, { action: 'inspect' }); let complete = true, pageCount = 0;
         if (document.format === 'pdf') {
@@ -75,6 +75,7 @@ class ComplianceChecks {
         return { fields, processing: { status: complete ? 'completed' : 'unreadable', reason: complete ? '仅提取明确标签及固定表头，未匹配内容保留未知' : '文本超过完整读取预算，不能据截断内容确定结论', pages: pageCount } };
     }
     async ready() {
+        if (!this.initializing && (this.service.closed || this.service.closing || this.service.isSuspended())) throw fail('合规恢复正在停机或维护中，未启动新的恢复操作',409,'COMPLIANCE_BUSY');
         if (!this.initializing) { this.recovering=true; this.initializing = (async () => {
             const { root } = await this.service.ledger.paths(true);
             this.lease = await require('./pi-compliance-lock').acquire(root, 'jobs');
@@ -193,14 +194,14 @@ class ComplianceChecks {
             if(pause){execution.status='paused';execution.reason=pause;break;}
             const doc=batch.documents.find(d=>d.id===step.documentId);
             if(step.kind==='recognition'&&!batch.configurationSnapshot.extractionModel){
-                try { await this.service.materials.content(doc.id); step.status='blocked';step.reason='未配置扫描识别模型；文本检查仍可使用';doc.processing={status:'unreadable',reason:step.reason}; }
+                try { await this.service.materials.readContent(doc.id); step.status='blocked';step.reason='未配置扫描识别模型；文本检查仍可使用';doc.processing={status:'unreadable',reason:step.reason}; }
                 catch(error){step.status='failed';step.reason=String(error.message).slice(0,500);doc.processing={status:'failed',reason:step.reason};}
                 continue;
             }
             let pageCost=1;
             try {
                 if(step.kind==='text'&&doc.format==='pdf') {
-                    const {base64}=await this.service.materials.content(doc.id);const info=await this.documents.pool.run(Buffer.from(base64,'base64'),'pdf',{action:'inspect'});pageCost=info.total;
+                    const {base64}=await this.service.materials.readContent(doc.id);const info=await this.documents.pool.run(Buffer.from(base64,'base64'),'pdf',{action:'inspect'});pageCost=info.total;
                 }
                 if(usage.pages+pageCost>execution.budget.pages){execution.status='paused';execution.reason='budget-pages';break;}
                 step.status='running';step.startedAt=new Date().toISOString();usage.pages+=pageCost;
@@ -217,10 +218,10 @@ class ComplianceChecks {
                         doc.processing={status:'unreadable',reason:'扫描页面待识别'};
                     }
                 } else {
-                    const {base64}=await this.service.materials.content(doc.id);
+                    const {base64}=await this.service.materials.readContent(doc.id);
                     const image=await this.documents.pool.run(Buffer.from(base64,'base64'),doc.format,{page:step.page},{render:true});
                     const output=await require('./pi-compliance-recognition').recognize(this.service,batch,doc,image,async()=>{const now=await ledger.snapshot();elapsed();const reason=this.service.closed?'shutdown':!now.settings.enabled?'disabled':now.batches.find(b=>b.id===batch.id).execution.pauseRequested?(now.batches.find(b=>b.id===batch.id).execution.stopReason||'requested'):this.service.isSuspended()?'maintenance':usage.elapsedMs>=execution.budget.runMs?'budget-time':null;if(reason){execution.status='paused';execution.reason=reason;throw fail('当前步骤已保存，未启动模型请求',409,'COMPLIANCE_STEP_PAUSED');}const encoded=Buffer.byteLength(image.base64,'ascii');if((usage.imageBytes||0)+encoded>128*1024*1024){execution.status='paused';execution.reason='budget-imageBytes';throw fail('批次图像传输量达到 128 MiB，请缩小范围建立新批次',413,'COMPLIANCE_STEP_PAUSED');}usage.imageBytes=(usage.imageBytes||0)+encoded;usage.modelCalls++;await this.checkpoint(batch);});
-                    for(const field of output.fields){const prior=batch.fields.find(f=>f.documentId===field.documentId&&f.key===field.key);if(!prior)batch.fields.push(field);else{prior.candidates||=[{raw:prior.raw,location:prior.location}];prior.candidates.push({raw:field.raw,location:field.location});if(prior.raw!==field.raw){prior.status='conflict';prior.value=null;}else if(field.status!=='known'){prior.status='unknown';prior.value=null;}}} usage.inputTokens=output.usage.inputTokens===null?null:(usage.inputTokens||0)+output.usage.inputTokens;usage.outputTokens=output.usage.outputTokens===null?null:(usage.outputTokens||0)+output.usage.outputTokens;
+                    for(const field of output.fields){const prior=batch.fields.find(f=>f.documentId===field.documentId&&f.key===field.key);if(!prior)batch.fields.push(field);else if(prior.original?.absent&&prior.raw===null){const {id,...original}=field;Object.assign(prior,original);}else{prior.candidates||=[{raw:prior.raw,location:prior.location}];prior.candidates.push({raw:field.raw,location:field.location});if(prior.raw!==field.raw){prior.status='conflict';prior.value=null;}else if(field.status!=='known'){prior.status='unknown';prior.value=null;}}} usage.inputTokens=output.usage.inputTokens===null?null:(usage.inputTokens||0)+output.usage.inputTokens;usage.outputTokens=output.usage.outputTokens===null?null:(usage.outputTokens||0)+output.usage.outputTokens;
                     if(output.usage.cost.estimate!==null){usage.cost.estimate=(usage.cost.estimate||0)+output.usage.cost.estimate;usage.cost.basis='partial-model-catalog-estimate';}
                     doc.processing=execution.steps.some(s=>s!==step&&s.documentId===doc.id&&s.status!=='completed')?{status:'unreadable',reason:'其余扫描页面尚未完成'}:{status:'completed',reason:'扫描字段候选已提取，结论仍待人工复核'};
                 }

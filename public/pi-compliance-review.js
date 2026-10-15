@@ -57,7 +57,7 @@
             try {
                 const result = await apiFetch('/api/pi/compliance' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId, expectedRevision: revision, ...body }) });
                 sessionStorage.removeItem(storageKey); lastPendingKey = null; await consume(result); return result;
-            } catch (error) { if (error.status && error.status < 500 && error.status !== 404 && error.data?.code !== 'COMPLIANCE_BUSY') { sessionStorage.removeItem(storageKey); lastPendingKey = null; } throw error; }
+            } catch (error) { if (error.status && error.status < 500 && error.status !== 404) { sessionStorage.removeItem(storageKey); lastPendingKey = null; } throw error; }
         }
         async function act(action) {
             if (busy || !current()) return; busy = true; form.disabled = true; cardRoot.querySelectorAll('button').forEach(b => b.disabled = true); status.textContent = '正在处理…';

@@ -15,7 +15,8 @@ class ComplianceMaterials {
     constructor(service, documents) { this.service = service; this.documents = documents; }
     project(state, projectId) { if (!id(projectId)) throw fail('工程项目编号无效'); const project = state.projects.find(p => p.id === projectId); if (!project) throw fail('工程项目不存在', 404); return project; }
     async list(projectId) { const state = await this.service.ledger.snapshot(); this.project(state, projectId); return { revision: state.revision, documents: (state.documents || []).filter(d => d.projectId === projectId) }; }
-    async content(documentId) {
+    content(documentId) { return this.service.operations.run('read:' + randomUUID(), () => this.readContent(documentId)); }
+    async readContent(documentId) {
         const state = await this.service.ledger.snapshot(), document = (state.documents || []).find(d => d.id === documentId);
         if (!document) throw fail('资料不存在', 404); const { root } = await this.service.ledger.paths();
         const file = await readVerifiedFile(path.join(root, document.hash + '.bin'), { maxBytes: FILE_LIMIT, check: actual => { if (path.dirname(actual) !== root) throw fail('资料位置变化', 409); } });
@@ -25,12 +26,13 @@ class ComplianceMaterials {
     import(projectId, input, worker) {
         only(input, ['requestId', 'expectedRevision', 'sources', 'cwd', 'sessionId']); request(input);
         if (!Array.isArray(input.sources) || !input.sources.length || input.sources.length > 32) throw fail('每次选择 1 至 32 份资料', 413);
-        return this.service.reserve(async () => {
+        return this.service.operations.run('import:' + projectId, async operation => {
             const ledger = this.service.ledger, initial = await ledger.snapshot();
             const previous = ledger.receipt(initial, 'documents:' + projectId, input); if (previous) return previous;
             this.service.assertEnabled(initial); this.project(initial, projectId); ledger.assertRevision(initial, input);
             const files = [], attachments = []; let total = 0;
             for (const source of input.sources) {
+                this.service.operations.check(operation); this.service.assertEnabled(await ledger.snapshot());
                 let bytes, name, provenance, authorized;
                 if (source.kind === 'upload') {
                     only(source, ['kind', 'name', 'base64']); name = source.name;
@@ -64,9 +66,11 @@ class ComplianceMaterials {
                 }
                 files.push({ id: randomUUID(), projectId, name, format, hash: digest(bytes), size: bytes.length, source: provenance, assignment: null, createdAt: new Date().toISOString(), bytes });
             }
+            this.service.operations.check(operation);
             if (worker) await this.service.authorizeWorker(worker);
-            return (await ledger.transact((state, { root, check }) => {
+            return this.service.reserve(async () => (await ledger.transact((state, { root, check }) => {
                 const prior = ledger.receipt(state, 'documents:' + projectId, input); if (prior) return prior;
+                this.service.operations.check(operation);
                 ledger.assertRevision(state, input); this.service.assertEnabled(state); this.project(state, projectId); state.documents ||= [];
                 const current = state.documents.filter(d => d.projectId === projectId), added = files.filter((file, index) => !current.some(d => d.hash === file.hash) && !files.slice(0, index).some(d => d.hash === file.hash));
                 if (current.length + added.length > 32 || current.reduce((n, d) => n + d.size, 0) + added.reduce((n, d) => n + d.size, 0) > PROJECT_LIMIT) throw fail('工程项目最多 32 份资料、256 MiB', 413, 'COMPLIANCE_CAPACITY');
@@ -109,7 +113,7 @@ class ComplianceMaterials {
             }, async () => {
                 if (worker) await this.service.authorizeWorker(worker);
                 for (const attachment of attachments) await this.documents.checkCurrent(attachment.context, attachment.authorized);
-            })).value;
+            })).value);
         });
     }
 }

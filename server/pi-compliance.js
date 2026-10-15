@@ -28,6 +28,7 @@ class ComplianceService {
     constructor({ store, profiles, supervisor, createModelRuntime, isSuspended = () => false, ledger, documents } = {}) {
         Object.assign(this, { store, profiles, supervisor, createModelRuntime, isSuspended });
         this.ledger = ledger || new ComplianceLedger(); this.mutating = false; this.closed = false; this.pending = null;
+        this.operations = new (require('./pi-compliance-operations').ComplianceOperations)(this);
         this.materials = new (require('./pi-compliance-materials').ComplianceMaterials)(this, documents);
         this.checks = new (require('./pi-compliance-checks').ComplianceChecks)(this, documents);
         this.review = new (require('./pi-compliance-review').ComplianceReview)(this);
@@ -38,20 +39,46 @@ class ComplianceService {
         this.mutating = true; const pending = Promise.resolve().then(action); this.pending = pending;
         return pending.finally(() => { if (this.pending === pending) this.pending = null; this.mutating = false; });
     }
-    get busy() { return this.mutating || Boolean(this.checks?.jobs.size) || Boolean(this.checks?.recovering) || Boolean(this.reports?.busy); }
+    get busy() { return this.mutating || Boolean(this.operations.jobs.size) || Boolean(this.checks?.jobs.size) || Boolean(this.checks?.recovering) || Boolean(this.reports?.busy); }
     async dispose() {
         this.closed = this.closing = true;
-        const draining = [this.reports.dispose(), this.checks.dispose()];
+        const draining = [this.operations.dispose(), this.reports.dispose(), this.checks.dispose()];
         if (this.pending) draining.push(this.pending.catch(() => {}));
         await Promise.all(draining);
         if (this.pending) await this.pending.catch(() => {});
     }
     view(state) {
-        return { version: 1, revision: state.revision, settingsRevision: state.settingsRevision || 0, ...state.settings, status: state.setup ? 'configuring' : state.settings.enabled ? 'enabled' : (this.checks.jobs.size || this.reports?.busy) ? 'disabling' : 'disabled',
+        return { version: 1, revision: state.revision, settingsRevision: state.settingsRevision || 0, ...state.settings, status: state.setup ? 'configuring' : state.settings.enabled ? 'enabled' : (this.operations.jobs.size || this.checks.jobs.size || this.checks.recovering || this.reports?.busy) ? 'disabling' : 'disabled',
             scanStatus: state.settings.extractionModel ? 'configured' : 'unconfigured', requiresReload: true,
             pendingSetup: state.setup ? { requestId: state.setup.requestId, input: state.setup.input } : null };
     }
-    async snapshot() { return this.view(await this.ledger.snapshot()); }
+    async snapshot() {
+        const state = await this.ledger.snapshot();
+        if (!state.settings.enabled || state.setup) return { ...this.view(state), availability: { status: state.setup ? 'configuration-insufficient' : 'disabled', text: false, scan: false, reasons: state.setup ? ['专用助手配置待核对'] : [] } };
+        const availability = await this.operations.run('availability:' + randomUUID(), async () => {
+            const reasons = []; let available = [];
+            const profile = await this.profiles.getProfile(state.settings.profileId);
+            if (!profile?.enabled) reasons.push('专用助手未启用或已不可用');
+            try { available = await (await this.createModelRuntime()).getAvailable(undefined, { signal: AbortSignal.timeout(20000) }); }
+            catch { reasons.push('无法读取当前模型目录'); }
+            const model = (ref, kind) => Boolean(ref && available.some(m => m.provider === ref.provider && m.id === ref.modelId && m.input?.includes(kind) && !/:batch$/.test(m.id)));
+            const parser = Boolean(this.materials.documents?.pool && !this.materials.documents.pool.closed && require('./pi-file-descriptor').descriptorBackendAvailable());
+            if (!parser) reasons.push('共享解析或文件校验组件不可用');
+            const text = Boolean(profile?.enabled && model(state.settings.mainModel, 'text') && parser);
+            if (!model(state.settings.mainModel, 'text')) reasons.push('对话模型未配置或当前不可用');
+            let imageBackend = false; try { imageBackend = typeof require('@napi-rs/canvas').createCanvas === 'function'; } catch {}
+            const scan = Boolean(text && model(state.settings.extractionModel, 'image') && imageBackend);
+            if (!state.settings.extractionModel) reasons.push('扫描识别未配置');
+            else if (!model(state.settings.extractionModel, 'image')) reasons.push('识别模型当前不可用或不支持图像');
+            if (!imageBackend) reasons.push('页面图像组件不可用');
+            return { status: text ? scan ? 'available' : 'partial' : 'configuration-insufficient', text, scan, reasons };
+        });
+        // A concurrent settings change must not receive an availability result for
+        // the previous binding. Leave the caller a fresh, explicitly unknown view.
+        const current = await this.ledger.snapshot();
+        if (current.settingsRevision !== state.settingsRevision) return { ...this.view(current), availability: { status:'configuration-insufficient', text:false, scan:false, reasons:['配置已变化，请刷新状态'] } };
+        return { ...this.view(current), availability };
+    }
     createSession(input) {
         only(input, ['cwd', 'requestId', 'expectedRevision']); request(input);
         return this.reserve(async () => {
@@ -270,7 +297,7 @@ class ComplianceService {
                 if (!(await this.profiles.getProfile(setup.profileId))?.enabled) throw fail('绑定的专用助手已停用，请先恢复该身份', 409, 'COMPLIANCE_PROFILE_DISABLED');
             }
             if (input.enabled && state.settings.profileId && !(await this.profiles.getProfile(state.settings.profileId))?.enabled) throw fail('绑定的专用助手已停用，请先恢复该身份', 409);
-            return (await this.ledger.transact(current => {
+            const result = (await this.ledger.transact(current => {
                 const prior = this.ledger.receipt(current, 'settings', input); if (prior) return prior;
                 if (current.setup) {
                     if (current.setup.fingerprint !== fingerprint('settings', input)) throw fail('配置操作已变化', 409);
@@ -283,6 +310,8 @@ class ComplianceService {
                 current.settingsRevision = (current.settingsRevision || 0) + 1;
                 return this.ledger.record(current, 'settings', input, this.view(current));
             })).value;
+            if (!input.enabled) this.operations.stopImports();
+            return result;
         });
     }
 }

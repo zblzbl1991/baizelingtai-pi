@@ -75,7 +75,7 @@ function evaluate(batch) {
         if (rule.predicate === 'natural-day-difference') {
             if (min >= rule.minimum && max <= rule.maximum) return done('passed', `签订日期差 ${min} 至 ${max} 自然日，通知书当日为第零天`);
             if (max < rule.minimum) return done('issue', '合同提前签订候选问题');
-            if (min > rule.maximum) return done('issue', '合同超过三十日签订候选问题');
+            if (min > rule.maximum) return done('issue', `合同超过 ${rule.maximum} 自然日签订候选问题`);
             return done('insufficient', '日期可能区间跨越期限边界');
         }
         if (min > 0) return done('passed', '可研报告日期严格早于评审日期');
