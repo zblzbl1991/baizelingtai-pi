@@ -43,7 +43,7 @@ function mountStaffingExcelRoutes(router, excel, { resolveSource } = {}) {
     router.post('/staffing/agent/export-status', route(async (req, res, source) => { keys(req.body, ['requestId']); res.json(await excel.operation(req.body.requestId, source)); }, true));
     router.post('/staffing/agent/ledger-status', route(async (req, res, source) => {
         keys(req.body, []); const state = await excel.staffing.requireSource(source);
-        res.json({ revision: state.revision, historyComplete: state.historyComplete, counts: { people: state.people.length, projects: state.projects.length, occupancies: state.occupancies.length } });
+        res.json({ revision: state.revision, state: state.phase, historyComplete: state.historyComplete, counts: { people: state.people.length, projects: state.projects.length, occupancies: state.occupancies.length } });
     }, true));
     router.post('/staffing/agent/import', route(async (req, res, source) => {
         excel.staffing.validateRequest(req.body, ['attachmentId']);

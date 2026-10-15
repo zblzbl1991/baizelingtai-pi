@@ -1,6 +1,7 @@
 'use strict';
 const { keys, fail, id, validateInitial, LIMITS } = require('./validation');
 const { isDeepStrictEqual: same } = require('node:util');
+const { active, overlaps, day, unionDays } = require('./rules');
 const collections = ['people', 'projects', 'occupancies'];
 function merged(state, plan) {
     const data = { historyComplete: plan.import.historyComplete };
@@ -38,6 +39,12 @@ function check(state, plan, { today } = {}) {
             if (row.kind !== 'project' || row.state === 'cancelled' || same(state.occupancies.find(item => item.id === row.id), row)) continue;
             const person = data.people.find(item => item.id === row.personId), project = data.projects.find(item => item.id === row.projectId);
             if (person.department !== project.department) fail('Cross-department import requires an explicit staffing plan with borrowing permission', 409);
+            for (const absence of data.occupancies.filter(item => item.personId === row.personId && item.kind !== 'project' && active(item) && overlaps(item, row))) {
+                const begin = Math.max(day(row.start), day(absence.start)), end = Math.min(day(row.end), day(absence.end));
+                const existing = state.occupancies.filter(item => item.personId === row.personId && item.projectId === row.projectId && item.kind === 'project' && active(item))
+                    .map(item => [Math.max(begin, day(item.start)), Math.min(end, day(item.end))]).filter(([start, stop]) => start <= stop);
+                if (unionDays(existing) !== end - begin + 1) fail('Imported assignment includes unavailable days; record absence and use an explicit adjustment', 409);
+            }
         }
         for (const row of plan.import.upserts.projects) {
             const old = state.projects.find(item => item.id === row.id);
@@ -54,7 +61,7 @@ function projection(state, plan) {
     return { ...projected, currentRevision: state.revision, stale: !state.enabled || plan.epoch !== state.epoch || plan.revision !== state.revision,
         historyCompleteChange: { before: state.historyComplete, after: plan.import.historyComplete },
         changes: visible, totalChanges: changes.length, counts: plan.import.counts || Object.fromEntries(collections.map(name => [name, plan.import.upserts[name].length])),
-        warning: plan.import.sourceRevision < state.revision ? '导入文件版本较旧。请核对全部差异。' : '' };
+        warning: plan.import.mode === 'merge' && plan.import.sourceRevision < plan.revision - 1 ? '导入文件版本较旧。请核对全部差异。' : '' };
 }
 function commit(state, plan, action, options) {
     if (action !== 'apply-import') fail('Import requires apply-import confirmation'); check(state, plan, options);
