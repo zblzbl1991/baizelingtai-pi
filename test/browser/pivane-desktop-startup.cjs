@@ -59,9 +59,38 @@ async function main() {
         try {
             await lostPage.goto(lost.url, { waitUntil: 'domcontentloaded' });
             await lost.close();
-            await lostPage.waitForFunction(() => document.getElementById('startup-title').textContent === '启动连接已断开');
+            await lostPage.waitForFunction(() => document.getElementById('startup-title').textContent === '正在重新连接');
             assert.equal(lostPage.url(), lost.url);
         } finally { await lostContext.close(); await lost.close(); }
+        for (const width of [1440, 390]) {
+            const recovering = await createDesktopStartup({ root });
+            const recoveryContext = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
+            const recoveryPage = await recoveryContext.newPage(); recoveryPage.on('pageerror', error => errors.push(error.message));
+            let reads = 0, phase = 'transient';
+            await recoveryPage.route('**/status', async route => {
+                reads++;
+                if (phase === 'transient') { await route.abort('timedout'); return; }
+                const payload = { instance: recovering.instance, generation: 'new-run', state: phase };
+                if (phase === 'foreign') Object.assign(payload, { instance: 'unrelated-tray', state: 'ready', url: targetUrl });
+                if (phase === 'ready') payload.url = targetUrl;
+                if (phase === 'error') payload.message = '合成启动失败';
+                await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payload) });
+            });
+            try {
+                await recoveryPage.goto(recovering.url);
+                await recoveryPage.waitForFunction(() => document.getElementById('startup-title').textContent === '正在重新连接');
+                phase = 'foreign';
+                const before = reads; await recoveryPage.waitForFunction(() => true);
+                await new Promise(resolve => setTimeout(resolve, 1100));
+                assert.ok(reads > before); assert.equal(recoveryPage.url(), recovering.url, 'another tray cannot redirect this page');
+                phase = 'error'; await recoveryPage.waitForFunction(() => document.body.dataset.state === 'error');
+                phase = 'stopped'; await recoveryPage.waitForFunction(() => document.body.dataset.state === 'stopped');
+                phase = 'starting'; await recoveryPage.waitForFunction(() => document.body.dataset.state === 'starting');
+                assert.ok(await recoveryPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+                phase = 'ready'; await recoveryPage.waitForURL(targetUrl);
+                assert.equal(await recoveryPage.title(), '合成工作台');
+            } finally { await recoveryContext.close(); await recovering.close(); }
+        }
         assert.deepEqual(errors, []);
         console.log(JSON.stringify({ ok: true, viewports: ['desktop', 'mobile'], themes: ['light', 'dark'], pageErrors: errors, evidence }));
     } finally {
