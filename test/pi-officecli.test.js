@@ -2,7 +2,7 @@ const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const inventory = require('../server/officecli/inventory');
 const { install } = require('../scripts/install-officecli.cjs');
-const { environment } = require('../server/officecli/mcp-host.cjs');
+const { environment } = require('../server/officecli/mcp-host.js');
 const { commandError } = require('../server/officecli/commands');
 const { OfficeDocuments } = require('../server/officecli/documents');
 const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-office-'))), agent = path.join(root, 'agent'), cwd = path.join(root, 'project');

@@ -17,7 +17,7 @@ export default function officecli(pi: ExtensionAPI) {
         // The loader selects this extension only alongside Pi's native MCP consumer.
         try {
             verify();
-            pi.registerMcpServer(SERVER, { command: process.execPath, args: [path.join(root, 'server/officecli/mcp-host.cjs')],
+            pi.registerMcpServer(SERVER, { command: process.execPath, args: [path.join(root, 'server/officecli/mcp-host.js')],
                 exposure: 'codemode', timeout: 60,
                 description: 'OfficeCLI edits DOCX/XLSX/PPTX work copies. Use command argv arrays; inspect/validate and optionally screenshot, then deliver_files. For uploaded originals call prepare_office_document first. Follow office-documents skill.' });
         } catch (error: any) { ctx.ui.notify(`OfficeCLI 不可用：${error.message}`, 'warning'); }
