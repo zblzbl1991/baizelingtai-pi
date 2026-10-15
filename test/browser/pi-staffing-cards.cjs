@@ -32,8 +32,10 @@ async function run(browser, width, raceOnly = false) {
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening'); const origin = `http://127.0.0.1:${server.address().port}`;
     const context = await browser.newContext({ viewport: { width, height: 900 }, locale: 'zh-CN', hasTouch: width < 900 }), page = await context.newPage();
-    const errors = []; let commits = 0, dropped = false, releaseCommit;
+    const errors = [], planReads = []; let commits = 0, dropped = false, releaseCommit;
     page.on('pageerror', error => errors.push(error.message)); page.setDefaultTimeout(30000);
+    page.on('request', req => { if (new URL(req.url()).pathname.startsWith('/api/pi/staffing/plans/')) planReads.push({ event: 'request', at: Date.now() }); });
+    page.on('response', response => { if (new URL(response.url()).pathname.startsWith('/api/pi/staffing/plans/')) planReads.push({ event: 'response', status: response.status(), at: Date.now() }); });
     await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, route => route.abort());
     await page.addInitScript(({ cwd, sessionId }) => { localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem('pi.web.session:' + cwd, sessionId); }, source);
     await page.route('**/api/**', async route => {
@@ -70,6 +72,7 @@ async function run(browser, width, raceOnly = false) {
             await page.locator('.staffing-plan-card').first().locator('[data-staffing-person="P1"]').waitFor();
             await page.evaluate(message => document.getElementById('cards').append(fixtureCards.render(message)), message);
             let latest = page.locator('.staffing-plan-card').last(); await latest.locator('[data-staffing-person="P1"]').waitFor();
+            console.log('Duplicate card ready:', JSON.stringify(await latest.evaluate(card => ({ connected: card.isConnected, fields: [...card.querySelectorAll('input')].map(input => ({ person: input.dataset.staffingPerson, disabled: input.disabled, connected: input.isConnected, checked: input.checked, rect: input.getBoundingClientRect().toJSON() })) }))), 'Plan GET:', JSON.stringify(planReads));
             await latest.locator('[data-staffing-person="P2"]').uncheck(); await latest.locator('[data-staffing-person="P3"]').check();
             await latest.locator('[data-staffing-action="revise"]').click(); await latest.locator('[data-staffing-action="reserve"]').waitFor();
             const old = page.locator('.staffing-plan-card').first();
@@ -90,6 +93,7 @@ async function run(browser, width, raceOnly = false) {
         let card = page.locator('.staffing-plan-card').last(); await card.waitFor();
         await card.locator('[data-staffing-person="P1"]').waitFor();
         stage('card loaded');
+        if (process.env.PIVANE_TEST_SCREENSHOT_DIR) { fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR, { recursive: true }); await card.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, `staffing-card-plan-${width}.png`) }); }
         assert.equal(await card.locator('img').count(), 0); assert.match(await card.innerText(), /<img src=x/);
         assert.equal((await service.ledger()).occupancies.length, 0);
         if (width === 393) {
@@ -112,13 +116,17 @@ async function run(browser, width, raceOnly = false) {
         }
         await card.locator('[data-staffing-outcome="completed"]').waitFor();
         stage('confirmed');
+        if (process.env.PIVANE_TEST_SCREENSHOT_DIR) await card.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, `staffing-card-saved-${width}.png`) });
         assert.equal(commits, 1); assert.deepEqual((await service.ledger()).occupancies.map(row => row.personId), width === 320 ? ['P2'] : width === 393 ? ['P3', 'P4'] : ['P1', 'P3']);
         await page.reload(); await page.locator('[data-staffing-outcome="completed"]').waitFor();
         assert.equal(await page.locator('[data-staffing-action="reserve"]').count(), 0);
         if (width === 320) assert.match(await page.locator('.staffing-plan-card').innerText(), /缺直签/);
         assert.deepEqual(await page.evaluate(() => ['body', '.staffing-plan-card'].filter(selector => { const el = document.querySelector(selector); return el && el.scrollWidth > el.clientWidth + 1; })), []);
         assert.deepEqual(errors, []); console.log(`staffing cards: ${width}px passed`);
-    } catch (error) { console.error('Card state:', await page.locator('.staffing-plan-card').allTextContents(), 'Page errors:', errors); throw error; }
+    } catch (error) {
+        console.error('Card DOM:', JSON.stringify(await page.locator('.staffing-plan-card').evaluateAll(cards => cards.map((card, index) => ({ index, connected: card.isConnected, rect: card.getBoundingClientRect().toJSON(), fields: [...card.querySelectorAll('input')].map(input => ({ person: input.dataset.staffingPerson, disabled: input.disabled, connected: input.isConnected, checked: input.checked, rect: input.getBoundingClientRect().toJSON() })) })))), 'Plan GET:', JSON.stringify(planReads));
+        if (process.env.PIVANE_TEST_SCREENSHOT_DIR) { fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, `staffing-card-failure-${width}.png`), fullPage: true }).catch(() => {}); }
+        console.error('Card state:', await page.locator('.staffing-plan-card').allTextContents(), 'Page errors:', errors); throw error; }
     finally { releaseCommit?.(); await context.close(); await service.dispose(); access.dispose(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 (async () => { console.log('staffing cards: launch ' + new Date().toISOString()); const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true, args: ['--no-sandbox'] });
