@@ -25,7 +25,15 @@ export default async function (pi: ExtensionAPI) {
                     Type.Object({ requestId: Type.String({ maxLength: 80 }), expectedRevision: Type.Integer({ minimum: 0 }), kind: Type.Union([Type.Literal('reschedule'), Type.Literal('extend')]), projectId: Type.String(), start: Type.Optional(Type.String()), end: Type.String(), reason: Type.String() }, { additionalProperties: false })
                 ]) },
             { name: 'staffing_operation_status', action: 'operation', description: 'Check the original staffing operation after an uncertain outcome. Do not replay an uncertain write.',
-                parameters: Type.Object({ requestId: Type.String({ maxLength: 80 }) }, { additionalProperties: false }) }
+                parameters: Type.Object({ requestId: Type.String({ maxLength: 80 }) }, { additionalProperties: false }) },
+            { name: 'staffing_prepare_import', action: 'import', description: 'Prepare a source-bound difference card from an attached standard staffing XLSX. Does not update the ledger. The user confirms the exact differences in the card.',
+                parameters: Type.Object({ requestId: Type.String({ maxLength: 80 }), expectedRevision: Type.Integer({ minimum: 0 }), attachmentId: Type.String({ pattern: '^[a-f0-9]{64}$' }) }, { additionalProperties: false }) },
+            { name: 'staffing_export', action: 'export', description: 'On explicit user request, export the current ledger revision to a standard XLSX and independently save it to artifacts. Report generated, available and saved phases accurately.',
+                parameters: Type.Object({ requestId: Type.String({ maxLength: 80 }), expectedRevision: Type.Integer({ minimum: 0 }) }, { additionalProperties: false }) },
+            { name: 'staffing_export_status', action: 'export-status', description: 'Query the original export result after an uncertain outcome. Never replay an uncertain export.',
+                parameters: Type.Object({ requestId: Type.String({ maxLength: 80 }) }, { additionalProperties: false }) },
+            { name: 'staffing_ledger_status', action: 'ledger-status', description: 'Read the latest ledger revision and record counts before preparing an Excel import or requesting an export.',
+                parameters: Type.Object({}, { additionalProperties: false }) }
         ];
         for (const definition of definitions) pi.registerTool({ name: definition.name, label: definition.name, description: definition.description,
             parameters: definition.parameters,
@@ -38,7 +46,7 @@ export default async function (pi: ExtensionAPI) {
                 const response = await fetch(url, { method: 'POST', redirect: 'error', signal,
                     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.PI_WEB_NAVIGATION_TOKEN}` }, body: JSON.stringify(raw) });
                 const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Staffing request failed');
-                return { content: [{ type: 'text', text: JSON.stringify(result) }], ...(definition.action === 'prepare' ? { details: { pivaneStaffing: { version: 1, plan: result } } } : {}) };
+                return { content: [{ type: 'text', text: JSON.stringify(result) }], ...(['prepare', 'import'].includes(definition.action) ? { details: { pivaneStaffing: { version: 1, plan: result } } } : {}) };
             } });
     });
 }

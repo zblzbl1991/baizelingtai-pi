@@ -10,6 +10,14 @@ class ArtifactManagement {
     constructor(service) { this.service = service; this.library = service.library; }
     async source(key) {
         const s = this.service, locator = s.locator(key); let data, metadata;
+        if (locator.source === 'generated-staffing') {
+            if (typeof s.staffingSource !== 'function') throw fail('Staffing source is unavailable', 403, 'ARTIFACT_SOURCE');
+            const source = await s.staffingSource(locator);
+            s.check();
+            if (!Buffer.isBuffer(source.bytes) || source.bytes.length > 16 * 1024 ** 2 || hash(source.bytes) !== locator.revision
+                || source.metadata?.origin !== null || source.metadata?.provenance?.kind !== 'staffing-export') throw fail('Staffing source verification failed', 409, 'ARTIFACT_SOURCE');
+            return source;
+        }
         if (locator.source === 'media') {
             const m = locator.media; data = await s.mediaBytes(m);
             metadata = { name: m.filename, kind: m.kind, createdAt: m.createdAt, model: m.model || '', project: null, origin: null,

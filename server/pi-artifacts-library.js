@@ -48,6 +48,9 @@ class ArtifactLibrary {
                 || !['document', 'image', 'video', 'audio', 'web', 'other'].includes(e.kind) || !Number.isFinite(Date.parse(e.savedAt))
                 || e.project && (typeof e.project.cwd !== 'string' || !path.isAbsolute(e.project.cwd) || typeof e.project.name !== 'string')
                 || e.origin && (typeof e.origin.cwd !== 'string' || !path.isAbsolute(e.origin.cwd) || typeof e.origin.sessionId !== 'string' || !ID.test(e.origin.deliveryId) || !ID.test(e.origin.revision) || !Number.isInteger(e.origin.index))
+                || e.provenance && (e.origin !== null || e.provenance.kind !== 'staffing-export' || !ID.test(e.provenance.exportId)
+                    || !Number.isSafeInteger(e.provenance.ledgerRevision) || e.provenance.ledgerRevision < 0 || !Number.isFinite(Date.parse(e.provenance.generatedAt))
+                    || Object.keys(e.provenance).some(k => !['kind', 'exportId', 'ledgerRevision', 'generatedAt'].includes(k)))
                 || !Array.isArray(e.collections) || e.collections.length > 100 || e.collections.some(c => !data.collections.some(item => item.id === c)) || typeof e.favorite !== 'boolean')) throw fail('成果目录无效，请保留原文件并联系管理员', 409, 'ARTIFACT_STORAGE');
         data.deletedSources ||= []; data.deletedVersions ||= {};
         if (!data.deletedVersions || typeof data.deletedVersions !== 'object' || Array.isArray(data.deletedVersions) || Object.keys(data.deletedVersions).length > MAX_ENTRIES

@@ -4,6 +4,8 @@
 
 默认关闭的人员调配能力使用 `/api/pi/staffing`。完整路径、方案字段、来源校验、修订及不确定结果规则见[人员调配接口](STAFFING.md#http-接口)。模型仅能查询和准备方案；具体写入由受认证页面确认，worker 私有认证不能代替确认。
 
+标准 XLSX 的原件上传、差异计划、按需导出及独立成果阶段使用 `/api/pi/staffing/excel/*`；私有受管工具使用对应 `/agent/import`、`/agent/export` 和 `/agent/export-status`。字段与预算见 [Excel 导入与成果](STAFFING.md#excel-导入与成果)。
+
 ## 桌面启动私有通道
 
 Windows 托盘与 `scripts/start-desktop.cjs` 使用继承的 stdin/stdout LF 通道。新增 `waiting` 响应 `{type:"waiting",url}`，允许浏览器先打开本次启动的本地等待页；`ready` 的 `url` 才是经受管子服务 IPC 和 HTTP 检查确认的工作台地址。`starting`、`error`、`stopping` 和私有 stdin 的 `stop` 继续沿用原语义，不增加工作台的公开控制接口。

@@ -54,6 +54,7 @@ async function run(browser, width, locale) {
             await page.locator('#staffing-check-operation').click();
             assert.equal(enableRequests, 1, 'an uncertain result must be queried without a second write');
         }
+        await page.locator('[data-staffing-advanced] > summary').click();
         await page.locator('#staffing-initial-json').waitFor();
         if (width < 680) assert.ok(await page.locator('#staffing-initial-json').evaluate(element => parseFloat(getComputedStyle(element).fontSize)) >= 16);
         const initial = { people: [{ id: 'P1', name: '<img src=x onerror=alert(1)>', department: 'A', direct: true }],
