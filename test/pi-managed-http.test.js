@@ -27,14 +27,17 @@ test('managed launcher performs authenticated backup and restart with paused sch
     const queue = path.join(data, 'deferred.json');
     fs.writeFileSync(queue, JSON.stringify({ version: 1, jobs: [{ id: randomUUID(), cwd: project, sessionId: randomUUID(), dueAt: Date.now() + 3600000,
         payload: { message: 'Never deliver during maintenance', images: [] }, status: 'scheduled', revision: 1 }] }));
-    let output = '', owner;
+    let output = '', owner;const launchedAt=Date.now();let firstStdout=false,firstStderr=false;
     const child = spawn(process.execPath, [path.join(app, 'server.js')], { cwd: app,
         env: { PATH: process.env.PATH, HOME: os.homedir(), ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
             HOST: '127.0.0.1', PORT: '0', PI_CODING_AGENT_DIR: path.join(data, 'agent'), PI_MEDIA_DATA_DIR: path.join(data, 'media'),
             PI_MEDIA_CONFIG_DIR: path.join(data, 'agent/media-lab'), PI_PROJECT_ROOTS: project, PI_WEB_DEFERRED_FILE: queue,
             PI_WEB_TOKEN: 'maintenance-fixture-only', PI_OFFLINE: '1', PI_TELEMETRY: '0', PI_SKIP_VERSION_CHECK: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
-    child.stdout.on('data', b => { output += b; }); child.stderr.on('data', b => { output += b; });
+    child.once('spawn',()=>console.log('managed fixture: launcher process spawned',JSON.stringify({pid:child.pid,elapsedMs:Date.now()-launchedAt})));
+    child.stdout.on('data', b => { output += b;if(!firstStdout){firstStdout=true;console.log('managed fixture: first stdout',JSON.stringify({elapsedMs:Date.now()-launchedAt,bytes:b.length}));} });
+    child.stderr.on('data', b => { output += b;if(!firstStderr){firstStderr=true;console.log('managed fixture: first stderr',JSON.stringify({elapsedMs:Date.now()-launchedAt,bytes:b.length}));} });
     t.after(async () => {
+        console.log('managed fixture: cleanup observation',JSON.stringify({elapsedMs:Date.now()-launchedAt,exitCode:child.exitCode,signalCode:child.signalCode,outputBytes:Buffer.byteLength(output),listeningCount:(output.match(/running at http:\/\/localhost:/g)||[]).length}));
         owner?.terminate();
         if (child.exitCode === null) { const exited = once(child, 'exit'); child.kill('SIGTERM'); await exited; }
         fs.rmSync(root, { recursive: true, force: true });
