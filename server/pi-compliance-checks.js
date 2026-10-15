@@ -161,6 +161,9 @@ class ComplianceChecks {
             await this.service.reserve(()=>ledger.transact(current=>{
                 ledger.receipt(current,kind,input);this.service.assertEnabled(current);ledger.assertRevision(current,input);
                 if(current.batches.find(b=>b.id===batchId).revision!==batch.revision)throw fail('批次已变化',409,'COMPLIANCE_STALE');
+                if(batch.results.some(result=>result.humanDecision)) {
+                    batch.history||=[];batch.history.push({revision:batch.revision,fields:structuredClone(batch.fields),results:structuredClone(batch.results),review:structuredClone(batch.review),changedAt:new Date().toISOString(),reason:'checks-resumed'});
+                }
                 for(const key of ['pages','modelCalls','runMs'])batch.execution.budget[key]+=allowance[key];
                 if(batch.execution.budget.pages>10000||batch.execution.budget.modelCalls>1000||batch.execution.budget.runMs>86400000)throw fail('累计批次预算达到上限',413);
                 batch.execution.status='running';batch.execution.reason=null;batch.execution.pauseRequested=false;batch.execution.stopReason=null;batch.revision++;
@@ -204,7 +207,8 @@ class ComplianceChecks {
 
                 await this.checkpoint(batch);
                 if(step.kind==='text') {
-                    const extracted=await this.extract(doc);doc.processing=extracted.processing;batch.fields.push(...extracted.fields);
+                    const extracted=await this.extract(doc);doc.processing=extracted.processing;
+                    for(const field of extracted.fields){const prior=batch.fields.find(f=>f.documentId===field.documentId&&f.key===field.key);if(!prior)batch.fields.push(field);else if(prior.original?.absent){const id=prior.id;Object.assign(prior,field);prior.id=id;}else{prior.candidates||=[{raw:prior.raw,location:prior.location}];prior.candidates.push(...(field.candidates||[{raw:field.raw,location:field.location}]));if(prior.raw!==field.raw){prior.status='conflict';prior.value=null;}}}
                     const role=doc.assignment.role, needed=['feasibility-review','feasibility-approval'].includes(role)?['date','documentNumber']:['award-notice','contract','feasibility-report'].includes(role)?['date']:[];
                     const missing=needed.filter(key=>!extracted.fields.some(f=>f.key===key&&f.status==='known'));
                     if(doc.format==='pdf'&&batch.configurationSnapshot.extractionModel&&(!extracted.fields.length||missing.length||extracted.processing.status==='unreadable')) {

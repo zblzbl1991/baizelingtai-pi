@@ -13,7 +13,7 @@ function date(raw) {
     return { value: { start: d.toISOString().slice(0, 10), end: match[3] ? d.toISOString().slice(0, 10) : new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10) }, precision: match[3] ? 'day' : 'month' };
 }
 function evaluate(batch) {
-    const documents = batch.documents, fields = batch.fields, project = batch.projectSnapshot;
+    const documents = batch.documents, fields = batch.fields.map(field => field.humanValue ? { ...field, ...field.humanValue } : field), project = batch.projectSnapshot;
     return batch.rulePackage.rules.map(rule => {
         const result = { id: rule.id, conclusion: 'insufficient', execution: 'completed', reason: '', evidence: [], review: { status: 'unreviewed' } };
         const done = (conclusion, reason) => ({ ...result, conclusion, reason });
@@ -30,9 +30,16 @@ function evaluate(batch) {
         if (selected.some(group => !group.length)) return done(rule.id === 'documents-identity' ? 'issue' : 'insufficient', '缺少必需资料：' + required.filter((_r, i) => !selected[i].length).join('、'));
         const used = selected.flat();
         result.sources = used.map(doc => ({ documentId: doc.id, role: doc.assignment.role, name: doc.name }));
-        if (used.some(d => d.processing?.status === 'failed')) return { ...done('insufficient', '资料解析执行失败'), execution: 'failed' };
+        // A person may verify the exact inputs of a date rule without certifying
+        // the unreadable document or replacing its parser/OCR execution record.
+        const manualDates = ['contract-deadline', 'feasibility-order'].includes(rule.id) && used.every(doc => {
+            const dates = fields.filter(field => field.documentId === doc.id && field.key === 'date');
+            return dates.length === 1 && dates[0].humanValue?.status === 'known' && dates[0].humanValue?.value;
+        });
+        if (manualDates) result.manualInputs = fields.filter(field => used.some(doc => doc.id === field.documentId) && field.key === 'date').map(field => field.id);
+        if (used.some(d => d.processing?.status === 'failed') && !manualDates) return { ...done('insufficient', '资料解析执行失败'), execution: 'failed' };
         if (used.some(d => d.processing?.status === 'unreadable')
-            && !(rule.id === 'feasibility-numbers' && used.every(d => d.processing?.status !== 'unreadable' || d.assignment.numberAbsentConfirmed)))
+            && !manualDates && !(rule.id === 'feasibility-numbers' && used.every(d => d.processing?.status !== 'unreadable' || d.assignment.numberAbsentConfirmed)))
             return done('insufficient', '资料读取不完整或需要识别，不能根据部分内容确定结论');
         if (used.some(d => !d.assignment.identityConfirmed)) return done('insufficient', '资料归属尚未人工核对');
         const conflictFields = fields.filter(field => used.some(d => d.id === field.documentId) && ['projectName', 'projectNumber', 'organization', 'year', 'phase'].includes(field.key)).filter(field => {

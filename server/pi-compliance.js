@@ -30,6 +30,7 @@ class ComplianceService {
         this.ledger = ledger || new ComplianceLedger(); this.mutating = false; this.closed = false; this.pending = null;
         this.materials = new (require('./pi-compliance-materials').ComplianceMaterials)(this, documents);
         this.checks = new (require('./pi-compliance-checks').ComplianceChecks)(this, documents);
+        this.review = new (require('./pi-compliance-review').ComplianceReview)(this);
     }
     reserve(action) {
         if (this.mutating || this.closed || this.isSuspended()) throw fail('合规操作正在处理或工作台维护中', 409, 'COMPLIANCE_BUSY');
@@ -281,6 +282,13 @@ function mountCompliance(router, service) {
     router.get('/compliance/projects/:id/batches', route(req => service.checks.list(req.params.id)));
     router.get('/compliance/batches/:id', route(req => service.checks.get(req.params.id)));
     router.get('/compliance/batches/:id/evidence/:fieldId', route(req => service.checks.evidence(req.params.id, req.params.fieldId)));
+    router.post('/compliance/batches/:id/review-proposals', route(req => service.review.prepare(req.params.id, req.body)));
+    router.get('/compliance/batches/:id/review-proposals', route(req => service.review.list(req.params.id)));
+    router.get('/compliance/review-proposals/:id', route(req => service.review.get(req.params.id)));
+    router.post('/compliance/review-proposals/:id/confirm', route(req => {
+        if (!['open', 'token', 'cookie'].includes(req.workspaceIdentity?.kind)) throw fail('人工确认只能由工作台用户提交', 403, 'COMPLIANCE_CONFIRMATION_USER_ONLY');
+        return service.review.confirm(req.params.id, req.body);
+    }));
     router.post('/compliance/tool', route(req => {
         if (req.workspaceIdentity?.kind !== 'agent-thread') throw fail('仅允许存活受管 worker 调用', 403, 'COMPLIANCE_SCOPE');
         return service.tool(req.workspaceIdentity.worker, req.body);
