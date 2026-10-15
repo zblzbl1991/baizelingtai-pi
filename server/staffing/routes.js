@@ -29,6 +29,7 @@ function mountStaffingRoutes(router, service, { resolveSource } = {}) {
         const { source: _source, ...input } = req.body; return input;
     };
     router.get('/staffing/views', route(req => { const input = { ...req.query }; for (const key of ['offset', 'limit']) if (input[key] !== undefined) input[key] = Number(input[key]); return service.views(input); }));
+    router.post('/staffing/recommend', route(async req => service.query(req.body, await service.pageSource())));
     router.post('/staffing/prepare', route(async req => service.prepareChange(req.body, await service.pageSource())));
     router.post('/staffing/adjust', route(async req => service.prepareAdjustment(req.body, await service.pageSource())));
     router.get('/staffing/plans/:planId', route(async req => service.plan(req.params.planId, await sourceForPage(req))));
@@ -43,7 +44,7 @@ function mountStaffingRoutes(router, service, { resolveSource } = {}) {
             if (action === 'operation') {
                 if (!req.body || Object.keys(req.body).some(key => key !== 'requestId')) throw new Error('Invalid staffing operation query');
                 res.json(await service.operationForSource(req.body.requestId, source));
-            } else res.json(await service[action === 'prepare' ? 'prepareChange' : 'query'](req.body, source));
+            } else res.json(await service[action === 'prepare' ? (req.body?.kind && req.body.kind !== 'assign' ? 'prepareAdjustment' : 'prepareChange') : 'query'](req.body, source));
         } catch (error) { res.status(error.status || 400).json({ error: error.message }); }
     });
 }

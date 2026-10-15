@@ -29,7 +29,7 @@ function validateInitial(data) {
         keys(row, ['id', 'personId', 'projectId', 'kind', 'state', 'start', 'end', 'reason']);
         const project = projects.get(row.projectId);
         return people.has(row.personId) && dates(row) && ['reserved', 'confirmed', 'cancelled'].includes(row.state)
-            && (row.kind === 'project' ? project && (row.state === 'cancelled' || row.start >= project.start && row.end <= project.end)
+            && (row.kind === 'project' ? project && (row.state === 'cancelled' || row.start >= project.start && row.end <= project.end && (!project.lifecycle || project.lifecycle.state === 'active' || row.end < project.lifecycle.effectiveDate))
                 : ['leave', 'training', 'unavailable'].includes(row.kind) && row.projectId === undefined)
             && (row.reason === undefined || text(row.reason, 500));
     });
@@ -39,6 +39,25 @@ function validateInitial(data) {
         const priorEnd = byPerson.get(row.personId);
         if (priorEnd && row.start <= priorEnd) fail('Overlapping initial project assignments');
         byPerson.set(row.personId, row.end);
+    }
+}
+function validatePatch(plan, state) {
+    keys(plan.patch, ['projects', 'occupancies']); keys(plan.change, ['kind', 'effectiveDate', 'reason']);
+    if (!['absence', 'formalize', 'replace', 'reschedule', 'extend', 'withdraw', 'cancel', 'early-end'].includes(plan.change.kind)
+        || plan.change.effectiveDate !== undefined && !date(plan.change.effectiveDate)
+        || plan.change.reason !== undefined && !text(plan.change.reason, 500)) fail('Invalid staffing adjustment');
+    if (plan.project) validateInitial({ people: [], projects: [plan.project], occupancies: [], historyComplete: false });
+    for (const field of ['projects', 'occupancies']) {
+        const items = plan.patch[field];
+        if (!Array.isArray(items) || items.length > LIMITS[field] || new Set(items.map(item => item?.after?.id)).size !== items.length) fail('Invalid staffing adjustment patch');
+        for (const item of items) {
+            keys(item, ['before', 'after']);
+            if (!object(item.after) || item.before !== undefined && (!object(item.before) || item.before.id !== item.after.id)) fail('Invalid staffing adjustment records');
+            for (const row of [item.before, item.after].filter(Boolean)) {
+                if (field === 'projects') validateInitial({ people: [], projects: [row], occupancies: [], historyComplete: false });
+                else validateInitial({ people: state.people, projects: row.kind === 'project' ? [{ id: row.projectId, name: 'History', department: 'History', owner: 'History', minimum: 1, start: '1900-01-01', end: '9999-12-31' }] : [], occupancies: [row], historyComplete: false });
+            }
+        }
     }
 }
 function emptyLedger() { return { version: 1, revision: 0, epoch: 0, plans: {}, enabled: false, initialized: false, phase: 'awaiting-import',
@@ -69,7 +88,7 @@ function validateLedger(state) {
             || plan.outcome !== undefined && (!object(plan.outcome) || plan.outcome.planId !== plan.id || !['reserve', 'confirm', 'apply', 'apply-import'].includes(plan.outcome.action))) fail('Invalid staffing plan');
         if (plan.kind === 'assign') validateInitial({ people: [], projects: [plan.project], occupancies: [], historyComplete: false });
         else if (plan.kind === 'import') require('./import-domain').validate(plan, state);
-        else if (!object(plan.patch) || !Array.isArray(plan.patch.projects) || !Array.isArray(plan.patch.occupancies)) fail('Invalid staffing adjustment patch');
+        else validatePatch(plan, state);
         if (plan.supersededBy) {
             const target = Object.hasOwn(state.plans, plan.supersededBy) && state.plans[plan.supersededBy];
             if (!target || target.revision <= plan.revision || target.originId !== plan.originId || plan.outcome
