@@ -1,6 +1,6 @@
 {
   "name": "pivane",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "description": "白泽灵台: a personal AI workspace powered by Pi Coding Agent with a media laboratory",
   "main": "server.js",
   "private": true,
