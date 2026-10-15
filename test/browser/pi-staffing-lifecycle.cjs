@@ -1,10 +1,23 @@
 // Real workspace HTTP/WS, native worker, local provider, ledger and artifact store.
 const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http');
 const { once } = require('node:events'), express = require('express'), { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
-const root = path.resolve(__dirname, '../..'), temporary = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'staffing-full-browser-')));
-const agent = path.join(temporary, 'agent'), cwd = path.join(temporary, 'project'); fs.mkdirSync(agent); fs.mkdirSync(cwd);
-process.env.PI_CODING_AGENT_DIR = agent; process.env.PI_PROJECT_ROOTS = temporary; process.env.PI_OFFLINE = '1'; process.env.PI_WEB_DEFERRED_FILE = path.join(agent, 'deferred.json');
+const root = path.resolve(__dirname, '../..');
 async function main() {
+    const cleanups = [], cleanupErrors = [], diagnosticErrors = [], closed = [], failures = [];
+    const own = (name, priority, close) => cleanups.push({ name, priority, close, order: cleanups.length });
+    const closeServer = server => new Promise((resolve, reject) => server.close(error => {
+        // A created server whose listen failed never acquired a listener.
+        if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') reject(error); else resolve();
+    }));
+    let temporary, temporaryFd, temporaryIdentity, temporaryStat, removed = false;
+    const io = require('../../server/pi-file-io'), { descriptorPathSync } = require('../../server/pi-file-descriptor');
+    try {
+    const temporaryParent = fs.realpathSync.native(os.tmpdir());
+    temporary = fs.mkdtempSync(path.join(temporaryParent, 'staffing-full-browser-'));
+    temporaryFd = io.openReadSync(temporary); temporaryStat = fs.fstatSync(temporaryFd, { bigint: true }); temporaryIdentity = io.identity(temporaryFd);
+    assert.equal(descriptorPathSync(temporaryFd), temporary);
+    const agent = path.join(temporary, 'agent'), cwd = path.join(temporary, 'project'); fs.mkdirSync(agent); fs.mkdirSync(cwd);
+    process.env.PI_CODING_AGENT_DIR = agent; process.env.PI_PROJECT_ROOTS = temporary; process.env.PI_OFFLINE = '1'; process.env.PI_WEB_DEFERRED_FILE = path.join(agent, 'deferred.json');
     const toolQueue = [], requests = [], uploads = []; let call = 0;
     const provider = http.createServer(async (req, res) => {
         let raw = ''; for await (const part of req) raw += part; const body = JSON.parse(raw); requests.push(body);
@@ -13,12 +26,15 @@ async function main() {
         const delta = tool ? { role: 'assistant', tool_calls: [{ index: 0, id: 'browser-' + ++call, type: 'function', function: { name: tool.name, arguments: JSON.stringify(tool.input) } }] } : { role: 'assistant', content: exported ? '合成 Excel 已保存到成果。' : '合成方案已准备，请核对具体卡片。' };
         res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.end(`data: ${JSON.stringify({ id: 'fixture', object: 'chat.completion.chunk', model: 'fixture', choices: [{ index: 0, delta, finish_reason: tool ? 'tool_calls' : 'stop' }] })}\n\ndata: [DONE]\n\n`);
     });
+    own('provider listener', 50, () => closeServer(provider)); own('provider connections', 50, () => provider.closeAllConnections());
     provider.listen(0, '127.0.0.1'); await once(provider, 'listening');
     fs.writeFileSync(path.join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture', defaultProjectTrust: 'never', enableInstallTelemetry: false }));
     fs.writeFileSync(path.join(agent, 'models.json'), JSON.stringify({ providers: { fixture: { baseUrl: `http://127.0.0.1:${provider.address().port}/v1`, api: 'openai-completions', apiKey: 'synthetic', models: [{ id: 'fixture', input: ['text'], contextWindow: 32000, maxTokens: 1000 }] } } }));
     const { WorkspaceAccessService } = require('../../server/workspace-access-service'), { createPiAgentGateway } = require('../../server/pi-agent-routes');
     const access = new WorkspaceAccessService({ filePath: path.join(agent, 'access.json'), envToken: () => '' });
+    own('access', 30, () => access.dispose());
     const gateway = createPiAgentGateway({ accessService: access, deferredFilePath: path.join(agent, 'deferred.json'), cronFilePath: path.join(agent, 'cron.sqlite') });
+    own('gateway', 20, () => gateway.dispose());
     const app = express();
     app.use((req, res, next) => {
         if (req.url.startsWith('/api/pi/staffing/excel/uploads')) {
@@ -30,12 +46,17 @@ async function main() {
     });
     access.mount(app); app.use(express.json()); gateway.mount(app);
     for (const [name, folder] of [['marked', 'marked/lib'], ['dompurify', 'dompurify/dist'], ['highlight', '@highlightjs/cdn-assets']]) app.use('/vendor/' + name, express.static(path.join(root, 'node_modules', folder)));
-    app.use(express.static(path.join(root, 'public'))); const server = http.createServer(app); gateway.attachWebSocket(server); server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    app.use(express.static(path.join(root, 'public'))); const server = http.createServer(app);
+    own('workspace listener', 40, () => closeServer(server)); own('workspace connections', 40, () => server.closeAllConnections());
+    gateway.attachWebSocket(server); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const origin = `http://127.0.0.1:${server.address().port}`; process.env.PI_WORKSPACE_INTERNAL_ORIGIN = origin;
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true, args: ['--no-sandbox'] });
-    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'zh-CN' }), page = await context.newPage(), errors = [];
+    own('browser', 10, () => browser.close());
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'zh-CN' }); own('browser context', 10, () => context.close());
+    const page = await context.newPage(), errors = []; own('page', 10, () => page.close());
     const stages = [], dialogs = [], sockets = [], network = [], lifecycle = [], targetCrashes = [];
-    const cdp = await context.newCDPSession(page), browserCdp = await browser.newBrowserCDPSession();
+    const cdp = await context.newCDPSession(page); own('page CDP', 10, () => cdp.detach());
+    const browserCdp = await browser.newBrowserCDPSession(); own('browser CDP', 10, () => browserCdp.detach());
     await cdp.send('Page.enable'); await cdp.send('Page.setLifecycleEventsEnabled', { enabled: true }); await cdp.send('Performance.enable');
     await browserCdp.send('Target.setDiscoverTargets', { discover: true });
     const browserVersion = await browserCdp.send('Browser.getVersion');
@@ -153,6 +174,7 @@ async function main() {
         console.log('staffing full workspace lifecycle: actual native provider/cards/views/Excel/artifacts/disable; 1440/393/320 passed');
     } catch (error) {
         console.error('staffing lifecycle failed phase:', phase, 'pageerrors:', errors);
+        try {
         console.error('staffing controls:', JSON.stringify(await page.evaluate(() => ['#staffing-import', '#staffing-initial-json', '[data-staffing-advanced]'].map(selector => { const e = document.querySelector(selector); return { selector, exists: Boolean(e), open: e?.open, disabled: e?.disabled, rect: e?.getBoundingClientRect().toJSON(), visibility: e && getComputedStyle(e).visibility, display: e && getComputedStyle(e).display }; }))));
         const diagnostic = await page.evaluate(async () => ({ visibility: document.visibilityState, focus: document.hasFocus(), audit: window.staffingAudit,
             frame: await Promise.race([new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve('two frames')))), new Promise(resolve => setTimeout(() => resolve('no frames in 500ms'), 500))]),
@@ -160,8 +182,35 @@ async function main() {
             scroll: ['html', 'body', '.main-content', '#staffing-tab'].map(selector => { const e = document.querySelector(selector); return { selector, height: e?.clientHeight, scrollHeight: e?.scrollHeight, scrollTop: e?.scrollTop, overflow: e && getComputedStyle(e).overflowY }; }) }));
         console.error('staffing async audit:', JSON.stringify(diagnostic));
         if (process.env.PIVANE_TEST_SCREENSHOT_DIR) { fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR, { recursive: true }); fs.writeFileSync(path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, 'failure.json'), JSON.stringify({ phase, error: error.message, diagnostic, browserVersion, performance: await performanceMetrics(), lifecycle, targetCrashes, stages, dialogs, sockets, network, uploads }, null, 2)); try { await page.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, 'failure.png') }); } catch (capture) { console.error('failure capture:', capture.message); } }
+        } catch (diagnosticError) { diagnosticErrors.push(diagnosticError); console.error('staffing failure diagnostics:', diagnosticError); }
         throw error;
     }
-    finally { await context.close(); await browser.close(); await gateway.dispose(); access.dispose(); server.closeAllConnections(); provider.closeAllConnections(); await Promise.all([new Promise(resolve => server.close(resolve)), new Promise(resolve => provider.close(resolve))]); fs.rmSync(temporary, { recursive: true, force: true }); }
+    } catch (error) { failures.push(error); }
+    finally {
+        // Keep browser -> gateway/SQLite -> HTTP/provider dependency order, and
+        // still attempt every acquired resource after an earlier close fails.
+        for (const cleanup of cleanups.sort((a, b) => a.priority - b.priority || b.order - a.order)) {
+            try { await cleanup.close(); closed.push(cleanup.name); }
+            catch (error) { cleanupErrors.push(new Error('Cleanup failed: ' + cleanup.name, { cause: error })); }
+        }
+        try {
+            if (temporary && !cleanupErrors.length) {
+                const named = fs.lstatSync(temporary, { bigint: true }), opened = temporaryFd === undefined ? null : fs.fstatSync(temporaryFd, { bigint: true });
+                assert.ok(opened?.isDirectory() && named.isDirectory() && !named.isSymbolicLink(), 'temporary cleanup root must remain a real directory');
+                assert.equal(path.dirname(temporary), fs.realpathSync.native(os.tmpdir())); assert.ok(path.basename(temporary).startsWith('staffing-full-browser-'));
+                assert.equal(fs.realpathSync.native(temporary), temporary); assert.equal(descriptorPathSync(temporaryFd), temporary);
+                assert.ok(['dev', 'ino', 'mode'].every(key => temporaryStat[key] === opened[key] && opened[key] === named[key]));
+                assert.ok(['size', 'mtimeNs', 'ctimeNs'].every(key => opened[key] === named[key]));
+                assert.equal(io.identity(temporaryFd), temporaryIdentity); assert.ok(io.sameIdentityAtPath(temporary, temporaryIdentity));
+                fs.rmSync(temporary, { recursive: true, force: true }); removed = true;
+            }
+        } catch (error) { cleanupErrors.push(new Error('Temporary root cleanup failed', { cause: error })); }
+        finally { if (temporaryFd !== undefined) try { fs.closeSync(temporaryFd); closed.push('temporary root descriptor'); } catch (error) { cleanupErrors.push(new Error('Temporary root descriptor close failed', { cause: error })); } }
+        console.log('staffing lifecycle cleanup:', JSON.stringify({ closed, cleanupErrors: cleanupErrors.map(error => error.message), temporary: !temporary ? 'not-created' : removed ? 'removed' : 'not-confirmed-removed', temporaryRoot: temporary }));
+        if (temporary && !removed) console.error('Staffing fixture root not confirmed removed:', temporary);
+    }
+    failures.push(...diagnosticErrors, ...cleanupErrors);
+    if (failures.length === 1) throw failures[0];
+    if (failures.length) throw new AggregateError(failures, 'Staffing lifecycle and cleanup failures');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
