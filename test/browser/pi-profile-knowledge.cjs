@@ -228,7 +228,7 @@ async function run(browser, base, width, locale, dark) {
 }
 (async () => {
     const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
-    const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true });
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try { for (const width of [320,393,1440]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, width === 393 ? 'zh-CN' : 'en-US', width === 393); }
     finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

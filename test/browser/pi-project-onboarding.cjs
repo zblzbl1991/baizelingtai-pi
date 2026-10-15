@@ -10,7 +10,7 @@ assert.match(project||'',/^\/tmp\/pi-onboarding-[^/]+\/project$/);
  const status=await get('/api/pi/status');assert.deepEqual(status.projectRoots,['/']);assert.ok(status.defaultProject.startsWith('/'));
  const marker=await get('/api/pi/files/content?'+new URLSearchParams({cwd:project,path:'marker.txt'}));assert.equal(marker.content,'pi-onboarding-fixture\n');
  const models=await get('/api/pi/settings/models');assert.ok(models.providers.every(p=>!p.configured));
- const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true});const results=[];
+ const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH || '/usr/bin/chromium',headless:true});const results=[];
  try{for(const width of [1440,393,320]){
   const context=await browser.newContext({ locale: 'zh-CN',viewport:{width,height:1000}});const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route(/https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com)\//,r=>r.abort());

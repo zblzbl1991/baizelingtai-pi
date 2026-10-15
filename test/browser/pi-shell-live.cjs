@@ -10,7 +10,7 @@ const cwd = '/tmp/pi-web-shell-preview/project';
     assert.equal(status.userShell, true); assert.deepEqual(status.projectRoots, [cwd]);
     const response = await fetch(base + '/api/pi/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cwd, name: 'Isolated shell smoke' }) });
     assert.equal(response.status, 201); const session = await response.json();
-    const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     const errors = [], sent = [];
     try {
         const pages = [];
