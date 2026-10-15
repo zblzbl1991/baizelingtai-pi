@@ -15,7 +15,7 @@
 ## 实现边界
 
 - `server/staffing/service.js` 统一启停、初始化核对、请求回执、生命周期和就绪门槛。
-- `server/staffing/store.js` 使用原生描述符身份、私密目录与文件权限、目录锁、CAS 和原子替换。8 MiB 上限；人员 5000、业务项目 5000、占用 20000、持久操作 10000、历史 20000 条。超限失败，保留旧台账，不静默清理。
+- `server/staffing/store.js` 使用原生描述符身份、私密目录与文件权限、内核所有权、CAS 和原子替换。8 MiB 上限；人员 5000、业务项目 5000、占用 20000、持久操作 10000、历史 20000 条。超限失败，保留旧台账，不静默清理。
 - `server/staffing/validation.js` 校验稳定 ID、严格日期、记录预算和初始项目重叠。
 - `PiProfileRegistry.ensureManagedProfile('pivane-staffing:v1', template)` 在档案注册表内原子保存稳定业务绑定。保留已有档案及用户编辑，不设置普通聊天默认档案。
 - `server/staffing/routes.js` 挂载到已有 workspace auth/Origin 边界；gateway 增加能力声明、活动、维护空闲和统一停机投影。
@@ -46,3 +46,19 @@
 - 新增语言目录时出现的数组闭合符及重复条目错误已修复，保留原目录顺序，仅追加去重条目，语言专项重新通过。
 
 所有 Node 命令仍走统一过滤入口；本机命令设置 `PSModulePath` 为系统 Windows PowerShell Modules，避免 PS7 路径污染 DACL 验证。浏览器命令设置 `PLAYWRIGHT_MODULE` 为本机 Codex runtime 的 playwright，`CHROMIUM_PATH` 为已存在的 chromium-1248 的 `chrome.exe`。未放宽文件身份、权限或业务断言。
+
+## 初始化恢复缺口修正
+
+后续只读核查发现 mkdir 排他目录仅靠 finally 删除，真实进程崩溃会留下永久锁；前序“正常抛错后重建服务”不构成操作系统崩溃恢复证据。本次补上该正确性边界，不涉及票 05 的停机依赖或成果流水线。
+
+- 台账和档案注册表保存均复用 `pi-installation-lock.acquireStorageOwnership`，其底层仍是已验证的 `acquireInstallationLock`：Windows 独占 named pipe，其他当前平台独占 loopback 端点。锁按私密真实目录分别划定范围，进程终止时由内核释放，无 PID/年龄清锁、备用端口或另一份台账。
+- 保留打开的 parent descriptor、内核路径、完整身份、类型、前后复核、CAS、私密权限和原子替换。异步获得所有权后再次复核 parent，直到释放所有权才结束本次预占。
+- 遇到旧 `ledger.lock` 或 `profiles.lock`，返回 409 / `STORAGE_LEGACY_LOCK` 并保留原目录及证据。旧协议与新协议写入者不能并发使用同一身份；切换需停止旧写入者并进入维护核查，不能根据目录年龄、PID 或自报 owner 自动删除。
+- 一旦开始原子替换，其后出现异常（含后置权限/身份检查和释放阶段）保守报告 503，公开模块错误标为 `STAFFING_OUTCOME_UNKNOWN` 或 `PROFILE_OUTCOME_UNKNOWN`、`outcomeUnknown:true`。客户端查询原 requestId，不将错误当作尚未执行而自动重发。初始化的 pending 仅允许在核对后用原初始化参数显式恢复。
+- `test/fixtures/staffing-crash-child.cjs` 只在独立测试进程外部 I/O 层建立屏障或注入实际发布后的 EIO。生产代码没有故障开关；业务均通过公开服务/HTTP执行和验收，不读取私有 JSON 代替结果。
+- 真正强制终止独立进程覆盖台账临时写入、档案临时写入、档案已发布、最终台账已发布四个窗口。验证活进程互斥、终止后恢复、原回执、唯一档案及用户 SOUL/名称保留。发布后故障另通过真实 HTTP 验证 503 及 completed/pending 结果核对。
+- 红绿证据：原台账锁在强杀后仍 409；更换内核所有权后通过。原档案锁在强杀后仍 409；更换后通过。原发布后 EIO 返回 400；明确 unknown 后返回 503 并能查询原结果。
+- `npm test -- test/staffing-recovery.test.js test/staffing-initialization.test.js test/pi-profile-edit.test.js test/pi-installation-lock.test.js`：退出 0，19 项通过，60.2 秒；包括原 DACL、档案编辑、安装级所有权专项，未修改 service、worker 或卡片文件。
+- 最终 `npm test -- test/staffing-recovery.test.js`：退出 0，8 项通过，276.5 秒。SDK/隔离身份准备放入文件级 before，未提高单项 180 秒预算，业务操作和强杀断言保留。期间宿主冷启动停顿曾使前一次首项超时；最终结果以上述完整通过为准。
+- `npm run check`：退出 0，589 文件；`npm run check:docs`：退出 0，79 文档；新夹具和专项文件另经 `node --check` 通过。
+- 相邻 logical assistant projects 及 source-files 专项通过；`pi-profiles.test.js` 的既有 30 秒整体预算在两次运行中均因超时取消（其中一次到 221 秒才触发）。未出现业务断言失败，也不将取消视为通过；留待集成阶段统一回归核对，不放宽原断言或生产边界。
