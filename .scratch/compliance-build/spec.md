@@ -1,6 +1,16 @@
 # 合规审查第一版：实现规格草案
 
-Status: ready-for-agent
+Status: implementation-complete; acceptance-incomplete
+
+## 实施与验证状态（2026-10-16）
+
+源码完成；综合回归未通过，未部署、未发布。最终默认 Chromium 99 项全部执行，57 通过、42 失败，exit 1；不把专项通过合并成全绿结果。
+
+最终证据保存在仓库外 C:/Users/adolbook/.codex/tmp/pivane-compliance-01a13de8/。完整 Node 原结果 807 项：802 通过、4 失败、1 取消；最终影响闭包 79 项：77 通过、1 失败、1 取消；最后差额 15 项：14 通过、1 取消。managed HTTP 保留原九十秒预算，最终仍取消；最终取消后未再重跑或扩大预算。真实合成 RPC/模型与 cron 最终 8/8 通过。语法、公开文档及 diff 检查通过。
+
+合规主流程、报告与人工复核在最终默认桌面/手机回归通过。暂停归属聚焦专项双宽通过；本轮聚焦脚本在 HTTP 准备阶段 ECONNRESET，未进入 UI，两个结果分别保留。真实资料识别质量、真实供应商账单与 Linux/macOS 原生实机尚未验收。
+
+非 release 试包成功，包 SHA256：47e7d465cc61a161045e912bb4c8331d10560a775135c28b35b4d6d9902d4816。试包不表示已部署、已发布或综合验收通过。完整失败原因及不确定项见树外 ticket06-final-validation-map.md。
 
 ## Problem Statement
 
