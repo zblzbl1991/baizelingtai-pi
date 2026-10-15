@@ -94,7 +94,18 @@
             const execution=node('section',undefined,'compliance-execution');execution.id='compliance-execution';execution.setAttribute('aria-live','polite');
             execution.append(node('strong',(states[e.status]||e.status)+(e.reason?'：'+(reasons[e.reason]||e.reason):'')),node('p',`已处理 ${u.pages||0} / ${e.budget?.pages||200} 页，模型调用 ${u.modelCalls||0} / ${e.budget?.modelCalls||20}，运行 ${Math.ceil((u.elapsedMs||0)/1000)} 秒。实际费用未知${u.cost?.estimate!=null?'；模型目录估算 '+u.cost.estimate+' USD':''}。`));
             if(e.status==='paused'||e.status==='needs-review')execution.append(button('追加当前预算，继续未启动步骤',()=>act(()=>run(async()=>{const fresh=await apiFetch('/api/pi/compliance/batches/'+batch.id);revision=fresh.revision;const value=await mutate('/batches/'+batch.id+'/continue',{budget:budget()});if(current()){batch=value.batch;showResults();}}),'已保存继续执行的进度。'),'compliance-continue'));
-            if(e.status==='running')execution.append(button('当前步骤结束后暂停',async()=>{try{const fresh=await apiFetch('/api/pi/compliance/batches/'+batch.id);revision=fresh.revision;await mutate('/batches/'+batch.id+'/pause',{});if(current())stateText.textContent=t('暂停请求已保存，等待当前步骤实际结束。');}catch(error){if(current())stateText.textContent=error.message;}},'compliance-pause'),button('核对当前进度',()=>refreshExecution().catch(error=>{if(current())stateText.textContent=error.message;})));
+            if(e.status==='running'){
+                const ownerId=batch.id,selection=batchSelection,owns=()=>current()&&batch?.id===ownerId&&selection===batchSelection;
+                execution.append(button('当前步骤结束后暂停',async()=>{
+                    if(!owns())return;
+                    try{
+                        const fresh=await apiFetch('/api/pi/compliance/batches/'+ownerId);
+                        if(!owns()||fresh.batch?.id!==ownerId)return;
+                        revision=fresh.revision;await mutate('/batches/'+ownerId+'/pause',{});
+                        if(owns())stateText.textContent=t('暂停请求已保存，等待当前步骤实际结束。');
+                    }catch(error){if(owns())stateText.textContent=error.message;}
+                },'compliance-pause'),button('核对当前进度',()=>refreshExecution().catch(error=>{if(current())stateText.textContent=error.message;})));
+            }
             for(const step of (e.steps||[]).filter(s=>s.status==='uncertain'))execution.append(node('p','请求待核对：'+batch.documents.find(d=>d.id===step.documentId)?.name+' 第 '+step.page+' 页。继续只处理尚未启动的步骤，不重发此请求。','settings-help'));
             results.append(execution);
             for (const result of batch.results) {
