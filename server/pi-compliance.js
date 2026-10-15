@@ -30,14 +30,21 @@ class ComplianceService {
         this.ledger = ledger || new ComplianceLedger(); this.mutating = false; this.closed = false; this.pending = null;
         this.materials = new (require('./pi-compliance-materials').ComplianceMaterials)(this, documents);
         this.checks = new (require('./pi-compliance-checks').ComplianceChecks)(this, documents);
+        this.reports = new (require('./pi-compliance-reports').ComplianceReports)(this);
     }
-    reserve(action) {
-        if (this.mutating || this.closed || this.isSuspended()) throw fail('合规操作正在处理或工作台维护中', 409, 'COMPLIANCE_BUSY');
+    reserve(action, settling = false) {
+        if (this.mutating || !settling && (this.closed || this.closing || this.isSuspended())) throw fail('合规操作正在处理或工作台维护中', 409, 'COMPLIANCE_BUSY');
         this.mutating = true; const pending = Promise.resolve().then(action); this.pending = pending;
         return pending.finally(() => { if (this.pending === pending) this.pending = null; this.mutating = false; });
     }
     get busy() { return this.mutating || Boolean(this.checks?.jobs.size) || Boolean(this.checks?.recovering) || Boolean(this.reports?.busy); }
-    async dispose() { this.closed = true; if (this.pending) await this.pending.catch(() => {}); await this.checks.dispose(); }
+    async dispose() {
+        this.closed = this.closing = true;
+        const draining = [this.reports.dispose(), this.checks.dispose()];
+        if (this.pending) draining.push(this.pending.catch(() => {}));
+        await Promise.all(draining);
+        if (this.pending) await this.pending.catch(() => {});
+    }
     view(state) {
         return { version: 1, revision: state.revision, settingsRevision: state.settingsRevision || 0, ...state.settings, status: state.setup ? 'configuring' : state.settings.enabled ? 'enabled' : (this.checks.jobs.size || this.reports?.busy) ? 'disabling' : 'disabled',
             scanStatus: state.settings.extractionModel ? 'configured' : 'unconfigured', requiresReload: true,
@@ -89,7 +96,7 @@ class ComplianceService {
             })).value;
         });
     }
-    assertEnabled(state) { if (!state.settings.enabled || state.setup) throw fail('请先启用合规审查并完成配置', 409, 'COMPLIANCE_DISABLED'); }
+    assertEnabled(state, settling = false) { if (!settling && (!state.settings.enabled || state.setup)) throw fail('请先启用合规审查并完成配置', 409, 'COMPLIANCE_DISABLED'); }
     async listProjects() { const state = await this.ledger.snapshot(); return { revision: state.revision, projects: state.projects }; }
     async project(id) {
         if (!ID.test(id)) throw fail('工程项目编号无效');
@@ -98,6 +105,7 @@ class ComplianceService {
         return { revision: state.revision, project };
     }
     async operation(id) {
+        const reportOperation = await this.reports.pending(id); if (reportOperation) return reportOperation;
         const state = await this.ledger.snapshot();
         const receipt = Object.hasOwn(state.receipts, id) && state.receipts[id];
         if (!receipt && state.setup?.requestId === id) return { status: 'pending', phase: 'profile-binding', canResume: true, requestId: id, revision: state.revision };
@@ -135,23 +143,25 @@ class ComplianceService {
             return { ok: true, project };
         }));
     }
-    async authorizeWorker(worker) {
+    async authorizeWorker(worker, settling = false) {
         this.profileRegistryFile = (await this.profiles.paths()).file;
-        const state = await this.ledger.snapshot(); this.assertEnabled(state);
-        if (!worker || worker.disposed || worker.restarting || worker.noSession || this.closed || this.isSuspended()
+        const state = await this.ledger.snapshot(); this.assertEnabled(state, settling);
+        if (!worker || worker.disposed || worker.restarting || worker.noSession || !settling && (this.closed || this.closing || this.isSuspended())
             || this.supervisor?.getActiveWorker(worker.sessionPath) !== worker || !worker.loadedAgentProfileConfirmed
             || worker.loadedAgentProfileId !== state.settings.profileId) throw fail('需要存活且已绑定的合规专用会话', 403, 'COMPLIANCE_SCOPE');
         const snapshot = await worker.request('get_entries');
         const binding = require('./pi-profile-state').readProfileBinding({ getSessionId: () => worker.sessionId, getEntries: () => snapshot.entries || [] });
         const current = await this.ledger.snapshot();
-        if (!current.settings.enabled || binding?.profileId !== current.settings.profileId || this.supervisor.getActiveWorker(worker.sessionPath) !== worker
+        if (!settling && !current.settings.enabled || binding?.profileId !== current.settings.profileId || this.supervisor.getActiveWorker(worker.sessionPath) !== worker
             || worker.disposed || worker.restarting || !(await this.profiles.getProfile(binding.profileId))?.enabled) throw fail('合规会话资格已变化', 403, 'COMPLIANCE_SCOPE');
         return current;
     }
     async tool(worker, input) {
         worker.complianceOperations = (worker.complianceOperations || 0) + 1;
         try {
-            await this.authorizeWorker(worker);
+            const settling = input?.operation === 'reports' && await this.reports.canSettle(worker, input);
+            await this.authorizeWorker(worker, settling);
+            if (input?.operation === 'reports') return await this.reports.tool(worker, input);
             if (input.operation === 'materials' || input.operation === 'checks') {
                 only(input, ['operation', 'action', 'projectId', 'documentId', 'batchId', 'fieldId', 'requestId', 'expectedRevision', 'sources', 'budget', 'offset']);
                 if (input.operation === 'materials') {
@@ -263,6 +273,7 @@ function mountCompliance(router, service) {
         res.set('Cache-Control', 'no-store');
         try { res.json(await fn(req)); } catch (error) { res.status(error.status || 400).json({ error: error.message, code: error.code || 'COMPLIANCE_FAILED' }); }
     };
+    require('./pi-compliance-reports').mountReports(router, service, route);
     router.get('/compliance', route(() => service.snapshot()));
     router.put('/compliance/settings', route(req => service.saveSettings(req.body)));
     router.post('/compliance/sessions', route(req => service.createSession(req.body)));

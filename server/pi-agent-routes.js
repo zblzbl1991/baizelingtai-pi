@@ -155,6 +155,7 @@ function createPiAgentGateway(options = {}) {
     require('./pi-file-roots').mountFileRoots(router, fileRoots);
     const artifacts = require('./pi-artifacts-routes').mountArtifacts(router, { store, supervisor, preferences, mediaRoot: options.artifactMediaRoot,
         isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running) || Boolean(sessionTransfer.running) });
+    compliance.reports.artifacts = artifacts;
     require('./pi-document-uploads').mountDocumentUploads(router, documents);
     require('./pi-compliance').mountCompliance(router, compliance);
     notifications.mount(router);
