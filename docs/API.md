@@ -2,9 +2,13 @@
 
 ## 桌面启动私有通道
 
-Windows 托盘与 `scripts/start-desktop.cjs` 使用继承的 stdin/stdout LF 通道。新增 `waiting` 响应 `{type:"waiting",url}`，允许浏览器先打开本次启动的本地等待页；`ready` 的 `url` 才是经受管子服务 IPC 和 HTTP 检查确认的工作台地址。`starting`、`error`、`stopping` 和私有 stdin 的 `stop` 继续沿用原语义，不增加工作台的公开控制接口。
+Windows 托盘以 `scripts/start-desktop.cjs --controlled --generation <UUID>` 创建每轮 runner，使用继承的 stdin/stdout LF JSON 通道，日志走 stderr。所有受控事件带 `generation`，响应回显 `id`；迟到或其他代次无权改变状态。`ready.url` 必须经受管子服务 IPC 和 HTTP 检查。单轮旧 Node 入口仍兼容 `waiting` 与私有 `stop`；受控模式就绪后不允许用 `stop` 绕过最终检查。
 
-临时等待页的只读 `GET /status` 返回 `{state:"starting"}`、`{state:"ready",url}` 或 `{state:"error",message}`，仅监听本机 `127.0.0.1` 并校验 Host/Origin。它不属于 `/api/pi`，不读取会话或凭据，不接受启动重试、停机或配置写入；生命周期与用户操作见 [托盘启动器](DESKTOP_LAUNCHER.md)。
+受控请求包括 `snapshot`、`review-stop`（`action:"stop"|"exit"`）、`execute-stop`（`ticket,draftsSaved:true,externalWritersStopped:true`）。快照/检查响应 `snapshot` / `stop-review` 包含 `complete,revision,blockers,scheduled`；只有完整空闲检查才提供有效期内的一次性 `ticket`。阻碍项为有界 `type,count,label` 和可选的安全定位，不包含会话正文。执行原子复核代次、修订和空闲，预占新工作闸门后接受，返回 `stop-accepted` 与 `operationId`。接受后重复查询只观察同一操作；清理完成返回 `stopped,clean:true`，托盘还须等待实际 runner 退出。启动中可请求同一代次的有序 `stop`；未知或失败不表示取消或清理成功。
+
+runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,method:"snapshot"|"review"|"execute",input`），响应为 `desktop-response`（`id,result` 或 `error:{code,message}`）。检查不长期锁住工作台；最终接受后沿统一异步停机，桌面停止采用可逆内存派发闸门，不调用持久预约暂停。此私有协议不扩展现有公开维护 action 列表，不新增 HTTP 停机接口。
+
+托盘的稳定只读 `GET /status` 返回 `state,instance,generation` 和可选 `url,message`，状态包括 `starting,ready,error,stopped,stopping,unknown`。页面的 `startup-instance` 标记必须与实例相符。入口仅监听本机 `127.0.0.1`、校验 Host/Origin 并限制请求，随托盘退出关闭；单次读取失败退避重试，读取本身不启动服务或重放操作。它不属于 `/api/pi`，不读取会话或凭据，不接受启动、停机或配置写入。旧单轮临时页保持原有精简状态；生命周期与用户操作见 [托盘启动器](DESKTOP_LAUNCHER.md)。
 
 ## 成果中心（artifacts）
 
