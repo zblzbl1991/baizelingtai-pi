@@ -25,7 +25,7 @@ test('startup page retries a denied temporary port and still serves its own stat
     assert.ok(attempts.length >= 2 && attempts.length <= 32);
     assert.ok(attempts.every(attempt => attempt.host === '127.0.0.1'));
     assert.notEqual(attempts[1].port, attempts[0].port);
-    assert.deepEqual(await fetch(new URL('status', startup.url)).then(value => value.json()), { state: 'starting' });
+    assert.deepEqual(await fetch(new URL('status', startup.url)).then(value => value.json()), { state: 'starting', instance: startup.instance, generation: startup.generation });
 });
 
 test('temporary port retries are bounded, propagate unrelated failures and leave no listeners behind', async t => {
@@ -64,7 +64,7 @@ test('startup page is available before readiness and serves only its bounded loc
     assert.match(await page.text(), /正在启动/);
     assert.equal(page.headers.get('cache-control'), 'no-store');
     assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'none'/);
-    assert.deepEqual(await fetch(new URL('status', startup.url)).then(value => value.json()), { state: 'starting' });
+    assert.deepEqual(await fetch(new URL('status', startup.url)).then(value => value.json()), { state: 'starting', instance: startup.instance, generation: startup.generation });
     for (const file of ['startup.js', 'startup.css', 'brand.png']) assert.equal((await fetch(new URL(file, startup.url))).status, 200);
     assert.equal((await fetch(new URL('.env', startup.url))).status, 404);
     assert.equal((await fetch(new URL('status', startup.url), { method: 'POST' })).status, 405);
@@ -75,7 +75,7 @@ test('startup page is available before readiness and serves only its bounded loc
     });
     assert.equal(foreignHost, 403);
     startup.ready('http://127.0.0.1:11408/');
-    assert.deepEqual(await fetch(new URL('status', startup.url)).then(value => value.json()), { state: 'ready', url: 'http://127.0.0.1:11408/' });
+    assert.deepEqual(await fetch(new URL('status', startup.url)).then(value => value.json()), { state: 'ready', instance: startup.instance, generation: startup.generation, url: 'http://127.0.0.1:11408/' });
     await startup.close();
     await assert.rejects(fetch(startup.url), /fetch failed/);
 });
@@ -88,7 +88,7 @@ test('failure is delivered to the waiting browser before shutdown, never replace
     assert.equal(startup.close(), closed, 'closing is reserved before the asynchronous wait');
     const failure = await fetch(new URL('status', startup.url));
     assert.equal(failure.headers.get('connection'), 'close', 'terminal delivery drains a browser keep-alive connection');
-    assert.deepEqual(await failure.json(), { state: 'error', message: '<img src=x onerror=alert(1)>' });
+    assert.deepEqual(await failure.json(), { state: 'error', instance: startup.instance, generation: startup.generation, message: '<img src=x onerror=alert(1)>' });
     await closed;
     await assert.rejects(fetch(startup.url), /fetch failed/);
 });

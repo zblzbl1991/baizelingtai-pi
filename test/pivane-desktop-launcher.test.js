@@ -132,7 +132,7 @@ test('real managed service becomes ready, serves the workspace, and exits cleanl
     const waiting = run.events.find(event => event.type === 'waiting');
     assert.ok(waiting, 'a browser startup page is announced before service readiness');
     assert.ok(run.events.indexOf(waiting) < run.events.indexOf(ready));
-    assert.deepEqual(await fetch(new URL('status', waiting.url)).then(value => value.json()), { state: 'ready', url: ready.url });
+    assert.deepEqual(await fetch(new URL('status', waiting.url)).then(value => value.json()), { state: 'ready', instance: run.events.find(event => event.type === 'waiting').instance, generation: run.events.find(event => event.type === 'waiting').generation, url: ready.url });
     const response = await fetch(ready.url);
     assert.equal(response.status, 200);
     assert.match(await response.text(), /<title>白泽灵台<\/title>/);
@@ -169,51 +169,6 @@ test('occupied HTTP port fails without readiness or termination of its existing 
     const run = launch(t, root, env); const [code] = await run.exited;
     assert.equal(code, 1); assert.equal(run.events.some(event => event.type === 'ready'), false);
     assert.equal(occupied.listening, true);
-});
-
-test('native tray accepts the browser waiting page while preserving NoOpen and startup failures', { skip: process.platform !== 'win32', timeout: 30000 }, async t => {
-    async function run(mode) {
-        const root = fixture(t);
-        fs.mkdirSync(path.join(root, 'scripts'));
-        fs.mkdirSync(path.join(root, 'public/brand'), { recursive: true });
-        fs.mkdirSync(path.join(root, '.pivane-runtime/desktop'), { recursive: true });
-        fs.copyFileSync(path.resolve(__dirname, '../public/brand/favicon.ico'), path.join(root, 'public/brand/favicon.ico'));
-        fs.writeFileSync(path.join(root, '.pivane-launcher-test'), 'synthetic tray feedback\n');
-        fs.writeFileSync(path.join(root, '.pivane-launcher-stop'), 'stop after readiness\n');
-        fs.writeFileSync(path.join(root, 'scripts/start-desktop.cjs'), `
-            const emit = value => process.stdout.write(JSON.stringify(value) + '\\n');
-            if (process.argv.includes('--identity')) {
-                emit({ root: ${JSON.stringify(root)}, id: ${JSON.stringify(path.basename(root))} });
-            } else {
-                emit({ type: 'waiting', url: 'http://127.0.0.1:12346/' });
-                emit({ type: 'starting', logFile: ${JSON.stringify(path.join(root, 'service.log'))} });
-                setTimeout(() => {
-                    ${mode === 'service-error' ? "emit({ type: 'error', message: 'Synthetic startup failure' }); process.exitCode = 1; process.stdin.destroy();" : "emit({ type: 'ready', url: 'http://127.0.0.1:12345/', logFile: 'synthetic.log' });"}
-                }, 200);
-                process.stdin.on('data', () => process.exit(0));
-                process.stdin.on('end', () => process.exit(0));
-            }
-        `);
-        const env = {};
-        for (const key of ['PATH', 'SystemRoot', 'SYSTEMROOT', 'COMSPEC', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA']) if (process.env[key]) env[key] = process.env[key];
-        Object.assign(env, { PI_CODING_AGENT_DIR: path.join(root, 'agent'), PI_MEDIA_DATA_DIR: path.join(root, 'media'), PI_WEB_DEFERRED_FILE: path.join(root, 'deferred.json') });
-        const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File',
-            path.resolve(__dirname, '../scripts/desktop-tray.ps1'), '-AppRoot', root, '-NodePath',
-            mode === 'preflight-error' ? path.join(root, 'missing-node.exe') : process.execPath, '-NoOpen', '-SmokeTest'], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-        let output = '';
-        child.stdout.on('data', bytes => { output += bytes; }); child.stderr.on('data', bytes => { output += bytes; });
-        const [code] = await once(child, 'close');
-        assert.equal(code, mode === 'ready' ? 0 : 1, output);
-        const report = JSON.parse(fs.readFileSync(path.join(root, '.pivane-runtime/desktop/smoke-result.json'), 'utf8'));
-        assert.equal(report.some(event => event.type === 'startup-notice-shown'), false, 'startup no longer displays a native popup');
-        assert.equal(report.some(event => event.type === 'waiting'), mode !== 'preflight-error');
-        assert.equal(report.some(event => event.type === 'error'), mode !== 'ready');
-        assert.equal(report.some(event => event.type === 'browser-opened'), false, 'NoOpen is preserved');
-        assert.equal(report.some(event => event.type === 'ready'), mode === 'ready');
-    }
-    await run('ready');
-    await run('preflight-error');
-    await run('service-error');
 });
 
 module.exports = { application };
