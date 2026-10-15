@@ -4,6 +4,11 @@
     const button = (text, id, action) => { const el = node('button', text, 'settings-secondary-button'); el.type = 'button'; if (id) el.id = id; el.onclick = action; return el; };
     const label = (text, field) => { const el = node('label', text); el.append(field); return el; };
     const rules = [['documents-identity', '资料缺失与归属'], ['feasibility-numbers', '可研评审及批复文号'], ['contract-deadline', '合同签订期限'], ['feasibility-order', '可研与评审时序']];
+    function randomId() {
+        if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+        const bytes = crypto.getRandomValues(new Uint8Array(16)); bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+        const hex = [...bytes].map(byte => byte.toString(16).padStart(2,'0')).join(''); return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+    }
     const modelKey = ref => ref ? ref.provider + '/' + (ref.modelId || ref.id) : '';
     const send = (api, url, input, method = 'PUT') => api('/api/pi/compliance' + url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
     function createSettings({ apiFetch, currentCwd }) {
@@ -53,7 +58,7 @@
                 const generation = epoch;
                 const storageKey = 'pivane.compliance.settings-operation';
                 let pending; try { pending = JSON.parse(sessionStorage.getItem(storageKey) || 'null'); } catch {}
-                const input = pending || { requestId: crypto.randomUUID(), expectedRevision: data.revision, enabled: enabled.checked,
+                const input = pending || { requestId: randomId(), expectedRevision: data.revision, enabled: enabled.checked,
                     ...(enabled.checked ? { mainModel: toRef(main.value), extractionModel: toRef(extraction.value), ...(!data.profileId && profile.value ? { profileId: profile.value } : {}) } : {}) };
                 sessionStorage.setItem(storageKey, JSON.stringify(input));
                 try {
@@ -138,19 +143,24 @@
             const applicable = {};
             for (const [id, caption] of rules) {
                 const select = node('select'); select.append(new Option(t('尚未确认'), ''), new Option(t('适用'), 'yes'), new Option(t('不适用'), 'no'));
+                select.id = 'compliance-applicability-' + id; select.setAttribute('aria-label', t(caption));
                 select.value = selected?.applicability?.[id] === true ? 'yes' : selected?.applicability?.[id] === false ? 'no' : ''; applicable[id] = select; fields.append(label(caption, select));
             }
             const save = button('保存工程项目', 'compliance-project-save'); save.type = 'submit'; save.classList.add('settings-primary-button');
             const status = node('p', '', 'settings-help'); status.id = 'compliance-project-status'; status.setAttribute('role', 'status');
             if (selected) { const id = node('p', '', 'settings-help'); id.textContent = 'ID: ' + selected.id + ' · ' + (selected.number || t('编号未知')); fields.append(id); }
             form.append(fields, save, status); drawer.append(form);
+            if (selected) {
+                const expected = key(), n = generation;
+                window.PiComplianceMaterials?.mount({ root: drawer, project: selected, apiFetch, context, valid: () => n === generation && expected === key() });
+            }
             form.onsubmit = async event => {
                 event.preventDefault(); if (save.disabled) return;
                 const n = generation, expected = key(); fields.disabled = true; save.disabled = true;
                 const project = Object.fromEntries(Object.entries(inputs).map(([name, input]) => [name, input.value.trim() || null]));
                 project.identityConfirmed = confirmed.checked; project.applicability = Object.fromEntries(Object.entries(applicable).map(([id, select]) => [id, select.value === '' ? null : select.value === 'yes']));
                 const priorOperation = pending.get(expected);
-                const operation = priorOperation || { input: { requestId: crypto.randomUUID(), expectedRevision: loaded.revision, project }, id: selected?.id };
+                const operation = priorOperation || { input: { requestId: randomId(), expectedRevision: loaded.revision, project }, id: selected?.id };
                 pending.set(expected, operation);
                 try {
                     let result;
@@ -178,5 +188,5 @@
         window.addEventListener('workspace:access-locked', () => { trigger.hidden = true; close(); });
         return { update, close };
     }
-    window.PiCompliance = { createSettings, createChat };
+    window.PiCompliance = { createSettings, createChat, randomId };
 })();

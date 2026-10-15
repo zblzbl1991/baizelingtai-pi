@@ -25,9 +25,11 @@ function projectInput(input) {
     return output;
 }
 class ComplianceService {
-    constructor({ store, profiles, supervisor, createModelRuntime, isSuspended = () => false, ledger } = {}) {
+    constructor({ store, profiles, supervisor, createModelRuntime, isSuspended = () => false, ledger, documents } = {}) {
         Object.assign(this, { store, profiles, supervisor, createModelRuntime, isSuspended });
         this.ledger = ledger || new ComplianceLedger(); this.busy = false; this.closed = false; this.pending = null;
+        this.materials = new (require('./pi-compliance-materials').ComplianceMaterials)(this, documents);
+        this.checks = new (require('./pi-compliance-checks').ComplianceChecks)(this, documents);
     }
     reserve(action) {
         if (this.busy || this.closed || this.isSuspended()) throw fail('合规操作正在处理或工作台维护中', 409, 'COMPLIANCE_BUSY');
@@ -116,6 +118,15 @@ class ComplianceService {
             if (id && index < 0) throw fail('工程项目不存在', 404, 'COMPLIANCE_NOT_FOUND');
             if (!id && state.projects.length >= 500) throw fail('工程项目数量达到上限', 413, 'COMPLIANCE_CAPACITY');
             const previous = state.projects[index], now = new Date().toISOString();
+            if (worker) {
+                const unchanged = previous && ['name','number','organization','year','phase','type','stage'].every(key => previous[key] === fields[key]);
+                if (input.project.identityConfirmed === true && (!unchanged || !previous.identityConfirmed)
+                    || input.project.applicability && Object.values(input.project.applicability).some(value => value !== null)
+                        && (!unchanged || JSON.stringify(fields.applicability) !== JSON.stringify(previous.applicability)))
+                    throw fail('工程身份和规则适用清单须由审查人员在工作台核对', 403, 'COMPLIANCE_CONFIRMATION_USER_ONLY');
+                fields.identityConfirmed = Boolean(unchanged && previous.identityConfirmed);
+                fields.applicability = unchanged ? previous.applicability : Object.fromEntries(RULE_GROUPS.map(key => [key, null]));
+            }
             const project = { ...previous, ...fields, id: previous?.id || randomUUID(), revision: (previous?.revision || 0) + 1,
                 createdAt: previous?.createdAt || now, updatedAt: now };
             if (index < 0) state.projects.push(project); else state.projects[index] = project;
@@ -139,6 +150,26 @@ class ComplianceService {
         worker.complianceOperations = (worker.complianceOperations || 0) + 1;
         try {
             await this.authorizeWorker(worker);
+            if (input.operation === 'materials' || input.operation === 'checks') {
+                only(input, ['operation', 'action', 'projectId', 'documentId', 'batchId', 'fieldId', 'requestId', 'expectedRevision', 'sources']);
+                if (input.operation === 'materials') {
+                    if (input.action === 'list') {
+                        const value = await this.materials.list(input.projectId);
+                        return { revision: value.revision, documents: value.documents.map(({ id, name, format, size, assignment }) => ({ id, name, format, size, assignment })) };
+                    }
+                    if (input.action === 'import') {
+                        const result = await this.materials.import(input.projectId, { requestId: input.requestId, expectedRevision: input.expectedRevision, sources: input.sources }, worker);
+                        return { revision: result.revision, reused: result.reused, documents: result.documents.map(({ id, name, format, size }) => ({ id, name, format, size })), requiresHumanAssignment: true };
+                    }
+                } else {
+                    if (input.action === 'list') return await this.checks.list(input.projectId);
+                    if (input.action === 'evidence') return await this.checks.evidence(input.batchId, input.fieldId);
+                    const value = input.action === 'run' ? await this.checks.create(input.projectId, { requestId: input.requestId, expectedRevision: input.expectedRevision }, worker)
+                        : input.action === 'get' ? await this.checks.get(input.batchId) : null;
+                    if (value) return { revision: value.revision, batchId: value.batch.id, batchRevision: value.batch.revision, results: value.batch.results, execution: value.batch.execution, review: value.batch.review };
+                }
+                throw fail('合规工具操作无效');
+            }
             only(input, ['action', 'projectId', 'requestId', 'expectedRevision', 'project', 'offset']);
             if (input.action === 'list') {
                 const offset = input.offset ?? 0;
@@ -229,6 +260,14 @@ function mountCompliance(router, service) {
     router.post('/compliance/projects', route(req => service.saveProject(req.body)));
     router.put('/compliance/projects/:id', route(req => service.saveProject(req.body, req.params.id)));
     router.get('/compliance/operations/:id', route(req => service.operation(req.params.id)));
+    router.get('/compliance/projects/:id/documents', route(req => service.materials.list(req.params.id)));
+    router.post('/compliance/projects/:id/documents', route(req => service.materials.import(req.params.id, req.body)));
+    router.get('/compliance/documents/:id/content', route(req => service.materials.content(req.params.id)));
+    router.put('/compliance/documents/:id/assignment', route(req => service.checks.assign(req.params.id, req.body)));
+    router.post('/compliance/projects/:id/batches', route(req => service.checks.create(req.params.id, req.body)));
+    router.get('/compliance/projects/:id/batches', route(req => service.checks.list(req.params.id)));
+    router.get('/compliance/batches/:id', route(req => service.checks.get(req.params.id)));
+    router.get('/compliance/batches/:id/evidence/:fieldId', route(req => service.checks.evidence(req.params.id, req.params.fieldId)));
     router.post('/compliance/tool', route(req => {
         if (req.workspaceIdentity?.kind !== 'agent-thread') throw fail('仅允许存活受管 worker 调用', 403, 'COMPLIANCE_SCOPE');
         return service.tool(req.workspaceIdentity.worker, req.body);

@@ -4970,7 +4970,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const originCwd = state.cwd, originId = state.session?.id, generation = state.socketGeneration;
             let pending; try { pending = JSON.parse(sessionStorage.getItem(storageKey) || 'null'); } catch {}
             const configuration = await apiFetch('/api/pi/compliance');
-            const input = pending || { cwd: event.detail.cwd, requestId: crypto.randomUUID(), expectedRevision: configuration.revision };
+            const input = pending || { cwd: event.detail.cwd, requestId: window.PiCompliance.randomId(), expectedRevision: configuration.revision };
             let session;
             if (pending) session = await apiFetch('/api/pi/compliance/operations/' + encodeURIComponent(input.requestId));
             sessionStorage.setItem(storageKey, JSON.stringify(input));

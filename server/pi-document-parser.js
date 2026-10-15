@@ -124,8 +124,8 @@ function detectDocument(bytes, format) {
     getXml(zip, main); return zip;
 }
 function validateRead(raw = {}) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(key => !['action', 'start', 'count', 'sheet', 'column', 'columns'].includes(key))) throw fail('文档读取参数无效', 400, 'DOCUMENT_INPUT');
-    const input = { action: raw.action ?? 'inspect', start: raw.start ?? 1, count: raw.count ?? 20, sheet: raw.sheet, column: raw.column ?? 1, columns: raw.columns ?? 20 };
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(key => !['action', 'start', 'count', 'sheet', 'column', 'columns', 'provenance'].includes(key)) || raw.provenance !== undefined && typeof raw.provenance !== 'boolean') throw fail('文档读取参数无效', 400, 'DOCUMENT_INPUT');
+    const input = { action: raw.action ?? 'inspect', start: raw.start ?? 1, count: raw.count ?? 20, sheet: raw.sheet, column: raw.column ?? 1, columns: raw.columns ?? 20, provenance: raw.provenance === true };
     if (!['inspect', 'read'].includes(input.action) || !Number.isSafeInteger(input.start) || input.start < 1 || input.start > 1048576
         || !Number.isSafeInteger(input.count) || input.count < 1 || input.count > 200 || !Number.isSafeInteger(input.column) || input.column < 1 || input.column > 16384
         || !Number.isSafeInteger(input.columns) || input.columns < 1 || input.columns > 50
@@ -217,11 +217,29 @@ async function pdf(bytes, input) {
         if (doc.numPages > 10000) throw fail('PDF 页数超过读取预算', 413, 'DOCUMENT_LIMIT');
         const base = { format: 'pdf', unit: 'page', total: doc.numPages, warnings: ['只提取可复制文字，不自动 OCR；扫描页、图片、表格布局和附件未提取。'] };
         if (input.action === 'inspect') return base;
-        const count = Math.min(input.count, 10), items = []; let remaining = 24000, truncated = false;
+        const count = Math.min(input.count, 10), items = []; let remaining = 24000, truncated = false, runBudget = 3000, runCount = 0;
         for (let page = input.start; page <= Math.min(doc.numPages, input.start + count - 1); page++) {
             const current = await doc.getPage(page), content = await current.getTextContent();
             const text = content.items.map(item => (item.str || '') + (item.hasEOL ? '\n' : ' ')).join(''), part = clip(text, Math.max(0, remaining));
-            remaining -= part.text.length; truncated ||= part.truncated; items.push({ index: page, ...part, hasText: Boolean(text.trim()) }); current.cleanup();
+            // Coordinates use the actual rotated viewport, with top-left origin.
+            // Preserve existing text consumers; bounded positioned runs are additive.
+            const viewport = current.getViewport({ scale: 1 }), runs = []; let provenanceTruncated = false;
+            if (input.provenance) for (const item of content.items) {
+                if (!item.str) continue;
+                if (!item.transform || runBudget <= 0 || runCount >= 200) { provenanceTruncated = true; continue; }
+                const [a,b,c,d,x,y] = item.transform, horizontal = Math.hypot(a,b), vertical = Math.hypot(c,d);
+                let bounds = null, region = 'unknown';
+                if (horizontal > 0 && vertical > 0 && [a,b,c,d,x,y,item.width,item.height].every(Number.isFinite) && Math.abs((a*c+b*d)/(horizontal*vertical)) < 0.001 && item.dir !== 'ttb') {
+                    const u = [a/horizontal*item.width,b/horizontal*item.width], v = [c/vertical*item.height,d/vertical*item.height];
+                    const corners = [[x,y],[x+u[0],y+u[1]],[x+v[0],y+v[1]],[x+u[0]+v[0],y+u[1]+v[1]]].map(point => viewport.convertToViewportPoint(...point));
+                    bounds = [Math.min(...corners.map(p=>p[0])),Math.min(...corners.map(p=>p[1])),Math.max(...corners.map(p=>p[0])),Math.max(...corners.map(p=>p[1]))];
+                    region = bounds[0] >= 0 && bounds[2] <= viewport.width && bounds[1] >= 0 && bounds[3] <= viewport.height * 0.4 ? 'upper' : 'body';
+                }
+                const value = item.str.slice(0, runBudget); runBudget -= value.length; runCount++; provenanceTruncated ||= value.length !== item.str.length;
+                runs.push({ text: value, rect: bounds, region });
+            }
+            remaining -= part.text.length; truncated ||= part.truncated;
+            items.push({ index: page, ...part, hasText: Boolean(text.trim()), ...(input.provenance ? { viewport: { width: viewport.width, height: viewport.height, rotation: viewport.rotation }, runs, provenanceTruncated } : {}) }); current.cleanup();
         }
         return { ...base, start: input.start, items, truncated, nextStart: input.start + items.length <= doc.numPages ? input.start + items.length : null };
     } catch (error) {
@@ -231,11 +249,35 @@ async function pdf(bytes, input) {
     } finally { await task.destroy(); }
 }
 async function parseDocument(bytes, format, raw, validateOnly = false) {
-    const input = validateRead(raw), zip = detectDocument(bytes, format);
+    const input = validateRead(raw);
+    if (format === 'csv') return csv(bytes, input, validateOnly);
+    const zip = detectDocument(bytes, format);
     if (validateOnly && format !== 'pdf') return { format, valid: true };
     const result = format === 'pdf' ? await pdf(bytes, validateOnly ? { ...input, action: 'inspect' } : input)
         : ({ docx, pptx, xlsx })[format](zip, input);
     if (Buffer.byteLength(JSON.stringify(result)) > 256 * 1024) throw fail('文档结果超过输出预算，请缩小读取范围', 413, 'DOCUMENT_LIMIT');
+    return result;
+}
+function csv(bytes, input, validateOnly) {
+    let text; try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { throw bad('CSV 必须使用 UTF-8 编码'); }
+    if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(text)) throw bad('CSV 含无效控制字符');
+    const rows = []; let row = [], cell = '', quoted = false, afterQuote = false;
+    const finishCell = () => { if (cell.length > 2000 || row.length >= 50) throw fail('CSV 单元格或列数超过预算', 413, 'DOCUMENT_LIMIT'); row.push(cell); cell = ''; afterQuote = false; };
+    const finishRow = () => { finishCell(); rows.push(row); row = []; if (rows.length > 10000) throw fail('CSV 行数超过一万行', 413, 'DOCUMENT_LIMIT'); };
+    for (let at = 0; at < text.length; at++) {
+        const char = text[at];
+        if (quoted) { if (char === '"') { if (text[at + 1] === '"') { cell += '"'; at++; } else { quoted = false; afterQuote = true; } } else cell += char; }
+        else if (char === ',' ) finishCell();
+        else if (char === '\n' || char === '\r') { if (char === '\r' && text[at + 1] === '\n') at++; finishRow(); }
+        else if (char === '"' && cell === '' && !afterQuote) quoted = true;
+        else { if (afterQuote || char === '"') throw bad('CSV 引号无效'); cell += char; }
+    }
+    if (quoted) throw bad('CSV 引号未闭合'); if (cell || row.length || afterQuote) finishRow();
+    const base = { format: 'csv', unit: 'row', total: rows.length, sheets: [{ name: 'CSV', state: 'visible' }] };
+    if (validateOnly || input.action === 'inspect') return base;
+    const selected = rows.slice(input.start - 1, input.start - 1 + input.count);
+    const result = { ...base, sheet: 'CSV', rows: selected.map((cells, i) => ({ index: input.start + i, cells: cells.map((value, column) => ({ column: column + 1, value, type: 'str', truncated: false })) })), lastRow: rows.length, truncated: false, nextStart: input.start + selected.length <= rows.length ? input.start + selected.length : null };
+    if (Buffer.byteLength(JSON.stringify(result)) > 256 * 1024) throw fail('CSV 读取范围超过输出预算', 413, 'DOCUMENT_LIMIT');
     return result;
 }
 module.exports = { parseDocument, officeZip, xml, validateRead, crc32 };

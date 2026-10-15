@@ -119,7 +119,7 @@ function createPiAgentGateway(options = {}) {
     const maintenance = options.maintenance || new (require('./pi-maintenance-client').MaintenanceClient)({ managed: false });
     const documents = new (require('./pi-document-uploads').DocumentUploads)({ store, supervisor,
         isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running) });
-    const compliance = new (require('./pi-compliance').ComplianceService)({ store, profiles, supervisor,
+    const compliance = new (require('./pi-compliance').ComplianceService)({ store, profiles, supervisor, documents,
         createModelRuntime: () => settingsService.createModelRuntime(),
         isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running) });
     Object.assign(profiles, { nativeService, settingsService, maintenance });
