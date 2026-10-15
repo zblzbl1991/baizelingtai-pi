@@ -1014,6 +1014,8 @@ const shutdown = require('./server/pi-process-shutdown').registerProcessShutdown
 if (maintenance.managed) {
     process.on('message', message => {
         if (message?.nonce !== maintenance.nonce) return;
+        if (require('./server/pivane-desktop-stop').receiveDesktopRequest({ message, maintenance, stop: piAgentGateway.desktopStop,
+            send: reply => process.send(reply, () => {}) })) return;
         maintenance.receive(message);
         if (message.type === 'maintenance-shutdown') { maintenance.locked = true; void shutdown(); }
     });

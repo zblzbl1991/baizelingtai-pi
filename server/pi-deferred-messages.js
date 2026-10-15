@@ -10,8 +10,9 @@ const ACTIVE = new Set(['scheduled', 'waiting', 'paused', 'expired', 'failed', '
 const READY = new Set(['scheduled', 'waiting']);
 
 class PiDeferredMessages {
-    constructor({ store, supervisor, filePath, now = Date.now, intervalMs = 1000, isSuspended = () => false }) {
+    constructor({ store, supervisor, filePath, now = Date.now, intervalMs = 1000, isSuspended = () => false, onActivity = () => {} }) {
         this.isSuspended = isSuspended;
+        this.onActivity = onActivity;
         this.store = store;
         this.supervisor = supervisor;
         this.now = now;
@@ -98,7 +99,8 @@ class PiDeferredMessages {
     }
 
     create(session, input) {
-        if (this.disposed) throw new Error('服务正在关闭');
+        if (this.disposed || this.isSuspended()) throw new Error('服务正在关闭');
+        this.onActivity();
         const payload = validateMessage(input, { plain: true });
         const dueAt = Number(input.dueAt);
         if (!Number.isFinite(dueAt) || dueAt <= this.now() || dueAt > this.now() + 366 * 86400000) throw new Error('请选择未来一年内的发送时间');
@@ -119,7 +121,8 @@ class PiDeferredMessages {
     }
 
     update(cwd, sessionId, id, input) {
-        if (this.disposed) throw new Error('服务正在关闭');
+        if (this.disposed || this.isSuspended()) throw new Error('服务正在关闭');
+        this.onActivity();
         return this.change(() => {
             const job = this.jobs.find(item => item.id === id && item.cwd === cwd && item.sessionId === sessionId);
             if (!job) throw new Error('待发送消息不存在');
@@ -194,16 +197,18 @@ class PiDeferredMessages {
     }
 
     async dispatch(id) {
+        if (this.disposed || this.isSuspended()) return;
+        this.onActivity();
         let handedOff = false;
         try {
             let job = this.jobs.find(item => item.id === id);
             const session = await this.store.getSession(job.cwd, job.sessionId);
-            if (this.disposed) return;
+            if (this.disposed || this.isSuspended()) return;
             const worker = await this.supervisor.getWorker({ cwd: session.cwd, sessionId: session.id, sessionPath: session.path });
             await worker.exclusive(async (rpc, runtime) => {
                 await this.store.getSession(session.cwd, session.id);
                 job = this.jobs.find(item => item.id === id);
-                if (this.disposed || !READY.has(job.status) || job.dueAt > this.now()) return;
+                if (this.disposed || this.isSuspended() || !READY.has(job.status) || job.dueAt > this.now()) return;
                 const payload = validateMessage(job.payload, { plain: true });
                 assertSendable(runtime, payload);
                 this.change(() => { const current = this.jobs.find(item => item.id === id); current.status = 'dispatching'; current.revision++; });

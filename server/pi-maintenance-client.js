@@ -9,7 +9,8 @@ class MaintenanceClient {
                 if (error) this.state = { ...this.state, transportUncertain: true };
             });
         });
-        this.locked = managed; this.active = 0; this.tickets = new Map();
+        this.locked = managed; this.active = 0; this.activeMutations = 0; this.activityRevision = 0n;
+        this.desktopStopping = false; this.tickets = new Map();
         this.state = { supported: false, busy: false, reason: 'managed-launcher-required' };
         this.generation = randomUUID();
     }
@@ -22,15 +23,30 @@ class MaintenanceClient {
         if (message.type === 'maintenance-activate' || message.type === 'maintenance-release' && message.id === this.state.job?.id) { this.locked = false; this.pendingId = null; }
         if (message.type === 'maintenance-rejected' && message.id === this.state.job?.id) { this.locked = false; this.pendingId = null; this.state = { ...this.state, busy: false, job: { id: message.id, phase: 'failed', error: 'rejected' } }; }
     }
-    enter() {
+    get locked() { return this.maintenanceLocked || this.desktopStopping; }
+    set locked(value) { this.maintenanceLocked = Boolean(value); }
+    touch() { this.activityRevision++; }
+    enter({ readOnly = false } = {}) {
         if (this.locked) throw fail('实例正在维护，请等待完成');
+        if (!readOnly) { this.touch(); this.activeMutations++; }
         this.active++; let released = false;
-        return () => { if (!released) { released = true; this.active--; } };
+        return () => { if (!released) { released = true; this.active--; if (!readOnly) this.activeMutations--; } };
     }
     http(req, res, next) {
-        if (!req.path.startsWith('/api/') || req.path.startsWith('/api/pi/settings/updates') || req.method === 'GET' && req.path === '/api/access/status') return next();
+        if (!req.path.startsWith('/api/') || req.method === 'GET' && req.path === '/api/access/status') return next();
+        // Existing maintenance routes manage their own request occupancy; they
+        // still must not cross a desktop stop reservation.
+        if (req.path.startsWith('/api/pi/settings/updates')) {
+            if (this.desktopStopping) return res.status(503).json({ error: '实例正在维护，请等待完成' });
+            if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) this.touch();
+            return next();
+        }
         let leave;
-        try { leave = this.enter(); } catch (error) { return res.status(503).json({ error: error.message }); }
+        // Plain status polling never occupies business eligibility. Other reads
+        // can start bounded file/model jobs; invalidate an older confirmation
+        // even when such a job completes before the next snapshot.
+        if (['GET', 'HEAD'].includes(req.method) && !['/api/pi/activity', '/api/pi/status', '/api/pi/cron'].includes(req.path)) this.touch();
+        try { leave = this.enter({ readOnly: ['GET', 'HEAD', 'OPTIONS'].includes(req.method) }); } catch (error) { return res.status(503).json({ error: error.message }); }
         const end = res.end;
         res.end = function (...args) { leave(); return end.apply(this, args); };
         // A disconnected response alone does not imply its asynchronous work stopped.
