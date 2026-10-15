@@ -20,6 +20,9 @@
 | `POST /api/pi/compliance/batches/:id/pause` | 输入稳定操作编号和当前修订，请求在当前真实步骤结束后暂停 |
 | `GET /api/pi/compliance/batches/:id` | 按需读取固定的 `batch` 和当前账本 `revision` |
 | `GET /api/pi/compliance/batches/:id/evidence/:fieldId` | 返回批次内字段原文、页码/工作表行及原件摘要 |
+| `GET/POST /api/pi/compliance/batches/:id/review-proposals` | 列出方案或准备确认卡，POST 输入稳定操作编号、账本及批次修订、原生来源聊天和 `change` |
+| `GET /api/pi/compliance/review-proposals/:id` | 返回服务端精确卡片及 `ready/stale/applied` 状态 |
+| `POST /api/pi/compliance/review-proposals/:id/confirm` | 仅工作台用户提交 `requestId/expectedRevision/contentHash/cwd/sessionId`，不接受替换卡片内容 |
 | `GET/POST /api/pi/compliance/batches/:id/reports` | 列出报告；POST 输入 `requestId/expectedRevision/batchRevision`，生成固定修订 HTML 与 XLSX |
 | `GET /api/pi/compliance/reports/:id` | 报告元数据、生成/发布/原生交付状态，以及当前独立库的 `savedFiles` 证明 |
 | `GET /api/pi/compliance/reports/:id/files/:index` | 按不透明报告 ID 和索引 0/1 返回校验后的文件表示，不接受私密路径 |
@@ -49,6 +52,14 @@
 `budget` 默认 `pages:200,modelCalls:20,runMs:600000`；单次设置范围为 1–2000 页、1–200 次、1000–3600000 毫秒，批次累计上限为一万页、一千次、二十四小时。预算只限制下一步准入，当前请求实际结束前仍计入忙碌。HTTP 断线不取消，服务中断后原执行中步骤变为不确定，读取或继续不会自动重发。初始任务在外部工作前持久登记；中断操作查询返回 `status:pending,phase:checks,batchId`。
 
 设置可额外传 `expectedSettingsRevision`，与状态中的 `settingsRevision` 比较；这样后台检查点增加账本修订不会阻止停用，真正并发配置变化仍返回 `COMPLIANCE_STALE`。旧客户端仅传 `expectedRevision` 时仍按账本修订核对。`status:disabling` 表示已拒绝新增工作，当前真实步骤尚未结束。停用在运行批次持久记录 `pauseRequested/stopReason:disabled`，重新启用不清除原暂停意图；显式继续才清除。所有实际检查、模型与解析作业参与活动、维护和异步关闭。
+
+复核准备输入 `{requestId,expectedRevision,batchRevision,cwd,sessionId,change}`。字段方案为 `{kind:"field",documentId,key,raw,location,reason}`，`key` 限 `projectName/projectNumber/organization/year/phase/date/documentNumber`；日期原文解析为日/月区间，不补造具体日。`location` 是 `{page,region,excerpt}` 或 `{sheet,row,column,excerpt}`，人工出处与原始提取定位分别保存。明确核对首页上方文号缺失时使用 `key:"documentNumber",raw:null,absent:true`，定位必须为 `page:1,region:"upper"`。结论方案为 `{kind:"conclusion",resultId,conclusion,reason}`，结论取同一四值枚举。返回 `{ok,revision,proposal}`，方案绑定项目、批次修订、源文档哈希、完整规则哈希、字段/结果快照、配置修订、原生来源和 `contentHash`，最多两千份并受八 MiB 账本限制。
+
+提交人工确认仅接受精确卡片哈希和来源，重新核对能力、原生绑定资格、账本/批次修订及冻结内容。实际运行的工程项目拒绝修正，两个聊天竞争修订只允许一次提交。原值保留在字段 `raw/value/precision/status/location/candidates`；人工值另存 `humanValue:{raw,value,precision,status,location,reason,origin,proposalId,confirmedAt}`，状态为 `known/absent`。原始缺失槽保留 `original:{absent:true}`；之后未执行步骤取得原文时保留同一字段 ID、人工值及历史。规则使用准确核验的当前值；资料读取状态保持原状，`manualInputs` 明确列出规则使用的人工字段。
+
+批次 `history` 保存旧修订的字段、规则结果和人工状态，`corrections` 保存前后值、理由及来源。字段修正产生新批次修订并重算冻结规则，重置当前复核。人工结论保存在独立的 `result.humanDecision`，不覆盖系统 `conclusion`；`result.review.status` 为 `confirmed`，批次复核为 `partial/confirmed`。继续检查前也保存已有人工决定，后续重算保留人工字段并重置当前复核。报告分别导出原始提取、人工值、人工决定及历史，旧报告不变。
+
+受管 `compliance_review` 支持 `prepare/list/get/operation`，内部输入 `operation:"review"`。准备只接受业务字段，实际来源从存活专用 worker 取得；没有 `confirm` 动作。`list` 每页至多五十份方案摘要并返回 `nextOffset`，`get` 按 `proposalId` 读卡，`operation` 按原 `requestId` 查回执。worker 导航凭据不能访问人工确认路由。网络结果未知时查原回执，不自动重发；已提交同参回执可在停用后继续核对，失效卡重新准备。
 
 ## 桌面启动私有通道
 

@@ -44,8 +44,9 @@ test('managed compliance tools and four skills reach only verified dedicated ses
     const resources = async worker => worker.getNativeResources();
     const noCompliance = payload => {
         assert.ok(!(payload.tools || []).some(tool => tool.function?.name?.startsWith('compliance_')));
-        const system = JSON.stringify(payload.messages.filter(message => message.role === 'system'));
-        assert.doesNotMatch(system, /compliance-materials|compliance-checks|compliance-review|compliance-reports|Read and maintain the engineering project/);
+        const system = payload.messages.filter(message => message.role === 'system').map(message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content)).join('\n');
+        const unexpected = /<name>compliance-(?:materials|checks|review|reports)<\/name>|pi-packages[\\/]compliance[\\/]skills|Read and maintain the engineering project/.exec(system);
+        assert.equal(Boolean(unexpected), false, unexpected && system.slice(Math.max(0, unexpected.index - 180), unexpected.index + 250));
     };
     try {
         const initial = await api('GET', '/compliance'); assert.equal(initial.enabled, false);
@@ -59,6 +60,7 @@ test('managed compliance tools and four skills reach only verified dedicated ses
         assert.equal((await api('GET', '/sessions?cwd=' + encodeURIComponent(cwd))).sessions.filter(session => session.agentProfile?.id === enabled.profileId).length, 1);
         const worker = await workerFor(dedicated), inventory = await resources(worker);
         assert.ok(inventory.tools.some(tool => tool.name === 'compliance_project'));
+        assert.ok(inventory.tools.some(tool => tool.name === 'compliance_review'), 'dedicated worker exposes prepare/query review tool');
         assert.deepEqual(inventory.skills.filter(skill => skill.name.startsWith('compliance-')).map(skill => skill.name).sort(), ['compliance-checks', 'compliance-materials', 'compliance-reports', 'compliance-review']);
         createArguments = { action: 'create', requestId: 'rpc-create', expectedRevision: (await api('GET', '/compliance')).revision, project: { name: 'RPC 工程', identityConfirmed: false } };
         await prompt(worker, 'fixture create project');
@@ -83,6 +85,22 @@ test('managed compliance tools and four skills reach only verified dedicated ses
         await prompt(worker, 'fixture operate check');
         const checkResult = (await worker.request('get_entries')).entries.findLast(entry => entry.message?.toolName === 'compliance_check')?.message;
         assert.ok(checkResult && !checkResult.isError, JSON.stringify(checkResult)); assert.ok(checkResult.details.pivaneCompliance.batchId);
+        const reviewBatch = (await api('GET', '/compliance/batches/' + checkResult.details.pivaneCompliance.batchId)).batch;
+        operation = { name: 'compliance_review', input: { action: 'prepare', batchId: reviewBatch.id, batchRevision: reviewBatch.revision, requestId: 'rpc-review', expectedRevision: (await api('GET', '/compliance')).revision,
+            change: { kind: 'field', documentId: importedId, key: 'date', raw: '2026-08', location: { sheet: 'CSV', row: 2, column: 2, excerpt: '日期列，原件只写到月' }, reason: '建议保留原件月份精度，等待用户确认' } } };
+        await prompt(worker, 'fixture operate prepare review');
+        const preparedReview = (await worker.request('get_entries')).entries.findLast(entry => entry.message?.toolName === 'compliance_review')?.message;
+        assert.ok(preparedReview && !preparedReview.isError, JSON.stringify(preparedReview)); const reviewCard = preparedReview.details.pivaneCompliance.proposal;
+        assert.equal(reviewCard.origin.sessionId, dedicated.id); assert.equal(reviewCard.change.precision, 'month');
+        assert.equal((await api('GET', '/compliance/batches/' + reviewBatch.id)).batch.fields.some(field => field.humanValue), false, 'model preparation is not human confirmation');
+        operation = { name: 'compliance_review', input: { action: 'confirm', proposalId: reviewCard.id, requestId: 'model-confirms', expectedRevision: (await api('GET', '/compliance')).revision } };
+        await prompt(worker, 'fixture operate forbidden confirm');
+        const modelConfirmation = (await worker.request('get_entries')).entries.findLast(entry => entry.message?.toolName === 'compliance_review')?.message; assert.equal(modelConfirmation.isError, true);
+        const forged = await fetch(origin + '/api/pi/compliance/review-proposals/' + reviewCard.id + '/confirm', { method: 'POST', headers: { Authorization: 'Bearer ' + worker.navigationToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: 'forged-http-confirm', expectedRevision: (await api('GET', '/compliance')).revision, contentHash: reviewCard.contentHash, cwd, sessionId: dedicated.id }) }); assert.equal(forged.status, 401);
+        await api('POST', '/compliance/review-proposals/' + reviewCard.id + '/confirm', { requestId: 'actual-human-confirm', expectedRevision: (await api('GET', '/compliance')).revision, contentHash: reviewCard.contentHash, cwd, sessionId: dedicated.id });
+        operation = { name: 'compliance_review', input: { action: 'operation', requestId: 'actual-human-confirm' } }; await prompt(worker, 'fixture operate query human receipt');
+        const humanReceipt = (await worker.request('get_entries')).entries.findLast(entry => entry.message?.toolName === 'compliance_review')?.message;
+        assert.ok(humanReceipt && !humanReceipt.isError, JSON.stringify(humanReceipt)); assert.equal(humanReceipt.details.pivaneCompliance.proposalId, reviewCard.id);
         assert.ok(calls.some(payload => JSON.stringify(payload.tools).includes('compliance_materials') && JSON.stringify(payload.tools).includes('compliance_check')));
         operation = { name:'compliance_project',input:{action:'update',projectId:project.id,requestId:'spoof-confirmation',expectedRevision:(await api('GET','/compliance')).revision,project:{name:project.name,identityConfirmed:true,applicability:{'contract-deadline':true}}} };
         await prompt(worker,'fixture operate spoof confirmation');
@@ -90,7 +108,7 @@ test('managed compliance tools and four skills reach only verified dedicated ses
         assert.equal((await api('GET','/compliance/projects/'+project.id)).project.identityConfirmed,false);
         const { labeledPdf }=require('./compliance-fixtures.cjs');
         const dense=labeledPdf(Array.from({length:4000},(_,i)=>({text:'Office fixture line '+i,x:20,y:760-(i%60)*10})));
-        const uploaded=await fetch(origin+'/api/pi/uploads?'+new URLSearchParams({cwd,sessionId:dedicated.id,requestId:'rpc-pdf',name:'密集文本.pdf'}),{method:'POST',headers:{Authorization:'Bearer fixture-compliance-token','Content-Type':'application/octet-stream'},body:dense}); assert.equal(uploaded.status,200); const attachment=await uploaded.json();
+        const uploaded=await fetch(origin+'/api/pi/uploads?'+new URLSearchParams({cwd,sessionId:dedicated.id,requestId:'rpc-pdf',name:'密集文本.pdf'}),{method:'POST',headers:{Authorization:'Bearer fixture-compliance-token','Content-Type':'application/octet-stream'},body:dense}); const attachment=await uploaded.json(); assert.equal(uploaded.status,200,JSON.stringify({bytes:dense.length,...attachment}));
         operation={name:'read_document',input:{id:attachment.reference.id,action:'read',start:1,count:10}};
         await prompt(worker,'fixture operate read ordinary PDF\n'+attachment.marker);
         const readEntries=(await worker.request('get_entries')).entries, read=readEntries.findLast(entry=>entry.message?.toolName==='read_document')?.message; assert.ok(read&&!read.isError,JSON.stringify({read,tools:readEntries.map(e=>e.message?.toolName).filter(Boolean),last:calls.at(-1)?.messages?.at(-1)}));

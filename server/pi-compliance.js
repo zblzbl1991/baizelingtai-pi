@@ -30,6 +30,7 @@ class ComplianceService {
         this.ledger = ledger || new ComplianceLedger(); this.mutating = false; this.closed = false; this.pending = null;
         this.materials = new (require('./pi-compliance-materials').ComplianceMaterials)(this, documents);
         this.checks = new (require('./pi-compliance-checks').ComplianceChecks)(this, documents);
+        this.review = new (require('./pi-compliance-review').ComplianceReview)(this);
         this.reports = new (require('./pi-compliance-reports').ComplianceReports)(this);
     }
     reserve(action, settling = false) {
@@ -162,6 +163,23 @@ class ComplianceService {
             const settling = input?.operation === 'reports' && await this.reports.canSettle(worker, input);
             await this.authorizeWorker(worker, settling);
             if (input?.operation === 'reports') return await this.reports.tool(worker, input);
+            if (input.operation === 'review') {
+                only(input, ['operation', 'action', 'batchId', 'proposalId', 'batchRevision', 'requestId', 'expectedRevision', 'change', 'offset']);
+                if (input.action === 'prepare') return await this.review.prepare(input.batchId, { requestId: input.requestId, expectedRevision: input.expectedRevision, batchRevision: input.batchRevision, cwd: worker.cwd, sessionId: worker.sessionId, change: input.change }, worker);
+                if (input.action === 'get') return await this.review.get(input.proposalId);
+                if (input.action === 'list') {
+                    const value = await this.review.list(input.batchId), offset = input.offset ?? 0;
+                    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2000) throw fail('复核目录位置无效');
+                    const proposals = value.proposals.slice(offset, offset + 50).map(({ id, status, batchId, batchRevision, createdAt, change }) => ({ id, status, batchId, batchRevision, createdAt, kind: change.kind }));
+                    return { revision: value.revision, proposals, nextOffset: offset + proposals.length < value.proposals.length ? offset + proposals.length : null };
+                }
+                if (input.action === 'operation') {
+                    const value = await this.operation(input.requestId);
+                    if (value.batch) return { ok: value.ok, revision: value.revision, proposalId: value.proposalId, batchId: value.batch.id, batchRevision: value.batch.revision, results: value.batch.results, review: value.batch.review };
+                    return value;
+                }
+                throw fail('智能体只能准备或查询复核，不能提交人工确认', 403, 'COMPLIANCE_CONFIRMATION_USER_ONLY');
+            }
             if (input.operation === 'materials' || input.operation === 'checks') {
                 only(input, ['operation', 'action', 'projectId', 'documentId', 'batchId', 'fieldId', 'requestId', 'expectedRevision', 'sources', 'budget', 'offset']);
                 if (input.operation === 'materials') {
@@ -292,6 +310,13 @@ function mountCompliance(router, service) {
     router.get('/compliance/projects/:id/batches', route(req => service.checks.list(req.params.id)));
     router.get('/compliance/batches/:id', route(req => service.checks.get(req.params.id)));
     router.get('/compliance/batches/:id/evidence/:fieldId', route(req => service.checks.evidence(req.params.id, req.params.fieldId)));
+    router.post('/compliance/batches/:id/review-proposals', route(req => service.review.prepare(req.params.id, req.body)));
+    router.get('/compliance/batches/:id/review-proposals', route(req => service.review.list(req.params.id)));
+    router.get('/compliance/review-proposals/:id', route(req => service.review.get(req.params.id)));
+    router.post('/compliance/review-proposals/:id/confirm', route(req => {
+        if (!['open', 'token', 'cookie'].includes(req.workspaceIdentity?.kind)) throw fail('人工确认只能由工作台用户提交', 403, 'COMPLIANCE_CONFIRMATION_USER_ONLY');
+        return service.review.confirm(req.params.id, req.body);
+    }));
     router.post('/compliance/tool', route(req => {
         if (req.workspaceIdentity?.kind !== 'agent-thread') throw fail('仅允许存活受管 worker 调用', 403, 'COMPLIANCE_SCOPE');
         return service.tool(req.workspaceIdentity.worker, req.body);

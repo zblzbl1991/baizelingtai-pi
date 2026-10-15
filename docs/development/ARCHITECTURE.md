@@ -29,6 +29,8 @@ flowchart TD
 - worker 拥有 RPC、事件、导航、Shell、控制队列和私有响应槽。`pi-worker-lifecycle` 集中投影这些工作；界面活动、维护空闲、无人订阅后的回收使用明确的不同条件。后台标题生成会阻止维护，但不占用主 prompt 操作；未处理草稿、队列和不确定操作不能因 agent_settled 被遗忘。
 - 功能服务依赖已注入的 store、supervisor、preferences 或公开 Pi SDK。跨服务操作的互斥在 await 前预占，完成后再释放；接口不能把超时当成实际终止。
 
+人工复核由 `ComplianceReview` 在同一业务账本中保存不可变方案、提交回执与批次修订历史。原生会话绑定只证明来源，聊天不成为业务结果副本。模型仅准备和查询，工作台用户提交精确内容哈希。规则读取独立人工字段，原始提取和解析状态保留；人工结论也不覆盖系统建议。继续检查前保存旧人工决定，报告消费指定修订的同一记录。
+
 ## 会话与运行时
 
 Pi SessionManager 和原生 JSONL 是唯一会话事实来源。项目先经 native realpath、配置范围和系统权限解析；持久 worker 按规范 sessionPath 唯一索引，多浏览器订阅同一 worker。外部 CLI 不能同时写同一个会话。
