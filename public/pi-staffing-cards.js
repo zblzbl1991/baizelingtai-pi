@@ -13,6 +13,12 @@
         const pendingKey = id => 'pivane.staffing.pending:' + id;
         function render(message) {
             const preview = message?.details?.pivaneStaffing;
+            if (message?.role === 'toolResult' && !message.isError && ['staffing_prepare_change', 'staffing_operation_status'].includes(message.toolName) && preview?.version === 2) {
+                const ref = preview.reference;
+                if (!['assign', 'absence', 'formalize', 'adjust', 'release'].includes(ref?.kind) || !/^[a-f0-9-]{36}$/.test(ref.id || '') || !Number.isSafeInteger(ref.revision) || ref.revision < 1
+                    || typeof ref.source?.cwd !== 'string' || !ref.source.cwd || typeof ref.source.sessionId !== 'string' || !ref.source.sessionId || ref.source.kind !== undefined) return null;
+                return renderPlan({ ...ref, personIds: [] });
+            }
             if (message?.role !== 'toolResult' || message.isError || message.toolName !== 'staffing_prepare_change' || preview?.version !== 1
                 || !/^[a-f0-9-]{36}$/.test(preview.plan?.id || '') || !preview.plan.source
                 || typeof preview.plan.source.cwd !== 'string' || typeof preview.plan.source.sessionId !== 'string'
@@ -74,6 +80,8 @@
                 const displayed = { generation, planId: plan.id, revision: plan.revision }; card.replaceChildren();
                 card.append(node('h3', tr(plan.kind === 'assign' ? '人员安排方案' : '人员安排变更')), node('p', tr('台账版本：{0}').replace('{0}', plan.revision)));
                 if (plan.project) card.append(node('p', plan.project.name + ' · ' + plan.project.department), node('p', plan.project.start + ' 至 ' + plan.project.end));
+                if (plan.kind === 'assign' && plan.project) card.append(node('p', tr('最低人数') + '：' + plan.project.minimum + ' · '
+                    + tr(plan.existingTeam?.length ? '本次新增人数' : '本次选中人数') + '：' + plan.personIds.length));
                 const status = node('p', entry.notice || plan.warning || '', { role: 'status', 'aria-live': 'polite' }); card.append(status);
                 if (entry.loading) { status.textContent = tr('正在读取方案…'); return; }
                 const coverage = plan.coverage;
@@ -91,7 +99,7 @@
                 if (plan.outcome) {
                     card.append(node('p', tr(plan.outcome.action === 'reserve' ? '已预占' : '已保存确认'), { 'data-staffing-outcome': 'completed' }),
                         node('p', plan.outcome.coverage ? tr(plan.outcome.coverage.allConfirmed ? '全部人员已正式确认' : '尚未全部正式确认') : ''));
-                    for (const person of plan.people || []) card.append(node('p', person.name + ' · ' + person.department)); return;
+                    for (const person of plan.people || []) card.append(node('p', person.name + ' · ' + person.id + ' · ' + person.department)); return;
                 }
                 if (entry.pending) { const check = node('button', tr('查询原操作结果'), { type: 'button', 'data-staffing-action': 'lookup' });
                     check.disabled = entry.busy; check.addEventListener('click', () => void lookup(generation)); card.append(check); return; }
@@ -100,14 +108,14 @@
                     const apply = node('button', tr('确认以上变更'), { type: 'button', 'data-staffing-action': 'apply' });
                     apply.disabled = entry.busy; apply.addEventListener('click', () => void write('apply', {}, displayed)); card.append(apply); return;
                 }
-                if (plan.existingTeam?.length) card.append(node('p', tr('已安排人数') + '：' + new Set(plan.existingTeam.map(row => row.personId)).size + ' · ' + tr('本次新增人数') + '：' + plan.personIds.length));
+                if (plan.existingTeam?.length) card.append(node('p', tr('已安排人数') + '：' + new Set(plan.existingTeam.map(row => row.personId)).size));
                 const list = node('fieldset'); list.append(node('legend', tr('选择人员')));
                 const selected = new Set(plan.personIds), inputs = [];
                 const allCandidates = new Map([...(plan.candidates || []), ...(plan.people || [])].map(person => [person.id, person]));
                 for (const person of allCandidates.values()) {
                     const label = node('label', undefined, { class: 'staffing-person-choice' }), input = node('input', undefined, { type: 'checkbox', 'data-staffing-person': person.id });
                     input.checked = selected.has(person.id); input.disabled = entry.busy; inputs.push(input);
-                    label.append(input, node('span', person.name + ' · ' + person.department + ' · ' + tr(person.direct ? '直签' : '非直签'))); list.append(label);
+                    label.append(input, node('span', person.name + ' · ' + person.id + ' · ' + person.department + ' · ' + tr(person.direct ? '直签' : '非直签'))); list.append(label);
                 }
                 card.append(list);
                 if (plan.candidates?.length === 200) card.append(node('p', tr('此卡片最多显示 200 名候选人员。')));

@@ -2,6 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { runtimeScope } from './runtime-scope.js';
+import { toolResult } from './tool-result.js';
 
 export default async function (pi: ExtensionAPI) {
     const project = Type.Object({ id: Type.String(), name: Type.String(), owner: Type.String(), department: Type.String(), start: Type.String(), end: Type.String(), minimum: Type.Integer({ minimum: 1, maximum: 5000 }) }, { additionalProperties: false });
@@ -46,7 +47,7 @@ export default async function (pi: ExtensionAPI) {
                 const response = await fetch(url, { method: 'POST', redirect: 'error', signal,
                     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.PI_WEB_NAVIGATION_TOKEN}` }, body: JSON.stringify(raw) });
                 const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Staffing request failed');
-                return { content: [{ type: 'text', text: JSON.stringify(result) }], ...(['prepare', 'import'].includes(definition.action) ? { details: { pivaneStaffing: { version: 1, plan: result } } } : {}) };
+                return toolResult(definition.action, result);
             } });
     });
 }

@@ -153,9 +153,9 @@ function createPiAgentGateway(options = {}) {
                 || !worker.loadedAgentProfileConfirmed || worker.loadedAgentProfileId !== status.profileId
                 || worker.loadedStaffingEpoch !== status.epoch
                 || worker.client.env.PIVANE_PROFILE_AUTHORING_CONTEXT)) throw Object.assign(new Error('Verified dedicated staffing session required'), { status: 403 });
-        const nativePlanIds = manager.getBranch().filter(entry => entry.type === 'message' && entry.message?.role === 'toolResult'
-            && ['staffing_prepare_change', 'staffing_prepare_import'].includes(entry.message.toolName) && !entry.message.isError && entry.message.details?.pivaneStaffing?.version === 1)
-            .map(entry => entry.message.details.pivaneStaffing.plan?.id).filter(value => typeof value === 'string');
+        const { referenceFromMessage } = require('./staffing/plan-reference');
+        const nativePlanIds = manager.getBranch().filter(entry => entry.type === 'message')
+            .map(entry => referenceFromMessage(entry.message)?.originId).filter(Boolean);
         return { sessionId: session.id, sessionPath: fs.realpathSync.native(session.path), cwd: session.cwd, profileId: context.profileId, nativePlanIds };
     };
     require('./staffing/routes').mountStaffingRoutes(router, staffing, { resolveSource: resolveStaffingSource });

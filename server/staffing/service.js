@@ -5,6 +5,7 @@ const { fail, keys, id, LIMITS, validateInitial } = require('./validation');
 const rules = require('./rules');
 const adjustments = require('./adjustments');
 const viewProjection = require('./views');
+const { referenceForPlan } = require('./plan-reference');
 const localToday = () => { const now = new Date(); return [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-'); };
 const BINDING_KEY = 'pivane-staffing:v1';
 const PROFILE = Object.freeze({ name: '人员调配', description: '查询人员台账，准备人员安排，并由用户确认具体变更。',
@@ -48,7 +49,13 @@ class StaffingService {
         if (!id(requestId)) fail('Invalid staffing request ID');
         const state = await this.requireSource(source), op = Object.hasOwn(state.operations, requestId) ? state.operations[requestId] : null;
         if (op && canonical(op.source) !== canonical(stableSource(source))) fail('Staffing operation source does not match', 403);
-        return this.operation(requestId);
+        const result = op ? op.state === 'completed' ? { state: 'completed', result: op.result } : { state: 'pending', noReplay: true }
+            : { state: 'unknown', noReplay: true };
+        const plan = op?.state === 'completed' && state.plans[op.result?.id];
+        if (plan && canonical(plan.source) === canonical(stableSource(source))) {
+            const reference = referenceForPlan(plan); if (reference) result.reference = reference;
+        }
+        return result;
     }
     validateRequest(input, fields = []) {
         keys(input, ['requestId', 'expectedRevision', ...fields]);

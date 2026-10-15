@@ -86,7 +86,7 @@ test('real managed supplier requests isolate staffing resources and reject disab
                 await prompt(worker, 'Prepare synthetic plan');
                 const entries = await worker.request('get_entries');
                 const result = entries.entries.findLast(entry => entry.message?.toolName === 'staffing_prepare_change')?.message;
-                assert.equal(result?.isError, false, JSON.stringify(result)); const plan = result.details.pivaneStaffing.plan;
+                assert.equal(result?.isError, false, JSON.stringify(result)); const plan = result.details.pivaneStaffing.reference;
                 assert.equal((await gateway.staffing.ledger()).occupancies.length, 0);
                 const source = { cwd, sessionId: session.id };
                 let adjusted = plan;

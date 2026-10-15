@@ -18,7 +18,7 @@
         const first=status.projects[0],today=status.today;
         const start=field(controls,'开始日','staffing-view-start','date',first?.start||today),end=field(controls,'结束日','staffing-view-end','date',first?.end||today);
         const refreshButton=node('button',tr('查询最新台账'),{id:'staffing-view-refresh',type:'button'});controls.append(refreshButton);
-        const paging=node('div',undefined,{class:'staffing-actions'});let offset=0;
+        const paging=node('div',undefined,{class:'staffing-actions'});let offset=0,previousOffsets=[];
         async function load() {
             const ticket=++generation; notice.textContent=tr('正在读取台账…');
             try {const params=new URLSearchParams({kind:view,offset:String(offset),limit:'100'}); if(department.value)params.set('department',department.value);if(view!=='projects'){params.set('start',start.value);params.set('end',end.value);}
@@ -40,12 +40,13 @@
                     if(view==='people')for(const o of person.occupancies)row.append(node('p',(o.projectName||tr(kindLabels[o.kind]))+' · '+o.start+' 至 '+o.end+' · '+tr(kindLabels[o.state])));
                     results.append(row);
                 }
-                for(const [label,next,disabled]of [['上一页',Math.max(0,offset-100),offset===0],['下一页',offset+100,offset+100>=data.total]]){const b=node('button',tr(label),{type:'button'});b.disabled=disabled;b.addEventListener('click',()=>{offset=next;void load();});paging.append(b);}
+                const nextOffset=data.nextOffset??(offset+rows.length<data.total?offset+rows.length:null);
+                for(const [label,isNext,disabled]of [['上一页',false,!previousOffsets.length],['下一页',true,nextOffset===null]]){const b=node('button',tr(label),{type:'button'});b.disabled=disabled;b.addEventListener('click',()=>{if(isNext){previousOffsets.push(offset);offset=nextOffset;}else offset=previousOffsets.pop()??0;void load();});paging.append(b);}
                 paging.append(node('span',tr('记录总数')+'：'+data.total));
             } catch(error){if(ticket===generation&&root.isConnected)notice.textContent=error.message;}
         }
-        for(const [name,label]of [['projects','项目安排'],['availability','可用人员'],['people','人员日历']]){const b=node('button',tr(label),{type:'button','data-staffing-view':name});b.addEventListener('click',()=>{view=name;offset=0;for(const el of tabs.children)el.setAttribute('aria-pressed',String(el===b));void load();});b.setAttribute('aria-pressed',String(name===view));tabs.append(b);}
-        refreshButton.addEventListener('click',()=>{offset=0;void load();});root.append(tabs,controls,results,paging);
+        for(const [name,label]of [['projects','项目安排'],['availability','可用人员'],['people','人员日历']]){const b=node('button',tr(label),{type:'button','data-staffing-view':name});b.addEventListener('click',()=>{view=name;offset=0;previousOffsets=[];for(const el of tabs.children)el.setAttribute('aria-pressed',String(el===b));void load();});b.setAttribute('aria-pressed',String(name===view));tabs.append(b);}
+        refreshButton.addEventListener('click',()=>{offset=0;previousOffsets=[];void load();});root.append(tabs,controls,results,paging);
         const editor=node('section',undefined,{class:'staffing-manual-editor','aria-label':tr('手动安排变更')});editor.append(node('h3',tr('准备具体变更')),node('p',tr('检查方案后，再确认保存。请假会保留原项目安排并标记缺口。')));
         const form=node('div',undefined,{class:'staffing-form-grid'});editor.append(form);
         const operation=select(form,'操作','staffing-change-kind',[['add','补充人员'],['absence','登记请假或培训'],['formalize','将已有预占正式确认'],['replace','区间换人'],['reschedule','整体改期'],['extend','延长项目'],['withdraw','撤回人员'],['early-end','提前结束'],['cancel','取消项目']].map(([id,label])=>[id,tr(label)]));

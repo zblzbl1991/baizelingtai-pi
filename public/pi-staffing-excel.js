@@ -5,7 +5,7 @@
     const sourceOf = plan => plan.source.kind === 'page' ? { kind: 'page' } : { cwd: plan.source.cwd, sessionId: plan.source.sessionId };
     function card(initial, { request, refresh = () => {}, context = () => null }) {
         const root = el('section', undefined, { class: 'staffing-plan-card staffing-import-card', 'data-staffing-import-plan': initial.id });
-        let plan = initial, busy = false, pending = null, notice = '', generation = 0;
+        let plan = initial, busy = false, pending = null, notice = '', generation = 0, loading = !initial.import;
         const key = 'pivane.staffing.import:' + initial.id; try { pending = sessionStorage.getItem(key); } catch { /* Optional UI receipt. */ }
         const active = () => plan.source.kind === 'page' || context()?.cwd === plan.source.cwd && context()?.sessionId === plan.source.sessionId;
         const clear = () => { pending = null; try { sessionStorage.removeItem(key); } catch { /* Optional. */ } };
@@ -13,10 +13,10 @@
             const ticket = ++generation;
             try { const loaded = await request('/plans/' + encodeURIComponent(initial.id) + '?' + new URLSearchParams(sourceOf(plan))); if (ticket !== generation || !root.isConnected) return; plan = loaded; if (plan.outcome) clear(); }
             catch (error) { if (ticket !== generation) return; notice = error.message; plan = { ...plan, stale: true }; }
-            draw();
+            loading = false; draw();
         }
         async function confirm() {
-            if (busy || pending || plan.stale || !active()) return; busy = true; pending = crypto.randomUUID(); try { sessionStorage.setItem(key, pending); } catch { /* Optional. */ } draw();
+            if (loading || busy || pending || plan.stale || !active()) return; busy = true; pending = crypto.randomUUID(); try { sessionStorage.setItem(key, pending); } catch { /* Optional. */ } draw();
             try {
                 await request('/commit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: pending, expectedRevision: plan.revision, planId: plan.id, action: 'apply-import', source: sourceOf(plan) }) });
                 clear(); notice = tr('导入已保存。'); await load(); await refresh(); window.dispatchEvent(new Event('workspace:staffing-changed'));
@@ -30,6 +30,7 @@
         }
         function draw() {
             root.replaceChildren(el('h3', tr('Excel 导入差异')), el('p', tr('台账版本：{0}').replace('{0}', plan.revision)), el('p', notice || plan.warning || '', { role: 'status' }));
+            if (loading) { root.append(el('p', tr('正在读取方案…'))); return; }
             root.append(el('p', `${tr('变更记录')} ${plan.totalChanges ?? Object.values(plan.counts || {}).reduce((n, v) => n + v, 0)}`));
             if (plan.historyCompleteChange) root.append(el('p', tr('历史完整性') + '：' + tr(plan.historyCompleteChange.before ? '完整' : '不完整') + ' → ' + tr(plan.historyCompleteChange.after ? '完整' : '不完整')));
             for (const change of plan.changes || []) {
@@ -90,6 +91,12 @@
         section.append(input, prepare, lookup); if (exportButton) section.append(exportButton); section.append(message, preview); container.append(section); draw();
     }
     function render(message, options) {
+        if (message?.role === 'toolResult' && !message.isError && ['staffing_prepare_import', 'staffing_operation_status'].includes(message.toolName) && message.details?.pivaneStaffing?.version === 2) {
+            const reference = message.details.pivaneStaffing.reference;
+            if (reference?.kind !== 'import' || !/^[a-f0-9-]{36}$/.test(reference.id || '') || !Number.isSafeInteger(reference.revision) || reference.revision < 1
+                || reference.source?.kind !== undefined || typeof reference.source?.cwd !== 'string' || !reference.source.cwd || typeof reference.source.sessionId !== 'string' || !reference.source.sessionId) return null;
+            return card({ ...reference, stale: true }, { request: (url, init) => options.fetch('/api/pi/staffing' + url, init), context: options.context });
+        }
         if (message?.role !== 'toolResult' || message.toolName !== 'staffing_prepare_import' || message.isError || message.details?.pivaneStaffing?.version !== 1 || message.details.pivaneStaffing.plan?.kind !== 'import') return null;
         const plan = message.details.pivaneStaffing.plan; if (!/^[a-f0-9-]{36}$/.test(plan.id) || !plan.source || !Number.isSafeInteger(plan.revision)) return null;
         return card(plan, { ...options, request: (url, opts) => options.fetch('/api/pi/staffing' + url, opts) });

@@ -9794,6 +9794,7 @@
         ["确认以上变更", "Confirm these changes"],
         ["已安排人数", "People assigned"],
         ["本次新增人数", "People added in this plan"],
+        ["本次选中人数", "People selected in this plan"],
         ["核查与调整", "Review and adjust"],
         ["台账视图", "Ledger views"],
         ["人员调配台账", "Staffing ledger"],
