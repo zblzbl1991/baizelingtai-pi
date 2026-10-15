@@ -1,9 +1,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const net = require('node:net');
 const { fork } = require('node:child_process');
-const { randomUUID, createHash } = require('node:crypto');
+const { randomUUID } = require('node:crypto');
+const { acquireInstallationLock } = require('./pi-installation-lock');
 const { privateDir, atomicJson, readSafe, backupRoots, recordInstallation, inside } = require('./pi-maintenance-files');
 const { stagePi, exactVersion } = require('./pi-update-installer');
 const { stageApplication, validRelease } = require('./pi-application-installer');
@@ -60,14 +60,18 @@ class ManagedLauncher {
             storage: this.directory, backupScope: 'agent-sessions-media-config-history', nodeVersion: process.versions.node };
     }
     send(message) { if (this.child?.connected) this.child.send({ ...message, nonce: this.nonce }, () => {}); }
-    async start() {
-        // The kernel owns this process lock. It disappears on crash and needs no stale PID deletion.
-        const port = 40000 + createHash('sha256').update(this.root).digest().readUInt32BE(0) % 20000;
-        this.guard = net.createServer(socket => socket.destroy());
-        await new Promise((resolve, reject) => { this.guard.once('error', reject); this.guard.listen(port, '127.0.0.1', resolve); });
-        this.loadState();
-        await this.boot(this.state.active);
-        this.send({ type: 'maintenance-activate' });
+    start() {
+        if (this.closed) return Promise.reject(new Error('Launcher is stopping'));
+        if (!this.starting) this.starting = Promise.resolve().then(async () => {
+            if (this.closed) return;
+            this.lockAcquisition = acquireInstallationLock(this.root);
+            this.guard = await this.lockAcquisition;
+            if (this.closed) return;
+            this.loadState();
+            await this.boot(this.state.active);
+            if (!this.closed) this.send({ type: 'maintenance-activate' });
+        });
+        return this.starting;
     }
     boot(release) {
         if (this.closed) throw new Error('Launcher is stopping');
@@ -217,11 +221,19 @@ class ManagedLauncher {
         });
         return this.operation;
     }
-    async close() {
-        this.closed = true; this.controller?.abort();
-        await this.operation;
-        await this.stopChild();
-        if (this.guard?.listening) await new Promise(resolve => this.guard.close(resolve));
+    close() {
+        if (!this.closing) {
+            this.closed = true; this.controller?.abort();
+            this.closing = Promise.resolve().then(async () => {
+                // A pending acquisition must settle before deciding there is no
+                // lock to release. Failed acquisition never grants ownership.
+                await this.lockAcquisition?.catch(() => {});
+                await this.operation;
+                await this.stopChild();
+                await this.guard?.close();
+            });
+        }
+        return this.closing;
     }
 }
 module.exports = { ManagedLauncher };

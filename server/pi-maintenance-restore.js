@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const net = require('node:net');
-const { randomUUID, createHash } = require('node:crypto');
+const { randomUUID } = require('node:crypto');
+const { acquireInstallationLock } = require('./pi-installation-lock');
 const { privateDir, readSafe, copySafe, backupRoots, hashFileSafe, recordInstallation, atomicJson, hash, inside } = require('./pi-maintenance-files');
 const { replaceFileSync } = require('./pi-win32-native');
 const { ManagedLauncher } = require('./pi-managed-launcher');
@@ -37,12 +37,10 @@ function inspectBackup(root, id) {
 }
 async function restoreBackup(root, id) {
     root = fs.realpathSync.native(root);
-    const port = 40000 + createHash('sha256').update(root).digest().readUInt32BE(0) % 20000;
-    const guard = net.createServer(socket => socket.destroy());
-    await new Promise((resolve, reject) => { guard.once('error', reject); guard.listen(port, '127.0.0.1', resolve); });
+    const guard = await acquireInstallationLock(root);
     try {
         return restoreStoppedBackup(root, id);
-    } finally { await new Promise(resolve => guard.close(resolve)); }
+    } finally { await guard.close(); }
 }
 // Called internally only after the launcher owns the lock and awaits child exit.
 function restoreStoppedBackup(root, id) {

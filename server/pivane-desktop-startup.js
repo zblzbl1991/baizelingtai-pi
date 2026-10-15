@@ -42,8 +42,8 @@ async function createDesktopStartup({ root, reservedPorts = [], failureViewMs = 
     server.requestTimeout = 5000;
     server.headersTimeout = 5000;
     server.setTimeout(5000, socket => socket.destroy());
-    // ManagedLauncher reserves one port in 40000..59999 for the installation
-    // lock. Keep temporary HTTP listeners outside that range to avoid self-conflict.
+    // Non-Windows ManagedLauncher still reserves a port in 40000..59999.
+    // Keep temporary HTTP listeners outside that range on every platform.
     for (let attempt = 0; attempt < 32; attempt++) {
         try {
             await new Promise((resolve, reject) => {
@@ -52,7 +52,7 @@ async function createDesktopStartup({ root, reservedPorts = [], failureViewMs = 
                 server.once('error', failed); server.once('listening', listening);
                 server.listen(attempt === 0 ? 0 : randomInt(60000, 65536), '127.0.0.1');
             });
-        } catch (error) { if (error.code === 'EADDRINUSE') continue; throw error; }
+        } catch (error) { if (['EADDRINUSE', 'EACCES'].includes(error.code)) continue; throw error; }
         const port = server.address().port;
         if ((port < 40000 || port >= 60000) && !reservedPorts.includes(port)) { url = `http://127.0.0.1:${port}/`; break; }
         await new Promise(resolve => server.close(resolve));
