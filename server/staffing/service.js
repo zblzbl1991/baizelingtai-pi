@@ -5,6 +5,7 @@ const { fail, keys, id, LIMITS, validateInitial } = require('./validation');
 const rules = require('./rules');
 const adjustments = require('./adjustments');
 const viewProjection = require('./views');
+const localToday = () => { const now = new Date(); return [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-'); };
 const BINDING_KEY = 'pivane-staffing:v1';
 const PROFILE = Object.freeze({ name: '人员调配', description: '查询人员台账，准备人员安排，并由用户确认具体变更。',
     soul: '你是人员调配助手。使用最新台账查询人员。说明安排缺口。推荐不占用人员。具体变更由用户通过安排卡片确认。不得用聊天记忆判断人员空闲。',
@@ -20,7 +21,7 @@ const summary = state => ({ enabled: state.enabled, state: state.enabled ? state
     counts: { people: state.people.length, projects: state.projects.length, occupancies: state.occupancies.length }, limits: LIMITS });
 
 class StaffingService {
-    constructor({ profiles, store = new StaffingStore(), isSuspended = () => false, today = () => new Date().toLocaleDateString('en-CA'), imports = null } = {}) {
+    constructor({ profiles, store = new StaffingStore(), isSuspended = () => false, today = localToday, imports = null } = {}) {
         this.profiles = profiles; this.store = store; this.isSuspended = isSuspended; this.today = today; this.imports = imports;
         this.busy = false; this.stopping = false; this.pending = null;
     }
@@ -31,11 +32,11 @@ class StaffingService {
         return pending.finally(() => { if (this.pending === pending) this.pending = null; this.busy = false; });
     }
     async dispose() { this.stopping = true; if (this.pending) await this.pending.catch(() => {}); }
-    async status() { return summary(await this.store.snapshot()); }
+    async status() { return { ...summary(await this.store.snapshot()), today: this.today() }; }
     async ledger() {
         const state = await this.store.snapshot();
         if (!state.enabled) fail('Staffing capability is disabled', 409);
-        return { ...summary(state), people: state.people, projects: state.projects, occupancies: state.occupancies };
+        return { ...summary(state), today: this.today(), people: state.people, projects: state.projects, occupancies: state.occupancies };
     }
     async operation(requestId) {
         if (!id(requestId)) fail('Invalid staffing request ID');
@@ -147,10 +148,12 @@ class StaffingService {
     async views(input) { return viewProjection.project(await this.requireReady(), structuredClone(input)); }
     async prepareAdjustment(input, source) {
         input = structuredClone(input); source = structuredClone(source);
-        this.validateRequest(input, adjustments.fields);
+        this.validateRequest(input, [...adjustments.fields, 'allowCrossDepartment']);
+        if (input.allowCrossDepartment !== undefined && (source?.kind !== 'page' || typeof input.allowCrossDepartment !== 'boolean' || input.kind !== 'replace')) fail('Cross-department permission requires the workspace page and current replacement plan', 403);
         return this.planMutation(input, 'prepare-adjustment', source, next => {
             if (Object.keys(next.plans).length >= LIMITS.operations) fail('Staffing plan limit reached', 413);
-            const plan = { ...adjustments.build(next, input, this.today()), id: randomUUID(), source: stableSource(source), epoch: next.epoch, revision: next.revision + 1, crossDepartment: false };
+            const { allowCrossDepartment, ...changeInput } = input;
+            const plan = { ...adjustments.build(next, changeInput, this.today()), id: randomUUID(), source: stableSource(source), epoch: next.epoch, revision: next.revision + 1, crossDepartment: input.allowCrossDepartment === true };
             plan.originId = plan.id; this.checkPlan(next, plan); next.plans[plan.id] = plan;
             return this.planProjection({ ...next, revision: next.revision + 1 }, plan);
         });
@@ -170,8 +173,8 @@ class StaffingService {
         const state = await this.requireSource(source), available = rules.candidates(state, input.project);
         const currentCoverage = rules.coverage(state, input.project);
         const existingTeam = state.occupancies.filter(row => row.projectId === input.project.id && row.kind === 'project' && rules.active(row));
-        const additionalNeeded = Math.max(0, ...currentCoverage.segments.map(row => row.missing));
         const needsDirect = currentCoverage.segments.some(row => row.missingDirect);
+        const additionalNeeded = Math.max(needsDirect ? 1 : 0, ...currentCoverage.segments.map(row => row.missing));
         const direct = needsDirect && available.find(person => person.direct), selected = direct ? [direct] : [];
         for (const person of available) if (selected.length < additionalNeeded && !selected.includes(person)) selected.push(person);
         const proposed = { ...state, occupancies: [...state.occupancies, ...selected.map(person => ({ personId: person.id, projectId: input.project.id, kind: 'project', state: 'reserved', start: input.project.start, end: input.project.end }))] };
@@ -186,7 +189,7 @@ class StaffingService {
         const people = plan.personIds.map(id => state.people.find(person => person.id === id));
         const proposed = { ...state, occupancies: [...state.occupancies, ...plan.personIds.map(personId => ({ personId, projectId: plan.project.id,
             kind: 'project', state: 'reserved', start: plan.project.start, end: plan.project.end }))] };
-        return { ...structuredClone(plan), people, candidates: rules.candidates(state, plan.project, plan.crossDepartment).slice(0, 200),
+        return { ...structuredClone(plan), people, existingTeam: state.occupancies.filter(o => o.projectId === plan.project.id && o.kind === 'project' && rules.active(o)), candidates: rules.candidates(state, plan.project, plan.crossDepartment).slice(0, 200),
             coverage: plan.outcome?.coverage || rules.coverage(proposed, plan.project), currentRevision: state.revision,
             stale: !state.enabled || plan.epoch !== state.epoch || plan.revision !== state.revision,
             warning: state.historyComplete ? '' : '按已录入记录排序，历史不完整' };
@@ -204,7 +207,8 @@ class StaffingService {
     }
     checkPlan(state, plan) {
         if (plan.kind === 'import') return this.imports.check(state, plan, { today: this.today() });
-        if (plan.kind !== 'assign') return adjustments.check(state, plan);
+        if (plan.kind !== 'assign') return adjustments.check(state, plan, { today: this.today() });
+        if (plan.project.lifecycle && plan.project.lifecycle.state !== 'active') fail('Closed projects do not accept new assignments', 409);
         const existing = state.projects.find(project => project.id === plan.project.id);
         if (existing && canonical(existing) !== canonical(plan.project)) fail('Project definition changed; prepare a project adjustment', 409);
         const available = new Set(rules.candidates(state, plan.project, plan.crossDepartment).map(person => person.id));
@@ -254,6 +258,7 @@ class StaffingService {
         return this.planMutation(input, 'revise-plan', source, next => {
             const old = next.plans[input.planId];
             this.checkAuthority(next, old, source);
+            if (old.kind !== 'assign') fail('Prepare a new adjustment to change this plan', 409);
             if (old.epoch !== next.epoch || old.revision !== next.revision) fail('Staffing plan changed; inspect a new plan', 409);
             if (Object.keys(next.plans).length >= LIMITS.operations) fail('Staffing plan limit reached', 413);
             const plan = { ...old, id: randomUUID(), personIds: [...input.personIds], crossDepartment: input.allowCrossDepartment, revision: next.revision + 1 };

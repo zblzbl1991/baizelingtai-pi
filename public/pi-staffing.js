@@ -127,7 +127,7 @@
             } else {
                 panel.append(node('p', tr('人员 {0} · 项目 {1} · 占用 {2}').replace('{0}', status.counts.people).replace('{1}', status.counts.projects).replace('{2}', status.counts.occupancies)),
                     node('p', tr(status.historyComplete ? '已登记完整项目历史。' : '项目历史不完整。后续推荐将按已录入记录排序。')));
-                if (ledger) panel.append(showPeople(ledger));
+                if (ledger && status.state !== 'ready') panel.append(showPeople(ledger));
                 if (ledger && status.state === 'awaiting-review') {
                     const detail = node('details');
                     detail.append(node('summary', tr('查看完整台账记录')), node('pre', JSON.stringify({ people: ledger.people, projects: ledger.projects, occupancies: ledger.occupancies }, null, 2)));
@@ -152,12 +152,13 @@
             if (status.state !== 'initializing') actions.append(button('停用并保留数据', 'staffing-disable', () => void write('disable'), true));
             panel.append(actions);
             globalThis.PiStaffingExcel?.mount(panel, { request: api, status, refresh: load });
+            if (status.state === 'ready') globalThis.PiStaffingViews?.mount(panel, { request: api, status, refresh: load });
         }
         function route(detail) { active = detail?.tab === 'staffing'; generation++; if (active) void load(); }
         window.addEventListener('workspace:tabchanged', event => route(event.detail));
         window.addEventListener('workspace:access-ready', () => void load());
         window.addEventListener('workspace:access-locked', () => { generation++; status = null; panel.replaceChildren(); navigation(null); });
-        window.addEventListener('workspace:staffing-changed', () => { if (!active) void load(); });
+        window.addEventListener('workspace:staffing-changed', () => { if (!busy && !pending) void load(); });
         window.addEventListener('pagehide', () => { active = false; generation++; });
         route(window.PiWorkspaceRoute?.current());
         Promise.resolve(window.WorkspaceAccess?.ready).then(() => { if (!active) void load(); });

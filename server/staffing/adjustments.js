@@ -14,12 +14,31 @@ function split(before, start, end) {
 function reason(input) { if (typeof input.reason !== 'string' || !input.reason.trim() || input.reason.length > 500 || /[\x00-\x1f\x7f]/.test(input.reason)) fail('A staffing change reason is required'); }
 function build(state, input, today) {
     if (!date(today)) fail('Invalid staffing server calendar');
+    if (['reschedule', 'extend'].includes(input.kind)) {
+        keys(input, ['requestId', 'expectedRevision', 'kind', 'projectId', 'start', 'end', 'reason']); reason(input);
+        const project = state.projects.find(p => p.id === input.projectId);
+        if (!project || project.lifecycle && project.lifecycle.state !== 'active' || !date(input.end)) fail('Invalid project adjustment');
+        const rows = state.occupancies.filter(o => o.projectId === project.id && o.kind === 'project' && rules.active(o));
+        let after, occupancies;
+        if (input.kind === 'reschedule') {
+            if (project.start <= today) fail('Started projects retain elapsed dates; use extension, early finish or future interval replacement', 409);
+            if (!date(input.start) || input.start < today || input.start > input.end) fail('Reschedule requires valid future dates');
+            if (rows.some(o => o.start !== project.start || o.end !== project.end)) fail('A staged team needs explicit future interval adjustment', 409);
+            after = { ...project, start: input.start, end: input.end };
+            occupancies = rows.flatMap(before => [{ before: structuredClone(before), after: { ...before, state: 'cancelled' } }, { after: { ...before, id: randomUUID(), start: after.start, end: after.end, reason: input.reason } }]);
+        } else {
+            if (input.start !== undefined && input.start !== project.start || input.end <= project.end || rules.iso(rules.day(project.end) + 1) < today) fail('Extension must add future days without rewriting the project start');
+            after = { ...project, end: input.end };
+            occupancies = rows.filter(o => o.end === project.end).map(before => ({ before: structuredClone(before), after: { ...before, end: input.end } }));
+        }
+        return { kind: 'adjust', project: structuredClone(after), personIds: [...new Set(rows.map(o => o.personId))], change: { kind: input.kind, effectiveDate: input.kind === 'reschedule' ? input.start : rules.iso(rules.day(project.end) + 1), reason: input.reason }, patch: { projects: [{ before: structuredClone(project), after }], occupancies } };
+    }
     if (input.kind === 'replace') {
         keys(input, ['requestId', 'expectedRevision', 'kind', 'projectId', 'occupancyId', 'replacementPersonId', 'start', 'end', 'reason']); reason(input);
         const project = state.projects.find(p => p.id === input.projectId), before = state.occupancies.find(o => o.id === input.occupancyId && o.projectId === input.projectId && o.kind === 'project' && rules.active(o));
         if (!project || project.lifecycle && project.lifecycle.state !== 'active' || !before || !id(input.replacementPersonId) || !state.people.some(p => p.id === input.replacementPersonId) || input.replacementPersonId === before.personId || !date(input.start) || !date(input.end) || input.start < today || input.start > input.end || input.start < before.start || input.end > before.end) fail('Replacement needs a valid future interval and a different person');
         const after = { id: randomUUID(), personId: input.replacementPersonId, projectId: project.id, kind: 'project', state: before.state, start: input.start, end: input.end, reason: input.reason };
-        return { kind: 'adjust', project: structuredClone(project), personIds: [before.personId, input.replacementPersonId], change: { kind: 'replace', reason: input.reason }, patch: { projects: [], occupancies: [...split(before, input.start, input.end), { after }] } };
+        return { kind: 'adjust', project: structuredClone(project), personIds: [before.personId, input.replacementPersonId], change: { kind: 'replace', effectiveDate: input.start, reason: input.reason }, patch: { projects: [], occupancies: [...split(before, input.start, input.end), { after }] } };
     }
     if (input.kind === 'release') {
         keys(input, ['requestId', 'expectedRevision', 'kind', 'projectId', 'occupancyId', 'effectiveDate', 'releaseKind', 'reason']); reason(input);
@@ -53,14 +72,16 @@ function apply(state, patch) {
         if (at >= 0) state[field][at] = structuredClone(item.after); else state[field].push(structuredClone(item.after));
     }
 }
-function check(state, plan) {
+function check(state, plan, { today } = {}) {
+    if (!date(today) || plan.change.effectiveDate && plan.change.effectiveDate < today) fail('Staffing changes must retain elapsed days and use future dates', 409);
+    if (plan.change.kind === 'reschedule' && plan.patch.projects[0].before.start <= today) fail('Started projects retain elapsed dates', 409);
     const proposed = structuredClone(state); apply(proposed, plan.patch);
     for (const entry of plan.patch.occupancies) {
         const after = entry.after;
         if (after.kind !== 'project' || !rules.active(after)) continue;
         const prior = state.occupancies.filter(o => o.personId === after.personId && o.projectId === after.projectId && o.kind === 'project' && rules.active(o));
         const person = state.people.find(p => p.id === after.personId), project = proposed.projects.find(p => p.id === after.projectId);
-        if (!plan.crossDepartment && person.department !== project.department && !prior.length) fail('Staffing person is outside the allowed department', 409);
+        if (!plan.crossDepartment && person.department !== project.department && !prior.some(o => o.start <= after.start && o.end >= after.end || o.id === after.id && plan.change.kind === 'extend' || plan.change.kind === 'reschedule')) fail('Staffing person is outside the allowed department', 409);
         for (const absence of proposed.occupancies.filter(o => o.personId === after.personId && o.kind !== 'project' && rules.active(o) && rules.overlaps(o, after))) {
             const start = absence.start > after.start ? absence.start : after.start, end = absence.end < after.end ? absence.end : after.end;
             if (!prior.some(o => o.start <= start && o.end >= end)) fail('Staffing replacement is unavailable', 409);
@@ -69,13 +90,17 @@ function check(state, plan) {
     validateInitial({ people: proposed.people, projects: proposed.projects, occupancies: proposed.occupancies, historyComplete: proposed.historyComplete });
 }
 function affected(state, plan) {
-    const people = new Set(plan.personIds), ids = new Set(plan.patch?.projects.map(item => item.after.id) || []);
-    for (const row of state.occupancies) if (row.kind === 'project' && people.has(row.personId)) ids.add(row.projectId);
+    const ids = new Set(plan.patch?.projects.map(item => item.after.id) || []), byPerson = new Map();
+    for (const item of plan.patch?.occupancies || []) for (const row of [item.before, item.after].filter(Boolean)) {
+        if (row.kind === 'project') ids.add(row.projectId);
+        else { if (!byPerson.has(row.personId)) byPerson.set(row.personId, []); byPerson.get(row.personId).push(row); }
+    }
+    for (const row of state.occupancies) if (row.kind === 'project' && rules.active(row) && byPerson.get(row.personId)?.some(change => rules.overlaps(row, change))) ids.add(row.projectId);
     return state.projects.filter(p => ids.has(p.id)).map(project => ({ ...project, coverage: rules.coverage(state, project) }));
 }
 function projection(state, plan) {
     const proposed = structuredClone(state); if (!plan.outcome) apply(proposed, plan.patch);
     return { ...structuredClone(plan), people: state.people.filter(p => plan.personIds.includes(p.id)), affectedProjects: affected(proposed, plan),
-        diff: structuredClone(plan.patch), ...(plan.change?.effectiveDate ? { lastRequiredDate: rules.iso(rules.day(plan.change.effectiveDate) - 1) } : {}), currentRevision: state.revision, stale: !state.enabled || plan.epoch !== state.epoch || plan.revision !== state.revision };
+        diff: structuredClone(plan.patch), ...(plan.kind === 'release' ? { lastRequiredDate: rules.iso(rules.day(plan.change.effectiveDate) - 1) } : {}), currentRevision: state.revision, stale: !state.enabled || plan.epoch !== state.epoch || plan.revision !== state.revision };
 }
 module.exports = { fields, build, apply, check, affected, projection };
