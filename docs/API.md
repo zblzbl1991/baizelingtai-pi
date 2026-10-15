@@ -8,7 +8,7 @@ Windows 托盘以 `scripts/start-desktop.cjs --controlled --generation <UUID>` �
 
 `ready`、`snapshot` 和 `stop-review` 可附带 `versions:{appVersion,engineVersion}`，取自当前实际受管子服务的就绪消息；缺失时显示尚未核实，不能用安装目录版本代替实际运行版。管理窗口的维护入口只打开现有工作台并提示“设置 → 版本与更新”，不提交升级。
 
-桌面 ManagedLauncher 要求所属子服务在 HTTP、网关和登记 worker 清理结束后通过 nonce IPC 发送 `maintenance-shutdown-complete` 并完成发送，再实际退出 0。父进程只接受自己请求停机之后、实际当前子进程发来的证明。缺少证明或清理失败产生 `DESKTOP_CLEANUP_UNKNOWN`，保留受控 runner 与运行锁，不发送 `clean:true`；其他启动方式默认保持原兼容契约。启动停止与就绪交错时转入正常检查和保存草稿确认，不能绕过已就绪服务的阻碍检查。
+桌面 ManagedLauncher 要求就绪消息声明 `capabilities.shutdownProof:true`；所属子服务在 HTTP、网关和登记 worker 清理结束后通过 nonce IPC 发送 `maintenance-shutdown-complete` 并完成发送，再实际退出 0。父进程只接受自己请求停机之后、实际当前子进程发来的证明。缺少证明或清理失败产生 `DESKTOP_CLEANUP_UNKNOWN`，保留受控 runner 与运行锁，不发送 `clean:true`；其他启动方式默认保持原兼容契约。已接受的操作可只读查询同一 `operationId`，收尾期间返回 `complete:false,cleanup:"pending"|"unknown"`，重复执行同一票据只返回现有进度，不重跑清理。启动停止与就绪交错时转入正常检查和保存草稿确认，不能绕过已就绪服务的阻碍检查。
 
 runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,method:"snapshot"|"review"|"execute",input`），响应为 `desktop-response`（`id,result` 或 `error:{code,message}`）。检查不长期锁住工作台；最终接受后沿统一异步停机，桌面停止采用可逆内存派发闸门，不调用持久预约暂停。此私有协议不扩展现有公开维护 action 列表，不新增 HTTP 停机接口。
 
