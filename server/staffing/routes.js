@@ -16,6 +16,11 @@ function mountStaffingRoutes(router, service, { resolveSource } = {}) {
     router.post('/staffing/confirm-initial', route(req => service.confirmInitial(req.body)));
     router.post('/staffing/disable', route(req => service.disable(req.body)));
     const sourceForPage = async req => {
+        const supplied = req.method === 'GET' ? req.query : req.body?.source;
+        if (supplied?.kind === 'page') {
+            if (Object.keys(supplied).some(key => key !== 'kind')) throw new Error('Invalid staffing page source selector');
+            return service.pageSource({ phase: 'initial' });
+        }
         if (!resolveSource) throw Object.assign(new Error('Staffing source resolution unavailable'), { status: 503 });
         return resolveSource(req.method === 'GET' ? req.query : req.body.source);
     };
@@ -23,6 +28,9 @@ function mountStaffingRoutes(router, service, { resolveSource } = {}) {
         if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) throw new Error('Invalid staffing page request');
         const { source: _source, ...input } = req.body; return input;
     };
+    router.get('/staffing/views', route(req => { const input = { ...req.query }; for (const key of ['offset', 'limit']) if (input[key] !== undefined) input[key] = Number(input[key]); return service.views(input); }));
+    router.post('/staffing/prepare', route(async req => service.prepareChange(req.body, await service.pageSource())));
+    router.post('/staffing/adjust', route(async req => service.prepareAdjustment(req.body, await service.pageSource())));
     router.get('/staffing/plans/:planId', route(async req => service.plan(req.params.planId, await sourceForPage(req))));
     router.post('/staffing/revise', route(async req => service.revisePlan(pageInput(req), await sourceForPage(req))));
     router.post('/staffing/commit', route(async req => service.commitPlan(pageInput(req), await sourceForPage(req))));

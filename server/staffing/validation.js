@@ -60,18 +60,19 @@ function validateLedger(state) {
         || state.history.some(event => !object(event) || !id(event.requestId) || !text(event.action) || !text(event.at))) fail('Invalid staffing ledger');
     validateInitial({ people: state.people, projects: state.projects, occupancies: state.occupancies, historyComplete: state.historyComplete });
     for (const [planId, plan] of Object.entries(state.plans)) {
-        if (!id(planId) || !object(plan) || plan.id !== planId || plan.kind !== 'assign' || !Number.isSafeInteger(plan.epoch) || plan.epoch < 0 || plan.epoch > state.epoch
-            || !Number.isSafeInteger(plan.revision) || plan.revision < 1 || plan.revision > state.revision || !object(plan.source) || !text(plan.source.sessionId)
-            || !text(plan.source.sessionPath, 8192) || !text(plan.source.cwd, 8192) || !text(plan.source.profileId)
+        if (!id(planId) || !object(plan) || plan.id !== planId || !['assign', 'absence', 'formalize', 'adjust', 'release', 'import'].includes(plan.kind) || !Number.isSafeInteger(plan.epoch) || plan.epoch < 0 || plan.epoch > state.epoch
+            || !Number.isSafeInteger(plan.revision) || plan.revision < 1 || plan.revision > state.revision || !object(plan.source) || !(plan.source.kind === 'page' ? Object.keys(plan.source).every(key => ['kind', 'profileId'].includes(key)) && text(plan.source.profileId) : plan.source.kind === undefined && text(plan.source.sessionId) && text(plan.source.sessionPath, 8192) && text(plan.source.cwd, 8192) && text(plan.source.profileId))
             || !Array.isArray(plan.personIds) || plan.personIds.length > LIMITS.people || new Set(plan.personIds).size !== plan.personIds.length
             || plan.personIds.some(value => !id(value)) || typeof plan.crossDepartment !== 'boolean'
             || plan.originId !== undefined && !id(plan.originId) || plan.supersededBy !== undefined && (!id(plan.supersededBy) || plan.supersededBy === plan.id)
-            || plan.outcome !== undefined && (!object(plan.outcome) || plan.outcome.planId !== plan.id || !['reserve', 'confirm'].includes(plan.outcome.action))) fail('Invalid staffing plan');
-        validateInitial({ people: [], projects: [plan.project], occupancies: [], historyComplete: false });
+            || plan.outcome !== undefined && (!object(plan.outcome) || plan.outcome.planId !== plan.id || !['reserve', 'confirm', 'apply', 'apply-import'].includes(plan.outcome.action))) fail('Invalid staffing plan');
+        if (plan.kind === 'assign') validateInitial({ people: [], projects: [plan.project], occupancies: [], historyComplete: false });
+        else if (plan.kind === 'import') require('./import-domain').validate(plan, state);
+        else if (!object(plan.patch) || !Array.isArray(plan.patch.projects) || !Array.isArray(plan.patch.occupancies)) fail('Invalid staffing adjustment patch');
         if (plan.supersededBy) {
             const target = Object.hasOwn(state.plans, plan.supersededBy) && state.plans[plan.supersededBy];
             if (!target || target.revision <= plan.revision || target.originId !== plan.originId || plan.outcome
-                || ['sessionId', 'sessionPath', 'cwd', 'profileId'].some(key => target.source?.[key] !== plan.source[key])) fail('Invalid staffing plan chain');
+                || ['kind', 'sessionId', 'sessionPath', 'cwd', 'profileId'].some(key => target.source?.[key] !== plan.source[key])) fail('Invalid staffing plan chain');
         }
         if (plan.outcome && (!Number.isSafeInteger(plan.outcome.revision) || plan.outcome.revision <= plan.revision || plan.outcome.revision > state.revision)) fail('Invalid staffing plan outcome');
     }
