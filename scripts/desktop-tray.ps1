@@ -9,7 +9,7 @@ $script:state = 'stopped'; $script:url = $null; $script:logFile = $null; $script
 $script:tickBusy = $false; $script:clean = $true; $script:exitIntent = $false; $script:pending = $null; $script:review = $null
 $script:events = [Collections.Generic.List[object]]::new(); $script:smokeValidated = $false; $script:smokeCommand = ''; $script:lastSnapshot = [DateTime]::MinValue
 $script:confirmationShown=$false; $script:uiScale=1; $script:recoverStop=$false; $script:readyAt = $null; $script:smokeStopSent = $false; $script:lastReport = ''; $script:startupStopReview=$false
-$script:versions=$null; $script:maintenanceHint=$false
+$script:versions=$null; $script:maintenanceHint=$false; $script:lastReviewId=''
 $mutex = $null; $ownsMutex = $false; $openEvent = $null; $tray = $null; $timer = $null; $context = $null; $window = $null; $hoster = $null
 function Record-Event($Value) {
     if($script:events.Count -ge 256){$script:events.RemoveAt(0)}
@@ -136,6 +136,7 @@ function Handle-Message([string]$Line, $Owner, [string]$Generation) {
         }
         'snapshot' { Show-Blockers $message }
         'stop-review' {
+            $script:lastReviewId=$message.id
             Show-Blockers $message
             if ($message.ticket -and $message.complete -eq $true -and @($message.blockers).Count -eq 0) {
                 $script:review = @{ticket=$message.ticket;generation=$Generation}; $savedCheck.Checked=$false; $externalCheck.Checked=$false
@@ -167,7 +168,11 @@ function Handle-Message([string]$Line, $Owner, [string]$Generation) {
 function Read-RecentLog {
     if (-not $script:logFile -or -not [IO.File]::Exists($script:logFile)) { $logText.Text='本次运行尚无日志。'; return }
     try {
-        $file=[IO.File]::Open($script:logFile,'Open','Read','ReadWrite'); try { $offset=[Math]::Max(0,$file.Length-16384); $file.Seek($offset,'Begin') | Out-Null; $reader=[IO.StreamReader]::new($file); $text=$reader.ReadToEnd() } finally { $file.Dispose() }
+        $file=[IO.File]::Open($script:logFile,'Open','Read','ReadWrite'); try {
+            $buffer=[byte[]]::new(16384); $offset=[Math]::Max(0,$file.Length-$buffer.Length); $file.Seek($offset,'Begin') | Out-Null
+            $count=0;while($count -lt $buffer.Length){$read=$file.Read($buffer,$count,$buffer.Length-$count);if($read -eq 0){break};$count+=$read}
+            $text=[Text.Encoding]::UTF8.GetString($buffer,0,$count)
+        } finally { $file.Dispose() }
         $text=($text -split "`n" | Select-Object -Last 24) -join "`r`n"
         $text=$text -replace '(?i)(Bearer\s+|(?:api[_-]?key|token|password|secret)\s*[:=]\s*)[^\s,;]+','$1[redacted]'
         $logText.Text=$text.Substring([Math]::Max(0,$text.Length-8192))
@@ -204,7 +209,7 @@ function Update-Window {
 }
 function Report-Smoke {
     if (-not $SmokeTest) { return }
-    $value=@{state=$script:state;generation=$script:generation;instance=$script:instance;visible=$window.Visible;canStart=($mainButton.Enabled -and $mainButton.Text -eq '启动服务');pending=[bool]$script:pending;confirm=$confirmPanel.Visible;blockers=$blockerText.Text;versions=$versionLabel.Text;detail=$detailLabel.Text;waitingUrl=$hoster.Url;pid=if($script:service){$script:service.Id}else{$null}}
+    $value=@{state=$script:state;generation=$script:generation;instance=$script:instance;visible=$window.Visible;canStart=($mainButton.Enabled -and $mainButton.Text -eq '启动服务');pending=[bool]$script:pending;confirm=$confirmPanel.Visible;reviewId=$script:lastReviewId;blockers=$blockerText.Text;versions=$versionLabel.Text;detail=$detailLabel.Text;waitingUrl=$hoster.Url;pid=if($script:service){$script:service.Id}else{$null}}
     $json=ConvertTo-Json -Compress $value
     if ($json -ne $script:lastReport) { [IO.File]::WriteAllText((Join-Path $AppRoot '.pivane-runtime\desktop\smoke-state.json'),$json,[Text.UTF8Encoding]::new($false)); $script:lastReport=$json }
 }

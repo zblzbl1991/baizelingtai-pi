@@ -80,6 +80,8 @@ function validateRpcPayload(command, payload) {
 }
 
 function createPiAgentGateway(options = {}) {
+    const socketServers = new Set();
+    let disposing = false, disposal;
     const access = options.accessService || new (require('./workspace-access-service').WorkspaceAccessService)();
     const maintenance = options.maintenance || new (require('./pi-maintenance-client').MaintenanceClient)({ managed: false });
     const supervisor = new PiAgentSupervisor({ isSuspended: () => maintenance.locked, onActivity: () => maintenance.touch() });
@@ -613,9 +615,9 @@ function createPiAgentGateway(options = {}) {
         source('deferred', '延迟消息派发', () => deferred.stopReadiness()),
         source('side-chat', '侧聊连接、确认或启动', () => sideChat.stopReadiness()),
         source('media', '媒体任务或待确认请求', () => options.mediaLabService ? options.mediaLabService.stopReadiness() : 0),
-        source('updates', '版本检查或提醒设置', () => updateService.inflight.size + count(updateService.notifications?.pending)),
+        source('updates', '版本检查或提醒设置', () => updateService.stopReadiness()),
         source('usage', '用量记录保存', () => usage.stopReadiness()),
-        source('search', '会话搜索', () => count(sessionSearch.pending))
+        source('search', '会话搜索', () => sessionSearch.stopReadiness())
     ], scheduled: () => {
         const scheduled = cron.scheduledReadiness(), delayed = deferred.scheduledReadiness();
         return { futureCount: scheduled.futureCount + delayed.futureCount, latestCount: scheduled.latestCount };
@@ -631,9 +633,12 @@ function createPiAgentGateway(options = {}) {
     }
 
     function attachWebSocket(server) {
+        if (disposing) throw new Error('Pi gateway is shutting down');
         const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });
+        socketServers.add(wss);
 
         server.on('upgrade', (req, socket, head) => {
+            if (disposing) { socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n'); return; }
             let pathname;
             try {
                 pathname = new URL(req.url, 'http://localhost').pathname;
@@ -1068,33 +1073,51 @@ function createPiAgentGateway(options = {}) {
         return wss;
     }
 
-    return { mount, attachWebSocket, desktopStop, dispose: async () => {
-        const stoppingProjectDirectories = projectDirectories.dispose();
-        const stoppingFileRoots = fileRoots.dispose();
-        const stoppingArtifacts = artifacts.dispose();
-        sessionSearch.dispose();
-        if (!options.accessService) access.dispose();
-        await settingsService.loginService.dispose();
-        const stoppingAuxiliaryModels = auxiliaryModels.dispose();
-        const stoppingTitles = titles.dispose();
-        const stoppingTranscription = transcription.dispose();
-        const stoppingDocuments = documents.dispose();
-        cron.stopping = true;
-        const stoppingDeferred = deferred.dispose();
-        const stoppingMoves = sessionMoves.dispose();
-        const stoppingThreads = agentThreads.dispose();
-        const stoppingSide = sideChat.dispose();
-        await stoppingArtifacts; // Finish native source reads before shutting down their workers.
-        await stoppingSide; // Keep side workers alive until their in-memory usage is saved.
-        await supervisor.dispose();
-        await learning.flushRegistrations();
-        await learning.dispose();
-        await profiles.dispose();
-        await usage.dispose();
-        await stoppingThreads;
-        await Promise.all([stoppingProjectDirectories, stoppingFileRoots, stoppingDeferred, stoppingTitles, stoppingAuxiliaryModels, stoppingMoves, stoppingTranscription, stoppingDocuments]);
-        await cron.dispose();
-    }, store, supervisor, cron, deferred, sideChat, titles, auxiliaryModels, learning, knowledgeService, agentThreads, sessionMoves, transcription, documents, artifacts };
+    function closeSocketServer(wss) {
+        return new Promise((resolve, reject) => {
+            // A peer may ignore the normal close handshake. Bound disposal of
+            // our transport only; native workers retain their own graceful path.
+            const drain = setTimeout(() => { for (const socket of wss.clients) socket.terminate(); }, 2000);
+            wss.close(error => { clearTimeout(drain); socketServers.delete(wss); error ? reject(error) : resolve(); });
+            for (const socket of wss.clients) socket.close(1001, 'Service shutdown');
+        });
+    }
+    function dispose() {
+        if (disposal) return disposal;
+        disposing = true; maintenance.locked = true;
+        disposal = Promise.resolve().then(async () => {
+            const stoppingSockets = Promise.all([...socketServers].map(closeSocketServer));
+            void stoppingSockets.catch(() => {}); // Preserve rejection for the final await while other owners drain.
+            const stoppingProjectDirectories = projectDirectories.dispose();
+            const stoppingFileRoots = fileRoots.dispose();
+            const stoppingArtifacts = artifacts.dispose();
+            sessionSearch.dispose();
+            if (!options.accessService) access.dispose();
+            await settingsService.loginService.dispose();
+            const stoppingAuxiliaryModels = auxiliaryModels.dispose();
+            const stoppingTitles = titles.dispose();
+            const stoppingTranscription = transcription.dispose();
+            const stoppingDocuments = documents.dispose();
+            cron.stopping = true;
+            const stoppingDeferred = deferred.dispose();
+            const stoppingMoves = sessionMoves.dispose();
+            const stoppingThreads = agentThreads.dispose();
+            const stoppingSide = sideChat.dispose();
+            await stoppingArtifacts; // Finish native source reads before shutting down their workers.
+            await stoppingSide; // Keep side workers alive until their in-memory usage is saved.
+            await supervisor.dispose();
+            await learning.flushRegistrations();
+            await learning.dispose();
+            await profiles.dispose();
+            await usage.dispose();
+            await stoppingThreads;
+            await Promise.all([stoppingProjectDirectories, stoppingFileRoots, stoppingDeferred, stoppingTitles, stoppingAuxiliaryModels, stoppingMoves, stoppingTranscription, stoppingDocuments]);
+            await cron.dispose();
+            await stoppingSockets;
+        });
+        return disposal;
+    }
+    return { mount, attachWebSocket, desktopStop, dispose, store, supervisor, cron, deferred, sideChat, titles, auxiliaryModels, learning, knowledgeService, agentThreads, sessionMoves, transcription, documents, artifacts };
 }
 
 module.exports = { createPiAgentGateway };

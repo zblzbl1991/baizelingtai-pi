@@ -6,6 +6,7 @@ const path = require('node:path');
 const express = require('express');
 const { once } = require('node:events');
 const { WebSocket } = require('ws');
+const net = require('node:net');
 
 const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-desktop-stop-gateway-')));
 process.env.PI_CODING_AGENT_DIR = path.join(root, 'agent');
@@ -60,4 +61,16 @@ test('assembled stop projection covers conservative side chat and private confir
     assert.match(rejected.error, /维护/);
     await assert.rejects(gateway.supervisor.createEphemeralWorker(root), /维护/);
     assert.equal(gateway.supervisor.workers.size, 0);
+    const stalled = net.createConnection(server.address().port, '127.0.0.1');
+    await once(stalled, 'connect');
+    const upgraded = once(stalled, 'data');
+    stalled.write(`GET /api/pi/ws HTTP/1.1\r\nHost: 127.0.0.1:${server.address().port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n`);
+    assert.match((await upgraded)[0].toString(), /101 Switching Protocols/);
+    const closed = once(socket, 'close'), stalledClosed = once(stalled, 'close');
+    const began = Date.now(), disposal = gateway.dispose();
+    assert.equal(gateway.dispose(), disposal, 'repeated disposal shares the same transport and worker cleanup');
+    await disposal;
+    assert.equal((await closed)[0], 1001, 'cooperating workbenches receive a normal service close');
+    await stalledClosed;
+    assert.ok(Date.now() - began < 6000, 'a peer ignoring the close handshake cannot hold the HTTP drain');
 });
