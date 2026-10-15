@@ -28,3 +28,21 @@
 .staffing-person-choice span { min-width:0; overflow-wrap:anywhere; }
 .staffing-plan-card button { min-height:40px; white-space:normal; }
 @media(max-width:680px) { .staffing-plan-card input,.staffing-plan-card button { font-size:16px; } }
+.staffing-views { margin-top: 32px; padding-top: 28px; border-top: 1px solid var(--line); }
+.staffing-view-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
+.staffing-view-tabs [aria-pressed=true] { color: var(--text-main); background: var(--surface-1); border: 1px solid var(--text-muted); font-weight: 600; }
+.staffing-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px 18px; align-items: end; }
+.staffing-form-grid label { margin: 0; min-width: 0; }
+.staffing-form-grid input:not([type=checkbox]), .staffing-form-grid select { display: block; margin-top: 7px; width: 100%; min-width: 0; font: inherit; font-size: 16px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-1); color: var(--text-main); }
+.staffing-form-grid [hidden], .staffing-form-grid label[hidden] { display: none !important; }
+.staffing-form-grid fieldset { grid-column: 1 / -1; max-height: 280px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.staffing-form-grid .staffing-person-choice { display: flex; gap: 8px; align-items: start; margin: 8px 0; }
+.staffing-view-results { margin-top: 20px; }
+.staffing-project-row, .staffing-person-row { border-block-end: 1px solid var(--line); padding: 18px 0; overflow-wrap: anywhere; }
+.staffing-project-row h3, .staffing-person-row h3 { margin: 0 0 8px; font-size: 17px; }
+.staffing-project-row p, .staffing-person-row p { margin: 8px 0; }
+.staffing-manual-editor { margin-top: 30px; }
+.staffing-manual-editor > button { margin-top: 20px; }
+.staffing-plan-diff { max-height: 280px; overflow: auto; font-size: 13px; overflow-wrap: anywhere; border-block: 1px solid var(--line); margin-block: 16px; }
+.staffing-panel button:focus-visible, .staffing-panel input:focus-visible, .staffing-panel select:focus-visible { outline: 2px solid var(--text-muted); outline-offset: 3px; }
+@media(max-width:680px) { .staffing-form-grid { grid-template-columns: minmax(0,1fr); } }

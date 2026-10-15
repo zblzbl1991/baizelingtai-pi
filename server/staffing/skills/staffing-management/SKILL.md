@@ -10,3 +10,7 @@ description: 查询人员可用时间、推荐名单或准备项目人员安排�
 5. 只按已返回的操作结果说明是否保存。结果不确定时使用 staffing_operation_status 核对原操作；不得自动重放写入。卡片过期时先查询并重新准备。
 
 人员安排以工具读取的台账为准。聊天记忆和导出 Excel 不能证明当前空闲。停用或身份校验失败时停止调配并说明需要恢复能力或重新加载资源。
+
+For an existing project, separate existingTeam from selected additions. Recommend only the remaining gap. Do not add the project minimum again. Use formalize to change existing reserved assignments to confirmed; do not assign the same people twice.
+
+Use staffing_prepare_change for absence, formalize, replace, reschedule, extend or release. Show the concrete difference and missing coverage. Leave records preserve the original project history. Release effectiveDate is the first free day; the previous day is the last required day. Retain elapsed project dates. Started projects use future extension, early end or interval replacement. Never move other projects automatically.

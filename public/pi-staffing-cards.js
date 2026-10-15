@@ -9,19 +9,22 @@
         const states = new Map();
         window.addEventListener('workspace:staffing-changed', () => { for (const entry of states.values()) if (entry.card?.isConnected && !entry.busy) void entry.refresh?.(); });
         window.addEventListener('workspace:access-locked', () => { for (const entry of states.values()) { entry.unavailable = true; entry.redraw?.(); } });
-        const sourceOf = plan => ({ cwd: plan.source.cwd, sessionId: plan.source.sessionId });
+        const sourceOf = plan => plan.source.kind === 'page' ? { kind: 'page' } : { cwd: plan.source.cwd, sessionId: plan.source.sessionId };
         const pendingKey = id => 'pivane.staffing.pending:' + id;
         function render(message) {
             const preview = message?.details?.pivaneStaffing;
             if (message?.role !== 'toolResult' || message.isError || message.toolName !== 'staffing_prepare_change' || preview?.version !== 1
                 || !/^[a-f0-9-]{36}$/.test(preview.plan?.id || '') || !preview.plan.source
                 || typeof preview.plan.source.cwd !== 'string' || typeof preview.plan.source.sessionId !== 'string'
-                || !preview.plan.project || ['name', 'department', 'start', 'end'].some(key => typeof preview.plan.project[key] !== 'string')
+                || preview.plan.kind === 'assign' && (!preview.plan.project || ['name', 'department', 'start', 'end'].some(key => typeof preview.plan.project[key] !== 'string'))
                 || !Number.isSafeInteger(preview.plan.revision) || !Array.isArray(preview.plan.personIds)) return null;
-            const id = preview.plan.id, card = node('section', undefined, { class: 'staffing-plan-card', 'data-staffing-plan': id, 'aria-label': tr('人员安排方案') });
+            return renderPlan(preview.plan);
+        }
+        function renderPlan(initial) {
+            const id = initial.id, card = node('section', undefined, { class: 'staffing-plan-card', 'data-staffing-plan': id, 'aria-label': tr('人员安排方案') });
             let entry = states.get(id);
             if (!entry) { let pending = null; try { pending = sessionStorage.getItem(pendingKey(id)); } catch { /* Storage may be unavailable. */ }
-                entry = { plan: preview.plan, busy: false, pending, notice: '' }; states.set(id, entry); }
+                entry = { plan: initial, busy: false, pending, notice: '' }; states.set(id, entry); }
             if (entry.card) {
                 entry.card.querySelectorAll('button,input').forEach(element => { element.disabled = true; });
                 const notice = entry.card.querySelector('[role="status"]');
@@ -29,7 +32,7 @@
             }
             entry.card = card; entry.loading = true; let viewGeneration = 0;
             const owns = () => entry.card === card;
-            const current = () => { const scope = context(); return owns() && scope && scope.cwd === entry.plan.source.cwd && scope.sessionId === entry.plan.source.sessionId; };
+            const current = () => { const scope = context(); return owns() && (entry.plan.source.kind === 'page' ? card.isConnected : scope && scope.cwd === entry.plan.source.cwd && scope.sessionId === entry.plan.source.sessionId); };
             const clearPending = () => { entry.pending = null; try { sessionStorage.removeItem(pendingKey(id)); } catch { /* UI preference only. */ } };
             const post = (path, body) => request('/api/pi/staffing/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             async function load() {
@@ -69,20 +72,35 @@
             function draw() {
                 if (!owns()) return; const plan = entry.plan, generation = ++viewGeneration;
                 const displayed = { generation, planId: plan.id, revision: plan.revision }; card.replaceChildren();
-                card.append(node('h3', tr('人员安排方案')), node('p', plan.project.name + ' · ' + plan.project.department),
-                    node('p', plan.project.start + ' — ' + plan.project.end), node('p', tr('台账版本：{0}').replace('{0}', plan.revision)));
+                card.append(node('h3', tr(plan.kind === 'assign' ? '人员安排方案' : '人员安排变更')), node('p', tr('台账版本：{0}').replace('{0}', plan.revision)));
+                if (plan.project) card.append(node('p', plan.project.name + ' · ' + plan.project.department), node('p', plan.project.start + ' 至 ' + plan.project.end));
                 const status = node('p', entry.notice || plan.warning || '', { role: 'status', 'aria-live': 'polite' }); card.append(status);
                 if (entry.loading) { status.textContent = tr('正在读取方案…'); return; }
                 const coverage = plan.coverage;
                 if (coverage) for (const segment of coverage.segments) card.append(node('p', `${segment.start} — ${segment.end} · ${tr('还缺人数')} ${segment.missing} · ${tr(segment.missingDirect ? '缺直签' : '直签已满足')}`));
+                for (const affected of plan.affectedProjects || []) { card.append(node('p', affected.name)); for (const segment of affected.coverage.segments) card.append(node('p', `${segment.start} 至 ${segment.end} · ${tr('还缺人数')} ${segment.missing} · ${tr(segment.missingDirect ? '缺直签' : '直签已满足')}`)); }
+                if (plan.lastRequiredDate) card.append(node('p', tr('最后用人日') + '：' + plan.lastRequiredDate + ' · ' + tr('释放开始日') + '：' + plan.change.effectiveDate));
+                if (plan.diff) {
+                    const diff = node('div', undefined, { class: 'staffing-plan-diff' });
+                    const labels = { project: '项目', leave: '请假', training: '培训', unavailable: '不可用', reserved: '预占', confirmed: '正式确认', cancelled: '已释放', active: '进行中', ended: '提前结束' };
+                    const names = new Map((plan.people || []).map(person => [person.id, person.name]));
+                    const describe = row => row ? (row.personId ? (names.get(row.personId) || row.personId) + ' (' + row.personId + ')' : row.name || row.id) + ' · ' + tr(labels[row.kind] || '') + ' · ' + row.start + ' 至 ' + row.end + ' · ' + tr(labels[row.state || row.lifecycle?.state] || '') : tr('新增');
+                    for (const field of ['projects', 'occupancies']) for (const item of plan.diff[field]) diff.append(node('p', describe(item.before) + ' → ' + describe(item.after)));
+                    card.append(diff);
+                }
                 if (plan.outcome) {
                     card.append(node('p', tr(plan.outcome.action === 'reserve' ? '已预占' : '已保存确认'), { 'data-staffing-outcome': 'completed' }),
-                        node('p', tr(plan.outcome.coverage.allConfirmed ? '全部人员已正式确认' : '尚未全部正式确认')));
+                        node('p', plan.outcome.coverage ? tr(plan.outcome.coverage.allConfirmed ? '全部人员已正式确认' : '尚未全部正式确认') : ''));
                     for (const person of plan.people || []) card.append(node('p', person.name + ' · ' + person.department)); return;
                 }
                 if (entry.pending) { const check = node('button', tr('查询原操作结果'), { type: 'button', 'data-staffing-action': 'lookup' });
                     check.disabled = entry.busy; check.addEventListener('click', () => void lookup(generation)); card.append(check); return; }
                 if (entry.unavailable || plan.stale || !current()) { card.append(node('p', tr('方案已失效或能力不可用。请查询并准备新方案。'))); return; }
+                if (plan.kind !== 'assign') {
+                    const apply = node('button', tr('确认以上变更'), { type: 'button', 'data-staffing-action': 'apply' });
+                    apply.disabled = entry.busy; apply.addEventListener('click', () => void write('apply', {}, displayed)); card.append(apply); return;
+                }
+                if (plan.existingTeam?.length) card.append(node('p', tr('已安排人数') + '：' + new Set(plan.existingTeam.map(row => row.personId)).size + ' · ' + tr('本次新增人数') + '：' + plan.personIds.length));
                 const list = node('fieldset'); list.append(node('legend', tr('选择人员')));
                 const selected = new Set(plan.personIds), inputs = [];
                 const allCandidates = new Map([...(plan.candidates || []), ...(plan.people || [])].map(person => [person.id, person]));
@@ -108,7 +126,7 @@
             entry.refresh = load; entry.redraw = draw;
             draw(); void load(); return card;
         }
-        return { render };
+        return { render, renderPage: plan => plan?.source?.kind === 'page' && /^[a-f0-9-]{36}$/.test(plan.id || '') ? renderPlan(plan) : null };
     }
     globalThis.PiStaffingCards = { create };
 })();
