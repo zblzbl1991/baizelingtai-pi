@@ -4,11 +4,11 @@ const { once } = require('node:events');
 const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-scans-'))), agent = path.join(root, 'agent'), cwd = path.join(root, 'project');
 fs.mkdirSync(agent); fs.mkdirSync(cwd);
 process.env.PI_CODING_AGENT_DIR = agent; process.env.PI_PROJECT_ROOTS = root; process.env.PI_OFFLINE = '1';
-let gateway, server, provider, origin, revision = 0, gatewayClosed=false; const calls = [];
+let gateway, server, provider, origin, revision = 0, gatewayClosed=false, composed; const calls = [];
 let holdNext = false, held, release, responseFields, nativeArguments;
 async function call(method, route, input) {
     const res = await fetch(origin + '/api/pi/compliance' + route, { method, headers: { Authorization: 'Bearer synthetic-scans', 'Content-Type': 'application/json' }, body: input && JSON.stringify(input) });
-    const data = await res.json(); if (res.ok && data.revision !== undefined) revision = data.revision; return { status: res.status, data };
+    const data = await res.json(); if (res.ok && Number.isSafeInteger(data.revision)) revision = data.revision; return { status: res.status, data };
 }
 async function write(route, input = {}, method = 'POST') { return call(method, route, { requestId: require('node:crypto').randomUUID(), expectedRevision: revision, ...input }); }
 async function archive(bytes, name = '扫描.png') {
@@ -66,6 +66,42 @@ test('model-call budget pauses before the next request and an explicit allowance
     const continued = await write(`/batches/${batch.id}/continue`, { budget:{pages:1,modelCalls:1,runMs:60000} }); assert.equal(continued.status,200,JSON.stringify(continued.data));
     assert.equal(continued.data.batch.execution.status,'completed'); assert.equal(continued.data.batch.execution.usage.modelCalls,2); assert.equal(calls.length,before+2);
     assert.equal(continued.data.batch.results.find(r=>r.id==='contract-deadline').conclusion,'passed');
+});
+test('a paused scan retains human input and conclusion history while later recognition fills original evidence for the composed report', {timeout:180000}, async () => {
+    await call('GET',''); const session=(await write('/sessions',{cwd})).data;
+    const canvas=require('@napi-rs/canvas').createCanvas(100,80);canvas.getContext('2d').fillRect(5,20,20,20);const project=await archive(canvas.toBuffer('image/png'));
+    canvas.getContext('2d').fillRect(35,20,20,20);
+    const doc=(await write(`/projects/${project.id}/documents`,{sources:[{kind:'upload',name:'待执行通知书.png',base64:canvas.toBuffer('image/png').toString('base64')}]})).data.documents[0];
+    await write(`/documents/${doc.id}/assignment`,{role:'award-notice',identityConfirmed:true,selected:true},'PUT');
+    let batch=(await write(`/projects/${project.id}/batches`,{budget:{pages:5,modelCalls:1,runMs:600000}})).data.batch;
+    assert.equal(batch.execution.status,'paused');
+    const prepare=async change=>{await call('GET','');const prepared=await write(`/batches/${batch.id}/review-proposals`,{cwd,sessionId:session.id,batchRevision:batch.revision,change});assert.equal(prepared.status,200,JSON.stringify(prepared.data));return prepared.data.proposal;};
+    const confirm=async card=>{await call('GET','');const result=await write(`/review-proposals/${card.id}/confirm`,{cwd,sessionId:session.id,contentHash:card.contentHash});assert.equal(result.status,200,JSON.stringify(result.data));batch=result.data.batch;};
+    await confirm(await prepare({kind:'field',documentId:doc.id,key:'date',raw:'2026-08-01',location:{page:1,region:'body',excerpt:'人工查看通知书日期'},reason:'先核对未执行原件的日期'}));
+    const manualId=batch.fields.find(f=>f.documentId===doc.id&&f.key==='date').id;
+    await confirm(await prepare({kind:'conclusion',resultId:'contract-deadline',conclusion:'insufficient',reason:'继续识别前保留人工决定'}));
+    const decidedRevision=batch.revision;await call('GET','');const result=await write(`/batches/${batch.id}/continue`,{budget:{pages:1,modelCalls:1,runMs:60000}});assert.equal(result.status,200,JSON.stringify(result.data));batch=result.data.batch;
+    const field=batch.fields.find(f=>f.documentId===doc.id&&f.key==='date');
+    assert.equal(field.id,manualId); assert.equal(field.humanValue.raw,'2026-08-01'); assert.equal(field.raw,'2026-08-31','the actual later OCR candidate fills original evidence without replacing the human value');
+    assert.equal(field.status,'known'); assert.equal(field.location.page,1);assert.equal(batch.execution.status,'completed');
+    assert.ok(batch.history.some(h=>h.revision===decidedRevision&&h.results.some(r=>r.humanDecision?.reason==='继续识别前保留人工决定')));
+    assert.equal(batch.results.find(r=>r.id==='contract-deadline').conclusion,'passed');
+    await confirm(await prepare({kind:'conclusion',resultId:'contract-deadline',conclusion:'passed',reason:'最终核对三十自然日'}));
+    await call('GET',''); const generated=await write(`/batches/${batch.id}/reports`,{batchRevision:batch.revision});assert.equal(generated.status,200,JSON.stringify(generated.data));
+    const html=(await call('GET',`/reports/${generated.data.report.id}/files/0`)).data.content;
+    for(const text of ['2026-08-31','2026-08-01','最终核对三十自然日','继续识别前保留人工决定'])assert.ok(html.includes(text),text);
+    const api=async(method,route,input)=>{const response=await fetch(origin+'/api/pi'+route,{method,headers:{Authorization:'Bearer synthetic-scans','Content-Type':'application/json'},body:input&&JSON.stringify(input)});const data=await response.json();assert.equal(response.status,200,JSON.stringify(data));return data;};
+    const worker=await gateway.supervisor.getWorker({cwd,sessionId:session.id,sessionPath:session.path});
+    await call('GET','');const deliveryInput={cwd,sessionId:session.id,requestId:'composed-delivery',expectedRevision:revision};
+    const delivered=await write(`/reports/${generated.data.report.id}/delivery`,deliveryInput);assert.equal(delivered.status,200,JSON.stringify(delivered.data));assert.equal(delivered.data.report.status,'delivered');
+    assert.equal((await write(`/reports/${generated.data.report.id}/delivery`,deliveryInput)).status,200);
+    const reference=delivered.data.report.delivery.reference;
+    assert.equal((await worker.request('get_entries')).entries.filter(e=>e.customType==='pivane-deliverable'&&e.data.id===reference.id).length,1);
+    const artifacts=await api('GET','/artifacts?'+new URLSearchParams({cwd,sessionId:session.id})),group=artifacts.items.find(i=>i.files.some(f=>f.name===generated.data.report.files[0].name));assert.ok(group);
+    const saved=await api('POST','/artifacts/batch',{requestId:'composed-save',action:'save',files:group.files.map(f=>({key:f.key}))});assert.ok(saved.results.every(r=>r.ok));
+    await call('GET','');assert.equal((await write('/settings',{enabled:false},'PUT')).status,200);assert.equal((await api('GET','/artifacts/'+saved.results[0].item.key+'/preview')).content,html);
+    composed={batchId:batch.id,reportId:generated.data.report.id,libraryId:saved.results[0].item.key,html};
+    await call('GET','');assert.equal((await write('/settings',{enabled:true},'PUT')).status,200);
 });
 test('image-only PDF is rendered in the shared isolated pool and its actual page reaches the configured provider', async () => {
     const { scannedPdf } = require('./compliance-fixtures.cjs');
@@ -135,4 +171,13 @@ test('unified shutdown waits for the actual recognition request and preserves it
     finally{release();}
     const result=await pending;await closing;assert.equal(result.status,200,JSON.stringify(result.data));assert.equal(result.data.batch.execution.steps[0].status,'completed');
     assert.equal((await call('GET',`/batches/${result.data.batch.id}`)).data.batch.execution.status,'completed');
+    assert.ok(composed,'the complete human-to-independent-report chain ran before restart');
+    let child;const originalOrigin=origin;
+    try{
+        child=require('node:child_process').fork(path.join(__dirname,'compliance-service-fixture.cjs'),[],{env:{...process.env},execArgv:[],stdio:['ignore','inherit','inherit','ipc']});origin=(await once(child,'message'))[0].origin;
+        const restored=(await call('GET',`/batches/${composed.batchId}`)).data.batch;assert.equal(restored.results.find(r=>r.id==='contract-deadline').humanDecision.reason,'最终核对三十自然日');
+        await call('GET','');assert.equal((await write('/settings',{enabled:false},'PUT')).status,200);
+        const preview=await fetch(origin+'/api/pi/artifacts/'+composed.libraryId+'/preview',{headers:{Authorization:'Bearer synthetic-scans'}});assert.equal(preview.status,200);assert.equal((await preview.json()).content,composed.html);
+        assert.ok((await call('GET',`/reports/${composed.reportId}`)).data.report.savedFiles.every(Boolean));
+    }finally{if(child?.connected){child.send('close');await once(child,'exit');}origin=originalOrigin;}
 });

@@ -70,7 +70,7 @@ async function run(browser, origin, width, theme) {
         await page.locator('#compliance-extraction-model').selectOption('fixture/vision'); await page.locator('#compliance-save').click();
         await page.waitForFunction(() => document.querySelector('#compliance-settings-status')?.textContent.includes('已变化'));
         await page.locator('#compliance-save').click();
-        await page.waitForFunction(() => document.querySelector('#compliance-settings-status')?.textContent === '已启用');
+        await page.waitForFunction(() => document.querySelector('#compliance-settings-status')?.textContent.includes('已启用'));
         assert.equal((await (await fetch(origin + '/api/pi/compliance', { headers: auth })).json()).extractionModel.modelId, 'vision');
         await page.locator('#compliance-open-chat').click();
         await page.locator('#pi-compliance-open').waitFor({ state: 'visible' }); assert.notEqual(active, 'ordinary');

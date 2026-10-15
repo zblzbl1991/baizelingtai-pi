@@ -6,7 +6,7 @@
 
 | 接口 | 用途 |
 |---|---|
-| `GET /api/pi/compliance` | 返回 `version/revision/settingsRevision/enabled/status/profileId/mainModel/extractionModel/scanStatus/requiresReload` |
+| `GET /api/pi/compliance` | 返回 `version/revision/settingsRevision/enabled/status/profileId/mainModel/extractionModel/scanStatus/availability/requiresReload` |
 | `PUT /api/pi/compliance/settings` | 输入 `requestId/expectedRevision/enabled`；启用时首次提供 `mainModel`，可选 `extractionModel` 和首次关联的 `profileId` |
 | `GET/POST /api/pi/compliance/projects` | 列出或创建工程项目档案 |
 | `GET/PUT /api/pi/compliance/projects/:id` | 读取或更新工程项目档案 |
@@ -36,6 +36,10 @@
 修订是非负整数。所有业务变更要求稳定 `requestId` 和当前 `expectedRevision`。相同操作编号、相同语义 JSON 内容返回原回执，JSON 键顺序不影响识别；同一编号换内容返回 `COMPLIANCE_CONFLICT`，修订已变化返回 `COMPLIANCE_STALE`。回执的 `revision` 属于该次提交，继续修改前读取当前状态。
 
 模型引用为 `{provider,modelId}`。对话模型须在实际目录中可用并支持文本；资料识别模型另须支持图像，也可设为 null。配置不发起推理。专用档案初次绑定后不允许以显示名称或其他编号替换。
+
+`GET /compliance` 增加 `availability:{status,text,scan,reasons}`；`status` 为 `disabled/configuration-insufficient/partial/available`，与能力开关的 `status` 分开。投影核对当前档案、公开 ModelRuntime 目录、共享解析池、文件身份和页面图像组件，不发送推理、不承诺外部供应商健康或识别质量。并发配置变化返回要求刷新的未知可用状态。配置引用仍可通过 `scanStatus` 区分是否已配置。
+
+导入的实际读取与校验不持有设置保存互斥。停用会锁存已有导入的停止请求，当前资料步骤结束后不安排下一份；本次选定范围不部分发布，返回 `409 COMPLIANCE_STOPPED`。重新启用不解除原导入停止请求。最终发布仍原子核对来源、修订、完整文件身份、容量和回执。原件读取允许在能力停用后继续使用，但新实际工作在服务关闭或维护时返回 `409 COMPLIANCE_BUSY`；已接纳工作持续计入 `activity.complianceBusy`，直到真实读取、解析和描述符关闭结束。未初始化的恢复也不能在停机或维护后通过历史 GET 启动。
 
 创建或更新档案输入 `{requestId,expectedRevision,project}`。`project` 包含 `name`，以及可为 null 的 `number/organization/year/phase/type/stage`；`identityConfirmed` 表示审查人员已核对身份。`applicability` 包含 `documents-identity/feasibility-numbers/contract-deadline/feasibility-order`，值为 true、false 或 null。返回 `{ok,project,revision}`，档案另外拥有自身的 `id/revision/createdAt/updatedAt`。当前支持创建、读取和更新，保留原有档案数据。
 
