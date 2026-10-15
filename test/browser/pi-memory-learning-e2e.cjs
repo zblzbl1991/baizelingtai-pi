@@ -123,7 +123,7 @@ async function main() {
             while (Date.now() < end) { last = await check(); if (last) return last; await new Promise(r => setTimeout(r, 200)); }
             throw new Error(`Timed out: ${label}`);
         };
-        browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+        browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
         const open = async (width, route) => {
             const context = await browser.newContext({ viewport: { width, height: width < 900 ? 852 : 920 }, locale: 'zh-CN',
                 isMobile: width < 900, hasTouch: width < 900 });
