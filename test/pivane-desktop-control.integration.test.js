@@ -2,9 +2,23 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { createApplication } = require('./desktop-launcher-fixture.cjs');
+
+test('tray identity reserves the resolved workspace port without starting a service', () => {
+    const { root, base, env } = createApplication();
+    try {
+        fs.writeFileSync(path.join(root, '.env'), 'PORT=62345\n');
+        const result = spawnSync(process.execPath, [path.join(root, 'scripts/start-desktop.cjs'), '--identity'],
+            { cwd: root, env: { ...env, PORT: '61234' }, windowsHide: true, encoding: 'utf8' });
+        assert.equal(result.status, 0, result.stderr);
+        const identity = JSON.parse(result.stdout);
+        assert.equal(identity.root, root);
+        assert.deepEqual(identity.reservedPorts, [61234], 'inherited configuration wins over .env');
+        assert.equal(fs.existsSync(path.join(root, '.pivane-runtime')), false, 'identity lookup has no owner side effects');
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
 
 // This seam crosses the real runner, ManagedLauncher, child IPC and gateway.
 // It owns a synthetic installation/identity and never sends model requests.

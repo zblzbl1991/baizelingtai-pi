@@ -6,7 +6,11 @@ process.stdout.on('error', () => process.emit('SIGTERM'));
 process.stderr.on('error', () => process.emit('SIGTERM'));
 const root = require('node:path').resolve(__dirname, '..');
 if (process.argv.length === 3 && process.argv[2] === '--identity') {
-    emit({ root: require('node:fs').realpathSync.native(root), id: require('../server/pivane-desktop-launcher').installationId(root) });
+    const { installationId, desktopEnvironment } = require('../server/pivane-desktop-launcher');
+    const environment = desktopEnvironment(root);
+    const port = Number(environment.PORT || 11408);
+    if (!Number.isInteger(port) || port < 0 || port > 65535) throw Error('Invalid workspace listening port.');
+    emit({ root: require('node:fs').realpathSync.native(root), id: installationId(root), reservedPorts: port ? [port] : [] });
 }
 else if (process.argv.length !== 2 && !controlled) { emit({ type: 'error', message: 'Usage: node scripts/start-desktop.cjs [--identity | --controlled --generation UUID]' }); process.exitCode = 1; }
 else require('../server/pivane-desktop-launcher').startDesktop({ root, emit, controlled, generation }).catch(error => {
