@@ -9,16 +9,18 @@ const { ComplianceService, mountCompliance } = require('../../server/pi-complian
 const store = new PiSessionStore(), profiles = new PiProfileRegistry(store); store.profiles = profiles;
 const documents = new (require('../../server/pi-document-uploads').DocumentUploads)({ store, supervisor: { getActiveWorker: () => null, removing: new Set(), moving: new Set() } });
 const models = [{ provider: 'fixture', id: 'text', name: '文本样例', input: ['text'], available: true }, { provider: 'fixture', id: 'vision', name: '图像样例', input: ['text', 'image'], available: true }];
-let browserModelCalls=0,failRecognition=false;
+let browserModelCalls=0,failRecognition=false,recognitionGate;
 const service = new ComplianceService({ store, profiles, documents, createModelRuntime: async () => ({ getAvailable: async () => models,
-    completeSimple:async()=>{browserModelCalls++;if(failRecognition)throw new Error('synthetic uncertain response');return {stopReason:'stop',content:[{type:'text',text:JSON.stringify({fields:[{key:'date',raw:'2026-08-01',status:'known',excerpt:'日期：2026-08-01',rect:[0,0,90,20]}]})}],usage:{input:10,output:3,cost:{total:0}}};} }) });
+    completeSimple:async()=>{browserModelCalls++;await recognitionGate;if(failRecognition)throw new Error('synthetic uncertain response');return {stopReason:'stop',content:[{type:'text',text:JSON.stringify({fields:[{key:'date',raw:'2026-08-01',status:'known',excerpt:'日期：2026-08-01',rect:[0,0,90,20]}]})}],usage:{input:10,output:3,cost:{total:0}}};} }) });
 const token = 'synthetic-compliance-browser-token', access = new WorkspaceAccessService({ filePath: path.join(agent, 'access.json'), envToken: () => token });
 async function run(browser, origin, width, theme) {
     const fixtureDirectory=path.join(temporary,'files-'+width);fs.mkdirSync(fixtureDirectory);
     const fixtureFiles=files=>files.map(file=>{const target=path.join(fixtureDirectory,file.name);fs.writeFileSync(target,file.buffer);return target;});
     const context = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: width < 900 ? 852 : 1000 }, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [], sessions = [{ id: 'ordinary', cwd, name: '普通会话', messageCount: 0 }]; let active = 'ordinary', loseImport = false, busyImport = true, holdEvidence = false, releaseEvidence, importPosts = 0;
-    const pendingFonts=new Map(), businessResponses=[]; let holdBatchId, releaseBatch, batchRequested, busySettings=true, acceptedSettings=true, busyProject=true, busyChat=true, settingsPosts=0;
+    const pendingFonts=new Map(), businessResponses=[],startupResponses=[],consoleErrors=[]; let holdBatchId, releaseBatch, batchRequested, busySettings=true, acceptedSettings=true, busyProject=true, busyChat=true, settingsPosts=0,loseBatch=false,batchPosts=0,lostBatchRequest,lostBatchResponse,releaseRecognition;
+    page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text().slice(0,500));});
+    page.on('response',response=>{const url=new URL(response.url());if(url.origin===origin&&(url.pathname.endsWith('.js')||url.pathname.startsWith('/api/pi/')))startupResponses.push({path:url.pathname,status:response.status()});});
     page.on('response',async response=>{const request=response.request(),pathname=new URL(response.url()).pathname;if(request.method()!=='GET'&&pathname.startsWith('/api/pi/compliance'))try{const value=await response.json();businessResponses.push({path:pathname,status:response.status(),input:pathname.endsWith('/batches')?JSON.parse(request.postData()):undefined,revision:value.revision,error:value.error,settings:value.extractionModel,batch:value.batch&&{id:value.batch.id,revision:value.batch.revision,configuration:value.batch.configurationSnapshot,execution:value.batch.execution,documents:value.batch.documents.map(d=>({id:d.id,name:d.name,assignment:d.assignment,processing:d.processing}))}});}catch{}});
     page.on('request',request=>{if(request.resourceType()==='font'){const url=new URL(request.url());pendingFonts.set(request,url.origin+url.pathname);}});
     for(const event of ['requestfinished','requestfailed'])page.on(event,request=>pendingFonts.delete(request));
@@ -37,6 +39,13 @@ async function run(browser, origin, width, theme) {
         }
         if(endpoint==='/api/pi/compliance/projects'&&req.method()==='POST'&&busyProject){busyProject=false;return route.fulfill({status:409,json:{error:'工程请求尚未接纳',code:'COMPLIANCE_BUSY',operationAccepted:false}});}
         if(endpoint==='/api/pi/compliance/sessions'&&req.method()==='POST'&&busyChat){busyChat=false;return route.fulfill({status:409,json:{error:'原生聊天请求尚未接纳',code:'COMPLIANCE_BUSY',operationAccepted:false}});}
+        if(endpoint.startsWith('/api/pi/compliance/projects/')&&endpoint.endsWith('/batches')&&req.method()==='POST'){
+            batchPosts++;
+            if(loseBatch){loseBatch=false;lostBatchRequest=JSON.parse(req.postData());lostBatchResponse=route.fetch();lostBatchResponse.catch(()=>{});
+                for(let n=0;n<300;n++){const response=await fetch(origin+'/api/pi/compliance/operations/'+lostBatchRequest.requestId,{headers:{Authorization:'Bearer '+token}});if(response.ok&&(await response.json()).status==='pending')return route.abort();await new Promise(resolve=>setTimeout(resolve,50));}
+                throw new Error('actual check job did not publish its pending receipt');
+            }
+        }
         if(holdBatchId && endpoint === '/api/pi/compliance/batches/'+holdBatchId && req.method()==='GET') {
             holdBatchId=null; const response=await route.fetch();batchRequested();await new Promise(resolve=>{releaseBatch=()=>route.fulfill({response}).then(resolve);});return;
         }
@@ -173,8 +182,24 @@ async function run(browser, origin, width, theme) {
         const configure=async ref=>{const latest=await(await fetch(origin+'/api/pi/compliance',{headers:auth})).json();const saved=await fetch(origin+'/api/pi/compliance/settings',{method:'PUT',headers:auth,body:JSON.stringify({requestId:'browser-model-'+width+'-'+require('node:crypto').randomUUID(),expectedRevision:latest.revision,enabled:true,extractionModel:ref})});assert.equal(saved.status,200);await page.getByRole('button',{name:'刷新资料和批次',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#compliance-material-status')?.textContent.includes('已刷新'));await page.locator('#compliance-run-check').click();};
         await page.locator('#compliance-budget-pages').fill('200');
         await configure(null);await page.waitForFunction(()=>document.querySelector('#compliance-results')?.textContent.includes('未配置扫描识别模型'));
-        await page.locator('#compliance-budget-calls').fill('1');await configure({provider:'fixture',modelId:'vision'});
+        await page.locator('#compliance-budget-calls').fill('1');
+        recognitionGate=new Promise(resolve=>{releaseRecognition=resolve;});loseBatch=true;const postsBeforePending=batchPosts,batchesBeforePending=(await(await fetch(origin+'/api/pi/compliance/projects/'+project.id+'/batches',{headers:auth})).json()).batches.length;
+        await configure({provider:'fixture',modelId:'vision'});
+        await page.waitForFunction(()=>/Failed|fetch/.test(document.querySelector('#compliance-material-status')?.textContent||''));
+        const pendingKey='pivane.compliance.operation:'+project.id+':/projects/'+project.id+'/batches';
+        for(let attempt=0;attempt<2;attempt++){
+            const queried=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/pi/compliance/operations/'+lostBatchRequest.requestId);
+            await page.locator('#compliance-run-check').click();assert.equal((await(await queried).json()).status,'pending');
+            await page.waitForFunction(()=>document.querySelector('#compliance-run-check')?.matches(':enabled'));
+            assert.equal(await page.evaluate(key=>JSON.parse(sessionStorage.getItem(key)||'null')?.requestId,pendingKey),lostBatchRequest.requestId,'a pending original check keeps its operation ID until the durable terminal receipt');
+            assert.equal(batchPosts,postsBeforePending+1,'repeated clicks only query the accepted original check');
+        }
+        releaseRecognition();recognitionGate=null;assert.equal((await lostBatchResponse).status(),200);
+        await page.locator('#compliance-run-check').click();
+        if(width<900){await page.waitForFunction(()=>document.querySelector('#compliance-material-status')?.textContent.includes('原操作已核对'));await page.getByRole('button',{name:'刷新资料和批次',exact:true}).click();}
         await page.waitForFunction(()=>document.querySelector('#compliance-execution')?.textContent.includes('模型调用预算已用完'));
+        assert.equal(await page.evaluate(key=>sessionStorage.getItem(key),pendingKey),null);assert.equal(batchPosts,postsBeforePending+1);
+        assert.equal((await(await fetch(origin+'/api/pi/compliance/projects/'+project.id+'/batches',{headers:auth})).json()).batches.length,batchesBeforePending+1,'receipt recovery does not create a second batch');
         await page.locator('#compliance-execution').scrollIntoViewIfNeeded();
         await page.screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-scan-budget-'+width+'.png')});
         await page.locator('#compliance-continue').click();await page.waitForFunction(()=>document.querySelector('#compliance-results')?.textContent.includes('合同签订期限：通过'));
@@ -194,8 +219,8 @@ async function run(browser, origin, width, theme) {
         assert.equal(await page.locator('#compliance-open-chat').isVisible(), false);
         await page.evaluate(() => { location.hash = '#/chat'; }); assert.equal(await page.locator('#pi-compliance-open').isVisible(), false);
         assert.deepEqual(errors, []); console.log(`compliance ${width} ${theme}: actual authenticated settings, dedicated session, project drawer, persistence and disable passed`);
-    } catch (error) {fs.writeFileSync(path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-business-'+width+'.json'),JSON.stringify({businessResponses,execution:await page.evaluate(()=>document.querySelector('#compliance-execution')?.textContent||null)},null,2)); console.error({ errors, url: page.url(), message: error.message, status:await page.evaluate(()=>document.querySelector('#compliance-material-status')?.textContent||null),fileErrors:await page.evaluate(()=>window.syntheticReadErrors).catch(()=>null) }); await page.screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-failure-'+width+'.png'),timeout:10000}).catch(()=>{});throw error; }
-    finally { await context.close(); }
+    } catch (error) {fs.writeFileSync(path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-business-'+width+'.json'),JSON.stringify({businessResponses,startupResponses,consoleErrors,startup:await page.evaluate(()=>({readyState:document.readyState,title:document.title,body:document.body.innerText.slice(0,1500),settings:document.querySelector('#compliance-settings-status')?.textContent||null})),execution:await page.evaluate(()=>document.querySelector('#compliance-execution')?.textContent||null)},null,2)); console.error({ errors, url: page.url(), message: error.message, status:await page.evaluate(()=>document.querySelector('#compliance-material-status')?.textContent||null),fileErrors:await page.evaluate(()=>window.syntheticReadErrors).catch(()=>null) }); await page.screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-failure-'+width+'.png'),timeout:10000}).catch(()=>{});throw error; }
+    finally { releaseRecognition?.();recognitionGate=null;await lostBatchResponse?.catch(()=>{});await context.close(); }
 }
 (async () => {
     const app = express();

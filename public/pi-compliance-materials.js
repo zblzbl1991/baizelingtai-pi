@@ -18,6 +18,7 @@
             let pending; try { pending = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch {}
             if (pending) {
                 const result = await apiFetch('/api/pi/compliance/operations/' + encodeURIComponent(pending.requestId));
+                if(result.status==='pending')throw new Error(t('原操作仍在处理，请稍后核对原操作回执。'));
                 sessionStorage.removeItem(key); revision = result.revision;
                 if (!fingerprint || pending.fingerprint !== fingerprint) throw new Error(t('原操作已核对，请查看保存结果后重新提交新内容。'));
                 return result;
@@ -27,6 +28,7 @@
             sessionStorage.setItem(key, JSON.stringify({ requestId: input.requestId, fingerprint }));
             try {
                 const result = await apiFetch('/api/pi/compliance' + path, { method, headers: { 'Content-Type':'application/json' }, body: JSON.stringify(input) });
+                if(result.status==='pending')throw new Error(t('原操作仍在处理，请稍后核对原操作回执。'));
                 sessionStorage.removeItem(key); revision = result.revision; return result;
             } catch (error) {
                 if (window.PiCompliance.isDefiniteRejection(error)) sessionStorage.removeItem(key);

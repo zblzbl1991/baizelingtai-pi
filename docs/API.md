@@ -36,7 +36,7 @@
 
 修订是非负整数。所有业务变更要求稳定 `requestId` 和当前 `expectedRevision`。相同操作编号、相同语义 JSON 内容返回原回执，JSON 键顺序不影响识别；同一编号换内容返回 `COMPLIANCE_CONFLICT`，修订已变化返回 `COMPLIANCE_STALE`。回执的 `revision` 属于该次提交，继续修改前读取当前状态。
 
-带有效操作编号的 4xx 错误返回 `operationAccepted`。true 表示同编号已有持久回执/准备意图或另一在途请求，false 表示已确认拒绝且没有这些记录，null 表示无法核对账本。网页仅在确定未受理时清除待核对编号；包括 BUSY 在内的已受理或未知结果、网络失败、5xx 和回执 404 继续查询原编号，不自动重新 POST。首次配置仍须显式继续原准备记录。
+带有效操作编号的 4xx 错误返回 `operationAccepted`。true 表示同编号已有持久回执/准备意图或另一在途请求，false 表示已确认拒绝且没有这些记录，null 表示无法核对账本。网页仅在确定未受理时清除待核对编号；包括 BUSY 在内的已受理或未知结果、网络失败、5xx 和回执 404 继续查询原编号，不自动重新 POST。查询返回 `status:pending` 时继续保留原编号，直到取得终态回执；不把在途检查当成已完成结果。首次配置仍须显式继续原准备记录。
 
 报告来源接口逐项验证原生 reference、manifestRevision、index、SHA256、批次出处与当前分支；不通过文件名/大小搜索替代来源。返回的不透明 key 使用现有成果保存接口，保存时再次核对来源资格；来源读取参与报告及成果服务的实际作业排空。
 
@@ -44,7 +44,7 @@
 
 新批次的 `configurationSnapshot.mainModel` 来自已验证活跃原生 worker 的实际 `get_state.model`，并记录 `mainModelSource:"native-session"` 与 `mainModelSessionId`。用户切换对话模型后新批次固定新选择。HTTP 创建可传 `cwd/sessionId`；未提供来源或来源没有活跃 worker 时，对话模型为 null、来源为 `unknown`，不以设置中的初始默认值代替。旧批次不回写。识别模型仍固定当时的 `settings.extractionModel`。
 
-原生模型切换未确认或超时结果不确定时拒绝建立已知模型快照。读取期间完成了另一次模型切换也返回 `COMPLIANCE_STALE`；迟到响应不清除既有模型不确定状态，沿原有空闲退出并重开流程核对。
+原生模型切换未确认或超时结果不确定时拒绝建立已知模型快照。实际模型读取至批次持久准入使用该 worker 既有独占操作槽，与模型切换、定时任务启动/恢复和分支导航互斥；已有操作或定时任务时返回 `COMPLIANCE_BUSY`，身份或模型代次失效返回 `COMPLIANCE_STALE`。该短操作允许模型工具在当前回复中创建批次，扫描执行在释放操作槽后进行。迟到响应不清除既有模型不确定状态，沿原有空闲退出并重开流程核对。
 
 `GET /compliance` 增加 `availability:{status,text,scan,reasons}`；`status` 为 `disabled/configuration-insufficient/partial/available`，与能力开关的 `status` 分开。投影核对当前档案、公开 ModelRuntime 目录、共享解析池、文件身份和页面图像组件，不发送推理、不承诺外部供应商健康或识别质量。并发配置变化返回要求刷新的未知可用状态。配置引用仍可通过 `scanStatus` 区分是否已配置。
 
