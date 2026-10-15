@@ -74,6 +74,13 @@ test('real managed supplier requests isolate staffing resources and reject disab
             const actual = JSON.stringify(requests.at(-1));
             if (profileId === enabled.profileId) {
                 assert.match(actual, /staffing_query/); assert.match(actual, /staffing_prepare_change/); assert.match(actual, /staffing_operation_status/); assert.match(actual, /staffing-management/);
+                assert.match(actual, /staffing_prepare_import/); assert.match(actual, /staffing_export/); assert.match(actual, /staffing_ledger_status/);
+                tool = 'staffing_ledger_status'; argumentsForTool = {};
+                await prompt(worker, 'Read the synthetic ledger revision');
+                const statusEntries = await worker.request('get_entries'), statusMessage = statusEntries.entries.findLast(entry => entry.message?.toolName === 'staffing_ledger_status')?.message;
+                assert.equal(statusMessage?.isError, false, JSON.stringify(statusMessage));
+                const ledgerStatus = JSON.parse(statusMessage.content.find(item => item.type === 'text').text);
+                assert.equal(ledgerStatus.revision, (await gateway.staffing.status()).revision); assert.equal(ledgerStatus.counts.people, 1);
                 const project = { id: 'new', name: 'New', owner: 'Owner', department: 'A', start: '2026-11-01', end: '2026-11-02', minimum: 1 };
                 tool = 'staffing_prepare_change'; argumentsForTool = { requestId: 'prepare', expectedRevision: (await gateway.staffing.status()).revision, project, personIds: ['P1'] };
                 await prompt(worker, 'Prepare synthetic plan');
@@ -97,6 +104,13 @@ test('real managed supplier requests isolate staffing resources and reject disab
                 const response = await call('/commit', commit); assert.equal(response.status, 200, await response.clone().text());
                 stage('page confirmed');
                 assert.equal((await response.json()).coverage.satisfied, true);
+                tool = 'staffing_export'; argumentsForTool = { requestId: 'runtime-export', expectedRevision: (await gateway.staffing.status()).revision };
+                await prompt(worker, 'Explicitly export synthetic ledger');
+                const exportedEntries = await worker.request('get_entries'), exportedMessage = exportedEntries.entries.findLast(entry => entry.message?.toolName === 'staffing_export')?.message;
+                assert.equal(exportedMessage?.isError, false, JSON.stringify(exportedMessage));
+                const report = JSON.parse(exportedMessage.content.find(item => item.type === 'text').text);
+                assert.equal(report.phase, 'saved'); assert.equal((await gateway.artifacts.preview(report.artifactKey)).revision, report.sha256);
+                stage('native export independently saved');
                 const status = await gateway.staffing.status(); await gateway.staffing.disable({ requestId: 'disable', expectedRevision: status.revision });
                 const count = requests.length;
                 await prompt(worker, 'Disabled synthetic request');
@@ -108,6 +122,10 @@ test('real managed supplier requests isolate staffing resources and reject disab
                 await worker.reloadResources(); await prompt(worker, 'Explicitly refreshed session');
                 stage('reloaded');
                 assert.equal(requests.length, count + 1); assert.match(JSON.stringify(requests.at(-1)), /staffing_query/);
+                const removed = await fetch(origin + '/api/pi/sessions/' + encodeURIComponent(session.id) + '?' + new URLSearchParams({ cwd }), { method: 'DELETE', headers: { Authorization: 'Bearer synthetic-staffing-token', Origin: origin } });
+                assert.equal(removed.status, 200, await removed.clone().text());
+                assert.equal((await gateway.artifacts.preview(report.artifactKey)).revision, report.sha256, 'independent saved bytes survive native source removal');
+                await assert.rejects(gateway.artifacts.preview(report.sourceKey));
             } else {
                 assert.doesNotMatch(actual, /staffing_query|staffing_prepare_change|staffing_operation_status|staffing-management|pivane-staffing|人员调配/);
                 if (profileId) await gateway.supervisor.stopSession(session.path);

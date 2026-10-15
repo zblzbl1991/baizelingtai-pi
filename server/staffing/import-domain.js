@@ -1,6 +1,6 @@
 'use strict';
 const { keys, fail, id, validateInitial, LIMITS } = require('./validation');
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const { isDeepStrictEqual: same } = require('node:util');
 const collections = ['people', 'projects', 'occupancies'];
 function merged(state, plan) {
     const data = { historyComplete: plan.import.historyComplete };
@@ -52,6 +52,7 @@ function projection(state, plan) {
     const projected = structuredClone(plan); delete projected.import.upserts;
     const visible = []; let bytes = 0; for (const change of changes) { bytes += Buffer.byteLength(JSON.stringify(change)); if (visible.length >= 200 || bytes > 64000) break; visible.push(change); }
     return { ...projected, currentRevision: state.revision, stale: !state.enabled || plan.epoch !== state.epoch || plan.revision !== state.revision,
+        historyCompleteChange: { before: state.historyComplete, after: plan.import.historyComplete },
         changes: visible, totalChanges: changes.length, counts: plan.import.counts || Object.fromEntries(collections.map(name => [name, plan.import.upserts[name].length])),
         warning: plan.import.sourceRevision < state.revision ? '导入文件版本较旧。请核对全部差异。' : '' };
 }

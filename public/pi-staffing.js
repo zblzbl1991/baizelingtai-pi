@@ -105,6 +105,8 @@
                     button('继续初始化', 'staffing-resume', () => void write('enable', {}, status.initialization)));
             } else if (status.state === 'awaiting-import' || editingInitial && status.state === 'awaiting-review') {
                 panel.append(node('p', tr('导入人员、当前和已知未来的项目、预占、请假与培训。日期使用 YYYY-MM-DD。')));
+                const advanced = node('details', undefined, { 'data-staffing-advanced': '' });
+                advanced.append(node('summary', tr('高级台账输入')));
                 const help = node('details'); help.append(node('summary', tr('查看 JSON 字段示例')), node('pre', JSON.stringify(sample, null, 2)));
                 const label = node('label', tr('初始台账 JSON'), { for: 'staffing-initial-json' });
                 const input = node('textarea', undefined, { id: 'staffing-initial-json', rows: '12', spellcheck: 'false' });
@@ -117,8 +119,10 @@
                     try { const content = await selected.text(); if (active && ticket === generation && !busy) { draft = content; input.value = content; } }
                     catch (error) { if (active && ticket === generation) feedback.textContent = error.message; }
                 });
-                panel.append(help, label, input, fileLabel, file,
+                advanced.append(help, label, input, fileLabel, file,
                     button('导入并检查', 'staffing-import', () => { try { const data = JSON.parse(input.value); void write('initialize', data); } catch { feedback.textContent = tr('JSON 格式无效，请检查后再导入。'); } }));
+                panel.append(advanced);
+                if (editingInitial) advanced.open = true;
                 if (editingInitial) panel.append(button('返回核对', 'staffing-return-review', () => { editingInitial = false; void load(); }, true));
             } else {
                 panel.append(node('p', tr('人员 {0} · 项目 {1} · 占用 {2}').replace('{0}', status.counts.people).replace('{1}', status.counts.projects).replace('{2}', status.counts.occupancies)),
@@ -147,6 +151,7 @@
             actions.append(button('刷新状态', 'staffing-refresh', () => void load(), true));
             if (status.state !== 'initializing') actions.append(button('停用并保留数据', 'staffing-disable', () => void write('disable'), true));
             panel.append(actions);
+            globalThis.PiStaffingExcel?.mount(panel, { request: api, status, refresh: load });
         }
         function route(detail) { active = detail?.tab === 'staffing'; generation++; if (active) void load(); }
         window.addEventListener('workspace:tabchanged', event => route(event.detail));
