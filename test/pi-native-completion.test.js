@@ -15,6 +15,52 @@ process.env.PI_WEB_DEFERRED_FILE = path.join(root, 'deferred.json'); delete proc
 fs.mkdirSync(process.env.PI_CODING_AGENT_DIR, {recursive:true});
 test.after(() => fs.rmSync(root, {recursive:true,force:true}));
 const waitFor = async predicate => { const start = Date.now(); while (!predicate()) { if (Date.now() - start > 15000) throw new Error('fixture timeout'); await new Promise(r => setTimeout(r, 20)); } };
+// Temporary phase evidence. Never record payloads, credentials or extension text.
+function runtimePhases(t, label) {
+ const { PiRpcClient } = require('../server/pi-rpc-client');
+ const begun = performance.now(), events = [], clients = new Map(), restores = []; let omitted = 0, serial = 0;
+ const mark = (phase, fields = {}) => { if (events.length === 200) { events.shift(); omitted++; } events.push({ ms: Math.round(performance.now() - begun), phase, ...fields }); };
+ const errorCode = error => ['RPC_TIMEOUT','RPC_STARTUP_FAILED','RPC_REJECTED','STARTUP_UI_UNSUPPORTED','SESSION_BUSY'].includes(error?.code) ? error.code : 'OTHER';
+ const clientState = client => { if (!clients.has(client)) clients.set(client, { id: clients.size + 1, pending: new Map() }); return clients.get(client); };
+ const observe = (target, name, identify) => {
+  const original = target[name];
+  target[name] = function (...args) {
+   const state = identify ? identify(this, args) : null, call = ++serial;
+   const phase = name === 'request' ? 'rpc:' + args[0] : name;
+   state?.pending.set(call, phase); mark(phase + ':begin', state ? { client: state.id } : {});
+   let result;
+   const done = error => { state?.pending.delete(call); mark(phase + (error ? ':error' : ':end'), { ...(state ? { client: state.id } : {}), ...(error ? { code: errorCode(error) } : {}) }); };
+   try { result = original.apply(this, args); } catch (error) { done(error); throw error; }
+   if (name === 'start' && this.child && !state.observedChild) {
+    state.observedChild = this.child; mark('child:spawned', { client: state.id });
+    this.child.once('exit', (code, signal) => mark('child:exit', { client: state.id, code, signal }));
+    this.child.once('close', (code, signal) => mark('child:close', { client: state.id, code, signal }));
+   }
+   Promise.resolve(result).then(() => done(), error => done(error)); return result;
+  };
+  restores.push(() => { target[name] = original; });
+ };
+ for (const name of ['start','request','dispose']) observe(PiRpcClient.prototype, name, clientState);
+ t.after(() => { for (const restore of restores.reverse()) restore(); });
+ let supervisor;
+ return {
+  mark,
+  attach(gateway) {
+   supervisor = gateway.supervisor;
+   observe(gateway.store, 'getSession');
+   for (const name of ['getWorker','restartWorker']) observe(supervisor, name);
+   if (supervisor.workerEnvironment) observe(supervisor, 'workerEnvironment');
+   supervisor.on('worker', () => mark('worker:published'));
+  },
+  dump(phase) {
+   mark(phase);
+   t.diagnostic('[DEBUG-runtime-phase] ' + JSON.stringify({ label, omitted, events, supervisor: supervisor ? {
+    workers: supervisor.workers.size, starting: supervisor.starting.size,
+    active: [...supervisor.workers.values()].map(worker => ({ disposed: worker.disposed, restarting: Boolean(worker.restarting), busy: worker.activity.snapshot().busy }))
+   } : null, clients: [...clients].map(([client, state]) => ({ id: state.id, disposed: client.disposed, child: Boolean(client.child), pending: [...state.pending.values()] })) }));
+  }
+ };
+}
 
 test('live reducer preserves partial blocks and tool progress, bounds memory, and releases authoritative completions', () => {
  const live = new PiLiveState();
@@ -44,6 +90,7 @@ test('RPC snapshot mapper captures state before later records from the same stdo
 });
 
 test('native worker restores live output, drafts, config changes and safely replaces one idle worker', {timeout:60000}, async t => {
+ const phases = runtimePhases(t, 'native-replacement'); let socketOrdinal = 0;
  const cwd = path.join(root,'project'); fs.mkdirSync(cwd);
  let finish;
  const provider = http.createServer(async (req,res) => {
@@ -57,17 +104,20 @@ test('native worker restores live output, drafts, config changes and safely repl
  fs.writeFileSync(path.join(agent,'models.json'),JSON.stringify({providers:{fixture:{baseUrl:`http://127.0.0.1:${provider.address().port}/v1`,api:'openai-completions',apiKey:'synthetic',models:[{id:'fixture',input:['text'],contextWindow:32000,maxTokens:1000}]}}}));
  fs.writeFileSync(path.join(agent,'settings.json'),JSON.stringify({defaultProvider:'fixture',defaultModel:'fixture',enableInstallTelemetry:false,compaction:{enabled:false}}));
  const { createPiAgentGateway } = require('../server/pi-agent-routes');
- const gateway = createPiAgentGateway(); const app = require('express')(); app.use(require('express').json()); gateway.mount(app);
+ const gateway = createPiAgentGateway(); phases.attach(gateway); const app = require('express')(); app.use(require('express').json()); gateway.mount(app);
  const server = app.listen(0,'127.0.0.1'); await once(server,'listening'); gateway.attachWebSocket(server);
  const sockets = [];
- t.after(async()=>{for(const s of sockets)s.terminate(); finish?.(); await gateway.dispose(); server.closeAllConnections(); await new Promise(r=>server.close(r)); provider.closeAllConnections(); await new Promise(r=>provider.close(r));});
+ t.after(async()=>{try{for(const s of sockets)s.terminate(); finish?.(); await gateway.dispose(); server.closeAllConnections(); await new Promise(r=>server.close(r)); provider.closeAllConnections(); await new Promise(r=>provider.close(r));}finally{phases.dump('cleanup:finished')}});
  const session = await gateway.store.createSession(cwd,'fixture');
  const connect = async () => {
+  const ordinal = ++socketOrdinal;
   const socket = new WebSocket(`ws://127.0.0.1:${server.address().port}/api/pi/ws`,{origin:`http://127.0.0.1:${server.address().port}`}); sockets.push(socket);
   const events = [], pending = new Map(); let id=0;
-  socket.on('message',raw=>{const r=JSON.parse(raw); if(r.type==='response'&&pending.has(r.id)){const p=pending.get(r.id);pending.delete(r.id);r.success?p.resolve(r.data):p.reject(new Error(r.error));}else events.push(r);});
+  socket.on('close',code=>phases.mark('ws:close',{socket:ordinal,code}));socket.on('error',()=>phases.mark('ws:error',{socket:ordinal}));
+  socket.on('message',raw=>{const r=JSON.parse(raw); if(r.type==='response'&&pending.has(r.id)){const p=pending.get(r.id);pending.delete(r.id);phases.mark('ws:response',{socket:ordinal,id:r.id,success:r.success});r.success?p.resolve(r.data):p.reject(new Error(r.error));}else {if(r.type==='gateway_reconnect')phases.mark('ws:reconnect',{socket:ordinal});events.push(r);}});
   await once(socket,'open');
-  const call = (type,data={}) => new Promise((resolve,reject)=>{const key=String(++id); const timer=setTimeout(()=>{pending.delete(key);reject(new Error('timeout '+type));},15000);pending.set(key,{resolve:v=>{clearTimeout(timer);resolve(v);},reject:e=>{clearTimeout(timer);reject(e);}});socket.send(JSON.stringify({id:key,type,...data}));});
+  phases.mark('ws:open',{socket:ordinal});
+  const call = (type,data={}) => new Promise((resolve,reject)=>{const key=String(++id); const timer=setTimeout(()=>{pending.delete(key);phases.dump('ws:timeout:'+ordinal+':'+type);reject(new Error('timeout '+type));},15000);pending.set(key,{resolve:v=>{clearTimeout(timer);resolve(v);},reject:e=>{clearTimeout(timer);reject(e);}});phases.mark('ws:send',{socket:ordinal,id:key,type});socket.send(JSON.stringify({id:key,type,...data}));});
   const snapshot = await call('open_session',{cwd,sessionId:session.id}); return {socket,call,events,snapshot};
  };
  const a = await connect(); const worker = gateway.supervisor.getActiveWorker(session.path);
@@ -85,7 +135,10 @@ test('native worker restores live output, drafts, config changes and safely repl
  const settings = JSON.parse(fs.readFileSync(path.join(agent,'settings.json'))); settings.steeringMode='all'; fs.writeFileSync(path.join(agent,'settings.json'),JSON.stringify(settings));
  const changed = await c.call('get_runtime_configuration'); assert.equal(changed.matchesSavedConfig,false);
  await c.call('restart_runtime',{runtimeId:changed.runtimeId,expectedRevision:changed.revision,confirmed:true});
- await waitFor(()=>gateway.supervisor.getActiveWorker(session.path)?.controls.runtimeId !== changed.runtimeId && gateway.supervisor.workers.size === 1);
+ phases.mark('restart:accepted');
+ try { await waitFor(()=>gateway.supervisor.getActiveWorker(session.path)?.controls.runtimeId !== changed.runtimeId && gateway.supervisor.workers.size === 1); }
+ catch (error) { phases.dump('restart:replacement-timeout'); throw error; }
+ phases.mark('restart:replacement-observed');
  const d = await connect(); assert.equal((await d.call('get_runtime_configuration')).matchesSavedConfig,true); assert.equal(d.snapshot.state.steeringMode,'all');
  assert.equal(d.snapshot.session.id,session.id); assert.match(JSON.stringify(d.snapshot.messages.messages),/PREFIX 中文 SUFFIX/);
  const search = searchSessions({root:path.join(agent,'sessions'),roots:[root],q:'SUFFIX'}); assert.equal(search.results.length,1); assert.equal(search.results[0].sessionId,session.id);
