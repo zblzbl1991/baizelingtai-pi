@@ -1,6 +1,6 @@
 # 参与白泽灵台开发
 
-从 [源码 Agent 入口](AGENTS.md)、[模块导航](docs/development/MODULES.md) 和 [开发流程](docs/development/WORKFLOW.md) 找到本次任务的实现、契约与验证入口。整体数据边界见 [架构](docs/development/ARCHITECTURE.md)。
+从 [源码 Agent 入口](AGENTS.md) 和 [Wayfinder](WAYFINDER.md) 找到本次任务的实现、契约与 E2E 入口；文件映射见 [模块导航](docs/development/MODULES.md)，验证范围见 [开发流程](docs/development/WORKFLOW.md)。整体数据边界见 [架构](docs/development/ARCHITECTURE.md)。
 
 ## 源码与实例
 

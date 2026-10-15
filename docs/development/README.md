@@ -8,6 +8,7 @@
 
 | 需要了解什么 | 入口 |
 |---|---|
+| 按任务定位实现、契约和测试链路 | [Wayfinder](../../WAYFINDER.md) |
 | 一类功能应该修改哪里、相关契约在哪 | [模块导航](MODULES.md) |
 | 系统边界、数据流、设计取舍与已知技术债 | [架构](ARCHITECTURE.md) |
 | 开发步骤、验证范围、文档责任 | [开发流程](WORKFLOW.md) |
@@ -19,11 +20,14 @@
 | 平台原生组件 | [native](../../native/README.md) |
 | OfficeCLI 程序、原生 MCP、Office 工作副本与验收 | [Office 文档](../OFFICE_DOCUMENTS.md)、[模块导航](MODULES.md) |
 | guizang-ppt 与内网 SkillHub 来源、CLI 和接口依据 | [SkillHub 接入核查](research/skillhub-guizang-ppt.md) |
+| pi-web-keeper 的 Windows PWA 入口与集成取舍 | [桌面入口集成评估](research/pi-web-keeper.md) |
 | gongwen-kit 公文生成、机检与修订的接入建议 | [gongwen-kit 接入评估](research/gongwen-kit.md) |
 
 用户可见行为以功能文档为准；实现细节以本目录为准；两者都不记录某台机器的部署状态。
 
 ## 验证入口
+
+按功能寻找真实网关／原生 RPC、浏览器、实机与准确包测试时，先查 [E2E 导航](E2E.md)，确认真实范围、接口替身及缺口。
 
 统一的 [验证矩阵](WORKFLOW.md#验证矩阵) 区分局部功能本机部署、共享基础能力部署和公开发布，覆盖源码交付与累计集成检查；[结果复用](WORKFLOW.md#验证结果复用与失效) 定义证据和失效条件；[Node 测试入口](WORKFLOW.md#node-测试入口与计时) 提供定向运行、清单与耗时报告。
 
