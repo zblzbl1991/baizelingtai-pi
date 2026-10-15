@@ -6,7 +6,7 @@
 
 | 接口 | 用途 |
 |---|---|
-| `GET /api/pi/compliance` | 返回 `version/revision/enabled/status/profileId/mainModel/extractionModel/scanStatus/requiresReload` |
+| `GET /api/pi/compliance` | 返回 `version/revision/settingsRevision/enabled/status/profileId/mainModel/extractionModel/scanStatus/requiresReload` |
 | `PUT /api/pi/compliance/settings` | 输入 `requestId/expectedRevision/enabled`；启用时首次提供 `mainModel`，可选 `extractionModel` 和首次关联的 `profileId` |
 | `GET/POST /api/pi/compliance/projects` | 列出或创建工程项目档案 |
 | `GET/PUT /api/pi/compliance/projects/:id` | 读取或更新工程项目档案 |
@@ -15,7 +15,9 @@
 | `GET/POST /api/pi/compliance/projects/:id/documents` | 枚举或导入明确选定资料；POST 输入操作编号、修订及 `sources` |
 | `GET /api/pi/compliance/documents/:id/content` | 返回经快照哈希校验的 `name/hash/base64` 原字节，不接受私密路径 |
 | `PUT /api/pi/compliance/documents/:id/assignment` | 用户提交 `role/identityConfirmed/selected/numberAbsentConfirmed?` 与操作编号、修订 |
-| `GET/POST /api/pi/compliance/projects/:id/batches` | 枚举历史批次摘要或以当前已选资料建立文本检查批次 |
+| `GET/POST /api/pi/compliance/projects/:id/batches` | 枚举历史批次摘要或以当前已选资料建立检查批次，POST 可选 `budget:{pages,modelCalls,runMs}` |
+| `POST /api/pi/compliance/batches/:id/continue` | 输入稳定操作编号、当前修订及可选预算，追加额度并只继续未启动步骤 |
+| `POST /api/pi/compliance/batches/:id/pause` | 输入稳定操作编号和当前修订，请求在当前真实步骤结束后暂停 |
 | `GET /api/pi/compliance/batches/:id` | 按需读取固定的 `batch` 和当前账本 `revision` |
 | `GET /api/pi/compliance/batches/:id/evidence/:fieldId` | 返回批次内字段原文、页码/工作表行及原件摘要 |
 | `POST /api/pi/compliance/tool` | 仅接受存活受管 worker 的独立导航凭据；从真实会话绑定确定资格，用户 Token 不能调用此接口 |
@@ -32,7 +34,13 @@
 
 建立批次仅输入 `{requestId,expectedRevision}`。批次保存 `id/revision/projectId/projectSnapshot/documents/rulePackage/configurationSnapshot/fields/results/execution/review/createdAt`。`rulePackage` 固定实际规则内容与版本；`fields` 含 `id/documentId/key/raw/value/precision/status/location/candidates`，日期 `value` 保存 ISO 日期区间 `start/end`，精度为 `day/month`，未知为 null。位置包含 `page/region/viewport/rects` 或 `sheet/row/column/address` 及有界 `excerpt`。`results` 使用 `conclusion:passed|issue|insufficient|not-applicable`，`execution:completed|failed`，并保存 `reason/evidence/sources/review`；证据为本批次字段 ID。人工复核状态初始为 `unreviewed`，执行失败不能解释为通过。批次最多五百个，仍受八 MiB 账本上限限制。
 
-受管 `compliance_materials` 支持 `list/import`，仅接受当前 worker 工作目录内的相对路径或当前分支附件 ID；返回必要摘要及不透明 ID。`compliance_check` 支持 `run/list/get/evidence`，按需读取批次和字段证据。内部工具 HTTP 输入用 `operation:materials|checks` 区分，项目工具沿用原接口。工具创建/更新工程元数据不能新设人工身份或适用性确认；原确认只在身份字段未变化时保留，字段变化重置待核对。文本处理复用办公附件的同一解析池，HTTP 断开不释放仍在执行的工作，全部任务参与维护空闲与关闭等待。
+受管 `compliance_materials` 支持 `list/import`，仅接受当前 worker 工作目录内的相对路径或当前分支附件 ID；返回必要摘要及不透明 ID。`compliance_check` 支持 `run/list/get/evidence/continue/pause`，按需读取批次和字段证据。内部工具 HTTP 输入用 `operation:materials|checks` 区分，项目工具沿用原接口。工具创建/更新工程元数据不能新设人工身份或适用性确认；原确认只在身份字段未变化时保留，字段变化重置待核对。文本处理复用办公附件的同一解析池，HTTP 断开不释放仍在执行的工作，全部任务参与维护空闲与关闭等待。
+
+批次 `execution` 保留执行状态并增加 `budget/usage/steps/reason`；`paused` 表示预算、停用或用户请求暂停，`needs-review` 专指请求执行结果待核对，不能当作普通人工未复核。`steps` 的 `pending/running/completed/failed/uncertain/blocked` 分别表示未启动、执行中、完成、失败、不确定和缺少识别配置。`usage` 保存页处理量、模型调用次数、运行毫秒和可取得的 token；`cost.actual` 未知为 `null`，`estimate` 与 `basis` 明确标识模型目录估算。批次每个检查点增加自身修订；源资料、项目和规则快照不变，字段变化重算旧规则并保留未人工复核状态。受管工具只返回执行摘要及待处理/不确定数量，完整步骤按需读取；批次目录每页最多五十项，按 `offset/nextOffset` 继续。
+
+`budget` 默认 `pages:200,modelCalls:20,runMs:600000`；单次设置范围为 1–2000 页、1–200 次、1000–3600000 毫秒，批次累计上限为一万页、一千次、二十四小时。预算只限制下一步准入，当前请求实际结束前仍计入忙碌。HTTP 断线不取消，服务中断后原执行中步骤变为不确定，读取或继续不会自动重发。初始任务在外部工作前持久登记；中断操作查询返回 `status:pending,phase:checks,batchId`。
+
+设置可额外传 `expectedSettingsRevision`，与状态中的 `settingsRevision` 比较；这样后台检查点增加账本修订不会阻止停用，真正并发配置变化仍返回 `COMPLIANCE_STALE`。旧客户端仅传 `expectedRevision` 时仍按账本修订核对。`status:disabling` 表示已拒绝新增工作，当前真实步骤尚未结束。停用在运行批次持久记录 `pauseRequested/stopReason:disabled`，重新启用不清除原暂停意图；显式继续才清除。所有实际检查、模型与解析作业参与活动、维护和异步关闭。
 
 ## 桌面启动私有通道
 

@@ -27,18 +27,19 @@ function projectInput(input) {
 class ComplianceService {
     constructor({ store, profiles, supervisor, createModelRuntime, isSuspended = () => false, ledger, documents } = {}) {
         Object.assign(this, { store, profiles, supervisor, createModelRuntime, isSuspended });
-        this.ledger = ledger || new ComplianceLedger(); this.busy = false; this.closed = false; this.pending = null;
+        this.ledger = ledger || new ComplianceLedger(); this.mutating = false; this.closed = false; this.pending = null;
         this.materials = new (require('./pi-compliance-materials').ComplianceMaterials)(this, documents);
         this.checks = new (require('./pi-compliance-checks').ComplianceChecks)(this, documents);
     }
     reserve(action) {
-        if (this.busy || this.closed || this.isSuspended()) throw fail('合规操作正在处理或工作台维护中', 409, 'COMPLIANCE_BUSY');
-        this.busy = true; const pending = Promise.resolve().then(action); this.pending = pending;
-        return pending.finally(() => { if (this.pending === pending) this.pending = null; this.busy = false; });
+        if (this.mutating || this.closed || this.isSuspended()) throw fail('合规操作正在处理或工作台维护中', 409, 'COMPLIANCE_BUSY');
+        this.mutating = true; const pending = Promise.resolve().then(action); this.pending = pending;
+        return pending.finally(() => { if (this.pending === pending) this.pending = null; this.mutating = false; });
     }
-    async dispose() { this.closed = true; if (this.pending) await this.pending.catch(() => {}); }
+    get busy() { return this.mutating || Boolean(this.checks?.jobs.size) || Boolean(this.checks?.recovering) || Boolean(this.reports?.busy); }
+    async dispose() { this.closed = true; if (this.pending) await this.pending.catch(() => {}); await this.checks.dispose(); }
     view(state) {
-        return { version: 1, revision: state.revision, ...state.settings, status: state.setup ? 'configuring' : state.settings.enabled ? 'enabled' : 'disabled',
+        return { version: 1, revision: state.revision, settingsRevision: state.settingsRevision || 0, ...state.settings, status: state.setup ? 'configuring' : state.settings.enabled ? 'enabled' : (this.checks.jobs.size || this.reports?.busy) ? 'disabling' : 'disabled',
             scanStatus: state.settings.extractionModel ? 'configured' : 'unconfigured', requiresReload: true,
             pendingSetup: state.setup ? { requestId: state.setup.requestId, input: state.setup.input } : null };
     }
@@ -101,6 +102,7 @@ class ComplianceService {
         const receipt = Object.hasOwn(state.receipts, id) && state.receipts[id];
         if (!receipt && state.setup?.requestId === id) return { status: 'pending', phase: 'profile-binding', canResume: true, requestId: id, revision: state.revision };
         if (!receipt && Object.hasOwn(state.sessionCreations || {}, id)) return { status: 'pending', phase: 'native-session', canResume: true, requestId: id, revision: state.revision };
+        if (!receipt && Object.hasOwn(state.checkOperations || {}, id)) { const op = state.checkOperations[id]; return { status: 'pending', phase: 'checks', requestId: id, batchId: op.batchId, revision: state.revision, canResume: !this.checks.jobs.size }; }
         if (!receipt) throw fail('操作尚无已提交回执，请核对后再处理', 404, 'COMPLIANCE_OPERATION_UNKNOWN');
         return receipt.result;
     }
@@ -151,7 +153,7 @@ class ComplianceService {
         try {
             await this.authorizeWorker(worker);
             if (input.operation === 'materials' || input.operation === 'checks') {
-                only(input, ['operation', 'action', 'projectId', 'documentId', 'batchId', 'fieldId', 'requestId', 'expectedRevision', 'sources']);
+                only(input, ['operation', 'action', 'projectId', 'documentId', 'batchId', 'fieldId', 'requestId', 'expectedRevision', 'sources', 'budget', 'offset']);
                 if (input.operation === 'materials') {
                     if (input.action === 'list') {
                         const value = await this.materials.list(input.projectId);
@@ -162,11 +164,14 @@ class ComplianceService {
                         return { revision: result.revision, reused: result.reused, documents: result.documents.map(({ id, name, format, size }) => ({ id, name, format, size })), requiresHumanAssignment: true };
                     }
                 } else {
-                    if (input.action === 'list') return await this.checks.list(input.projectId);
+                    if (input.action === 'list') { const value=await this.checks.list(input.projectId),offset=input.offset??0;if(!Number.isSafeInteger(offset)||offset<0||offset>500)throw fail('批次目录位置无效');const batches=value.batches.slice(offset,offset+50);return {revision:value.revision,batches,total:value.batches.length,nextOffset:offset+batches.length<value.batches.length?offset+batches.length:null}; }
                     if (input.action === 'evidence') return await this.checks.evidence(input.batchId, input.fieldId);
-                    const value = input.action === 'run' ? await this.checks.create(input.projectId, { requestId: input.requestId, expectedRevision: input.expectedRevision }, worker)
+                    const mutation = { requestId: input.requestId, expectedRevision: input.expectedRevision, ...(input.budget === undefined ? {} : { budget: input.budget }) };
+                    if (input.action === 'pause') return await this.checks.pause(input.batchId, mutation);
+                    const value = input.action === 'run' ? await this.checks.create(input.projectId, mutation, worker)
+                        : input.action === 'continue' ? await this.checks.continue(input.batchId, mutation, worker)
                         : input.action === 'get' ? await this.checks.get(input.batchId) : null;
-                    if (value) return { revision: value.revision, batchId: value.batch.id, batchRevision: value.batch.revision, results: value.batch.results, execution: value.batch.execution, review: value.batch.review };
+                    if (value) { const { steps, ...execution } = value.batch.execution; return { revision: value.revision, batchId: value.batch.id, batchRevision: value.batch.revision, results: value.batch.results, execution: { ...execution, pendingSteps: steps?.filter(s=>s.status==='pending').length || 0, uncertainSteps: steps?.filter(s=>s.status==='uncertain').length || 0 }, review: value.batch.review }; }
                 }
                 throw fail('合规工具操作无效');
             }
@@ -197,14 +202,16 @@ class ComplianceService {
         }
     }
     saveSettings(input) {
-        only(input, ['requestId', 'expectedRevision', 'enabled', 'profileId', 'mainModel', 'extractionModel']); request(input);
+        only(input, ['requestId', 'expectedRevision', 'expectedSettingsRevision', 'enabled', 'profileId', 'mainModel', 'extractionModel']); request(input);
+        if (input.expectedSettingsRevision !== undefined && (!Number.isSafeInteger(input.expectedSettingsRevision) || input.expectedSettingsRevision < 0)) throw fail('配置修订无效');
+        const assertSettings = state => { if (input.expectedSettingsRevision === undefined) this.ledger.assertRevision(state,input); else if(input.expectedSettingsRevision !== (state.settingsRevision || 0)) throw fail('合规配置已变化，请重新核对',409,'COMPLIANCE_STALE'); };
         if (typeof input.enabled !== 'boolean') throw fail('能力开关无效');
         if (input.profileId !== undefined && (typeof input.profileId !== 'string' || !ID.test(input.profileId))) throw fail('专用助手编号无效');
         return this.reserve(async () => {
             let state = await this.ledger.snapshot();
             const prior = this.ledger.receipt(state, 'settings', input); if (prior) return prior;
             if (state.setup && state.setup.fingerprint !== fingerprint('settings', input)) throw fail('首次配置尚未完成，请查询原操作', 409, 'COMPLIANCE_CONFLICT');
-            if (!state.setup) this.ledger.assertRevision(state, input);
+            if (!state.setup) assertSettings(state);
             const mainModel = input.mainModel === undefined ? state.settings.mainModel : input.mainModel;
             const extractionModel = input.extractionModel === undefined ? state.settings.extractionModel : input.extractionModel;
             if (input.enabled) await this.validateModels(mainModel, extractionModel);
@@ -216,7 +223,7 @@ class ComplianceService {
                     if (!input.profileId && (await this.profiles.list()).profiles.length >= 50) throw fail('助手身份数量达到上限，请关联已有助手');
                     if (input.profileId && !(await this.profiles.getProfile(profileId))?.enabled) throw fail('请选择已启用的助手身份');
                     state = (await this.ledger.transact(current => {
-                        this.ledger.assertRevision(current, input);
+                        assertSettings(current);
                         current.setup = { requestId: input.requestId, fingerprint: fingerprint('settings', input), profileId, create: !input.profileId, input: structuredClone(input) };
                     })).state;
                 }
@@ -240,8 +247,12 @@ class ComplianceService {
                 if (current.setup) {
                     if (current.setup.fingerprint !== fingerprint('settings', input)) throw fail('配置操作已变化', 409);
                     current.settings.profileId = current.setup.profileId; current.setup = null;
-                } else this.ledger.assertRevision(current, input);
+                } else assertSettings(current);
                 current.settings = { ...current.settings, enabled: input.enabled, mainModel, extractionModel };
+                if (!input.enabled) for (const batch of current.batches || []) if (batch.execution.status === 'running') {
+                    batch.execution.pauseRequested = true; batch.execution.stopReason = 'disabled';
+                }
+                current.settingsRevision = (current.settingsRevision || 0) + 1;
                 return this.ledger.record(current, 'settings', input, this.view(current));
             })).value;
         });
@@ -260,6 +271,8 @@ function mountCompliance(router, service) {
     router.post('/compliance/projects', route(req => service.saveProject(req.body)));
     router.put('/compliance/projects/:id', route(req => service.saveProject(req.body, req.params.id)));
     router.get('/compliance/operations/:id', route(req => service.operation(req.params.id)));
+    router.post('/compliance/batches/:id/continue', route(req => service.checks.continue(req.params.id, req.body)));
+    router.post('/compliance/batches/:id/pause', route(req => service.checks.pause(req.params.id, req.body)));
     router.get('/compliance/projects/:id/documents', route(req => service.materials.list(req.params.id)));
     router.post('/compliance/projects/:id/documents', route(req => service.materials.import(req.params.id, req.body)));
     router.get('/compliance/documents/:id/content', route(req => service.materials.content(req.params.id)));

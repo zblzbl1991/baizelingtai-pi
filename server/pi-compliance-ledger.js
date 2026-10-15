@@ -11,8 +11,11 @@ const LIMIT = 8 * 1024 * 1024;
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const hash = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
-const empty = () => ({ version: 1, revision: 0, settings: { enabled: false, profileId: null, mainModel: null, extractionModel: null }, setup: null, projects: [], receipts: {} });
-const fingerprint = (kind, input) => { const { expectedRevision, ...values } = input; return hash({ kind, ...values }); };
+const empty = () => ({ version: 1, revision: 0, settingsRevision: 0, settings: { enabled: false, profileId: null, mainModel: null, extractionModel: null }, setup: null, projects: [], receipts: {} });
+const fingerprint = (kind, input) => { const { expectedRevision, expectedSettingsRevision, ...values } = input; return hash({ kind, ...values }); };
+const pendingMaps = state => [state.checkOperations,state.reportGenerations,state.reportDeliveries,state.sessionCreations];
+const pendingCount = (state,except) => new Set([...pendingMaps(state).flatMap(map=>Object.keys(map||{})),...(state.setup?[state.setup.requestId]:[])].filter(id=>id!==except)).size;
+
 function request(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input) || typeof input.requestId !== 'string'
         || !/^[A-Za-z0-9_.:-]{1,160}$/.test(input.requestId) || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0)
@@ -22,7 +25,7 @@ function request(input) {
 // A single private ledger is the transaction boundary. All mutation callbacks are
 // synchronous: revision comparison, receipt and replacement cannot interleave.
 class ComplianceLedger {
-    constructor({ getAgentDir } = {}) { this.getAgentDir = getAgentDir || (async () => (await getSdk()).getAgentDir()); this.busy = false; }
+    constructor({ getAgentDir } = {}) { this.getAgentDir = getAgentDir || (async () => (await getSdk()).getAgentDir()); this.busy = false; this.tail = Promise.resolve(); }
     async paths(create = false) {
         const agentDir = await this.getAgentDir();
         const file = safeFile(agentDir, ['pivane-compliance', 'ledger.json'], create), root = path.dirname(file);
@@ -52,8 +55,12 @@ class ComplianceLedger {
         finally { if (parentFd !== undefined) fs.closeSync(parentFd); }
     }
     async snapshot() { const { file } = await this.paths(); return this.read(file); }
-    async transact(update, beforeUpdate) {
-        if (this.busy) throw fail('合规账本正在保存，请查询原操作', 409, 'COMPLIANCE_BUSY');
+    transact(update, beforeUpdate) {
+        const result = this.tail.then(() => this.perform(update, beforeUpdate));
+        this.tail = result.catch(() => {});
+        return result;
+    }
+    async perform(update, beforeUpdate) {
         this.busy = true;
         let directoryFd, lock, check;
         try {
@@ -66,8 +73,9 @@ class ComplianceLedger {
                     || parent.mode !== current.mode || descriptorPathSync(directoryFd) !== root || fs.realpathSync.native(root) !== root
                     || !io.sameIdentityAtPath(root, identity)) throw fail('合规目录已变化', 409, 'COMPLIANCE_STORAGE_CHANGED');
             };
-            check(); lock = path.join(root, 'ledger.lock');
-            try { fs.mkdirSync(lock, { mode: 0o700 }); } catch { lock = null; throw fail('合规账本已锁定，请核对未完成操作', 409, 'COMPLIANCE_BUSY'); }
+            check();
+            if (fs.existsSync(path.join(root, 'ledger.lock'))) throw fail('旧账本锁待人工核对，未删除未知进程的锁', 409, 'COMPLIANCE_BUSY');
+            lock = await require('./pi-compliance-lock').acquire(root, 'ledger');
             if (beforeUpdate) await beforeUpdate();
             check(); const state = this.read(file), before = JSON.stringify(state);
             const value = update(state, { root, check });
@@ -80,18 +88,20 @@ class ComplianceLedger {
             }
             return { state, value };
         } finally {
-            try { if (lock) { check(); fs.rmdirSync(lock); } }
+            try { if (lock) await lock.close(); }
             finally { if (directoryFd !== undefined) fs.closeSync(directoryFd); this.busy = false; }
         }
     }
     receipt(state, kind, input) {
         request(input);
+        for(const map of pendingMaps(state)){const pending=map&&Object.hasOwn(map,input.requestId)&&map[input.requestId];if(pending&&pending.fingerprint!==fingerprint(kind,input))throw fail('操作编号已用于不同内容',409,'COMPLIANCE_CONFLICT');}
+        if(state.setup?.requestId===input.requestId&&state.setup.fingerprint!==fingerprint(kind,input))throw fail('操作编号已用于不同内容',409,'COMPLIANCE_CONFLICT');
         const found = Object.hasOwn(state.receipts, input.requestId) ? state.receipts[input.requestId] : null;
         if (found && found.fingerprint !== fingerprint(kind, input)) throw fail('操作编号已用于不同内容', 409, 'COMPLIANCE_CONFLICT');
         return found?.result;
     }
     record(state, kind, input, result) {
-        if (Object.keys(state.receipts).length >= 10000) throw fail('合规操作记录达到容量限制', 413, 'COMPLIANCE_CAPACITY');
+        if (Object.keys(state.receipts).length + pendingCount(state,input.requestId) >= 10000) throw fail('合规操作记录达到容量限制', 413, 'COMPLIANCE_CAPACITY');
         const saved = { ...result, revision: state.revision + 1 };
         Object.defineProperty(state.receipts, input.requestId, { value: { fingerprint: fingerprint(kind, input), result: saved }, enumerable: true, writable: true, configurable: true });
         return saved;
@@ -106,4 +116,4 @@ class ComplianceLedger {
         })).value;
     }
 }
-module.exports = { ComplianceLedger, fail, hash, fingerprint, request, LIMIT };
+module.exports = { ComplianceLedger, fail, hash, fingerprint, request, pendingCount, LIMIT };
