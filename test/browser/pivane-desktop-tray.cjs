@@ -31,7 +31,7 @@ async function main() {
         }
         throw Error(`Tray state timeout: ${JSON.stringify(state())} ${diagnostic}`);
     }
-    const pageErrors = [];
+    const pageErrors = []; let retainedContext, workbenchClosed;
     try {
         const initial = await wait(value => value.waitingUrl);
         for (const width of [1440, 390]) {
@@ -51,11 +51,35 @@ async function main() {
                 await page.waitForURL(actual.url);
                 assert.equal(await page.title(), '白泽灵台');
                 assert.ok(reads >= 2, 'read-only recovery reaches actual current service');
-            } finally { await context.close(); }
+                if(width===390){
+                    const created=await fetch(new URL('api/pi/sessions',actual.url),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cwd:root,name:'Synthetic browser idle workbench'})});
+                    assert.equal(created.status,201);const session=await created.json();
+                    const socketOpened=page.waitForEvent('websocket',{predicate:socket=>socket.url().endsWith('/api/pi/ws')});
+                    const workbench=new URL(actual.url);workbench.hash='/chat?'+new URLSearchParams({cwd:root,sessionId:session.id});
+                    await page.goto(workbench.href);
+                    const socket=await socketOpened;
+                    workbenchClosed=new Promise(resolve=>socket.on('close',resolve));
+                    await page.waitForFunction(()=>document.getElementById('pi-connection-text')?.textContent==='已连接');
+                    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+                    retainedContext=context;
+                }
+            } finally { if(context!==retainedContext)await context.close(); }
         }
         const first = await wait(value => value.state === 'ready' && !value.pending);
-        command('stop'); await wait(value => value.confirm && !value.pending);
+        let reviewed;
+        for(let attempt=0;attempt<5;attempt++){
+            const previous=state().reviewId;command('stop');
+            reviewed=await wait(value=>value.reviewId!==previous&&!value.pending);
+            if(reviewed.confirm)break;
+            // Bootstrap resource reads may still be finishing after the socket
+            // opens. A blocked review ends; explicitly ask again only once the
+            // native read-only projection reports that work has finished.
+            await wait(value=>value.blockers.startsWith('当前没有阻碍事项。')&&!value.pending);
+        }
+        assert.equal(reviewed.confirm,true,'an idle rendered workbench can be reviewed without closing its socket');
         command('confirm'); await wait(value => value.state === 'stopped');
+        await workbenchClosed;
+        await retainedContext.close();retainedContext=null;
         assert.equal(child.exitCode, null, 'actual service stop retains the native tray');
         const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true });
         try {
@@ -70,7 +94,7 @@ async function main() {
             assert.equal(await page.title(), '白泽灵台');
         } finally { await context.close(); }
         assert.deepEqual(pageErrors, []);
-        console.log(JSON.stringify({ ok: true, realNativeTray: true, realControlledService: true, viewports: [1440, 390], stableEntryAcrossRestart: true, pageErrors }));
+        console.log(JSON.stringify({ ok: true, realNativeTray: true, realControlledService: true, viewports: [1440, 390], stableEntryAcrossRestart: true, idleWorkbenchOpenThroughStop: true, pageErrors }));
     } finally {
         await browser.close();
         if (child.exitCode === null) command('finish');
