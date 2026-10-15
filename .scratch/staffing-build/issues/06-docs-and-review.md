@@ -4,9 +4,9 @@
 
 **Blocked by:** 完成停用恢复与桌面手机完整工作流。
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
-- [ ] 用户指南、API、模块职责、CHANGELOG 和源码/资源清单与实际行为一致。
+- [x] 用户指南、API、模块职责、CHANGELOG 和源码/资源清单与实际行为一致。
 - [ ] 共享基础能力所需 Node、浏览器、语法、文档和相关集成验证完成。
 - [ ] Standards 与 Spec 两轴审查完成，发现的问题修复并复验。
 - [ ] 本地实施票逐项关闭，报告集成分支和未覆盖范围。
