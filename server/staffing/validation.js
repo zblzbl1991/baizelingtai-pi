@@ -21,14 +21,15 @@ function validateInitial(data) {
     keys(data, ['people', 'projects', 'occupancies', 'historyComplete']);
     if (typeof data.historyComplete !== 'boolean') fail('History completeness must be specified');
     rows(data.people, 'people', row => { keys(row, ['id', 'name', 'department', 'direct']); return text(row.name) && text(row.department) && typeof row.direct === 'boolean'; });
-    rows(data.projects, 'projects', row => { keys(row, ['id', 'name', 'department', 'owner', 'start', 'end', 'minimum']);
+    rows(data.projects, 'projects', row => { keys(row, ['id', 'name', 'department', 'owner', 'start', 'end', 'minimum', 'lifecycle']);
+        if (row.lifecycle !== undefined) { keys(row.lifecycle, ['state', 'effectiveDate']); if (!['active', 'cancelled', 'ended'].includes(row.lifecycle.state) || (row.lifecycle.state === 'active' ? row.lifecycle.effectiveDate !== undefined : !date(row.lifecycle.effectiveDate) || row.lifecycle.effectiveDate > row.end || row.lifecycle.state === 'ended' && row.lifecycle.effectiveDate <= row.start)) return false; }
         return text(row.name) && text(row.department) && text(row.owner) && dates(row) && Number.isSafeInteger(row.minimum) && row.minimum > 0 && row.minimum <= LIMITS.people; });
     const people = new Set(data.people.map(row => row.id)), projects = new Map(data.projects.map(row => [row.id, row]));
     rows(data.occupancies, 'occupancies', row => {
         keys(row, ['id', 'personId', 'projectId', 'kind', 'state', 'start', 'end', 'reason']);
         const project = projects.get(row.projectId);
         return people.has(row.personId) && dates(row) && ['reserved', 'confirmed', 'cancelled'].includes(row.state)
-            && (row.kind === 'project' ? project && row.start >= project.start && row.end <= project.end
+            && (row.kind === 'project' ? project && (row.state === 'cancelled' || row.start >= project.start && row.end <= project.end)
                 : ['leave', 'training', 'unavailable'].includes(row.kind) && row.projectId === undefined)
             && (row.reason === undefined || text(row.reason, 500));
     });
@@ -62,8 +63,8 @@ function validateLedger(state) {
     for (const [planId, plan] of Object.entries(state.plans)) {
         if (!id(planId) || !object(plan) || plan.id !== planId || !['assign', 'absence', 'formalize', 'adjust', 'release', 'import'].includes(plan.kind) || !Number.isSafeInteger(plan.epoch) || plan.epoch < 0 || plan.epoch > state.epoch
             || !Number.isSafeInteger(plan.revision) || plan.revision < 1 || plan.revision > state.revision || !object(plan.source) || !(plan.source.kind === 'page' ? Object.keys(plan.source).every(key => ['kind', 'profileId'].includes(key)) && text(plan.source.profileId) : plan.source.kind === undefined && text(plan.source.sessionId) && text(plan.source.sessionPath, 8192) && text(plan.source.cwd, 8192) && text(plan.source.profileId))
-            || !Array.isArray(plan.personIds) || plan.personIds.length > LIMITS.people || new Set(plan.personIds).size !== plan.personIds.length
-            || plan.personIds.some(value => !id(value)) || typeof plan.crossDepartment !== 'boolean'
+            || plan.kind !== 'import' && (!Array.isArray(plan.personIds) || plan.personIds.length > LIMITS.people || new Set(plan.personIds).size !== plan.personIds.length
+            || plan.personIds.some(value => !id(value)) || typeof plan.crossDepartment !== 'boolean')
             || plan.originId !== undefined && !id(plan.originId) || plan.supersededBy !== undefined && (!id(plan.supersededBy) || plan.supersededBy === plan.id)
             || plan.outcome !== undefined && (!object(plan.outcome) || plan.outcome.planId !== plan.id || !['reserve', 'confirm', 'apply', 'apply-import'].includes(plan.outcome.action))) fail('Invalid staffing plan');
         if (plan.kind === 'assign') validateInitial({ people: [], projects: [plan.project], occupancies: [], historyComplete: false });
