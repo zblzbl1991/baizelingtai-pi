@@ -178,7 +178,7 @@ async function run(browser, base, viewport, locale, preferred = 336, navExpanded
     const root = path.resolve(__dirname, '../..'), app = express(); app.use(express.static(path.join(root, 'public')));
     for (const [n,d] of [['marked','marked/lib'],['dompurify','dompurify/dist'],['highlight','@highlightjs/cdn-assets']]) app.use('/vendor/'+n,express.static(path.join(root,'node_modules',d)));
     const server = app.listen(0,'127.0.0.1'); await once(server,'listening');
-    const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
         for (const locale of ['zh-CN','en-US']) for (const [width,height,preferred,navExpanded] of [[1468,834,700],[1280,800,800],[1440,900,800,true],[1920,1080,800],[1024,768,336],[901,768,800],[901,768,800,true],[1199,800,700],[1200,800,700],[1200,800,800,true],[960,720,336],[900,720,700],[393,852,336],[320,740,336]]) {
             if (process.env.PI_SIDE_LAYOUT_WIDTH && process.env.PI_SIDE_LAYOUT_WIDTH !== String(width)) continue;

@@ -688,7 +688,7 @@ async function runWave2(browser, base, width, locale) {
 (async () => {
     const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
     const base = `http://127.0.0.1:${server.address().port}`;
-    const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true });
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try {
         for (const [width, locale] of [[393, 'zh-CN'], [1440, 'en-US']]) await runFixture(browser, base, width, locale);
         for (const [width, locale] of [[393, 'zh-CN'], [1440, 'en-US']]) await runProfiles(browser, base, width, locale);
