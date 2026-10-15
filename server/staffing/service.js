@@ -3,6 +3,8 @@ const { createHash, randomUUID } = require('node:crypto');
 const { StaffingStore } = require('./store');
 const { fail, keys, id, LIMITS, validateInitial } = require('./validation');
 const rules = require('./rules');
+const adjustments = require('./adjustments');
+const viewProjection = require('./views');
 const BINDING_KEY = 'pivane-staffing:v1';
 const PROFILE = Object.freeze({ name: '人员调配', description: '查询人员台账，准备人员安排，并由用户确认具体变更。',
     soul: '你是人员调配助手。使用最新台账查询人员。说明安排缺口。推荐不占用人员。具体变更由用户通过安排卡片确认。不得用聊天记忆判断人员空闲。',
@@ -10,7 +12,7 @@ const PROFILE = Object.freeze({ name: '人员调配', description: '查询人员
 const canonical = value => Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']'
     : value !== null && typeof value === 'object' ? '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}' : JSON.stringify(value);
 const digest = value => createHash('sha256').update(canonical(value)).digest('hex');
-const stableSource = source => source && ({ sessionId: source.sessionId, sessionPath: source.sessionPath, cwd: source.cwd, profileId: source.profileId });
+const stableSource = source => source && (source.kind === 'page' ? { kind: 'page', profileId: source.profileId } : { sessionId: source.sessionId, sessionPath: source.sessionPath, cwd: source.cwd, profileId: source.profileId });
 const summary = state => ({ enabled: state.enabled, state: state.enabled ? state.phase : 'disabled',
     revision: state.revision, epoch: state.epoch, initialized: state.initialized, profileId: state.profileId, historyComplete: state.historyComplete,
     initialization: state.initializingRequestId ? { requestId: state.initializingRequestId,
@@ -18,8 +20,8 @@ const summary = state => ({ enabled: state.enabled, state: state.enabled ? state
     counts: { people: state.people.length, projects: state.projects.length, occupancies: state.occupancies.length }, limits: LIMITS });
 
 class StaffingService {
-    constructor({ profiles, store = new StaffingStore(), isSuspended = () => false } = {}) {
-        this.profiles = profiles; this.store = store; this.isSuspended = isSuspended;
+    constructor({ profiles, store = new StaffingStore(), isSuspended = () => false, today = () => new Date().toLocaleDateString('en-CA'), imports = null } = {}) {
+        this.profiles = profiles; this.store = store; this.isSuspended = isSuspended; this.today = today; this.imports = imports;
         this.busy = false; this.stopping = false; this.pending = null;
     }
     reserve(action) {
@@ -126,11 +128,36 @@ class StaffingService {
         if (!state.enabled || !state.initialized || state.phase !== 'ready') fail('Staffing requires enablement and initial ledger review', 409);
         return state;
     }
-    async requireSource(source) {
-        const state = await this.requireReady();
-        if (!source || source.profileId !== state.profileId || ['sessionId', 'sessionPath', 'cwd'].some(key => typeof source[key] !== 'string' || !source[key] || source[key].length > 8192)
+    async pageSource({ phase = 'ready' } = {}) {
+        const state = phase === 'initial' ? await this.store.snapshot() : await this.requireReady();
+        if (!state.enabled || !state.profileId || phase === 'initial' && !['awaiting-import', 'awaiting-review', 'ready'].includes(state.phase)) fail('Staffing requires enablement', 409);
+        return { kind: 'page', profileId: state.profileId };
+    }
+    async requireSource(source, { phase = 'ready' } = {}) {
+        const state = phase === 'initial' ? await this.store.snapshot() : await this.requireReady();
+        if (!state.enabled || phase === 'initial' && !['awaiting-import', 'awaiting-review', 'ready'].includes(state.phase)) fail('Staffing requires enablement', 409);
+        if (source?.kind === 'page') {
+            if (source.profileId !== state.profileId || Object.keys(source).some(key => !['kind', 'profileId'].includes(key))) fail('Invalid staffing page source', 403);
+            return state;
+        }
+        if (!source || source.kind !== undefined || source.profileId !== state.profileId || ['sessionId', 'sessionPath', 'cwd'].some(key => typeof source[key] !== 'string' || !source[key] || source[key].length > 8192)
             || source.nativePlanIds !== undefined && (!Array.isArray(source.nativePlanIds) || source.nativePlanIds.some(value => !id(value)))) fail('Verified dedicated staffing session is required', 403);
         return state;
+    }
+    async views(input) { return viewProjection.project(await this.requireReady(), structuredClone(input)); }
+    async prepareAdjustment(input, source) {
+        input = structuredClone(input); source = structuredClone(source);
+        this.validateRequest(input, adjustments.fields);
+        return this.planMutation(input, 'prepare-adjustment', source, next => {
+            if (Object.keys(next.plans).length >= LIMITS.operations) fail('Staffing plan limit reached', 413);
+            const plan = { ...adjustments.build(next, input, this.today()), id: randomUUID(), source: stableSource(source), epoch: next.epoch, revision: next.revision + 1, crossDepartment: false };
+            plan.originId = plan.id; this.checkPlan(next, plan); next.plans[plan.id] = plan;
+            return this.planProjection({ ...next, revision: next.revision + 1 }, plan);
+        });
+    }
+    async prepareImport(input, source) {
+        if (!this.imports) fail('Staffing import is unavailable', 503);
+        return this.imports.prepare(this, structuredClone(input), structuredClone(source));
     }
     validateProject(project) {
         validateInitial({ people: [], projects: [project], occupancies: [], historyComplete: false });
@@ -148,6 +175,8 @@ class StaffingService {
             historyComplete: state.historyComplete, warning: state.historyComplete ? '' : '按已录入记录排序，历史不完整' };
     }
     planProjection(state, plan) {
+        if (plan.kind === 'import') return this.imports.projection(state, plan, { today: this.today() });
+        if (plan.kind !== 'assign') return adjustments.projection(state, plan);
         const people = plan.personIds.map(id => state.people.find(person => person.id === id));
         const proposed = { ...state, occupancies: [...state.occupancies, ...plan.personIds.map(personId => ({ personId, projectId: plan.project.id,
             kind: 'project', state: 'reserved', start: plan.project.start, end: plan.project.end }))] };
@@ -158,7 +187,7 @@ class StaffingService {
     }
     async plan(planId, source) {
         if (!id(planId)) fail('Invalid staffing plan ID');
-        const state = await this.requireSource(source); let plan = state.plans[planId], hops = 0;
+        const state = await this.requireSource(source, { phase: source?.kind === 'page' ? 'initial' : 'ready' }); let plan = state.plans[planId], hops = 0;
         while (plan?.supersededBy && hops++ < LIMITS.operations) plan = state.plans[plan.supersededBy];
         this.checkAuthority(state, plan, source);
         return this.planProjection(state, plan);
@@ -168,23 +197,26 @@ class StaffingService {
         if (source.nativePlanIds && !source.nativePlanIds.includes(plan.originId || plan.id)) fail('Staffing plan is not referenced on the current native branch', 403);
     }
     checkPlan(state, plan) {
+        if (plan.kind === 'import') return this.imports.check(state, plan, { today: this.today() });
+        if (plan.kind !== 'assign') return adjustments.check(state, plan);
         const existing = state.projects.find(project => project.id === plan.project.id);
         if (existing && canonical(existing) !== canonical(plan.project)) fail('Project definition changed; prepare a project adjustment', 409);
         const available = new Set(rules.candidates(state, plan.project, plan.crossDepartment).map(person => person.id));
         if (plan.personIds.some(personId => !available.has(personId))) fail('Staffing person is unavailable or outside the allowed department', 409);
     }
-    async planMutation(input, action, source, change) {
+    async planMutation(input, action, source, change, options = {}) {
         input = structuredClone(input); source = structuredClone(source);
         return this.reserve(async () => {
-            const state = await this.requireSource(source), authorizedInput = { ...input, source: stableSource(source) }, previous = this.receipt(state, authorizedInput, action);
+            const state = await this.requireSource(source, options), authorizedInput = { ...input, source: stableSource(source) }, previous = this.receipt(state, authorizedInput, action);
             if (previous?.state === 'completed') return previous.result;
+            const prepared = options.preflight ? structuredClone(await options.preflight(state)) : undefined;
             return this.store.mutate(input.expectedRevision, next => {
                 if (Object.keys(next.operations).length >= LIMITS.operations || next.history.length >= LIMITS.history) fail('Staffing history or operation limit reached', 413);
-                const before = { projects: structuredClone(next.projects), occupancies: structuredClone(next.occupancies) };
-                const result = change(next);
+                const before = { people: structuredClone(next.people), projects: structuredClone(next.projects), occupancies: structuredClone(next.occupancies) };
+                const result = change(next, prepared);
                 next.operations[input.requestId] = { digest: digest({ action, input: authorizedInput }), source: stableSource(source), state: 'completed', result };
                 const after = {};
-                for (const field of ['projects', 'occupancies']) {
+                for (const field of ['people', 'projects', 'occupancies']) {
                     const old = new Map(before[field].map(row => [row.id, row])), current = new Map(next[field].map(row => [row.id, row]));
                     const changed = new Set([...old.keys(), ...current.keys()].filter(key => canonical(old.get(key)) !== canonical(current.get(key))));
                     before[field] = before[field].filter(row => changed.has(row.id)); after[field] = next[field].filter(row => changed.has(row.id)).map(row => structuredClone(row));
@@ -226,18 +258,30 @@ class StaffingService {
     async commitPlan(input, source) {
         input = structuredClone(input); source = structuredClone(source);
         this.validateRequest(input, ['planId', 'action']);
-        if (!id(input.planId) || !['reserve', 'confirm'].includes(input.action)) fail('Invalid staffing plan confirmation');
+        if (!id(input.planId) || !['reserve', 'confirm', 'apply', 'apply-import'].includes(input.action)) fail('Invalid staffing plan confirmation');
         return this.planMutation(input, 'commit-plan', source, next => {
             const plan = next.plans[input.planId];
             this.checkAuthority(next, plan, source);
             if (plan.epoch !== next.epoch || plan.revision !== next.revision) fail('Staffing plan changed; inspect a new plan', 409);
             this.checkPlan(next, plan);
+            if (plan.kind !== 'assign') {
+                let imported;
+                if (plan.kind === 'import') imported = this.imports.commit(next, plan, input.action, { today: this.today() });
+                else { if (input.action !== 'apply') fail('Adjustment requires apply confirmation'); adjustments.apply(next, plan.patch); }
+                const result = { ...summary({ ...next, revision: next.revision + 1 }), planId: plan.id, action: input.action, ...(imported || {}), ...(plan.project ? { coverage: rules.coverage(next, next.projects.find(row => row.id === plan.project.id)) } : {}), affectedProjects: adjustments.affected(next, plan) };
+                plan.outcome = result; return result;
+            }
+            if (!['reserve', 'confirm'].includes(input.action)) fail('Assignment requires reserve or confirm');
             if (!next.projects.some(project => project.id === plan.project.id)) next.projects.push(structuredClone(plan.project));
             for (const personId of plan.personIds) next.occupancies.push({ id: randomUUID(), personId, projectId: plan.project.id, kind: 'project',
                 start: plan.project.start, end: plan.project.end, state: input.action === 'reserve' ? 'reserved' : 'confirmed' });
             const result = { ...summary({ ...next, revision: next.revision + 1 }), planId: plan.id, action: input.action, coverage: rules.coverage(next, plan.project) };
             plan.outcome = result; return result;
-        });
+        }, { phase: source?.kind === 'page' ? 'initial' : 'ready', preflight: async state => {
+            const plan = state.plans[input.planId]; this.checkAuthority(state, plan, source);
+            if (plan.kind === 'import') return this.imports.preflight?.(state, plan, source);
+            if (!state.initialized || state.phase !== 'ready') fail('Staffing requires initial ledger review', 409);
+        } });
     }
 }
 module.exports = { StaffingService, BINDING_KEY };
