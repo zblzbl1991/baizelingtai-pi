@@ -51,6 +51,8 @@ test('release inventory includes its own discovery and checking tools and exclud
     const files = distributionFiles(path.resolve(__dirname, '..'));
     for (const file of ['scripts/source-files.cjs', 'scripts/check-syntax.cjs', 'scripts/run-tests.cjs',
         'server/pi-update-installer.js', 'test/source-files.test.js', 'pi-packages/media-workbench/skills/media-workbench/SKILL.md',
+        'pi-packages/document-review/package.json', 'pi-packages/document-review/skills/document-consistency-review/SKILL.md',
+        'docs/DOCUMENT_REVIEW.md',
         'pi-packages/gongwen/package.json', 'pi-packages/gongwen/skills/gongwen/SKILL.md', 'server/pi-gongwen-extension.ts',
         'scripts/desktop-tray.ps1', 'scripts/start-desktop.cjs', 'server/pivane-desktop-launcher.js',
         'server/pivane-desktop-startup.js', 'public/desktop-startup.html', 'public/desktop-startup.css', 'public/desktop-startup.js',
@@ -61,6 +63,10 @@ test('release inventory includes its own discovery and checking tools and exclud
     assert.equal(files.some(file => /^(?:backups|docs\/local|\.pivane-runtime|node_modules)\//.test(file)), false);
     assert.equal(files.some(file => /^public\/(?:images|audio|videos|downloads|legacy-workspace)\//.test(file)), false);
     assert.equal(files.includes('AGENTS.local.md'), false);
+    assert.ok(files.includes('config/officecli.json'));
+    assert.ok(files.includes(require('../server/officecli/inventory').inventory().relative));
+    assert.ok(files.includes('pi-packages/officecli/skills/office-documents/SKILL.md'));
+    assert.throws(() => require('../scripts/check-docs.cjs').assertPublicPath('project/.pivane-office/work.docx'), /Private/);
     assert.equal(files.includes('.baizelingtai-update-build.json'), false);
     assert.throws(() => require('../scripts/check-docs.cjs').assertPublicPath('.baizelingtai-update-build.json'), /Private or invalid/);
     assert.equal(files.includes('native/pi-win32-fd.lib'), false);

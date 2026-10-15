@@ -50,6 +50,7 @@ function distributionFiles(root) {
     const files = [
         ...publicDocumentation(root), 'docs/public-files.json',
         ...require('./vendor-files.cjs').vendorFiles(root),
+        ...require('../server/officecli/inventory').distributionFiles(root),
         'native/pi-win32-fd.c', 'native/pi-win32-x64-fd.node', 'native/win32-x64-manifest.json',
         'native/pi-darwin-fd.c', 'native/pi-darwin-fd.node', 'native/darwin-fd-manifest.json',
         'package.json', 'package-lock.json', 'LICENSE', 'server.js', '.env.example', '.gitignore', 'scripts/windows-portable-assets.json',

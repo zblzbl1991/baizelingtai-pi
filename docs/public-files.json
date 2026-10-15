@@ -19,6 +19,9 @@
     "docs/BUNDLED_CAPABILITIES.md",
     "docs/COMPOSER_TOOLS.md",
     "docs/DESKTOP_LAUNCHER.md",
+    "docs/DOCUMENT_REVIEW.md",
+    "docs/OFFICE_DOCUMENTS.md",
+    "pi-packages/officecli/skills/office-documents/SKILL.md",
     "docs/GONGWEN.md",
     "docs/FILE_VIEWER.md",
     "docs/FLUX2_DEV.md",
@@ -63,6 +66,7 @@
     "docs/development/WORKFLOW.md",
     "docs/development/README.md",
     "docs/development/research/skillhub-guizang-ppt.md",
+    "docs/development/research/pi-web-keeper.md",
     "docs/development/research/gongwen-kit.md",
     "docs/development/RELEASING.md",
     "docs/en/INSTALL.md",
@@ -83,6 +87,7 @@
     "docs/tts-providers/qwen3-gpu.md",
     "native/README.md",
     "pi-packages/media-workbench/skills/media-workbench/SKILL.md",
+    "pi-packages/document-review/skills/document-consistency-review/SKILL.md",
     "pi-packages/gongwen/skills/gongwen/SKILL.md"
   ]
 }

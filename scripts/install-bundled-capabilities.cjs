@@ -80,7 +80,8 @@ function enforceShrinkwrapFixes(base = root, fixes = SHRINKWRAP_FIXES) {
     }
     return removed;
 }
-function install() {
+async function install() {
+    await require('./install-officecli.cjs').install();
     const removed = enforceShrinkwrapFixes();
     if (removed.length) console.log('[baizelingtai] Replaced legacy nested ' + removed.join(', ') + ' with reviewed fixed release.');
     vendorFiles(root);
@@ -113,5 +114,5 @@ function install() {
     try { fs.writeFileSync(tmp, bytes); fs.renameSync(tmp, target); } finally { fs.rmSync(tmp, { force: true }); }
     console.log('[baizelingtai] Bundled ' + catalog.map(entry => `${entry.name} ${entry.version}`).join(', ') + ' ready.');
 }
-if (require.main === module) { try { install(); } catch (error) { console.error(error.message); process.exitCode = 1; } }
+if (require.main === module) install().catch(error => { console.error(error.message); process.exitCode = 1; });
 module.exports = { install, enforceShrinkwrapFixes, SHRINKWRAP_FIXES };

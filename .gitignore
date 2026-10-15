@@ -26,6 +26,8 @@ pivane-cron/
 pivane-uploads/
 pivane-artifacts/
 .pivane-gongwen/
+.pivane-office/
+/native/officecli/bin/
 *.log
 *.lnk
 *.bak*

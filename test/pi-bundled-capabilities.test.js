@@ -81,7 +81,7 @@ test('new bundled capabilities can be disabled and restored without changing leg
     const resources = new PiResourceService(new PiNativeService(new PiSessionStore()));
     const declarations = ['npm:pi-web-access@0.1.0', 'npm:@injaneity/pi-computer-use@0.1.0'];
     fs.writeFileSync(settingsFile, JSON.stringify({ packages: declarations, sentinel: 'keep' }));
-    for (const entry of catalog.filter(item => ['web', 'computer', 'presentations', 'gongwen'].includes(item.id))) {
+    for (const entry of catalog.filter(item => ['web', 'computer', 'presentations', 'document-review', 'gongwen', 'officecli'].includes(item.id))) {
         let snapshot = await resources.snapshot(cwd, 'global');
         const resource = snapshot.resources.find(item => item.source === packagePath(entry));
         assert.ok(resource?.enabled, entry.id);
@@ -95,6 +95,32 @@ test('new bundled capabilities can be disabled and restored without changing leg
     }
     const saved = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
     assert.deepEqual(saved.packages, declarations); assert.equal(saved.sentinel, 'keep');
+});
+
+test('application-owned skill package has no upstream alias and respects project trust', async () => {
+    const { identify, projectSettings } = require('../server/pi-bundled-resources');
+    const entry = catalog.find(item => item.id === 'document-review');
+    assert.ok(entry);
+    assert.equal(identify(`pivane:${entry.name}`, agentDir), entry);
+    assert.equal(identify(packagePath(entry), agentDir), entry);
+    assert.equal(identify('git:https://github.com/YogurtJ/pivane', agentDir), null);
+    assert.equal(identify('npm:unrelated-package', agentDir), null);
+    assert.equal(projectSettings({}, cwd).packages.some(item => item.source === packagePath(entry)), false);
+    const { SettingsManager, DefaultPackageManager } = await require('../server/pi-session-store').getSdk();
+    const { settingsView } = require('../server/pi-bundled-resources');
+    const localAgent = path.join(root, 'review-agent'), localProject = path.join(root, 'review-project');
+    fs.mkdirSync(localAgent, { recursive: true }); fs.mkdirSync(path.join(localProject, '.pi'), { recursive: true });
+    fs.writeFileSync(path.join(localAgent, 'settings.json'), JSON.stringify({ pivaneBuiltins: { 'document-review': { skills: [] } } }));
+    fs.writeFileSync(path.join(localProject, '.pi/settings.json'), JSON.stringify({ pivaneBuiltins: { 'document-review': { skills: ['+skills/document-consistency-review/SKILL.md'] } } }));
+    for (const trusted of [false, true]) {
+        const settings = SettingsManager.create(localProject, localAgent, { projectTrusted: trusted });
+        const view = settingsView(settings, localProject, localAgent);
+        const manager = new DefaultPackageManager({ cwd: localProject, agentDir: localAgent, settingsManager: view });
+        const resolved = await manager.resolve(async () => 'skip');
+        const skills = resolved.skills.filter(item => item.path === path.join(packagePath(entry), 'skills/document-consistency-review/SKILL.md'));
+        assert.equal(skills.length, 1);
+        assert.equal(skills[0].enabled, trusted);
+    }
 });
 
 test('bundled subagent runs against a synthetic provider, with native host controls and no old factory execution', { timeout: 120000 }, async t => {
@@ -167,6 +193,8 @@ test('bundled subagent runs against a synthetic provider, with native host contr
     assert.equal(resources.tools.filter(item => item.name === 'subagents_enable').length, 1);
     assert.ok(resources.skills.some(item => item.name === 'pi-subagents'));
     assert.ok(resources.skills.some(item => item.name === 'guizang-ppt-skill'));
+    assert.equal(resources.skills.filter(item => item.name === 'document-consistency-review').length, 1);
+    assert.equal((await worker.request('get_commands')).commands.filter(item => item.name === 'skill:document-consistency-review').length, 1);
     assert.equal(resources.tools.filter(item => item.name === 'generate_gongwen').length, 1);
     assert.equal(resources.tools.filter(item => item.name === 'revise_gongwen').length, process.env.PI_WORKSPACE_INTERNAL_ORIGIN ? 1 : 0);
     assert.equal(resources.skills.filter(item => item.name === 'gongwen').length, 1);
@@ -234,19 +262,23 @@ test('bundled subagent runs against a synthetic provider, with native host contr
     assert.ok(nativeIdle && worker.isIdle() && !worker.retainsBackgroundWork(), 'completion notifications settled before reload');
     // Native reload must recompute resource filters without restarting or losing
     // the current session. The old package factories remain blocked.
-    settings.pivaneBuiltins = { subagents: { extensions: [] }, web: { extensions: [] }, computer: { extensions: [] }, presentations: { skills: [] } };
+    settings.pivaneBuiltins = { subagents: { extensions: [] }, web: { extensions: [] }, computer: { extensions: [] }, presentations: { skills: [] }, 'document-review': { skills: [] } };
     fs.writeFileSync(settingsFile, JSON.stringify(settings));
     await worker.reloadResources();
     assert.equal((await worker.getNativeResources()).tools.some(item => item.name === 'subagents_enable'), false);
     assert.equal((await worker.getNativeResources()).tools.some(item => ['web_search', 'find_roots'].includes(item.name)), false);
     assert.equal((await worker.getNativeResources()).skills.some(item => item.name === 'guizang-ppt-skill'), false);
+    assert.equal((await worker.getNativeResources()).skills.some(item => item.name === 'document-consistency-review'), false);
+    assert.equal((await worker.request('get_commands')).commands.some(item => item.name === 'skill:document-consistency-review'), false);
     settings.pivaneBuiltins.subagents.extensions = ['+index.js'];
     delete settings.pivaneBuiltins.web; delete settings.pivaneBuiltins.computer; delete settings.pivaneBuiltins.presentations;
+    delete settings.pivaneBuiltins['document-review'];
     fs.writeFileSync(settingsFile, JSON.stringify(settings));
     await worker.reloadResources();
     assert.equal((await worker.getNativeResources()).tools.filter(item => item.name === 'subagents_enable').length, 1);
     assert.equal((await worker.getNativeResources()).tools.filter(item => item.name === 'web_search').length, 1);
     assert.equal((await worker.getNativeResources()).tools.filter(item => item.name === 'find_roots').length, 1);
     assert.equal((await worker.getNativeResources()).skills.filter(item => item.name === 'guizang-ppt-skill').length, 1);
+    assert.equal((await worker.getNativeResources()).skills.filter(item => item.name === 'document-consistency-review').length, 1);
     assert.equal(fs.existsSync(marker), false);
 });

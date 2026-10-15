@@ -1,0 +1,11 @@
+{
+  "name": "pivane-officecli",
+  "version": "1.0.0",
+  "private": true,
+  "license": "ISC",
+  "description": "白泽灵台 OfficeCLI 原生 MCP、附件副本与文档编辑技能",
+  "pi": {
+    "extensions": ["../../server/pi-officecli-extension.ts"],
+    "skills": ["./skills/office-documents/SKILL.md"]
+  }
+}
