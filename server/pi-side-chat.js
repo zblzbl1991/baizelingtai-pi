@@ -311,6 +311,7 @@ class SideConnection {
 }
 
 class PiSideChatService {
+    stopReadiness() { return this.connections.size + this.tickets.size + [...this.parents.values()].filter(parent => parent.preparing).length; }
     constructor({ store, supervisor, usage, ticketMs = 60000, maxConnections = 4, idleMs = SIDE_IDLE_MS }) {
         Object.assign(this, { store, supervisor, usage, ticketMs, maxConnections, idleMs });
         this.parents = new Map();

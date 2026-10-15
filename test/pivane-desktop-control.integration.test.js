@@ -62,6 +62,8 @@ test('controlled desktop checks and stops the actual owned service, then starts 
             assert.equal(starting.generation, generation, 'all controlled messages bind the owning generation');
             const ready = await run.wait(value => value.type === 'ready', 'IPC + HTTP readiness');
             assert.equal(ready.generation, generation);
+            assert.equal(ready.versions.appVersion, require('../package.json').version);
+            assert.equal(ready.versions.engineVersion, require('../node_modules/@earendil-works/pi-coding-agent/package.json').version);
             assert.equal(run.events.some(value => value.type === 'waiting'), false, 'the tray owns the stable waiting host');
             assert.equal((await fetch(ready.url)).status, 200);
 
@@ -102,5 +104,43 @@ test('controlled desktop checks and stops the actual owned service, then starts 
             await run.exited;
         }
         fs.rmSync(base, { recursive: true, force: true });
+    }
+});
+
+test('exit zero without cleanup proof keeps the controlled owner alive and refuses a second owner', { timeout: 60000 }, async () => {
+    for (const unexpected of [false,true]) {
+    const { root, base, env } = createApplication(); const runs=[];
+    env.PIVANE_TEST_UNEXPECTED_EXIT=unexpected?'1':'0';
+    fs.writeFileSync(path.join(root,'server.js'), `
+        const http=require('node:http'), nonce=process.env.PI_MANAGED_LAUNCHER;
+        const server=http.createServer((_req,res)=>{res.setHeader('content-type','application/json');res.end('{"authenticated":false}')});
+        server.listen(0,'127.0.0.1',()=>{process.send({type:'maintenance-ready',nonce,port:server.address().port,appVersion:require('./package.json').version,engineVersion:'0.85.1',capabilities:{shutdownProof:true}});if(process.env.PIVANE_TEST_UNEXPECTED_EXIT==='1')setTimeout(()=>process.exit(0),500)});
+        process.on('message',message=>{
+            if(message.nonce!==nonce)return;
+            if(message.type==='desktop-request')process.send({type:'desktop-response',nonce,id:message.id,result:message.method==='execute'?{accepted:true,operationId:'synthetic-operation'}:{complete:true,revision:'one',blockers:[],scheduled:{futureCount:0,latestCount:0},ticket:'synthetic-ticket'}});
+            if(message.type==='maintenance-shutdown')server.close(()=>process.exit(0));
+        });
+    `);
+    try {
+        const run=controlled(root,env,randomUUID());runs.push(run);
+        await run.wait(event=>event.type==='ready','synthetic readiness');
+        if(!unexpected)run.send({type:'execute-stop',id:'execute',ticket:'synthetic-ticket',draftsSaved:true,externalWritersStopped:true});
+        await run.wait(event=>event.type==='error'&&event.code==='DESKTOP_CLEANUP_UNKNOWN','unconfirmed cleanup');
+        assert.equal(run.child.exitCode,null,'unknown cleanup retains the runner and its ownership guard');
+        assert.equal(run.events.some(event=>event.type==='stopped'&&event.clean),false);
+        if(!unexpected){
+            run.send({type:'snapshot',id:'accepted-progress'});
+            const progress=await run.wait(event=>event.type==='snapshot'&&event.id==='accepted-progress','accepted operation progress',3000);
+            assert.equal(progress.operationId,'synthetic-operation');assert.equal(progress.accepted,true);assert.equal(progress.complete,false);
+            assert.equal(run.events.filter(event=>event.type==='stop-accepted').length,1,'progress never replays cleanup');
+        }
+        const duplicate=controlled(root,env,randomUUID());runs.push(duplicate);
+        assert.notEqual((await duplicate.exited).code,0);
+        assert.equal(duplicate.events.some(event=>event.type==='ready'),false,'another owner cannot start while proof is missing');
+    } finally {
+        // These are isolated fixture runners; their service has already exited.
+        for(const run of runs){if(run.child.exitCode===null&&run.child.signalCode===null)run.child.kill();await run.exited;}
+        fs.rmSync(base,{recursive:true,force:true});
+    }
     }
 });

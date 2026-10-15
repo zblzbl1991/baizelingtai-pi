@@ -19,5 +19,6 @@ else require('../server/pivane-desktop-launcher').startDesktop({ root, emit, con
     // Unreported errors occur in preflight, before the service manager starts.
     // Once a child may exist, startDesktop reports the error and cleanup facts.
     if (!error.desktopReported) emit({ type: 'error', message, ...(controlled ? { clean: true } : {}) });
+    if (error.desktopCleanupUnknown) return; // Retain the owner guard and diagnostic pipe; never advertise a new start.
     process.stdout.write('', () => process.exit(1));
 });

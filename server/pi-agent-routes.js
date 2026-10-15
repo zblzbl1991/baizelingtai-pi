@@ -598,7 +598,7 @@ function createPiAgentGateway(options = {}) {
     const count = value => Number(Boolean(value));
     const source = (type, label, read) => ({ type, label, read });
     const desktopStop = new (require('./pivane-desktop-stop').DesktopStop)({ maintenance, sources: [
-        source('worker', '会话运行、Shell、队列或后台任务', () => supervisor.stopReadiness()),
+        source('worker', '会话运行阻碍（含 Shell／队列／后台）', () => supervisor.stopReadiness()),
         source('artifacts', '成果处理', () => count(artifacts.busy)),
         source('files', '文件或项目目录处理', () => fileRoots.jobs.size + projectDirectories.jobs.size),
         source('documents', '文档解析', () => documents.active),
@@ -606,21 +606,19 @@ function createPiAgentGateway(options = {}) {
         source('tasks', '任务线程或任务目录', () => agentThreads.jobs.size + count(agentThreads.catalogIndex.busy) + count(agentThreads.returns.busy) + count(agentThreads.messages.busy)),
         source('settings', '模型、认证或原生配置', () => count(settingsService.mutating) + count(settingsService.loginService.busy) + count(nativeService.busy) + count(mcpSettingsService.busy) + count(auxiliaryModels.busy)),
         source('transfer', '会话导入导出或移动', () => count(sessionTransfer.running) + count(sessionMoves.running)),
-        source('titles', '辅助标题', () => titles.jobs.size + count(titles.savingModel)),
+        source('titles', '辅助标题', () => titles.stopReadiness()),
         source('transcription', '语音转录', () => transcription.active),
         source('learning', '后台学习', () => count(learning.busy)),
-        source('cron', '定时任务派发', () => { cron.healthy(); if (cron.lastError) throw new Error('Scheduler state unknown'); return count(cron.busy); }),
-        source('deferred', '延迟消息派发', () => { deferred.assertHealthy(); return count(deferred.running); }),
-        source('side-chat', '侧聊连接、确认或启动', () => sideChat.connections.size + sideChat.tickets.size + [...sideChat.parents.values()].filter(parent => parent.preparing).length),
-        source('media', '媒体任务或待确认请求', () => count(options.mediaLabService?.inFlight) + count(options.mediaLabService?.chatRequests?.preparing) + (options.mediaLabService?.chatRequests?.waiting?.length || 0) + (options.mediaLabService?.pendingReviews || 0) + count(options.mediaLabService?.providerService?.busy) + count(options.mediaLabService?.providerService?.active)),
+        source('cron', '定时任务派发', () => cron.stopReadiness()),
+        source('deferred', '延迟消息派发', () => deferred.stopReadiness()),
+        source('side-chat', '侧聊连接、确认或启动', () => sideChat.stopReadiness()),
+        source('media', '媒体任务或待确认请求', () => options.mediaLabService ? options.mediaLabService.stopReadiness() : 0),
         source('updates', '版本检查或提醒设置', () => updateService.inflight.size + count(updateService.notifications?.pending)),
-        source('usage', '用量记录保存', () => count(usage.pending) + usage.sideWrites.size),
+        source('usage', '用量记录保存', () => usage.stopReadiness()),
         source('search', '会话搜索', () => count(sessionSearch.pending))
     ], scheduled: () => {
-        cron.healthy(); deferred.assertHealthy();
-        const jobs = cron.db.jobs().filter(job => job.enabled && !job.deleted);
-        return { futureCount: jobs.filter(job => job.nextAt > Date.now()).length + deferred.jobs.filter(job => ['scheduled', 'waiting'].includes(job.status) && job.dueAt > Date.now()).length,
-            latestCount: jobs.filter(job => job.misfire.policy === 'latest').length };
+        const scheduled = cron.scheduledReadiness(), delayed = deferred.scheduledReadiness();
+        return { futureCount: scheduled.futureCount + delayed.futureCount, latestCount: scheduled.latestCount };
     } });
 
     require('./pi-transcription-service').mountTranscriptionRoutes(router, transcription, store);

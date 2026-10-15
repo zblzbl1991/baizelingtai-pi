@@ -72,6 +72,12 @@ class CronService {
         } catch (error) { this.error = error.message; }
     }
     get busy() { return Boolean(this.running || this.mutating); }
+    stopReadiness() { this.healthy(); if (this.lastError) throw new Error('Scheduler state unknown'); return Number(this.busy); }
+    scheduledReadiness(now = this.now()) {
+        this.healthy();
+        const jobs = this.db.jobs().filter(job => job.enabled && !job.deleted);
+        return { futureCount: jobs.filter(job => job.nextAt > now).length, latestCount: jobs.filter(job => job.misfire.policy === 'latest').length };
+    }
     healthy() { if (this.error) fail(this.error, 503); if (!this.db) fail('Scheduler is loading', 503); }
     reserve(action) {
         if (this.stopping || this.isSuspended() || this.mutating) fail('Scheduler is busy or workspace is stopping', 409);

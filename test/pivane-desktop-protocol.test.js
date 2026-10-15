@@ -71,3 +71,50 @@ test('managed desktop IPC binds responses to the actual child, nonce and request
     assert.equal(sent.filter(message => message.type === 'desktop-request').length, 2, 'uncertain execution is never replayed');
     launcher.closed = true; child.exitCode = 0; child.emit('exit', 0);
 });
+
+test('desktop cleanup requires the owned child acknowledgement and actual clean exit', async t => {
+    for (const proof of ['none', 'wrong', 'valid']) {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-desktop-proof-'));
+        t.after(() => fs.rmSync(root, { force: true, recursive: true }));
+        fs.writeFileSync(path.join(root, 'package.json'), '{"version":"1.0.0"}');
+        const child = new EventEmitter();
+        Object.assign(child, { connected: true, exitCode: null, signalCode: null, send: (_message, callback) => callback?.() });
+        const launcher = new ManagedLauncher({ root, env: {}, requireShutdownProof: true, forkServer: () => child });
+        const boot = launcher.boot(null);
+        child.emit('message', { type: 'maintenance-ready', nonce: launcher.nonce, port: 12345, capabilities: { shutdownProof: true } }); await boot;
+        let released = false; launcher.guard = { close: async () => { released = true; } };
+        const closing = launcher.close(); const outcome = closing.then(() => 'clean', () => 'unknown');
+        await new Promise(resolve => setImmediate(resolve));
+        if (proof !== 'none') child.emit('message', { type: 'maintenance-shutdown-complete', nonce: proof === 'valid' ? launcher.nonce : 'foreign' });
+        assert.equal(released, false, 'ack alone cannot release the service ownership guard');
+        child.exitCode = 0; child.emit('exit', 0);
+        assert.equal(await outcome, proof === 'valid' ? 'clean' : 'unknown');
+        assert.equal(released, proof === 'valid');
+    }
+});
+
+test('desktop refuses an older service without cleanup proof capability', async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-desktop-legacy-'));
+    t.after(() => fs.rmSync(root, { force: true, recursive: true }));
+    fs.writeFileSync(path.join(root, 'package.json'), '{"version":"1.0.0"}');
+    const child = new EventEmitter();
+    Object.assign(child, { connected: true, exitCode: null, signalCode: null, send: (_message, callback) => callback?.() });
+    const launcher = new ManagedLauncher({ root, env: {}, requireShutdownProof: true, forkServer: () => child });
+    const boot = launcher.boot(null);
+    child.emit('message', { type: 'maintenance-ready', nonce: launcher.nonce, port: 12345 });
+    await assert.rejects(boot, /does not support verified desktop cleanup/);
+    launcher.closed=true; child.exitCode=0; child.emit('exit',0);
+});
+
+test('startup timeout registers the cleanup request before an early completion acknowledgement', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),'pivane-timeout-proof-')); t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+    fs.writeFileSync(path.join(root,'package.json'),'{"version":"1.0.0"}');
+    const child=new EventEmitter(); Object.assign(child,{connected:true,exitCode:null,signalCode:null,send:(_message,callback)=>callback?.()});
+    const launcher=new ManagedLauncher({root,env:{},startupTimeoutMs:10000,requireShutdownProof:true,forkServer:()=>child});
+    const rejected=assert.rejects(launcher.boot(null),/timed out/);
+    t.mock.timers.tick(10000);await rejected;
+    child.emit('message',{type:'maintenance-shutdown-complete',nonce:launcher.nonce});
+    child.exitCode=0;child.emit('exit',0);
+    await launcher.close();
+});

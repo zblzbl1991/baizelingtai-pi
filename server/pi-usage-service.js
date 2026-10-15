@@ -16,6 +16,7 @@ function usageQuery(query = {}) {
 }
 
 class PiUsageService {
+    stopReadiness() { return Number(Boolean(this.pending)) + this.sideWrites.size; }
     constructor(store, { isSuspended = () => false, onActivity = () => {} } = {}) {
         Object.assign(this, { store, isSuspended, onActivity }); this.pending = null; this.cache = null; this.stopped = false; this.sideWrites = new Set();
     }

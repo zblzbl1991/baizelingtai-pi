@@ -91,7 +91,7 @@ function application(t) {
     fs.symlinkSync(path.join(source, 'node_modules'), path.join(root, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
     fs.writeFileSync(path.join(root, '.pivane-launcher-test'), 'synthetic instance\n');
     const env = {};
-    for (const key of ['PATH', 'SystemRoot', 'SYSTEMROOT', 'COMSPEC', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'ProgramFiles', 'ProgramFiles(x86)', 'HOME', 'LANG']) if (process.env[key]) env[key] = process.env[key];
+    for (const key of ['PATH', 'SystemRoot', 'SYSTEMROOT', 'SystemDrive', 'COMSPEC', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'ProgramFiles', 'ProgramFiles(x86)', 'HOME', 'LANG']) if (process.env[key]) env[key] = process.env[key];
     Object.assign(env, { HOST: '127.0.0.1', PORT: '0', PI_CODING_AGENT_DIR: path.join(base, 'agent'),
         PI_MEDIA_CONFIG_DIR: path.join(base, 'media-lab'), PI_MEDIA_DATA_DIR: path.join(base, 'media'), PI_PROJECT_ROOTS: base,
         PI_WEB_DEFERRED_FILE: path.join(base, 'deferred.json'), PI_OFFLINE: '1', PI_TELEMETRY: '0', PI_SKIP_VERSION_CHECK: '1' });

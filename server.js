@@ -998,6 +998,8 @@ const httpServer = app.listen(PORT, network.host, () => {
             ...(process.env.PI_CODING_AGENT_SESSION_DIR ? [path.resolve(process.env.PI_CODING_AGENT_SESSION_DIR)] : [])].filter(Boolean).map(p => path.resolve(p));
         const updateFeed = require('./server/pi-update-feed').configuredFeed(__dirname, process.env);
         process.send({ type: 'maintenance-ready', nonce: maintenance.nonce, backupInputs, port: address.port, appVersion: require('./package.json').version,
+            engineVersion: require('./node_modules/@earendil-works/pi-coding-agent/package.json').version,
+            capabilities: { shutdownProof: true },
             healthUrl: process.env.PI_WORKSPACE_INTERNAL_ORIGIN + '/api/access/status',
             runtimePaths: { PI_CODING_AGENT_DIR: agent, PI_MEDIA_DATA_DIR: mediaDataRoot, PI_MEDIA_CONFIG_DIR: mediaProfile.directory,
                 PI_WEB_DEFERRED_FILE: path.resolve(piAgentGateway.deferred.filePath), BAIZELINGTAI_UPDATE_FEED_URL: updateFeed || '',
@@ -1007,9 +1009,13 @@ const httpServer = app.listen(PORT, network.host, () => {
 piAgentGateway.attachWebSocket(httpServer);
 
 const shutdown = require('./server/pi-process-shutdown').registerProcessShutdown(async () => {
-    httpServer.close();
+    const httpClosed = new Promise((resolve, reject) => httpServer.close(error => error ? reject(error) : resolve()));
     try { await piAgentGateway.dispose(); }
     finally { await require('./server/pi-rpc-client').shutdownRpcProcesses(); workspaceAccess.dispose(); }
+    await httpClosed;
+    if (maintenance.managed && process.connected) await new Promise((resolve, reject) => {
+        process.send({ type: 'maintenance-shutdown-complete', nonce: maintenance.nonce }, error => error ? reject(error) : resolve());
+    });
 });
 if (maintenance.managed) {
     process.on('message', message => {
