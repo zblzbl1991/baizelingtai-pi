@@ -58,10 +58,10 @@
         if (app && managementPage) app.append(managementPage);
         const hostLabel = document.getElementById('workspace-host');
         if (hostLabel) hostLabel.textContent = window.location.host;
-        const routeTabs = new Set(['chat', 'assistant', 'cron', 'artifacts', 'media', 'profiles', 'extensions', 'settings']);
+        const routeTabs = new Set(['chat', 'assistant', 'cron', 'artifacts', 'staffing', 'media', 'profiles', 'extensions', 'settings']);
         const settingsTabs = new Set(['providers', 'media', 'models', 'system-prompts', 'native', 'access', 'usage', 'updates']);
         const extensionTabs = new Set(['extensions', 'installed', 'mcp']);
-        const moreTabs = new Set(['cron', 'artifacts', 'media', 'profiles', 'extensions']);
+        const moreTabs = new Set(['cron', 'artifacts', 'staffing', 'media', 'profiles', 'extensions']);
         document.querySelectorAll('[data-cron-nav]').forEach(label => { label.textContent = translateUi('定时任务'); });
         const moreToggle = document.getElementById('workspace-more-toggle');
         const moreMenu = document.getElementById('workspace-more-menu');
@@ -74,7 +74,7 @@
             if (restoreFocus && wasOpen) moreToggle?.focus({ preventScroll: true });
         }
         function parseRoute() {
-            const match = /^#\/(chat|assistant|cron|artifacts|media|profiles|extensions|settings)(?:\?(.*))?$/.exec(location.hash);
+            const match = /^#\/(chat|assistant|cron|artifacts|staffing|media|profiles|extensions|settings)(?:\?(.*))?$/.exec(location.hash);
             if (!match) return { tab: 'chat', params: new URLSearchParams() };
             return { tab: match[1], params: new URLSearchParams(match[2] || '') };
         }
@@ -145,7 +145,7 @@
             closeThemeMenu();
             moreMenu.hidden = !opening;
             moreToggle.setAttribute('aria-expanded', String(opening));
-            if (opening) moreMenu.querySelector('button')?.focus({ preventScroll: true });
+            if (opening) moreMenu.querySelector('[data-more-tab]:not([hidden])')?.focus({ preventScroll: true });
         });
         moreMenu?.addEventListener('click', event => {
             const button = event.target.closest('[data-more-tab]');
@@ -155,7 +155,7 @@
             }
         });
         moreMenu?.addEventListener('keydown', event => {
-            const items = [...moreMenu.querySelectorAll('[data-more-tab]')];
+            const items = [...moreMenu.querySelectorAll('[data-more-tab]:not([hidden])')];
             const index = items.indexOf(document.activeElement);
             const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
                 : event.key === 'ArrowDown' ? (index + 1) % items.length

@@ -53,7 +53,10 @@ function readRegistry(file) {
         const raw = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size));
         const state = JSON.parse(raw);
         if (!object(state) || state.version !== 1 || !Array.isArray(state.profiles) || state.profiles.length > 50
-            || !object(state.defaults) || new Set(state.profiles.map(p => p?.id)).size !== state.profiles.length
+            || !object(state.defaults) || state.managedProfiles !== undefined && (!object(state.managedProfiles)
+                || Object.entries(state.managedProfiles).some(([key, id]) => key !== 'pivane-staffing:v1' || !ID.test(id)
+                    || !state.profiles.some(profile => profile.id === id)))
+            || new Set(state.profiles.map(p => p?.id)).size !== state.profiles.length
             || state.profiles.some(p => !object(p) || !ID.test(p.id)
                 || typeof p.name !== 'string' || !p.name.trim() || p.name.length > 80
                 || typeof p.description !== 'string' || p.description.length > 500
@@ -219,6 +222,24 @@ class PiProfileRegistry {
             if (index < 0) state.profiles.push(record); else state.profiles[index] = record;
             return { ok: true, profile: record, requiresReload: true };
         }));
+    }
+
+    // Internal business binding; never infer identity from editable display names.
+    ensureManagedProfile(bindingKey, template) {
+        if (bindingKey !== 'pivane-staffing:v1') throw fail('Unknown managed profile binding');
+        return this.reserve(async () => {
+            const current = await this.state();
+            const existingId = current.state.managedProfiles?.[bindingKey];
+            if (existingId) return { profile: current.state.profiles.find(profile => profile.id === existingId), revision: current.revision };
+            return this.mutate(current.revision, state => {
+                if (state.profiles.length >= 50) throw fail('Profile limit reached');
+                const now = new Date().toISOString();
+                const record = { ...validateProfile(template), id: randomUUID(), createdAt: now, updatedAt: now };
+                state.profiles.push(record);
+                state.managedProfiles = { ...state.managedProfiles, [bindingKey]: record.id };
+                return { profile: record, requiresReload: true };
+            });
+        });
     }
 
     saveAvatar(id, expectedRevision, version, prepareAsset) {
