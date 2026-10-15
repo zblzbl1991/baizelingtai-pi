@@ -180,15 +180,40 @@ test('HTTP batch creation rejects a real model switch while its native acknowled
         try{const denied=await write('/projects/'+project.id+'/batches',{cwd,sessionId:session.id});assert.equal(denied.status,409,JSON.stringify(denied.data));assert.equal(denied.data.code,'COMPLIANCE_BUSY');}
         finally{gate.release();gate=null;}await changing;
         gate=holdModelResponse(worker,'get_state');const creating=write('/projects/'+project.id+'/batches',{cwd,sessionId:session.id});creating.catch(()=>{});await gate.reached;
-        await worker.request('set_model',{provider:'fixture',modelId:'text'});gate.release();gate=null;
-        const crossed=await creating;assert.equal(crossed.status,409,JSON.stringify(crossed.data));assert.equal(crossed.data.code,'COMPLIANCE_STALE','a fully completed model switch across the held snapshot response still invalidates the batch admission');
+        await assert.rejects(worker.request('set_model',{provider:'fixture',modelId:'text'}),/会话操作进行中/);gate.release();gate=null;
+        const crossed=await creating;assert.equal(crossed.status,200,JSON.stringify(crossed.data));assert.deepEqual(crossed.data.batch.configurationSnapshot.mainModel,{provider:'fixture',modelId:'selected'},'the existing operation slot excludes a model switch across snapshot admission');
         gate=holdModelResponse(worker);const uncertain=worker.request('set_model',{provider:'fixture',modelId:'selected'},100);uncertain.catch(()=>{});await gate.reached;await assert.rejects(uncertain,{code:'RPC_TIMEOUT'});
         assert.equal((await write('/projects/'+project.id+'/batches',{cwd,sessionId:session.id})).status,409);
         gate.release();gate=null;
         assert.equal((await write('/projects/'+project.id+'/batches',{cwd,sessionId:session.id})).status,409,'a late acknowledgement does not clear the existing uncertain-model latch');
-        assert.equal((await call('GET','/projects/'+project.id+'/batches')).data.batches.length,0,'none of these denied attempts creates a batch');
+        assert.equal((await call('GET','/projects/'+project.id+'/batches')).data.batches.length,1,'only the admitted locked snapshot creates a batch; pending and uncertain attempts create none');
         await gateway.supervisor.stopSession(session.path);const reopened=await gateway.supervisor.getWorker({cwd,sessionId:session.id,sessionPath:session.path});
         const actual=await reopened.request('get_state');assert.equal(actual.model.provider,'fixture');assert.equal(actual.model.id,'text','a model switch without a native message does not persist across a fresh worker');
         const confirmed=await write('/projects/'+project.id+'/batches',{cwd,sessionId:session.id});assert.equal(confirmed.status,200,JSON.stringify(confirmed.data));assert.deepEqual(confirmed.data.batch.configurationSnapshot.mainModel,{provider:actual.model.provider,modelId:actual.model.id});assert.equal(confirmed.data.batch.configurationSnapshot.mainModelSource,'native-session');assert.equal(confirmed.data.batch.configurationSnapshot.mainModelSessionId,session.id);
     } finally {gate?.release();await gateway.dispose();access.dispose();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
+
+test('batch model admission excludes a real cron start across the snapshot and rejects its native temporary model until restore', {timeout:180000},async()=>{
+    const provider=http.createServer(async(req,res)=>{for await(const part of req){}res.writeHead(200,{'Content-Type':'text/event-stream'});res.write('data: '+JSON.stringify({id:'cron-boundary',object:'chat.completion.chunk',choices:[{index:0,delta:{role:'assistant',content:'Fixture settled.'},finish_reason:'stop'}]})+'\n\n');res.end('data: [DONE]\n\n');});
+    provider.listen(0,'127.0.0.1');await once(provider,'listening');
+    fs.writeFileSync(path.join(agent,'models.json'),JSON.stringify({providers:{fixture:{baseUrl:'http://127.0.0.1:'+provider.address().port+'/v1',api:'openai-completions',apiKey:'synthetic',models:['text','selected'].map(id=>({id,input:['text'],contextWindow:32000,maxTokens:1000}))}}}));
+    const {createPiAgentGateway}=require('../server/pi-agent-routes'),{WorkspaceAccessService}=require('../server/workspace-access-service');
+    const access=new WorkspaceAccessService({filePath:path.join(agent,'cron-boundary-access.json'),envToken:()=> 'synthetic-cron-boundary'}),gateway=createPiAgentGateway({accessService:access,deferredFilePath:path.join(agent,'cron-boundary-deferred.json'),cronFilePath:path.join(agent,'cron-boundary.sqlite')});
+    const app=require('express')();access.mount(app);app.use(require('express').json());gateway.mount(app);const server=http.createServer(app);server.listen(0,'127.0.0.1');await once(server,'listening');
+    const origin='http://127.0.0.1:'+server.address().port;process.env.PI_WORKSPACE_INTERNAL_ORIGIN=origin;let revision=0,gate,creating;
+    const call=async(method,route,body)=>{const response=await fetch(origin+'/api/pi/compliance'+route,{method,headers:{Authorization:'Bearer synthetic-cron-boundary','Content-Type':'application/json'},body:body&&JSON.stringify(body)});const data=await response.json();if(response.ok&&Number.isSafeInteger(data.revision))revision=data.revision;return {status:response.status,data};};
+    const write=(route,body={},method='POST')=>call(method,route,{requestId:require('node:crypto').randomUUID(),expectedRevision:revision,...body});
+    const finish=async(worker,runId)=>{for(let n=0;n<400;n++){if(!worker.activity.snapshot().busy){const state=await worker.cron({action:'status',runId});if(state?.status==='settled')return worker.cron({action:'finish',runId});}await new Promise(resolve=>setTimeout(resolve,50));}throw new Error('real native cron did not settle');};
+    try{
+        await call('GET','');await write('/settings',{enabled:true},'PUT');const project=(await write('/projects',{project:{name:'定时模型互斥工程'}})).data.project,session=(await write('/sessions',{cwd})).data,worker=await gateway.supervisor.getWorker({cwd,sessionId:session.id,sessionPath:session.path});
+        const start=()=>({action:'start',runId:require('node:crypto').randomBytes(32).toString('hex'),jobId:require('node:crypto').randomUUID(),sessionId:session.id,name:'模型快照边界',prompt:'Synthetic cron boundary.',mode:'text',timeZone:'Asia/Shanghai',scheduledAt:Date.now(),maxCalls:1,maxTokens:32000,maxDurationSeconds:30,model:{provider:'fixture',modelId:'selected',thinkingLevel:'off'}});
+        gate=holdModelResponse(worker,'get_state');creating=write('/projects/'+project.id+'/batches',{cwd,sessionId:session.id});creating.catch(()=>{});await gate.reached;
+        const crossing=start();let rejected;try{await worker.cron(crossing);}catch(error){rejected=error;}finally{gate.release();gate=null;await creating;creating=null;}
+        if(!rejected)await finish(worker,crossing.runId);
+        assert.equal(rejected?.code,'SESSION_BUSY','a complete native cron start cannot enter between the actual model snapshot and durable batch admission');
+        const active=start();await worker.cron(active);assert.equal((await worker.request('get_state')).model.id,'selected','native cron actually selected its temporary model');
+        const denied=await write('/projects/'+project.id+'/batches',{cwd,sessionId:session.id});assert.equal(denied.status,409,JSON.stringify(denied.data));
+        await finish(worker,active.runId);assert.equal((await worker.request('get_state')).model.id,'text','native cron restores the actual original model');
+        const confirmed=await write('/projects/'+project.id+'/batches',{cwd,sessionId:session.id});assert.equal(confirmed.status,200,JSON.stringify(confirmed.data));assert.deepEqual(confirmed.data.batch.configurationSnapshot.mainModel,{provider:'fixture',modelId:'text'});
+    }finally{gate?.release();await creating?.catch(()=>{});await gateway.dispose();access.dispose();server.closeAllConnections();provider.closeAllConnections();await Promise.all([new Promise(resolve=>server.close(resolve)),new Promise(resolve=>provider.close(resolve))]);}
 });

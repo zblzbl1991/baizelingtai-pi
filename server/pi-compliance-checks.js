@@ -125,11 +125,7 @@ class ComplianceChecks {
             state.batches[index] = structuredClone(batch); update?.(state);
         });
     }
-    async modelSnapshot(input, worker) {
-        if(input.cwd!==undefined||input.sessionId!==undefined){
-            const session=await this.service.store.getSession(input.cwd,input.sessionId);
-            worker=this.service.supervisor?.getActiveWorker(session.path);
-        }
+    async modelSnapshot(worker) {
         if(!worker)return {worker:null,mainModel:null,mainModelSource:'unknown',mainModelSessionId:null};
         if(worker.modelChangesPending||worker.modelChangeUncertain)throw fail('会话模型选择仍待核对',409,'COMPLIANCE_BUSY');
         await this.service.authorizeWorker(worker);const generation=worker.modelChangeGeneration;
@@ -150,7 +146,12 @@ class ComplianceChecks {
                 if (pending.fingerprint !== fingerprint('batch:' + projectId,input)) throw fail('操作编号已用于不同内容',409,'COMPLIANCE_CONFLICT');
                 return {status:'pending',batch:(state.batches || []).find(b=>b.id===pending.batchId),revision:state.revision};
             }
-            const model=await this.modelSnapshot(input,worker);worker=model.worker;
+            if(input.cwd!==undefined||input.sessionId!==undefined){
+                const session=await this.service.store.getSession(input.cwd,input.sessionId);
+                worker=this.service.supervisor?.getActiveWorker(session.path);
+            }
+            const admit=async()=>{
+            const model=await this.modelSnapshot(worker);
             const batch = { id:randomUUID(),revision:1,projectId,projectSnapshot:structuredClone(this.service.materials.project(state,projectId)),
                 documents:structuredClone((state.documents||[]).filter(d=>d.projectId===projectId&&d.assignment?.selected)),rulePackage:structuredClone(RULE_PACKAGE),
                 configurationSnapshot:{mainModel:model.mainModel,mainModelSource:model.mainModelSource,mainModelSessionId:model.mainModelSessionId,extractionModel:state.settings.extractionModel,parserVersion:'local-labeled-2'},
@@ -167,6 +168,18 @@ class ComplianceChecks {
                 current.batches.push(structuredClone(batch));current.checkOperations||={};
                 Object.defineProperty(current.checkOperations,input.requestId,{value:{batchId:batch.id,kind:'batch:' + projectId,fingerprint:fingerprint('batch:' + projectId,input)},enumerable:true,writable:true,configurable:true});
             }));
+            return batch;
+            };
+            let batch;
+            try {
+                // Keep the native snapshot and its durable admission in the same
+                // existing operation slot as cron start/restore and navigation.
+                // A tool may be streaming; the long scan runs after releasing it.
+                batch=worker?await worker.exclusive(admit,{idle:false}):await admit();
+            } catch(error) {
+                if(error.code==='SESSION_BUSY')throw fail('会话正在切换或执行定时任务，请稍后核对',409,'COMPLIANCE_BUSY');
+                throw error;
+            }
             return this.run(batch,input,'batch:' + projectId,worker);
         });
     }
