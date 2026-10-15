@@ -95,6 +95,8 @@ npm run pack:windows -- --update-feed-url 'http://gitlab.example/team/baizelingt
 
 ### 隔离模拟 GitLab 更新
 
+网页一键更新的准确包 E2E 使用 `test/release/portable-auto-update.cjs`，参数与下方演练相同（不使用 `--routine` 或源码叠加）。它在旧包真实页面点击确认，通过受管票据完成下载、备份与启动新版，并检查桌面/手机、单次提交、原生分支/书签和媒体配置字节；覆盖下载哈希、503、重定向与启动失败恢复，最后验证原入口重启新版和离线回退。旧包必须包含新更新器；仅改版本号的模拟基线不代表已发行旧版获得此能力。
+
 维护者可用 `test/release/gitlab-portable-update.cjs` 在 Windows x64 本机模拟 GitLab repository files 清单及 Generic Package Registry 下载。脚本要求两个已核对 SHA256、版本递增的 Windows ZIP、新的报告目录，以及独立 Playwright/Chromium 路径：
 
 ```powershell

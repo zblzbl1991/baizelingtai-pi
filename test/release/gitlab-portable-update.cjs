@@ -388,4 +388,4 @@ async function main(args) {
     }
 }
 if (require.main === module) main(process.argv.slice(2)).catch(error => { console.error(error.stack); process.exitCode = 1; });
-module.exports = { options, download, start, verifyPage };
+module.exports = { options, download, start, verifyPage, extract };

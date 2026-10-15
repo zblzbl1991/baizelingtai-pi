@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { UpdateService, mountUpdateRoutes, compareVersions, proxyFor } = require('../server/pi-update-service');
 const { WorkspaceAccessService } = require('../server/workspace-access-service');
 const express = require('express');
+const fetch = require('node-fetch');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -13,7 +14,7 @@ const release = (version, extra = {}) => ({ tag_name: 'v' + version, prerelease:
         browser_download_url: `https://github.com/YogurtJ/pivane/releases/download/v${version}/pivane-${version}.tar.gz${suffix}` })), ...extra });
 const fixture = (releases, options = {}) => {
     const requests = [];
-    const service = new UpdateService({ env: {}, appVersion: '1.0.0-rc.2', piVersion: options.piVersion || '0.85.1',
+    const service = new UpdateService({ env: { BAIZELINGTAI_UPDATE_FEED_URL: '' }, appVersion: '1.0.0-rc.2', piVersion: options.piVersion || '0.85.1',
         fetch: async (url, opts) => {
             requests.push({ url, opts });
             return { ok: true, json: async () => url.includes('api.github.com') ? releases : { name: '@earendil-works/pi-coding-agent', version: '0.86.0' } };

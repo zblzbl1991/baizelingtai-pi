@@ -31,7 +31,14 @@
     function create({ apiFetch }) {
         const panel = document.getElementById('settings-updates-panel');
         const notifications = window.PiUpdateNotifications.create({ apiFetch });
-        let epoch = 0, snapshot, requested = false;
+        let epoch = 0, snapshot, requested = false, ticket, reviewing = false, submitting = false, pendingId, timer, operationMessage = '';
+        const terminal = phase => ['succeeded', 'failed', 'interrupted'].includes(phase);
+        const phases = { preparing: '正在准备更新…', installing: '正在准备安装…', downloading: '正在下载并校验整包…', extracting: '正在解压并核验文件…',
+            verifying: '正在验证候选程序…', stopping: '正在停止旧服务…', 'backing-up': '正在备份数据…', starting: '正在启动新版…',
+            succeeded: '更新完成，新版已启动。', failed: '更新失败，已保留旧程序与备份。请查看结果后再决定。', interrupted: '更新被中断，请核对运行版本与备份。' };
+        const post = (route, body) => apiFetch('/api/pi/settings/updates/' + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        function pending(value) { pendingId = value; try { if (value) sessionStorage.setItem('pivane.update.job', value); else sessionStorage.removeItem('pivane.update.job'); } catch {} }
+        try { pendingId = sessionStorage.getItem('pivane.update.job'); } catch {}
         const active = n => n === epoch && panel.classList.contains('active') && !document.getElementById('workspace-settings-dialog').classList.contains('hidden');
         function render(data, busy = false, checking = false) {
             const promptOpen = panel.querySelector('#updates-agent-guide')?.open || false;
@@ -39,11 +46,11 @@
             panel.replaceChildren();
             const header = node('div', undefined, { class: 'updates-header' });
             const heading = node('div');
-            heading.append(node('span', t('保持了解'), { class: 'updates-eyebrow' }), node('h3', t('版本与更新')),
+            heading.append(node('h3', t('版本与更新')),
                 node('p', t('查看当前版本与可用新版本。检查不会安装任何内容。')));
             const check = node('button', undefined, { type: 'button', id: 'updates-check', class: 'settings-primary-button' });
             check.append(node('i', undefined, { class: 'fa-solid fa-arrows-rotate', 'aria-hidden': 'true' }), node('span', t(busy ? checking ? '正在检查更新…' : '正在读取版本信息…' : '检查更新')));
-            check.disabled = busy; check.addEventListener('click', () => void load(true));
+            check.disabled = busy || reviewing || submitting || Boolean(pendingId); check.addEventListener('click', () => { ticket = null; void load(true); });
             header.append(heading, check); panel.append(header);
             const custom = data.source?.type === 'manifest';
             if (custom) panel.append(node('p', t('更新源：{0}', data.source.origin), { class: 'updates-note', id: 'updates-source' }),
@@ -75,7 +82,18 @@
                 card.append(links);
                 if (key === 'pi') engine.append(card); else cards.append(card);
             }
-            panel.append(cards, engine);
+            panel.append(cards);
+            const job = data.maintenance?.job;
+            const canInstall = custom && data.maintenance?.portableUpdateSupported;
+            if (canInstall && data.pivane.status === 'available' && !ticket) {
+                const install = node('button', t(reviewing ? '正在核对安装目标…' : '一键更新'), { type: 'button', id: 'updates-install-pivane', class: 'settings-primary-button' });
+                install.disabled = busy || reviewing || submitting || Boolean(pendingId) || data.maintenance.busy;
+                install.addEventListener('click', () => void review()); panel.append(install);
+            }
+            if (ticket) renderConfirmation();
+            if (operationMessage || job?.action === 'application') panel.append(node('p', operationMessage || t(phases[job.phase] || '正在更新…'), { id: 'updates-operation', role: 'status', 'aria-live': 'polite', class: 'updates-operation' }));
+            if (job?.backup?.directory) panel.append(node('p', t('备份位置：{0}', job.backup.directory), { class: 'updates-note' }));
+            panel.append(engine);
             const feedback = node('p', data.checkedAt ? t('上次检查：{0}', new Date(data.checkedAt).toLocaleString(globalThis.PiI18n?.locale || undefined)) : t(custom ? '尚未检查此更新源。' : "尚未手动检查。引擎详情可能显示自动检查的结果。"), { id: 'updates-feedback', role: 'status', 'aria-live': 'polite' });
             panel.append(feedback);
             const guide = node('details', undefined, { class: 'updates-agent-guide', id: 'updates-agent-guide' }); guide.open = promptOpen;
@@ -93,6 +111,71 @@
             const action = node('div', undefined, { class: 'updates-agent-action' }); action.append(copy, copyFeedback);
             content.append(prompt, action); guide.append(content); panel.append(guide, notifications.element);
         }
+        function renderConfirmation() {
+            const box = node('section', undefined, { id: 'updates-confirmation', class: 'updates-confirmation', 'aria-labelledby': 'updates-confirm-heading' });
+            box.append(node('h4', t('确认更新到 {0}', ticket.version), { id: 'updates-confirm-heading', tabindex: '-1' }),
+                node('p', t('将下载完整程序，正常停机、备份数据并启动新版。更新期间请保持此页面打开。')),
+                node('p', `SHA256: ${ticket.release.sha256}`, { class: 'updates-note' }));
+            const confirm = node('button', t('确认并更新'), { id: 'updates-confirm-install', type: 'button', class: 'settings-primary-button' }); confirm.disabled = true;
+            const checks = [];
+            for (const [id, text] of [['updates-drafts-saved', '已保存草稿，结束任务并暂停预约'], ['updates-external-stopped', '已停止使用同一数据的其他 Pi 进程']]) {
+                const label = node('label', undefined, { class: 'updates-confirm-check' }), input = node('input', undefined, { type: 'checkbox', id });
+                checks.push(input); label.append(input, node('span', t(text))); box.append(label);
+                input.addEventListener('change', () => { confirm.disabled = submitting || !checks.every(item => item.checked); });
+            }
+            confirm.addEventListener('click', () => void execute());
+            const cancel = node('button', t('取消'), { type: 'button', class: 'settings-secondary-button' });
+            cancel.addEventListener('click', () => { ticket = null; render(snapshot); panel.querySelector('#updates-install-pivane')?.focus(); });
+            const actions = node('div', undefined, { class: 'updates-agent-action' }); actions.append(confirm, cancel); box.append(actions); panel.append(box);
+        }
+        async function review() {
+            if (reviewing || submitting || pendingId) return;
+            reviewing = true; operationMessage = ''; render(snapshot);
+            const n = epoch;
+            try {
+                const reviewed = await post('review', { action: 'application', channel: snapshot.channel });
+                if (!active(n)) return;
+                ticket = reviewed;
+            } catch (error) { if (active(n)) operationMessage = error.message; }
+            finally {
+                reviewing = false;
+                if (active(n)) { render(snapshot); panel.querySelector('#updates-confirm-heading')?.focus(); }
+            }
+        }
+        async function execute() {
+            if (!ticket || submitting || pendingId) return;
+            if (!panel.querySelector('#updates-drafts-saved')?.checked || !panel.querySelector('#updates-external-stopped')?.checked) return;
+            submitting = true;
+            const id = ticket.id; pending(id); ticket = null;
+            operationMessage = t('正在提交更新…'); render(snapshot);
+            try { await post('execute', { ticket: id, confirmed: true, draftsSaved: true, externalWritersStopped: true }); }
+            catch (error) {
+                // A definite rejection did not execute. A network/5xx outcome is
+                // uncertain: read status only, never resend this mutation.
+                if (error.status >= 400 && error.status < 500) { pending(null); operationMessage = error.message; }
+                else operationMessage = t('提交结果待核对，正在查询状态；不会重复提交。');
+            } finally { submitting = false; if (active(epoch)) { render(snapshot); if (pendingId) void poll(epoch); } }
+        }
+        async function poll(n) {
+            clearTimeout(timer);
+            if (!active(n) || !pendingId) return;
+            try {
+                const state = await apiFetch('/api/pi/settings/updates/maintenance');
+                if (!active(n)) return;
+                if (state.job?.id === pendingId) {
+                    snapshot.maintenance = state; operationMessage = t(phases[state.job.phase] || '正在更新…');
+                    if (terminal(state.job.phase) && !state.busy) {
+                        pending(null); render(snapshot);
+                        if (state.job.phase === 'succeeded') {
+                            operationMessage = t('更新完成，新版已启动。');
+                            await load(true);
+                        }
+                        return;
+                    }
+                }
+            } catch { if (active(n)) operationMessage = t('服务正在切换，等待重新连接…'); }
+            if (active(n)) { render(snapshot); timer = setTimeout(() => void poll(n), 2000); }
+        }
         async function load(check) {
             const n = ++epoch;
             if (snapshot) render(snapshot, true, check);
@@ -104,6 +187,8 @@
                 if (!active(n)) return;
                 if (!data?.appVersion || !data.pi || !data.pivane) throw new Error('Unsupported update service');
                 snapshot = data; render(data); void notifications.refresh();
+                if (!pendingId && data.maintenance?.busy && data.maintenance.job?.action === 'application') pending(data.maintenance.job.id);
+                if (pendingId) { void poll(n); return; }
                 if (!check && !requested && !data.checkedAt) { requested = true; void load(true); }
             } catch {
                 if (!active(n)) return;
@@ -119,9 +204,9 @@
                 }
             }
         }
-        window.addEventListener('workspace:access-locked', () => { epoch++; snapshot = null; requested = false; });
+        window.addEventListener('workspace:access-locked', () => { epoch++; clearTimeout(timer); ticket = null; snapshot = null; requested = false; });
         window.addEventListener('workspace:access-ready', () => { epoch++; snapshot = null; requested = false; if (active(epoch)) void load(false); });
-        return { open() { void load(false); }, close() { epoch++; } };
+        return { open() { void load(false); }, close() { epoch++; clearTimeout(timer); ticket = null; } };
     }
     window.PiUpdates = { create };
 })();

@@ -996,7 +996,12 @@ const httpServer = app.listen(PORT, network.host, () => {
         const backupInputs = [agent, piAgentGateway.deferred.filePath, mediaProfile.directory, path.join(base, '.env'),
             ...['generation_history.json', 'video_history.json', 'tts_history.json', 'media_chat_requests.json', 'media_references', 'prompts.json', 'public/images', 'public/videos', 'public/audio'].map(p => path.join(mediaDataRoot, p)),
             ...(process.env.PI_CODING_AGENT_SESSION_DIR ? [path.resolve(process.env.PI_CODING_AGENT_SESSION_DIR)] : [])].filter(Boolean).map(p => path.resolve(p));
-        process.send({ type: 'maintenance-ready', nonce: maintenance.nonce, backupInputs, port: address.port });
+        const updateFeed = require('./server/pi-update-feed').configuredFeed(__dirname, process.env);
+        process.send({ type: 'maintenance-ready', nonce: maintenance.nonce, backupInputs, port: address.port, appVersion: require('./package.json').version,
+            healthUrl: process.env.PI_WORKSPACE_INTERNAL_ORIGIN + '/api/access/status',
+            runtimePaths: { PI_CODING_AGENT_DIR: agent, PI_MEDIA_DATA_DIR: mediaDataRoot, PI_MEDIA_CONFIG_DIR: mediaProfile.directory,
+                PI_WEB_DEFERRED_FILE: path.resolve(piAgentGateway.deferred.filePath), BAIZELINGTAI_UPDATE_FEED_URL: updateFeed || '',
+                BAIZELINGTAI_UPDATE_RELEASES_URL: process.env.BAIZELINGTAI_UPDATE_RELEASES_URL || updateFeed || '' } });
     }
 });
 piAgentGateway.attachWebSocket(httpServer);
