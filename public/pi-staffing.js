@@ -105,6 +105,7 @@
                     button('继续初始化', 'staffing-resume', () => void write('enable', {}, status.initialization)));
             } else if (status.state === 'awaiting-import' || editingInitial && status.state === 'awaiting-review') {
                 panel.append(node('p', tr('导入人员、当前和已知未来的项目、预占、请假与培训。日期使用 YYYY-MM-DD。')));
+                globalThis.PiStaffingExcel?.mount(panel, { request: api, status, refresh: load });
                 const advanced = node('details', undefined, { 'data-staffing-advanced': '' });
                 advanced.append(node('summary', tr('高级台账输入')));
                 const help = node('details'); help.append(node('summary', tr('查看 JSON 字段示例')), node('pre', JSON.stringify(sample, null, 2)));
@@ -139,7 +140,7 @@
                     review.append(checkbox, node('span', tr('我已核对人员及当前和已知未来占用。')));
                     const confirm = button('核对完成，开始使用', 'staffing-confirm-initial', () => void write('confirm-initial', { reviewed: true }));
                     confirm.disabled = true; checkbox.addEventListener('change', () => { confirm.disabled = !checkbox.checked || busy; }); panel.append(review, confirm);
-                    panel.append(button('修改初始台账', 'staffing-edit-initial', () => {
+                    panel.append(button('高级修改初始台账', 'staffing-edit-initial', () => {
                         draft = JSON.stringify({ people: ledger.people, projects: ledger.projects, occupancies: ledger.occupancies, historyComplete: ledger.historyComplete }, null, 2);
                         editingInitial = true; render(ledger);
                     }, true));
@@ -151,7 +152,7 @@
             actions.append(button('刷新状态', 'staffing-refresh', () => void load(), true));
             if (status.state !== 'initializing') actions.append(button('停用并保留数据', 'staffing-disable', () => void write('disable'), true));
             panel.append(actions);
-            globalThis.PiStaffingExcel?.mount(panel, { request: api, status, refresh: load });
+            if (!(status.state === 'awaiting-import' || editingInitial && status.state === 'awaiting-review')) globalThis.PiStaffingExcel?.mount(panel, { request: api, status, refresh: load });
             if (status.state === 'ready') globalThis.PiStaffingViews?.mount(panel, { request: api, status, refresh: load });
         }
         function route(detail) { active = detail?.tab === 'staffing'; generation++; if (active) void load(); }

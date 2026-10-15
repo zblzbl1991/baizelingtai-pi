@@ -55,6 +55,7 @@ test('initial Excel import and later differences require a source-bound inspecte
         const unchangedFile = await excel.upload(excel.workbook({ people: beforeRoundtrip.people, projects: beforeRoundtrip.projects, occupancies: beforeRoundtrip.occupancies, historyComplete: beforeRoundtrip.historyComplete }, { revision: confirmed.revision }), { requestId: 'upload-unchanged' }, source);
         const unchanged = await staffing.prepareImport({ requestId: 'prepare-unchanged', expectedRevision: confirmed.revision, uploadId: unchangedFile.id }, source);
         assert.equal(unchanged.totalChanges, 0, 'property order must not create changes in an unchanged workbook');
+        assert.equal(unchanged.warning, '', 'a freshly exported revision is not old merely because preparing a plan advances the revision');
         data.people[1].name = 'Changed';
         const changed = await excel.upload(excel.workbook(data, { revision: 0 }), { requestId: 'upload-change' }, source);
         const diff = await staffing.prepareImport({ requestId: 'prepare-change', expectedRevision: unchanged.revision, uploadId: changed.id }, source);
@@ -69,6 +70,15 @@ test('initial Excel import and later differences require a source-bound inspecte
         data.people[1].department = 'A'; data.occupancies.push({ id: 'leave-import', personId: 'P2', kind: 'leave', state: 'confirmed', start: '2026-12-01', end: '2026-12-01' });
         const unavailable = await excel.upload(excel.workbook(data, { revision: 0 }), { requestId: 'upload-unavailable' }, source);
         await assert.rejects(staffing.prepareImport({ requestId: 'prepare-unavailable', expectedRevision: (await staffing.status()).revision, uploadId: unavailable.id }, source), /unavailable/i);
+        const truthful = { people: beforeRoundtrip.people, projects: beforeRoundtrip.projects, occupancies: [...beforeRoundtrip.occupancies,
+            { id: 'later-leave', personId: 'P1', kind: 'leave', state: 'confirmed', start: '2026-11-01', end: '2026-11-01' }], historyComplete: false };
+        const leaveFile = await excel.upload(excel.workbook(truthful), { requestId: 'upload-truthful-leave' }, source);
+        const leavePlan = await staffing.prepareImport({ requestId: 'prepare-truthful-leave', expectedRevision: (await staffing.status()).revision, uploadId: leaveFile.id }, source);
+        assert.ok(leavePlan.id, 'truthful absence must preserve an existing assignment');
+        truthful.occupancies[0] = { ...truthful.occupancies[0], state: 'reserved' };
+        const retainedFile = await excel.upload(excel.workbook(truthful), { requestId: 'upload-retained-assignment' }, source);
+        const retainedPlan = await staffing.prepareImport({ requestId: 'prepare-retained-assignment', expectedRevision: leavePlan.revision, uploadId: retainedFile.id }, source);
+        assert.ok(retainedPlan.id, 'a changed row may retain days already assigned to the same person and project');
     } finally { await excel.dispose(); await staffing.dispose(); fs.rmSync(root, { recursive: true, force: true }); }
 });
 test('an exact generated staffing source saves an independent artifact and preserves export version', async () => {
