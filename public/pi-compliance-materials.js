@@ -85,7 +85,7 @@
             if(evidenceOwner&&evidenceOwner!==owner){evidenceEpoch++;evidenceOwner=null;evidence.replaceChildren();evidence.hidden=true;}
             results.replaceChildren(); if (!batch) return;
             results.append(node('h4','检查结果'), node('p','批次：' + batch.id + ' · 规则 ' + batch.rulePackage.version + ' · 未人工复核','settings-help'));
-            const e=batch.execution,u=e.usage||{}, reasons={'budget-pages':'页数预算已用完','budget-modelCalls':'模型调用预算已用完','budget-time':'运行时间预算已用完','budget-imageBytes':'图像传输量达到上限，请缩小范围建立新批次',disabled:'能力已停用，进度已保存',requested:'已按请求暂停',shutdown:'服务关闭，进度已保存',maintenance:'工作台维护，进度已保存',restart:'服务中断，请求结果待核对，未自动重发',uncertain:'请求结果不确定，未自动重发'};
+            const e=batch.execution,u=e.usage||{}, reasons={'budget-pages':'页数预算已用完','budget-modelCalls':'模型调用预算已用完','budget-time':'运行时间预算已用完','budget-imageBytes':'图像传输量达到上限，请缩小范围建立新批次',disabled:'已按停用请求暂停，进度已保存',requested:'已按请求暂停',shutdown:'服务关闭，进度已保存',maintenance:'工作台维护，进度已保存',restart:'服务中断，请求结果待核对，未自动重发',uncertain:'请求结果不确定，未自动重发'};
             const states={running:'正在执行',completed:'执行完成',failed:'执行失败',paused:'已暂停','needs-review':'请求待核对'};
             const execution=node('section',undefined,'compliance-execution');execution.id='compliance-execution';execution.setAttribute('aria-live','polite');
             execution.append(node('strong',(states[e.status]||e.status)+(e.reason?'：'+(reasons[e.reason]||e.reason):'')),node('p',`已处理 ${u.pages||0} / ${e.budget?.pages||200} 页，模型调用 ${u.modelCalls||0} / ${e.budget?.modelCalls||20}，运行 ${Math.ceil((u.elapsedMs||0)/1000)} 秒。实际费用未知${u.cost?.estimate!=null?'；模型目录估算 '+u.cost.estimate+' USD':''}。`));

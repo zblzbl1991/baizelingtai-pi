@@ -114,6 +114,7 @@ class ComplianceChecks {
             const index = state.batches.findIndex(b => b.id === batch.id);
             if (index < 0 || state.batches[index].revision !== batch.revision) throw fail('检查批次已变化，请重新核对',409,'COMPLIANCE_STALE');
             batch.execution.pauseRequested ||= state.batches[index].execution.pauseRequested;
+            batch.execution.stopReason = state.batches[index].execution.stopReason || batch.execution.stopReason;
             batch.revision++; batch.results = evaluate(batch); batch.review = {status:'unreviewed'};
             state.batches[index] = structuredClone(batch); update?.(state);
         });
@@ -162,7 +163,7 @@ class ComplianceChecks {
                 if(current.batches.find(b=>b.id===batchId).revision!==batch.revision)throw fail('批次已变化',409,'COMPLIANCE_STALE');
                 for(const key of ['pages','modelCalls','runMs'])batch.execution.budget[key]+=allowance[key];
                 if(batch.execution.budget.pages>10000||batch.execution.budget.modelCalls>1000||batch.execution.budget.runMs>86400000)throw fail('累计批次预算达到上限',413);
-                batch.execution.status='running';batch.execution.reason=null;batch.execution.pauseRequested=false;batch.revision++;
+                batch.execution.status='running';batch.execution.reason=null;batch.execution.pauseRequested=false;batch.execution.stopReason=null;batch.revision++;
                 current.batches[current.batches.findIndex(b=>b.id===batchId)]=structuredClone(batch);
                 current.checkOperations||={};if(Object.keys(current.checkOperations).length>=500||Object.keys(current.receipts).length+pendingCount(current,input.requestId)>=10000)throw fail('检查操作记录达到上限',413);Object.defineProperty(current.checkOperations,input.requestId,{value:{batchId,kind,fingerprint:fingerprint(kind,input)},enumerable:true,writable:true,configurable:true});
             }));
@@ -174,7 +175,7 @@ class ComplianceChecks {
         return this.service.reserve(()=>this.service.ledger.commit('batch-pause:' + batchId,input,state=>{
             const batch=(state.batches||[]).find(b=>b.id===batchId);if(!batch)throw fail('检查批次不存在',404);
             if(batch.execution.status!=='running')throw fail('当前批次没有运行中的步骤',409);
-            batch.execution.pauseRequested=true;return {ok:true,batchId,status:'pausing'};
+            batch.execution.pauseRequested=true;batch.execution.stopReason||='requested';return {ok:true,batchId,status:'pausing'};
         }));
     }
     async run(batch,input,kind,worker) {
@@ -183,7 +184,7 @@ class ComplianceChecks {
         for(let index=0;index<execution.steps.length;index++) {
             if(execution.status!=='running')break;const step=execution.steps[index];if(step.status!=='pending')continue;
             const state=await ledger.snapshot(),persisted=state.batches.find(b=>b.id===batch.id);elapsed();
-            let pause=this.service.closed?'shutdown':!state.settings.enabled?'disabled':this.service.isSuspended()?'maintenance':persisted.execution.pauseRequested?'requested':usage.elapsedMs>=execution.budget.runMs?'budget-time':null;
+            let pause=this.service.closed?'shutdown':!state.settings.enabled?'disabled':this.service.isSuspended()?'maintenance':persisted.execution.pauseRequested?(persisted.execution.stopReason||'requested'):usage.elapsedMs>=execution.budget.runMs?'budget-time':null;
             if(!pause&&step.kind==='recognition'&&usage.modelCalls>=execution.budget.modelCalls)pause='budget-modelCalls';
             if(!pause&&usage.pages>=execution.budget.pages)pause='budget-pages';
             if(pause){execution.status='paused';execution.reason=pause;break;}
@@ -214,7 +215,7 @@ class ComplianceChecks {
                 } else {
                     const {base64}=await this.service.materials.content(doc.id);
                     const image=await this.documents.pool.run(Buffer.from(base64,'base64'),doc.format,{page:step.page},{render:true});
-                    const output=await require('./pi-compliance-recognition').recognize(this.service,batch,doc,image,async()=>{const now=await ledger.snapshot();elapsed();const reason=this.service.closed?'shutdown':!now.settings.enabled?'disabled':now.batches.find(b=>b.id===batch.id).execution.pauseRequested?'requested':this.service.isSuspended()?'maintenance':usage.elapsedMs>=execution.budget.runMs?'budget-time':null;if(reason){execution.status='paused';execution.reason=reason;throw fail('当前步骤已保存，未启动模型请求',409,'COMPLIANCE_STEP_PAUSED');}const encoded=Buffer.byteLength(image.base64,'ascii');if((usage.imageBytes||0)+encoded>128*1024*1024){execution.status='paused';execution.reason='budget-imageBytes';throw fail('批次图像传输量达到 128 MiB，请缩小范围建立新批次',413,'COMPLIANCE_STEP_PAUSED');}usage.imageBytes=(usage.imageBytes||0)+encoded;usage.modelCalls++;await this.checkpoint(batch);});
+                    const output=await require('./pi-compliance-recognition').recognize(this.service,batch,doc,image,async()=>{const now=await ledger.snapshot();elapsed();const reason=this.service.closed?'shutdown':!now.settings.enabled?'disabled':now.batches.find(b=>b.id===batch.id).execution.pauseRequested?(now.batches.find(b=>b.id===batch.id).execution.stopReason||'requested'):this.service.isSuspended()?'maintenance':usage.elapsedMs>=execution.budget.runMs?'budget-time':null;if(reason){execution.status='paused';execution.reason=reason;throw fail('当前步骤已保存，未启动模型请求',409,'COMPLIANCE_STEP_PAUSED');}const encoded=Buffer.byteLength(image.base64,'ascii');if((usage.imageBytes||0)+encoded>128*1024*1024){execution.status='paused';execution.reason='budget-imageBytes';throw fail('批次图像传输量达到 128 MiB，请缩小范围建立新批次',413,'COMPLIANCE_STEP_PAUSED');}usage.imageBytes=(usage.imageBytes||0)+encoded;usage.modelCalls++;await this.checkpoint(batch);});
                     for(const field of output.fields){const prior=batch.fields.find(f=>f.documentId===field.documentId&&f.key===field.key);if(!prior)batch.fields.push(field);else{prior.candidates||=[{raw:prior.raw,location:prior.location}];prior.candidates.push({raw:field.raw,location:field.location});if(prior.raw!==field.raw){prior.status='conflict';prior.value=null;}else if(field.status!=='known'){prior.status='unknown';prior.value=null;}}} usage.inputTokens=output.usage.inputTokens===null?null:(usage.inputTokens||0)+output.usage.inputTokens;usage.outputTokens=output.usage.outputTokens===null?null:(usage.outputTokens||0)+output.usage.outputTokens;
                     if(output.usage.cost.estimate!==null){usage.cost.estimate=(usage.cost.estimate||0)+output.usage.cost.estimate;usage.cost.basis='partial-model-catalog-estimate';}
                     doc.processing=execution.steps.some(s=>s!==step&&s.documentId===doc.id&&s.status!=='completed')?{status:'unreadable',reason:'其余扫描页面尚未完成'}:{status:'completed',reason:'扫描字段候选已提取，结论仍待人工复核'};

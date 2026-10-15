@@ -18,6 +18,9 @@ async function run(browser, origin, width, theme) {
     const fixtureFiles=files=>files.map(file=>{const target=path.join(fixtureDirectory,file.name);fs.writeFileSync(target,file.buffer);return target;});
     const context = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: width < 900 ? 852 : 1000 }, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [], sessions = [{ id: 'ordinary', cwd, name: '普通会话', messageCount: 0 }]; let active = 'ordinary', loseImport = false, holdEvidence = false, releaseEvidence, importPosts = 0;
+    const pendingFonts=new Map();
+    page.on('request',request=>{if(request.resourceType()==='font'){const url=new URL(request.url());pendingFonts.set(request,url.origin+url.pathname);}});
+    for(const event of ['requestfinished','requestfailed'])page.on(event,request=>pendingFonts.delete(request));
     page.setDefaultTimeout(60000);
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(({ cwd, token, theme }) => { localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem('pi.web.session:' + cwd, 'ordinary'); sessionStorage.setItem('pi.web.token', token); localStorage.setItem('pi.workspace.theme', theme); }, { cwd, token, theme });
@@ -81,9 +84,10 @@ async function run(browser, origin, width, theme) {
             const rect=el.getBoundingClientRect(),style=getComputedStyle(el);
             return {rect:rect.toJSON(),hidden:el.hidden,disabled:el.disabled,display:style.display,visibility:style.visibility,transform:style.transform,
                 ancestors:[...function*(start){for(let p=start;p;p=p.parentElement)yield p;}(el)].map(p=>({tag:p.tagName,id:p.id,hidden:p.hidden,inert:p.inert,rect:p.getBoundingClientRect().toJSON(),display:getComputedStyle(p).display})),
-                overlays:document.elementsFromPoint(rect.x+rect.width/2,rect.y+rect.height/2).map(p=>({id:p.id,tag:p.tagName})),animations:document.getAnimations().filter(a=>a.playState==='running').length,hash:location.hash};});
-        fs.writeFileSync(path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-trigger-'+width+'.json'),JSON.stringify({active,sessions,triggerState},null,2));
-        await page.screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-trigger-'+width+'.png'),timeout:10000});
+                overlays:document.elementsFromPoint(rect.x+rect.width/2,rect.y+rect.height/2).map(p=>({id:p.id,tag:p.tagName})),animations:document.getAnimations().filter(a=>a.playState==='running').length,hash:location.hash,
+                fonts:{status:document.fonts.status,faces:[...document.fonts].map(font=>({family:font.family,status:font.status}))}};});
+        fs.writeFileSync(path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-trigger-'+width+'.json'),JSON.stringify({active,sessions,triggerState,pendingFonts:[...pendingFonts.values()]},null,2));
+        await page.screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-trigger-'+width+'.png'),timeout:10000}).catch(error=>console.warn('Optional trigger diagnostic screenshot: '+error.message));
         await page.locator('#pi-compliance-open').click();
         await page.locator('#compliance-project-new').click(); await page.locator('#compliance-project-name').fill('工程 <script> ' + width);
         await page.locator('#compliance-project-number').fill('C-' + width); await page.locator('#compliance-project-confirmed').check();

@@ -40,7 +40,7 @@
 
 `budget` 默认 `pages:200,modelCalls:20,runMs:600000`；单次设置范围为 1–2000 页、1–200 次、1000–3600000 毫秒，批次累计上限为一万页、一千次、二十四小时。预算只限制下一步准入，当前请求实际结束前仍计入忙碌。HTTP 断线不取消，服务中断后原执行中步骤变为不确定，读取或继续不会自动重发。初始任务在外部工作前持久登记；中断操作查询返回 `status:pending,phase:checks,batchId`。
 
-设置可额外传 `expectedSettingsRevision`，与状态中的 `settingsRevision` 比较；这样后台检查点增加账本修订不会阻止停用，真正并发配置变化仍返回 `COMPLIANCE_STALE`。旧客户端仅传 `expectedRevision` 时仍按账本修订核对。`status:disabling` 表示已拒绝新增工作，当前真实步骤尚未结束。所有实际检查、模型与解析作业参与活动、维护和异步关闭。
+设置可额外传 `expectedSettingsRevision`，与状态中的 `settingsRevision` 比较；这样后台检查点增加账本修订不会阻止停用，真正并发配置变化仍返回 `COMPLIANCE_STALE`。旧客户端仅传 `expectedRevision` 时仍按账本修订核对。`status:disabling` 表示已拒绝新增工作，当前真实步骤尚未结束。停用在运行批次持久记录 `pauseRequested/stopReason:disabled`，重新启用不清除原暂停意图；显式继续才清除。所有实际检查、模型与解析作业参与活动、维护和异步关闭。
 
 ## 桌面启动私有通道
 

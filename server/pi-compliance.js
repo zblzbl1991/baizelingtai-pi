@@ -249,6 +249,9 @@ class ComplianceService {
                     current.settings.profileId = current.setup.profileId; current.setup = null;
                 } else assertSettings(current);
                 current.settings = { ...current.settings, enabled: input.enabled, mainModel, extractionModel };
+                if (!input.enabled) for (const batch of current.batches || []) if (batch.execution.status === 'running') {
+                    batch.execution.pauseRequested = true; batch.execution.stopReason = 'disabled';
+                }
                 current.settingsRevision = (current.settingsRevision || 0) + 1;
                 return this.ledger.record(current, 'settings', input, this.view(current));
             })).value;
