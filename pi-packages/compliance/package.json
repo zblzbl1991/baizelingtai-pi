@@ -1,0 +1,7 @@
+{
+  "name": "pivane-compliance",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Managed optional engineering compliance capability",
+  "pi": { "extensions": ["extensions/compliance.ts"], "skills": ["skills"] }
+}

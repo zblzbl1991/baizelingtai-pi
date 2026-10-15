@@ -121,6 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const systemPrompts = window.PiSystemPrompts.create({ apiFetch, currentCwd });
     const agentProfiles = window.PiAgentProfiles.create({ apiFetch, currentCwd });
     window.PiAgentProfilesUI = agentProfiles;
+    const builtinCapabilities = window.PiCompliance?.createSettings({ apiFetch, currentCwd });
 
     let settingsViewEpoch = 0;
     let settingsOpen = false;
@@ -143,6 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
         systemPrompts.close();
         agentProfiles.close();
         subagentSettings.close();
+        builtinCapabilities?.close();
         closeEditor();
         elements.dialog.classList.add('hidden');
         window.dispatchEvent(new CustomEvent('workspace:settings-closed'));
@@ -159,6 +161,8 @@ document.addEventListener('DOMContentLoaded', () => {
         state.activeTab = tab;
         if (tab === 'media') void subagentSettings.open();
         else subagentSettings.close();
+        if (tab === 'builtins') void builtinCapabilities?.open();
+        else builtinCapabilities?.close();
         if (tab === 'media' && metadata.section === 'speech') window.PiMediaConnections?.open({ kind: 'tts', section: 'asr' });
         if (tab === 'access') { window.WorkspaceAccess?.openSettings(); window.WorkspaceNetwork?.open(metadata.section); }
         else { window.WorkspaceAccess?.closeSettings(); window.WorkspaceNetwork?.close(); }

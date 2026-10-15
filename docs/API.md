@@ -1,5 +1,27 @@
 # API Reference
 
+## 合规审查
+
+当前实现范围和使用方法见 [合规审查](COMPLIANCE.md)。所有用户接口经过工作台身份、Origin 和 CSRF 校验，数据不可由匿名请求读取。
+
+| 接口 | 用途 |
+|---|---|
+| `GET /api/pi/compliance` | 返回 `version/revision/enabled/status/profileId/mainModel/extractionModel/scanStatus/requiresReload` |
+| `PUT /api/pi/compliance/settings` | 输入 `requestId/expectedRevision/enabled`；启用时首次提供 `mainModel`，可选 `extractionModel` 和首次关联的 `profileId` |
+| `GET/POST /api/pi/compliance/projects` | 列出或创建工程项目档案 |
+| `GET/PUT /api/pi/compliance/projects/:id` | 读取或更新工程项目档案 |
+| `POST /api/pi/compliance/sessions` | 输入 `cwd/requestId/expectedRevision`，建立有原生操作标记的专用聊天；重复请求返回原会话回执 |
+| `GET /api/pi/compliance/operations/:requestId` | 查询持久回执；准备中的首次配置或会话返回 `status:pending/phase/canResume`，未知操作返回 404，不表示可以重发 |
+| `POST /api/pi/compliance/tool` | 仅接受存活受管 worker 的独立导航凭据；从真实会话绑定确定资格，用户 Token 不能调用此接口 |
+
+修订是非负整数。所有业务变更要求稳定 `requestId` 和当前 `expectedRevision`。相同操作编号、相同语义 JSON 内容返回原回执，JSON 键顺序不影响识别；同一编号换内容返回 `COMPLIANCE_CONFLICT`，修订已变化返回 `COMPLIANCE_STALE`。回执的 `revision` 属于该次提交，继续修改前读取当前状态。
+
+模型引用为 `{provider,modelId}`。对话模型须在实际目录中可用并支持文本；资料识别模型另须支持图像，也可设为 null。配置不发起推理。专用档案初次绑定后不允许以显示名称或其他编号替换。
+
+创建或更新档案输入 `{requestId,expectedRevision,project}`。`project` 包含 `name`，以及可为 null 的 `number/organization/year/phase/type/stage`；`identityConfirmed` 表示审查人员已核对身份。`applicability` 包含 `documents-identity/feasibility-numbers/contract-deadline/feasibility-order`，值为 true、false 或 null。返回 `{ok,project,revision}`，档案另外拥有自身的 `id/revision/createdAt/updatedAt`。当前支持创建、读取和更新，保留原有档案数据。
+
+受管 `compliance_project` 工具的 `action` 为 `list/get/create/update`。`list` 每页最多五十个编号、名称、业务编号与修订摘要，使用返回的 `nextOffset` 继续；`get` 用 `projectId` 按需读取字段。模型不能通过工具参数指定档案身份、来源聊天或私密路径。发现资源、登记工具和执行工具均核对当前启用状态与专用档案。`GET /api/pi/activity` 增加 `complianceBusy`，受管 worker 业务操作同时纳入生命周期投影。
+
 ## 桌面启动私有通道
 
 Windows 托盘与 `scripts/start-desktop.cjs` 使用继承的 stdin/stdout LF 通道。新增 `waiting` 响应 `{type:"waiting",url}`，允许浏览器先打开本次启动的本地等待页；`ready` 的 `url` 才是经受管子服务 IPC 和 HTTP 检查确认的工作台地址。`starting`、`error`、`stopping` 和私有 stdin 的 `stop` 继续沿用原语义，不增加工作台的公开控制接口。

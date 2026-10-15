@@ -5,6 +5,7 @@ const path = require('node:path');
 // Data, vendored assets and maintainer records are never discovered as source.
 const GROUPS = Object.freeze({
     server: { directory: 'server', extensions: ['.js', '.mjs', '.ts'] },
+    packages: { directory: 'pi-packages', extensions: ['.js', '.mjs', '.ts', '.json'] },
     public: { directory: 'public', extensions: ['.js', '.css', '.html'], excluded: ['vendor', 'brand', 'images', 'videos', 'audio', 'downloads', 'legacy-workspace'] },
     scripts: { directory: 'scripts', extensions: ['.cjs', '.ps1'] },
     tests: { directory: 'test', pattern: /\.test\.js$/ },
@@ -21,7 +22,7 @@ function sourceFiles(root, group) {
         const directory = path.join(root, relative);
         if (fs.lstatSync(directory).isSymbolicLink()) throw new Error(`Source directory is a symlink: ${relative}`);
         for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name, 'en'))) {
-            if (entry.name.startsWith('.') || rule.excluded?.includes(entry.name) || ['node_modules', 'backups', 'pivane-usage', 'pivane-cron', 'pivane-uploads', 'pivane-artifacts'].includes(entry.name) || /\.bak(?:[.-]|$)|\.tmp$|~$/i.test(entry.name)) continue;
+            if (entry.name.startsWith('.') || rule.excluded?.includes(entry.name) || ['node_modules', 'backups', 'pivane-usage', 'pivane-cron', 'pivane-uploads', 'pivane-artifacts', 'pivane-compliance'].includes(entry.name) || /\.bak(?:[.-]|$)|\.tmp$|~$/i.test(entry.name)) continue;
             const file = `${relative}/${entry.name}`;
             if (entry.isSymbolicLink()) throw new Error(`Source entry is a symlink: ${file}`);
             if (entry.isDirectory()) visit(file);
@@ -66,8 +67,6 @@ function distributionFiles(root) {
         'config/media-lab.json', 'config/tts-providers.json',
         'server/profile-memory/upstream-lock.json',
         'test/private-file-helper.cjs', 'test/fixtures/pi-0843-session.jsonl', 'test/fixtures/release-video.mp4',
-        'pi-packages/media-workbench/package.json', 'pi-packages/media-workbench/extensions/media-tools.ts',
-        'pi-packages/presentations/package.json'
     ];
     const fonts = 'public/vendor/katex-0.18.7/fonts';
     for (const name of fs.readdirSync(path.join(root, fonts)).sort()) {

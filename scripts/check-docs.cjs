@@ -6,7 +6,7 @@ const PRIVATE_PATH = /^(?:docs\/local(?:\/|$)|backups(?:\/|$)|\.pivane-runtime(?
 function assertPublicPath(file) {
     if (typeof file !== 'string' || !file || file.includes('\\') || path.posix.isAbsolute(file)
         || file.split('/').some(part => !part || part === '.' || part === '..') || PRIVATE_PATH.test(file)
-        || file.split('/').some(part => /^pivane-network\.json(?:$|[.~_-])|^\.baizelingtai-update-build\.json(?:$|[.~_-])/i.test(part))) {
+        || file.split('/').some(part => /^pivane-compliance$|^pivane-network\.json(?:$|[.~_-])|^\.baizelingtai-update-build\.json(?:$|[.~_-])/i.test(part))) {
         throw new Error(`Private or invalid distribution path: ${file}`);
     }
 }
