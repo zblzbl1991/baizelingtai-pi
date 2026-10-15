@@ -3,6 +3,7 @@
 Fixed point: `6fcedc9dd5e5e52e029c6ed29c9eec9d7a3833a4`
 Reviewed tip: `7f208720e39506e7c19c1dc4a68a52c6a4a42588`
 Command: `git diff 6fcedc9dd5e5e52e029c6ed29c9eec9d7a3833a4...7f208720e39506e7c19c1dc4a68a52c6a4a42588`
+Final re-reviewed runtime tip: `fad24f809205115dd79fce853ee031c6ae191596` (final executable source freeze `21b568c`, with shutdown documentation).
 
 Independent Standards and Spec agents reviewed the same pinned diff. The concurrent OfficeCLI entry rename repair is recorded in `b11c0aa`, separate from the feature. Findings below are the original review; resolution evidence will be appended after the single implementer finishes.
 
@@ -25,4 +26,12 @@ Worst within this axis: P1 cleanup proof and startup-stop race. Total: 4 issues.
 
 ## Resolution
 
-Status: in-progress. One implementer owns all review fixes; original failure evidence is retained and targeted regressions are added before fixes. Re-review and final verification are pending.
+Status: resolved. One implementer owned all review fixes (`de204a3`, `49acdc0`), merged through `fad24f8`. Original failure evidence was retained, and the final independent re-reviews found no remaining actionable findings on either axis.
+
+- Standards: opened-HANDLE path/full identity/budget/before-after checks are implemented; every readiness owner exposes its projection; unused queue removed. The final log reader has a fixed 16 KiB buffer on one stream. Final count: 0 remaining documented issues, 0 remaining heuristics.
+- Spec: current-child nonce-bound completion plus actual exit are required; uncertain cleanup retains ownership; startup/ready stop handoff uses normal review; scheduling consequences, actual running versions and maintenance entry are present. Final count: 0 remaining issues.
+- Additional P1 found during re-review: keeping the workbench WebSocket open prevented HTTP shutdown completion. Gateway now synchronously gates new connections, shares one disposal Promise, closes owned WebSockets with 1001 and bounds uncooperative transport cleanup. Workers still follow graceful cleanup, and completion proof still waits for gateway/RPC/HTTP. Actual controlled-service integration and Chromium now keep the workbench connection open through stop. The existing maintenance backup/restart test reproduced the failure in the pinned full run and passed after the fix.
+
+The two reviewers re-read the final `49acdc0` delta against `f938d5c`. The Spec reviewer also ran the real gateway/controlled integration tests (4/4). Source review is complete; final verification and baseline-failure accounting are recorded by the integration ticket and ignored local validation receipts.
+
+Final re-review: Standards 0 remaining (worst: none); Spec 0 remaining (worst: none).
