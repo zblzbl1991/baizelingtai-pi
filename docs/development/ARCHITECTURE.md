@@ -136,6 +136,8 @@ POSIX 私密权限和目录刷盘、Windows 受保护 DACL 和写透替换分别
 
 ## 成果中心
 
+合规批次报告由 `pi-compliance-reports` 在同一业务账本保存生成意图、固定修订元数据、发布与原生交付回执；未知生成预留也计入容量。`pi-compliance-report-format` 生成有界安全 HTML 和固定 inlineStr OOXML，`pi-compliance-report-publisher` 只接收服务器验证的报告对象与字节，建立带 `sourceKind=compliance-report`、空源路径和批次出处的交付快照。通用 `deliver_files` 仍只有经过 fileScope 的路径入口。`pi-compliance-report-runtime` 由唯一受管 worker 登记原生引用，再由服务器核对该分支；浏览器使用现有私有命令与独占生命周期，不新增普通聊天模型提示或工具。独立保存继续沿成果来源资格进行，保存状态按库内原始 hash/大小及精确 origin 投影，不能用文件名猜测。
+
 成果中心同时展示独立库与待保存来源。`pi-artifacts-library` 保存不可变原字节和原子组织目录，`pi-artifacts-management` 拥有持久请求预占、修订、收藏夹、归类、回收站及不覆盖导出。保存/收藏从当时合法来源取得完整字节后建立独立ID；之后会话删除不删除成果，来源仅用于追溯。永久删除要求库 ID 和当前修订，可直接删除未入回收站的条目；删除前持久意图（同时标记回收站，以便中断后显示为删除待核对）、校验描述符与完整身份／哈希，再 unlink 和提交目录；失败不自动重放，保留来源哈希抑制发现重现，再保存生成新 ID。没有第二份聊天正文或媒体历史，不自动迁移旧数据。`pi-artifacts-discovery` 是预算受限、可终止的只读发现 Worker；候选缓存不是授权，`pi-artifacts` 用验证字节构造原生内存 SessionManager 并复用 DeliverableService 的前后分支、清单修订及迁移证明，媒体则重验历史与限定文件身份。来源资格在最终响应前再次核对；读取操作参与维护空闲、迁移互斥与停机等待。浏览器端 `pi-artifacts-ui` 提供菜单、提示和格式化，`pi-artifacts-manage` 负责确认框、写请求、结果提示与用户发起的撤销（新请求、最新修订，不重放），`pi-artifacts` 管理视图、筛选、选择和加载，`pi-artifacts-preview` 是独立详情抽屉。详情独立于右栏文件阅读器，静态 HTML 无脚本权限，离页取消读取并释放资源。范围、预算及未支持项见 [成果中心](../ARTIFACTS.md)。
 
 ## 媒体

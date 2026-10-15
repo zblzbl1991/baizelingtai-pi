@@ -13,6 +13,10 @@ const ENTRY = 'pivane-deliverable';
 const idPattern = /^[a-f0-9]{64}$/;
 const digest = value => createHash('sha256').update(value).digest('hex');
 const invalid = () => fail('交付参数无效', 400, 'DELIVERY_INPUT');
+const validSource = f => f.sourceKind === 'compliance-report'
+    ? f.sourcePath === null && f.requestedPath === null && /^[a-f0-9]{64}$/.test(f.provenance?.reportId)
+        && /^[a-f0-9-]{36}$/.test(f.provenance?.batchId) && Number.isSafeInteger(f.provenance?.batchRevision) && f.provenance.batchRevision > 0
+    : f.sourceKind === undefined && typeof f.sourcePath === 'string';
 function validate(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)
         || Object.keys(input).some(k => !['requestId', 'title', 'files', 'sourceRoot'].includes(k))
@@ -56,7 +60,7 @@ class DeliverableStore {
         const manifest = JSON.parse(file.bytes.toString('utf8'));
         if (manifest.version !== 1 || manifest.id !== id || !Array.isArray(manifest.files) || !manifest.files.length || manifest.files.length > 20
             || manifest.files.some((f, i) => f.index !== i || !idPattern.test(f.revision) || !Number.isSafeInteger(f.size) || f.size < 0 || f.size > MAX_FILE_BYTES
-                || typeof f.name !== 'string' || typeof f.sourcePath !== 'string')) throw fail('交付清单无效', 409, 'DELIVERY_CHANGED');
+                || typeof f.name !== 'string' || !validSource(f))) throw fail('交付清单无效', 409, 'DELIVERY_CHANGED');
         return { manifest, revision: file.revision };
     }
     async publish(context, raw, signal) {

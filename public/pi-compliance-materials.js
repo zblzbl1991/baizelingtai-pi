@@ -9,7 +9,7 @@
     function mount({ root, project, apiFetch, context, valid }) {
         const section = node('section', undefined, 'compliance-materials'), stateText = node('p', '', 'settings-help'); stateText.id = 'compliance-material-status'; stateText.setAttribute('role','status');
         const controls = node('fieldset'), list = node('div'), results = node('div'), evidence = node('section', undefined, 'compliance-evidence'); results.id = 'compliance-results'; evidence.id = 'compliance-evidence'; evidence.hidden = true;
-        let alive = true, revision, batch, busy = false, watching = false, watchGeneration = 0, evidenceEpoch = 0, evidenceOwner = null;
+        let alive = true, revision, batch, busy = false, watching = false, watchGeneration = 0, evidenceEpoch = 0, evidenceOwner = null, reportView;
         const current = () => alive && section.isConnected && valid();
         section.append(node('h4','资料与检查'), node('p','每份资料不超过 20 MiB。工程最多 32 份、256 MiB，全部原件最多 2 GiB。扫描件使用本批次固定的识别模型。','settings-help'), stateText, controls, list, results, evidence); root.append(section);
         async function mutate(path, body, method = 'POST') {
@@ -83,6 +83,7 @@
         function showResults() {
             const owner=batch?batch.id+':'+batch.revision:null;
             if(evidenceOwner&&evidenceOwner!==owner){evidenceEpoch++;evidenceOwner=null;evidence.replaceChildren();evidence.hidden=true;}
+            reportView?.dispose();
             results.replaceChildren(); if (!batch) return;
             results.append(node('h4','检查结果'), node('p','批次：' + batch.id + ' · 规则 ' + batch.rulePackage.version + ' · 未人工复核','settings-help'));
             const e=batch.execution,u=e.usage||{}, reasons={'budget-pages':'页数预算已用完','budget-modelCalls':'模型调用预算已用完','budget-time':'运行时间预算已用完','budget-imageBytes':'图像传输量达到上限，请缩小范围建立新批次',disabled:'已按停用请求暂停，进度已保存',requested:'已按请求暂停',shutdown:'服务关闭，进度已保存',maintenance:'工作台维护，进度已保存',restart:'服务中断，请求结果待核对，未自动重发',uncertain:'请求结果不确定，未自动重发'};
@@ -107,6 +108,8 @@
                 results.append(row);
             }
             for (const doc of batch.documents.filter(d => d.processing?.status !== 'completed')) results.append(node('p',doc.name + '：' + (doc.processing?.reason||'尚未完成'),'settings-help'));
+            const selectedBatch = batch;
+            reportView = window.PiComplianceReports?.mount({ root: results, batch, apiFetch, context, valid: () => current() && batch === selectedBatch });
         }
         async function load() {
             const [docs,batches] = await Promise.all([apiFetch('/api/pi/compliance/projects/' + project.id + '/documents'),apiFetch('/api/pi/compliance/projects/' + project.id + '/batches')]); if (!current()) return;
@@ -126,7 +129,7 @@
             if (batches.batches.length) { const history = node('select'); history.append(new Option(t('选择历史检查批次'),'')); for (const b of batches.batches) history.append(new Option(b.createdAt + ' · ' + b.id.slice(0,8),b.id)); history.onchange = async () => { if (!history.value) return; const saved = await apiFetch('/api/pi/compliance/batches/' + history.value).catch(error => { if(current()) stateText.textContent = error.message; }); if (saved && current()) { batch = saved.batch; showResults(); } }; list.append(label('历史批次',history)); }
         }
         load().catch(error => { if (current()) stateText.textContent = error.message; });
-        return { dispose() { alive = false; watching = false; watchGeneration++; } };
+        return { dispose() { alive = false; watching = false; watchGeneration++; reportView?.dispose(); } };
     }
     window.PiComplianceMaterials = { mount };
 })();

@@ -3,11 +3,22 @@ import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { StringEnum } from '@earendil-works/pi-ai';
 import { complianceRuntime, isComplianceResource } from '../../../server/pi-compliance-runtime.js';
+import { reportRequest, deliverReport } from '../../../server/pi-compliance-report-runtime.ts';
 
 export default function compliance(pi: ExtensionAPI) {
     const eligible = (ctx: any) => ctx.mode === 'rpc' && Boolean(complianceRuntime(ctx.sessionManager, ctx.cwd, getAgentDir()));
     pi.on('session_start', (_event, ctx) => {
         if (!eligible(ctx)) return;
+        pi.registerTool({ name: 'compliance_report', label: '合规批次报告',
+            description: 'Generate fixed-revision HTML and XLSX reports, list/get generated reports, or explicitly deliver an existing report through this native session. list uses batchId and optional offset, returns up to50 opaque IDs/statuses and nextOffset; get reads details on demand. Generation is separate from delivery and independent artifact saving; never claim an unreviewed or incomplete batch passed. generate requires batchId,batchRevision,stable requestId,expectedRevision. deliver requires reportId,stable requestId,expectedRevision. After uncertainty query the original operation; do not create a replacement report or replay delivery.',
+            parameters: Type.Object({ action: StringEnum(['generate', 'list', 'get', 'deliver']), batchId: Type.Optional(Type.String()), batchRevision: Type.Optional(Type.Integer({ minimum: 1 })), reportId: Type.Optional(Type.String()), requestId: Type.Optional(Type.String()), expectedRevision: Type.Optional(Type.Integer({ minimum: 0 })), offset: Type.Optional(Type.Integer({minimum:0,maximum:500})) }),
+            execute: async (_id, raw, signal, _update, context) => {
+                if (!eligible(context)) throw new Error('合规专用会话资格无效'); signal?.throwIfAborted();
+                const input = Object.fromEntries(Object.entries(raw).filter(([,value]) => value !== undefined));
+                const result = input.action === 'deliver' ? await deliverReport(pi, context, input) : await reportRequest(context, input);
+                return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { pivaneCompliance: result } };
+            }
+        });
         pi.registerTool({ name: 'compliance_project', label: '工程项目档案',
             description: 'Read and maintain the engineering project archive for compliance review. list returns up to 50 project summaries, current revision and nextOffset; use offset to continue. get requires projectId and returns fields on demand. create/update require a stable requestId, expectedRevision from the latest read, and project fields. Keep unknown fields null. Ask the reviewer to verify identity and applicability; never infer confirmation from a document. Reuse the exact requestId after an uncertain result; a changed payload needs a new requestId.',
             promptSnippet: 'Read and maintain the engineering project archive for compliance review',

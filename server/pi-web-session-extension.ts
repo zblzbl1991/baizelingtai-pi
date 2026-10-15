@@ -24,6 +24,7 @@ import { registerAssistantProject } from './pi-assistant-project-runtime.js';
 import { registerProfileAuthoring } from './pi-profile-authoring-extension.ts';
 import { registerSubagentHost, subagentControl } from './pi-subagent-host.ts';
 import { requestRegisteredNativeMcpControl } from './pi-native-mcp-control.mjs';
+import { deliverReport } from './pi-compliance-report-runtime.ts';
 
 // Pi 0.86 stores prompt/tool checkpoints as native system messages in the
 // transcript. They are provider context, not chat bubbles or side-chat input.
@@ -79,11 +80,18 @@ export default async function (pi: ExtensionAPI) {
         }
     });
     pi.registerCommand(INTERNAL_COMMAND, {
-        description: `Pivane internal session navigation and context snapshot; managed-v1; cron-v1; task-v1; task-results-v1; agent-messages-v1; title-v1; model-catalog-v1; speed-v1; resources-v1; history-v1; tree-v1; tree-presentation-v1; history-presentation-v1; history-body-v1; system-prompt-v1; subagents-v1; mcp-v1; reload-v1:${randomUUID()}`,
+        description: `Pivane internal session navigation and context snapshot; managed-v1; cron-v1; task-v1; task-results-v1; agent-messages-v1; compliance-report-v1; title-v1; model-catalog-v1; speed-v1; resources-v1; history-v1; tree-v1; tree-presentation-v1; history-presentation-v1; history-body-v1; system-prompt-v1; subagents-v1; mcp-v1; reload-v1:${randomUUID()}`,
         handler: async (args, ctx) => {
             const request = JSON.parse(args);
             if (ctx.mode !== 'rpc' || request.token !== process.env.PI_WEB_NAVIGATION_TOKEN) throw new Error('Invalid navigation request');
             const notify = (data: object) => ctx.ui.notify(JSON.stringify({ pivaneNavigation: request.id, ...data }));
+            if (request.mode === 'compliance-report') {
+                try {
+                    if (!ctx.isIdle()) throw new Error('请等待当前任务完成后交付报告');
+                    notify({ success: true, data: await deliverReport(pi, ctx, request.input) });
+                } catch (error) { notify({ success: false, error: error instanceof Error ? error.message : '报告交付未完成，请查询原回执' }); }
+                return;
+            }
             if (request.mode === 'mcp') {
                 let response;
                 try {

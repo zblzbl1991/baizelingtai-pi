@@ -20,7 +20,15 @@
 | `POST /api/pi/compliance/batches/:id/pause` | 输入稳定操作编号和当前修订，请求在当前真实步骤结束后暂停 |
 | `GET /api/pi/compliance/batches/:id` | 按需读取固定的 `batch` 和当前账本 `revision` |
 | `GET /api/pi/compliance/batches/:id/evidence/:fieldId` | 返回批次内字段原文、页码/工作表行及原件摘要 |
+| `GET/POST /api/pi/compliance/batches/:id/reports` | 列出报告；POST 输入 `requestId/expectedRevision/batchRevision`，生成固定修订 HTML 与 XLSX |
+| `GET /api/pi/compliance/reports/:id` | 报告元数据、生成/发布/原生交付状态，以及当前独立库的 `savedFiles` 证明 |
+| `GET /api/pi/compliance/reports/:id/files/:index` | 按不透明报告 ID 和索引 0/1 返回校验后的文件表示，不接受私密路径 |
+| `POST /api/pi/compliance/reports/:id/delivery` | 输入 `requestId/expectedRevision/cwd/sessionId`；须有存活专用 worker，由该 worker 登记原生引用 |
 | `POST /api/pi/compliance/tool` | 仅接受存活受管 worker 的独立导航凭据；从真实会话绑定确定资格，用户 Token 不能调用此接口 |
+
+报告生成返回 `{ok,revision,report}`。`report` 绑定 `batchId/batchRevision/projectId/ruleVersion/generatedAt`，包含原复核/执行摘要和两份文件的 `index/format/name/size/sha256`。状态 `generated/published/delivered` 分别表示字节生成、快照发布和已核实的原生分支登记。`savedFiles` 按库内精确来源、大小和 SHA256 投影每份文件的独立库 ID、修订与保存时间，未保存项为 null；不回写批次或假报保存成功。实际保存使用现有 `POST /artifacts/batch` 的 `save`。
+
+受管 `compliance_report` 提供 `generate/list/get/deliver`；生成要求批次和批次修订，交付仅接受报告 ID，来源会话由实际 worker 决定。`list` 接受 `offset`，每页最多五十份摘要并返回 `total/nextOffset`；执行摘要不包含完整步骤。新报告文件不得覆盖，HTML 不超过 2 MiB、Excel 单元格不超过 32767 字符，超限返回 `COMPLIANCE_REPORT_LIMIT`。生成意图与交付意图均持久预占；`GET /compliance/operations/:requestId` 可返回 `generating/publishing/published` 和 `noReplay:true`，不确定结果不自动重发。若原生分支已有精确交付引用，操作查询可在复核清单出处和全部文件字节后补齐回执，能力停用或 worker 关闭不阻碍这项事实核对；不启动 worker、不重新交付。报告最多五百份、2 GiB，失败生成预留计入额度；未知对象不自动清理。报告文件入口返回 `no-store/nosniff` 与 sandbox CSP 的 JSON，不提供私密路径读取资格。
 
 修订是非负整数。所有业务变更要求稳定 `requestId` 和当前 `expectedRevision`。相同操作编号、相同语义 JSON 内容返回原回执，JSON 键顺序不影响识别；同一编号换内容返回 `COMPLIANCE_CONFLICT`，修订已变化返回 `COMPLIANCE_STALE`。回执的 `revision` 属于该次提交，继续修改前读取当前状态。
 

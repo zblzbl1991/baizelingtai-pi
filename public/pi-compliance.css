@@ -32,4 +32,8 @@
 .compliance-evidence[hidden] { display: none; }
 .compliance-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .compliance-materials button { white-space: normal; }
+.compliance-reports { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 12px; min-width: 0; }
+.compliance-report-row { padding-block: 16px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.compliance-report-row strong, .compliance-report-row p { flex-basis: 100%; margin: 0 0 6px; overflow-wrap: anywhere; }
+.compliance-reports iframe { width: 100%; min-width: 0; height: 480px; border: 1px solid var(--line); margin-top: 12px; box-sizing: border-box; }
 @media(max-width:680px) { #pi-compliance-drawer { padding: 16px; } .compliance-drawer-header { top: -16px; margin: -16px -16px 0; padding: 16px; } #pi-compliance-open { font-size: .75rem; } }
