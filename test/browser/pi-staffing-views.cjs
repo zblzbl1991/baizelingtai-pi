@@ -11,9 +11,11 @@ async function run(browser,width) {
     const service = new StaffingService({profiles:new PiProfileRegistry({resolveProject:value=>value}),today:()=> '2026-11-03'});
     const enabled = await service.enable({requestId:'enable',expectedRevision:0});
     const project = {id:'A',name:'Synthetic Project',owner:'Owner',department:'A',start:'2026-11-01',end:'2026-11-05',minimum:2};
+    const pagingPeople = width === 1440 ? Array.from({length:120},(_,index)=>({id:'B'+String(index).padStart(3,'0'),name:'测'.repeat(160),department:'B',direct:false})) : [];
     const initial = await service.initialize({requestId:'initial',expectedRevision:enabled.revision,historyComplete:false,projects:[project],
-        people:[{id:'D',name:'<Direct>',department:'A',direct:true},{id:'N',name:'Member',department:'A',direct:false},{id:'R',name:'Replacement',department:'A',direct:true}],
-        occupancies:['D','N'].map(personId=>({id:'O-'+personId,personId,projectId:'A',kind:'project',state:'reserved',start:project.start,end:project.end}))});
+        people:[{id:'D',name:'<Direct>',department:'A',direct:true},{id:'N',name:'Member',department:'A',direct:false},{id:'R',name:'Replacement',department:'A',direct:true},...pagingPeople],
+        occupancies:[...['D','N'].map(personId=>({id:'O-'+personId,personId,projectId:'A',kind:'project',state:'reserved',start:project.start,end:project.end})),
+            ...pagingPeople.flatMap(person=>Array.from({length:10},(_,index)=>({id:person.id+'-training-'+index,personId:person.id,kind:'training',state:'confirmed',start:'2026-11-03',end:'2026-11-03',reason:'训'.repeat(160)})))]});
     await service.confirmInitial({requestId:'review',expectedRevision:initial.revision,reviewed:true});
     const app = express(), access = new WorkspaceAccessService({filePath:path.join(agent,'access.json'),envToken:()=>''}); access.mount(app); app.use(express.json()); const router=express.Router();router.use(access.middleware());mountStaffingRoutes(router,service);app.use('/api/pi',router);
     app.get('/fixture.html',(_req,res)=>res.type('html').send('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/pi-staffing.css"><style>:root{--surface-1:#f5f6f4;--surface-2:#fafbf9;--text-main:#29332e;--text-muted:#59675f;--line:#ccd4cd}*{box-sizing:border-box}body{font-family:system-ui;margin:0;background:var(--surface-1);color:var(--text-main)}button{min-height:36px}main{max-width:1100px;margin:auto}</style><script>window.PiWorkspaceRoute={current:()=>({tab:"staffing"})}</script></head><body><main id="staffing-tab"></main><script src="/pi-staffing-cards.js"></script><script src="/pi-staffing-views.js"></script><script src="/pi-staffing.js"></script></body></html>'));
@@ -49,6 +51,21 @@ async function run(browser,width) {
         assert.ok(await page.locator('#staffing-change-start').evaluate(el=>parseFloat(getComputedStyle(el).fontSize))>=16);
         assert.deepEqual(await page.evaluate(()=>['body','#staffing-tab','.staffing-panel','.staffing-views'].filter(selector=>{const e=document.querySelector(selector);return e&&e.scrollWidth>e.clientWidth+1})),[]);
         if(process.env.PIVANE_TEST_SCREENSHOT_DIR){fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR,'staffing-views-'+width+'.png'),fullPage:true});}
+        if(width === 1440) {
+            await page.selectOption('#staffing-view-department','B');
+            const response = page.waitForResponse(value=>value.url().includes('/staffing/views?')&&new URL(value.url()).searchParams.get('department')==='B');
+            await page.click('#staffing-view-refresh'); const first = await (await response).json();
+            assert.ok(first.nextOffset > 0 && first.nextOffset < 100, 'byte-bounded page is shorter than the requested row count');
+            await page.locator('[data-staffing-person-calendar="B000"]').waitFor();
+            const firstIds = await page.locator('[data-staffing-person-calendar]').evaluateAll(rows=>rows.map(row=>row.dataset.staffingPersonCalendar));
+            assert.equal(firstIds.length,first.nextOffset);
+            await page.getByRole('button',{name:'下一页',exact:true}).click();
+            await page.locator('[data-staffing-person-calendar="'+pagingPeople[first.nextOffset].id+'"]').waitFor();
+            const secondIds = await page.locator('[data-staffing-person-calendar]').evaluateAll(rows=>rows.map(row=>row.dataset.staffingPersonCalendar));
+            assert.deepEqual([...firstIds,...secondIds],pagingPeople.map(person=>person.id),'next page starts at the server byte boundary without skipping people');
+            await page.getByRole('button',{name:'上一页',exact:true}).click();await page.locator('[data-staffing-person-calendar="B000"]').waitFor();
+            assert.deepEqual(await page.locator('[data-staffing-person-calendar]').evaluateAll(rows=>rows.map(row=>row.dataset.staffingPersonCalendar)),firstIds,'back returns to the actual previous offset');
+        }
         assert.deepEqual(errors,[]);console.log('staffing views '+width+'px passed');
     } finally {await context.close();await service.dispose();access.dispose();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 }
