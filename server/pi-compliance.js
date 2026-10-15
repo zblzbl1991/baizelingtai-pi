@@ -163,6 +163,23 @@ class ComplianceService {
             const settling = input?.operation === 'reports' && await this.reports.canSettle(worker, input);
             await this.authorizeWorker(worker, settling);
             if (input?.operation === 'reports') return await this.reports.tool(worker, input);
+            if (input.operation === 'review') {
+                only(input, ['operation', 'action', 'batchId', 'proposalId', 'batchRevision', 'requestId', 'expectedRevision', 'change', 'offset']);
+                if (input.action === 'prepare') return await this.review.prepare(input.batchId, { requestId: input.requestId, expectedRevision: input.expectedRevision, batchRevision: input.batchRevision, cwd: worker.cwd, sessionId: worker.sessionId, change: input.change }, worker);
+                if (input.action === 'get') return await this.review.get(input.proposalId);
+                if (input.action === 'list') {
+                    const value = await this.review.list(input.batchId), offset = input.offset ?? 0;
+                    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 2000) throw fail('复核目录位置无效');
+                    const proposals = value.proposals.slice(offset, offset + 50).map(({ id, status, batchId, batchRevision, createdAt, change }) => ({ id, status, batchId, batchRevision, createdAt, kind: change.kind }));
+                    return { revision: value.revision, proposals, nextOffset: offset + proposals.length < value.proposals.length ? offset + proposals.length : null };
+                }
+                if (input.action === 'operation') {
+                    const value = await this.operation(input.requestId);
+                    if (value.batch) return { ok: value.ok, revision: value.revision, proposalId: value.proposalId, batchId: value.batch.id, batchRevision: value.batch.revision, results: value.batch.results, review: value.batch.review };
+                    return value;
+                }
+                throw fail('智能体只能准备或查询复核，不能提交人工确认', 403, 'COMPLIANCE_CONFIRMATION_USER_ONLY');
+            }
             if (input.operation === 'materials' || input.operation === 'checks') {
                 only(input, ['operation', 'action', 'projectId', 'documentId', 'batchId', 'fieldId', 'requestId', 'expectedRevision', 'sources', 'budget', 'offset']);
                 if (input.operation === 'materials') {

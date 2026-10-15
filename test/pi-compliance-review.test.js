@@ -107,3 +107,45 @@ test('continuing a paused batch retains exact human input and archives the prior
     assert.equal(batch.review.status, 'unreviewed');
     assert.equal(batch.history.some(item => item.revision === reviewed.revision && item.results.find(r => r.id === 'contract-deadline').humanDecision?.conclusion === 'passed'), true);
 });
+test('human first-page verification distinguishes a confirmed absent number from an unreadable scan', async () => {
+    const project = (await write('/projects', { project: { name: '文号人工复核', identityConfirmed: true, applicability: { 'documents-identity': true, 'feasibility-numbers': true, 'contract-deadline': false, 'feasibility-order': false } } })).project;
+    const canvas = require('@napi-rs/canvas').createCanvas(80, 60), docs = [];
+    for (const [i, role] of ['feasibility-review', 'feasibility-approval'].entries()) {
+        canvas.getContext('2d').fillRect(i * 20, 20, 10, 10); const document = (await write(`/projects/${project.id}/documents`, { sources: [{ kind: 'upload', name: role + '.png', base64: canvas.toBuffer('image/png').toString('base64') }] })).documents[0]; docs.push(document);
+        await write(`/documents/${document.id}/assignment`, { role, identityConfirmed: true, selected: true }, 'PUT');
+    }
+    let batch = (await write(`/projects/${project.id}/batches`, {})).batch;
+    for (const [i, raw] of ['审〔2026〕2号', null].entries()) {
+        const proposal = (await write(`/batches/${batch.id}/review-proposals`, { ...originInput(), batchRevision: batch.revision, change: { kind: 'field', documentId: docs[i].id, key: 'documentNumber', raw, ...(i ? { absent: true } : {}), location: { page: 1, region: 'upper', excerpt: i ? '逐处查看首页上方，未见文号' : '首页上方完整文号' }, reason: '已人工查看发文首页上方' } })).proposal;
+        batch = (await write(`/review-proposals/${proposal.id}/confirm`, { ...originInput(), contentHash: proposal.contentHash })).batch;
+        assert.equal(batch.results.find(r => r.id === 'feasibility-numbers').conclusion, i ? 'issue' : 'insufficient');
+    }
+    assert.equal(batch.documents.every(d => d.processing.status === 'unreadable'), true); assert.equal(batch.fields.find(f => f.documentId === docs[1].id).humanValue.status, 'absent');
+});
+test('two native chats competing on one revision commit at most one exact correction and reject altered card contents', async () => {
+    const batch = await batchFor(), secondSession = await write('/sessions', { cwd });
+    const first = (await write(`/batches/${batch.id}/review-proposals`, { ...originInput(), batchRevision: batch.revision, change: fieldChange(batch, '2026-08-30') })).proposal;
+    const second = (await write(`/batches/${batch.id}/review-proposals`, { cwd, sessionId: secondSession.id, batchRevision: batch.revision, change: fieldChange(batch, '2026-08-31') })).proposal;
+    const wrongOrigin = await call('POST', `/review-proposals/${first.id}/confirm`, { cwd, sessionId: secondSession.id, requestId: 'wrong-origin', expectedRevision: revision, contentHash: first.contentHash }); assert.equal(wrongOrigin.data.code, 'COMPLIANCE_STALE');
+    const altered = await call('POST', `/review-proposals/${first.id}/confirm`, { ...originInput(), requestId: 'altered-card', expectedRevision: revision, contentHash: '0'.repeat(64) }); assert.equal(altered.data.code, 'COMPLIANCE_STALE');
+    const changedPayload = await call('POST', `/review-proposals/${first.id}/confirm`, { ...originInput(), requestId: 'payload-card', expectedRevision: revision, contentHash: first.contentHash, raw: '2026-01-01' }); assert.equal(changedPayload.status, 400);
+    await call('GET', ''); const currentRevision = revision;
+    const outcomes = await Promise.all([[first, session], [second, secondSession]].map(([card, source], index) => call('POST', `/review-proposals/${card.id}/confirm`, { cwd, sessionId: source.id, requestId: 'race-' + index, expectedRevision: currentRevision, contentHash: card.contentHash })));
+    assert.equal(outcomes.filter(outcome => outcome.status === 200).length, 1); assert.equal(outcomes.filter(outcome => outcome.status === 409).length, 1);
+    const saved = (await call('GET', `/batches/${batch.id}`)).data.batch; assert.equal(saved.corrections.length, 1); assert.equal(saved.history.length, 1);
+    const successful = outcomes.find(result => result.status === 200).data; const operation = await call('GET', '/operations/race-' + outcomes.findIndex(result => result.status === 200)); assert.deepEqual(operation.data, successful);
+});
+test('reports preserve old bytes and separately export original fields, human values, conclusions and history', async () => {
+    let batch = await batchFor(); const oldReport = (await write(`/batches/${batch.id}/reports`, { batchRevision: batch.revision })).report;
+    const oldHtml = (await call('GET', `/reports/${oldReport.id}/files/0`)).data.content;
+    const field = (await write(`/batches/${batch.id}/review-proposals`, { ...originInput(), batchRevision: batch.revision, change: fieldChange(batch, '2026-08') })).proposal;
+    batch = (await write(`/review-proposals/${field.id}/confirm`, { ...originInput(), contentHash: field.contentHash })).batch;
+    const conclusion = (await write(`/batches/${batch.id}/review-proposals`, { ...originInput(), batchRevision: batch.revision, change: { kind: 'conclusion', resultId: 'contract-deadline', conclusion: 'insufficient', reason: '人工要求补充签订落款证明' } })).proposal;
+    batch = (await write(`/review-proposals/${conclusion.id}/confirm`, { ...originInput(), contentHash: conclusion.contentHash })).batch;
+    const report = (await write(`/batches/${batch.id}/reports`, { batchRevision: batch.revision })).report; assert.equal(report.batchRevision, batch.revision);
+    const html = (await call('GET', `/reports/${report.id}/files/0`)).data.content;
+    assert.match(html, /原始提取原文/); assert.match(html, /人工核对值与出处（非原件）/); assert.match(html, /2026-09-01/); assert.match(html, /2026-08/); assert.match(html, /人工要求补充签订落款证明/); assert.match(html, /humanDecision/); assert.match(html, /历史修订与确认/);
+    const xlsx = (await call('GET', `/reports/${report.id}/files/1`)).data; const xml = Buffer.from(xlsx.base64, 'base64').toString('utf8');
+    assert.match(xml, /t="inlineStr"/); assert.doesNotMatch(xml, /<f[ >]/); assert.match(xml, /人工要求补充签订落款证明/); assert.match(xml, /humanValue|人工核对值/);
+    assert.equal((await call('GET', `/reports/${oldReport.id}/files/0`)).data.content, oldHtml); assert.doesNotMatch(oldHtml, /人工要求补充签订落款证明/);
+});

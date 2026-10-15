@@ -36,10 +36,14 @@ function evaluate(batch) {
             const dates = fields.filter(field => field.documentId === doc.id && field.key === 'date');
             return dates.length === 1 && dates[0].humanValue?.status === 'known' && dates[0].humanValue?.value;
         });
-        if (manualDates) result.manualInputs = fields.filter(field => used.some(doc => doc.id === field.documentId) && field.key === 'date').map(field => field.id);
-        if (used.some(d => d.processing?.status === 'failed') && !manualDates) return { ...done('insufficient', '资料解析执行失败'), execution: 'failed' };
+        const manualNumbers = rule.id === 'feasibility-numbers' && used.every(doc => {
+            const numbers = fields.filter(field => field.documentId === doc.id && field.key === 'documentNumber');
+            return numbers.length === 1 && ['known', 'absent'].includes(numbers[0].humanValue?.status) && numbers[0].location.page === 1 && numbers[0].location.region === 'upper';
+        });
+        if (manualDates || manualNumbers) result.manualInputs = fields.filter(field => used.some(doc => doc.id === field.documentId) && field.key === (manualDates ? 'date' : 'documentNumber')).map(field => field.id);
+        if (used.some(d => d.processing?.status === 'failed') && !manualDates && !manualNumbers) return { ...done('insufficient', '资料解析执行失败'), execution: 'failed' };
         if (used.some(d => d.processing?.status === 'unreadable')
-            && !manualDates && !(rule.id === 'feasibility-numbers' && used.every(d => d.processing?.status !== 'unreadable' || d.assignment.numberAbsentConfirmed)))
+            && !manualDates && !manualNumbers && !(rule.id === 'feasibility-numbers' && used.every(d => d.processing?.status !== 'unreadable' || d.assignment.numberAbsentConfirmed)))
             return done('insufficient', '资料读取不完整或需要识别，不能根据部分内容确定结论');
         if (used.some(d => !d.assignment.identityConfirmed)) return done('insufficient', '资料归属尚未人工核对');
         const conflictFields = fields.filter(field => used.some(d => d.id === field.documentId) && ['projectName', 'projectNumber', 'organization', 'year', 'phase'].includes(field.key)).filter(field => {
@@ -59,7 +63,7 @@ function evaluate(batch) {
             for (const doc of used) {
                 const value = values(doc, 'documentNumber');
                 if (value && value.location.page === 1 && value.location.region === 'upper') continue;
-                if (doc.assignment.numberAbsentConfirmed === true) absent = true;
+                if (doc.assignment.numberAbsentConfirmed === true || fields.some(field => field.documentId === doc.id && field.key === 'documentNumber' && field.humanValue?.status === 'absent' && field.location.page === 1 && field.location.region === 'upper')) absent = true;
                 else return done('insufficient', '缺少可核实的发文首页上方文号；扫描或空文本不证明文号缺失');
             }
             return done(absent ? 'issue' : 'passed', absent ? '审查人员已核对发文首页并确认文号缺失' : '发文首页上方存在完整文号');
