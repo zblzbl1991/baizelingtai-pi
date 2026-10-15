@@ -92,4 +92,27 @@ test('future start dates survive saving and resume, while manual runs stay expli
         assert.equal(manual.status, 'waiting');
     } finally { await service.dispose(); }
 });
+
+test('desktop dispatch gate rechecks after lookup and preserves the waiting run and future configuration', async () => {
+    const clock = { value: Date.parse('2026-09-28T12:00:00Z') };
+    const { service, calls, setIdle } = fixture(path.join(root, 'desktop-gate.sqlite'), clock);
+    let suspended = false, release;
+    service.isSuspended = () => suspended;
+    try {
+        await service.ready; setIdle(true);
+        const task = job({ nextAt: clock.value }); service.db.saveJob(task);
+        const run = service.enqueue(task, clock.value);
+        const original = service.store.getSession;
+        service.store.getSession = (...args) => new Promise(resolve => { release = () => { void original(...args).then(resolve); }; });
+        const dispatch = service.dispatch(run);
+        assert.equal(typeof release, 'function');
+        suspended = true; release(); await dispatch;
+        assert.equal(calls.length, 0);
+        assert.equal(service.db.run(run.id).status, 'waiting');
+        assert.deepEqual(service.db.job(task.id), task);
+        service.store.getSession = original;
+        suspended = false; await service.dispatch(run);
+        assert.equal(calls.length, 1);
+    } finally { await service.dispose(); }
+});
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));

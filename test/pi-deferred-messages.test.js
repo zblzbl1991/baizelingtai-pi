@@ -53,6 +53,28 @@ function fixture(t) {
     return { root, session, options, worker, create, calls, setNow: value => { now = value; }, setBusy: value => { busy = value; }, setError: value => { sendError = value; } };
 }
 
+test('desktop dispatch gate rechecks after an in-flight session lookup without persisting pause or handing off', async t => {
+    const f = fixture(t); let suspended = false, activity = 0, resolveSession;
+    f.options.isSuspended = () => suspended;
+    f.options.onActivity = () => { activity++; };
+    const original = f.options.store.getSession;
+    f.options.store.getSession = (...args) => new Promise(resolve => { resolveSession = () => { void original(...args).then(resolve); }; });
+    const service = f.create();
+    service.create(f.session, { id: randomUUID(), message: 'Synthetic pending dispatch', dueAt: 110000 });
+    const saved = fs.readFileSync(f.options.filePath);
+    f.setNow(110000);
+    const ticking = service.tick();
+    assert.equal(typeof resolveSession, 'function');
+    suspended = true; resolveSession(); await ticking;
+    assert.equal(f.calls.length, 0);
+    assert.equal(service.jobs[0].status, 'scheduled');
+    assert.deepEqual(fs.readFileSync(f.options.filePath), saved);
+    assert.ok(activity >= 2);
+    f.options.store.getSession = original;
+    suspended = false; await service.tick();
+    assert.equal(f.calls.length, 1);
+});
+
 test('deferred messages persist once, wait for idle, clear sent payload and reject stale edits', async t => {
     const f = fixture(t), service = f.create(), id = randomUUID();
     const input = { id, message: 'Preserve exactly\u2028this', dueAt: 110000 };

@@ -49,9 +49,11 @@ test('uploaded reference bytes are frozen in review and history keeps bounded me
     const image = 'data:image/png;base64,' + png.toString('base64');
     const parameters = { prompt: 'Use reference', image };
     const review = await service.review({ modelId: 'fixture-image', parameters });
+    assert.equal(service.pendingReviews, 1);
     parameters.image = 'changed after review';
     assert.equal(requests.length, 0);
     await service.execute(review.ticket);
+    assert.equal(service.pendingReviews, 0);
     assert.equal(JSON.parse(requests[0].options.body).input.image, image);
     const history = mediaHistory(dataRoot, 'image');
     assert.equal(history[0].parameters.image, undefined);
