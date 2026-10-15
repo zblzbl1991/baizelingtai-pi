@@ -45,6 +45,12 @@ dist/
 # Private maintainer context; public development contracts remain versioned.
 /AGENTS.local.md
 /docs/local/
+# Local Windows service-management verification evidence; spec/tickets stay versioned.
+/.scratch/windows-service-management/*-evidence/
+/.scratch/windows-service-management/validation-*
+/.scratch/windows-service-management/current-failures.json
+/.scratch/windows-service-management/audit.json
+/.scratch/windows-service-management/windows-test-cache/
 # Local native linker output; release binaries are explicitly listed.
 /native/*.lib
 media_references/
