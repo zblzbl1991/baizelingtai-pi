@@ -5,15 +5,18 @@ import capabilities from './pi-bundled-capabilities.js';
 import { configureComputerHelpers, setComputerConfigScope } from './pi-bundled-computer-config.js';
 import bundledGuidance from './pi-bundled-guidance.mjs';
 import { nativeExtensionFactories, selectedNativeBuiltins } from './pi-native-mcp.mjs';
+import compliance from './pi-compliance-runtime.js';
 
 // Build the same native resource inventory used by Settings, then let Pi load
 // only selected paths. Filtering happens before any third-party factory runs.
-export async function managedLoaderOptions({ cwd, agentDir, settings, parsed }) {
+export async function managedLoaderOptions({ cwd, agentDir, settings, parsed, sessionManager }) {
     configureComputerHelpers(agentDir);
     setComputerConfigScope(cwd, agentDir, settings.isProjectTrusted());
     const { resolved, settingsView } = await bundled.resolveManagedResources(sdk, { cwd, agentDir, settings });
-    const paths = type => resolved[type].filter(item => item.enabled).map(item => item.path);
+    const eligible = Boolean(compliance.complianceRuntime(sessionManager, cwd, agentDir));
+    const paths = type => resolved[type].filter(item => item.enabled && !compliance.isComplianceResource(item.path)).map(item => item.path);
     const explicit = values => (values || []).filter(file => {
+        if (compliance.isComplianceResource(file)) return false;
         if (bundled.obsoleteMcpAdapter(file, cwd)) return false;
         const entry = bundled.identify(file, cwd);
         if (!entry) return true;
@@ -30,8 +33,8 @@ export async function managedLoaderOptions({ cwd, agentDir, settings, parsed }) 
         extensionFactories: [...await nativeExtensionFactories(parsed), bundledGuidance],
         disabledBuiltinExtensions: parsed.noMcp ? ['mcp'] : undefined,
         noContextFiles: parsed.noContextFiles, systemPrompt: parsed.systemPrompt, appendSystemPrompt: parsed.appendSystemPrompt,
-        additionalExtensionPaths: [...new Set([...selectedNativeBuiltins(settingsView, parsed), ...explicit(parsed.extensions), ...(parsed.noExtensions ? [] : paths('extensions'))])].map(extensionPath),
-        additionalSkillPaths: [...explicit(parsed.skills), ...(parsed.noSkills ? [] : paths('skills'))],
+        additionalExtensionPaths: [...new Set([...(eligible && !parsed.noExtensions ? [compliance.extensionPath] : []), ...selectedNativeBuiltins(settingsView, parsed), ...explicit(parsed.extensions), ...(parsed.noExtensions ? [] : paths('extensions'))])].map(extensionPath),
+        additionalSkillPaths: [...explicit(parsed.skills), ...(parsed.noSkills ? [] : [...paths('skills'), ...(eligible ? [compliance.skillPath] : [])])],
         additionalPromptTemplatePaths: [...explicit(parsed.promptTemplates), ...(parsed.noPromptTemplates ? [] : paths('prompts'))],
         additionalThemePaths: [...explicit(parsed.themes), ...(parsed.noThemes ? [] : paths('themes'))],
     } };

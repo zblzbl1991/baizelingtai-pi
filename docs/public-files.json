@@ -85,6 +85,11 @@
     "docs/tts-providers/minimax.md",
     "docs/tts-providers/qwen3-gpu.md",
     "native/README.md",
-    "pi-packages/media-workbench/skills/media-workbench/SKILL.md"
+    "pi-packages/media-workbench/skills/media-workbench/SKILL.md",
+    "docs/COMPLIANCE.md",
+    "pi-packages/compliance/skills/compliance-materials/SKILL.md",
+    "pi-packages/compliance/skills/compliance-checks/SKILL.md",
+    "pi-packages/compliance/skills/compliance-review/SKILL.md",
+    "pi-packages/compliance/skills/compliance-reports/SKILL.md"
   ]
 }

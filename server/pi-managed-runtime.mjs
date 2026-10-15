@@ -31,7 +31,7 @@ try {
         if (!['direct', 'custom'].includes(process.env.PIVANE_NETWORK_MODE)) http.applyHttpProxySettings(settings.getGlobalSettings().httpProxy);
         http.configureHttpDispatcher(settings.getHttpIdleTimeoutMs());
         (await import('./workspace-network-transport.js')).default.markSdkNetworkReady();
-        const input = { cwd, agentDir, settings, parsed };
+        const input = { cwd, agentDir, settings, parsed, sessionManager };
         const { settingsView, options } = await managedLoaderOptions(input);
         const services = await createAgentSessionServices({ cwd, agentDir, settingsManager: settingsView,
             modelRuntimeSignal: AbortSignal.timeout(15000), extensionFlagValues: parsed.unknownFlags, resourceLoaderOptions: options });

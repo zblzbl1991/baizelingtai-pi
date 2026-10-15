@@ -1,0 +1,105 @@
+const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http');
+const { once } = require('node:events'), express = require('express');
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const root = path.resolve(__dirname, '../..'), temporary = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-compliance-browser-')));
+const agent = path.join(temporary, 'agent'), cwd = path.join(temporary, 'project'); fs.mkdirSync(agent); fs.mkdirSync(cwd);
+process.env.PI_CODING_AGENT_DIR = agent; process.env.PI_PROJECT_ROOTS = temporary; process.env.PI_OFFLINE = '1';
+const { PiSessionStore } = require('../../server/pi-session-store'), { PiProfileRegistry } = require('../../server/pi-profile-registry');
+const { ComplianceService, mountCompliance } = require('../../server/pi-compliance'), { WorkspaceAccessService } = require('../../server/workspace-access-service');
+const store = new PiSessionStore(), profiles = new PiProfileRegistry(store); store.profiles = profiles;
+const models = [{ provider: 'fixture', id: 'text', name: '文本样例', input: ['text'], available: true }, { provider: 'fixture', id: 'vision', name: '图像样例', input: ['text', 'image'], available: true }];
+const service = new ComplianceService({ store, profiles, createModelRuntime: async () => ({ getAvailable: async () => models }) });
+const token = 'synthetic-compliance-browser-token', access = new WorkspaceAccessService({ filePath: path.join(agent, 'access.json'), envToken: () => token });
+async function run(browser, origin, width, theme) {
+    const context = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: width < 900 ? 852 : 1000 }, isMobile: width < 900, hasTouch: width < 900 });
+    const page = await context.newPage(), errors = [], sessions = [{ id: 'ordinary', cwd, name: '普通会话', messageCount: 0 }]; let active = 'ordinary';
+    page.setDefaultTimeout(60000);
+    page.on('pageerror', error => errors.push(error.message));
+    await page.addInitScript(({ cwd, token, theme }) => { localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem('pi.web.session:' + cwd, 'ordinary'); sessionStorage.setItem('pi.web.token', token); localStorage.setItem('pi.workspace.theme', theme); }, { cwd, token, theme });
+    await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, route => route.abort());
+    await page.route('**/api/**', async route => {
+        const req = route.request(), endpoint = new URL(req.url()).pathname, json = data => route.fulfill({ json: data });
+        if (endpoint === '/api/pi/compliance/sessions' && req.method() === 'POST') {
+            const response = await route.fetch(), data = await response.json(); sessions.push(data); return route.fulfill({ response, json: data });
+        }
+        if (endpoint.startsWith('/api/pi/compliance') || endpoint === '/api/pi/profiles') return route.continue();
+        if (endpoint === '/api/pi/status') return json({ ok: true, sessionWorkflows: true, projectRoots: [temporary] });
+        if (endpoint === '/api/pi/projects') return json({ projects: [{ cwd, name: 'Synthetic compliance', sessionCount: sessions.length }], roots: [temporary] });
+        if (endpoint === '/api/pi/sessions') return json({ sessions });
+        if (endpoint === '/api/pi/activity') return json({ runtimes: [], pinnedProjects: [], hiddenProjects: [], replyNotices: [] });
+        if (endpoint === '/api/pi/settings/models') return json({ models, providers: [{ id: 'fixture', name: '合成服务' }], preferences: {} });
+        if (endpoint.endsWith('/deferred')) return json({ jobs: [] });
+        if (endpoint.endsWith('/workflow')) return json({ leafId: 'leaf', prompts: [], versions: [] });
+        if (req.method() !== 'GET') throw new Error('Unexpected browser write: ' + endpoint);
+        return json(endpoint.includes('history') ? [] : {});
+    });
+    await page.routeWebSocket('**/api/pi/ws', ws => ws.onMessage(raw => {
+        const cmd = JSON.parse(raw), state = { model: models[0], thinkingLevel: 'off', isStreaming: false, isCompacting: false };
+        const send = data => ws.send(JSON.stringify({ type: 'response', id: cmd.id, command: cmd.type, success: true, data }));
+        if (cmd.type === 'open_session') { active = cmd.sessionId; return send({ session: sessions.find(session => session.id === active), state, messages: { messages: [] }, stats: {}, models: { models }, thinkingLevels: { levels: ['off'] }, commands: { commands: [] } }); }
+        if (cmd.type === 'get_messages') return send({ messages: [] });
+        if (cmd.type === 'get_state') return send(state);
+        if (cmd.type === 'get_session_stats') return send({});
+        throw new Error('Unexpected RPC: ' + cmd.type);
+    }));
+    try {
+        await page.goto(origin + '/#/settings?tab=builtins', { waitUntil: 'domcontentloaded', timeout: 120000 });
+        await page.waitForFunction(() => document.querySelector('#compliance-enabled')?.getBoundingClientRect().width > 0, null, { timeout: 60000 });
+        assert.equal(await page.locator('html').getAttribute('data-theme'), theme);
+        console.log(`compliance ${width}: settings ready`);
+        await page.locator('#compliance-enabled').waitFor(); assert.equal(await page.locator('#compliance-enabled').isChecked(), false);
+        await page.locator('#compliance-enabled').check(); await page.locator('#compliance-main-model').selectOption('fixture/text');
+        await page.locator('#compliance-save').click(); await page.locator('#compliance-open-chat').waitFor({ state: 'visible' });
+        console.log(`compliance ${width}: enabled`);
+        assert.match(await page.locator('#compliance-settings-status').textContent(), /已启用/);
+        const auth = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
+        const setting = await (await fetch(origin + '/api/pi/compliance', { headers: auth })).json();
+        assert.equal((await fetch(origin + '/api/pi/compliance/settings', { method: 'PUT', headers: auth, body: JSON.stringify({ requestId: 'other-settings-' + width, expectedRevision: setting.revision, enabled: true }) })).status, 200);
+        await page.locator('#compliance-extraction-model').selectOption('fixture/vision'); await page.locator('#compliance-save').click();
+        await page.waitForFunction(() => document.querySelector('#compliance-settings-status')?.textContent.includes('已变化'));
+        await page.locator('#compliance-save').click();
+        await page.waitForFunction(() => document.querySelector('#compliance-settings-status')?.textContent === '已启用');
+        assert.equal((await (await fetch(origin + '/api/pi/compliance', { headers: auth })).json()).extractionModel.modelId, 'vision');
+        await page.locator('#compliance-open-chat').click();
+        await page.locator('#pi-compliance-open').waitFor({ state: 'visible' }); assert.notEqual(active, 'ordinary');
+        console.log(`compliance ${width}: dedicated chat ready`);
+        await page.locator('#pi-compliance-open').click();
+        await page.locator('#compliance-project-new').click(); await page.locator('#compliance-project-name').fill('工程 <script> ' + width);
+        await page.locator('#compliance-project-number').fill('C-' + width); await page.locator('#compliance-project-confirmed').check();
+        const projectState = await (await fetch(origin + '/api/pi/compliance/projects', { headers: auth })).json();
+        assert.equal((await fetch(origin + '/api/pi/compliance/projects', { method: 'POST', headers: auth, body: JSON.stringify({ requestId: 'other-project-' + width, expectedRevision: projectState.revision, project: { name: '另一个聊天的工程' } }) })).status, 200);
+        await page.locator('#compliance-project-save').click();
+        await page.waitForFunction(() => document.querySelector('#compliance-project-status')?.textContent.includes('已变化'));
+        await page.locator('#compliance-project-save').click();
+        await page.waitForFunction(width => document.querySelector('#pi-compliance-drawer').textContent.includes('C-' + width), width);
+        assert.equal(await page.locator('#compliance-project-organization').inputValue(), '');
+        assert.match(await page.locator('#compliance-project-status').textContent(), /已保存/);
+        console.log(`compliance ${width}: project saved`);
+        assert.equal(await page.locator('#pi-compliance-drawer script').count(), 0);
+        assert.ok(await page.locator('#compliance-project-name').evaluate(el => parseFloat(getComputedStyle(el).fontSize) >= 16));
+        await page.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR || os.tmpdir(), 'compliance-' + width + '.png') });
+        assert.equal(await page.evaluate(() => document.body.scrollWidth > document.body.clientWidth), false);
+        assert.equal(await page.locator('#pi-compliance-drawer').evaluate(el => el.scrollWidth > el.clientWidth + 1), false);
+        await page.locator('#pi-compliance-close').click();
+        await page.evaluate(() => { location.hash = '#/settings?tab=builtins'; });
+        await page.locator('#compliance-enabled').waitFor({ state: 'visible' }); await page.locator('#compliance-enabled').uncheck(); await page.locator('#compliance-save').click();
+        await page.waitForFunction(() => document.querySelector('#compliance-settings-status')?.textContent.includes('已停用'));
+        assert.equal(await page.locator('#compliance-open-chat').isVisible(), false);
+        await page.evaluate(() => { location.hash = '#/chat'; }); assert.equal(await page.locator('#pi-compliance-open').isVisible(), false);
+        assert.deepEqual(errors, []); console.log(`compliance ${width} ${theme}: actual authenticated settings, dedicated session, project drawer, persistence and disable passed`);
+    } catch (error) { console.error({ errors, url: page.url(), message: error.message }); throw error; }
+    finally { await context.close(); }
+}
+(async () => {
+    const app = express();
+    for (const [name, directory] of [['marked', 'marked/lib'], ['dompurify', 'dompurify/dist'], ['highlight', '@highlightjs/cdn-assets']]) app.use('/vendor/' + name, express.static(path.join(root, 'node_modules', directory)));
+    app.use(express.static(path.join(root, 'public')));
+    access.mount(app); app.use(express.json());
+    const router = express.Router(); router.use(access.middleware()); mountCompliance(router, service);
+    router.get('/profiles', async (_req, res) => res.json(await profiles.list())); app.use('/api/pi', router);
+    const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR || os.tmpdir(), { recursive: true });
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    try { for (const width of (process.env.PIVANE_COMPLIANCE_WIDTHS || '1440,393').split(',').map(Number)) await run(browser, `http://127.0.0.1:${server.address().port}`, width, width < 900 ? 'dark' : 'daylight'); }
+    finally { await browser.close(); await service.dispose(); access.dispose(); server.closeAllConnections(); await new Promise(r => server.close(r)); fs.rmSync(temporary, { recursive: true, force: true }); }
+})().catch(error => { console.error(error); process.exitCode = 1; });
