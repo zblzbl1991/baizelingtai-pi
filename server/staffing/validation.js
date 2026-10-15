@@ -40,11 +40,15 @@ function validateInitial(data) {
         byPerson.set(row.personId, row.end);
     }
 }
-function emptyLedger() { return { version: 1, revision: 0, enabled: false, initialized: false, phase: 'awaiting-import',
+function emptyLedger() { return { version: 1, revision: 0, epoch: 0, plans: {}, enabled: false, initialized: false, phase: 'awaiting-import',
     profileId: null, initializingRequestId: null, people: [], projects: [], occupancies: [], historyComplete: false,
     operations: {}, history: [] }; }
 function validateLedger(state) {
+    if (!object(state)) fail('Invalid staffing ledger');
+    // Version 1 initial ledgers predate plans; normalize without a separate migration.
+    state.epoch ??= 0; state.plans ??= {};
     if (!object(state) || state.version !== 1 || !Number.isSafeInteger(state.revision) || state.revision < 0
+        || !Number.isSafeInteger(state.epoch) || state.epoch < 0 || !object(state.plans) || Object.keys(state.plans).length > LIMITS.operations
         || typeof state.enabled !== 'boolean' || typeof state.initialized !== 'boolean'
         || !['initializing', 'awaiting-import', 'awaiting-review', 'ready'].includes(state.phase)
         || !(state.profileId === null || /^[a-f0-9-]{36}$/.test(state.profileId))
@@ -55,10 +59,26 @@ function validateLedger(state) {
             || !['pending', 'completed'].includes(op.state) || op.state === 'completed' && !object(op.result))
         || state.history.some(event => !object(event) || !id(event.requestId) || !text(event.action) || !text(event.at))) fail('Invalid staffing ledger');
     validateInitial({ people: state.people, projects: state.projects, occupancies: state.occupancies, historyComplete: state.historyComplete });
+    for (const [planId, plan] of Object.entries(state.plans)) {
+        if (!id(planId) || !object(plan) || plan.id !== planId || plan.kind !== 'assign' || !Number.isSafeInteger(plan.epoch) || plan.epoch < 0 || plan.epoch > state.epoch
+            || !Number.isSafeInteger(plan.revision) || plan.revision < 1 || plan.revision > state.revision || !object(plan.source) || !text(plan.source.sessionId)
+            || !text(plan.source.sessionPath, 8192) || !text(plan.source.cwd, 8192) || !text(plan.source.profileId)
+            || !Array.isArray(plan.personIds) || plan.personIds.length > LIMITS.people || new Set(plan.personIds).size !== plan.personIds.length
+            || plan.personIds.some(value => !id(value)) || typeof plan.crossDepartment !== 'boolean'
+            || plan.originId !== undefined && !id(plan.originId) || plan.supersededBy !== undefined && (!id(plan.supersededBy) || plan.supersededBy === plan.id)
+            || plan.outcome !== undefined && (!object(plan.outcome) || plan.outcome.planId !== plan.id || !['reserve', 'confirm'].includes(plan.outcome.action))) fail('Invalid staffing plan');
+        validateInitial({ people: [], projects: [plan.project], occupancies: [], historyComplete: false });
+        if (plan.supersededBy) {
+            const target = Object.hasOwn(state.plans, plan.supersededBy) && state.plans[plan.supersededBy];
+            if (!target || target.revision <= plan.revision || target.originId !== plan.originId || plan.outcome
+                || ['sessionId', 'sessionPath', 'cwd', 'profileId'].some(key => target.source?.[key] !== plan.source[key])) fail('Invalid staffing plan chain');
+        }
+        if (plan.outcome && (!Number.isSafeInteger(plan.outcome.revision) || plan.outcome.revision <= plan.revision || plan.outcome.revision > state.revision)) fail('Invalid staffing plan outcome');
+    }
     if (state.phase === 'ready' && !state.initialized || state.initialized && (state.phase !== 'ready' || !state.profileId)
         || state.phase === 'awaiting-review' && !state.profileId
         || state.phase === 'initializing' && (!state.enabled || state.profileId || !state.initializingRequestId
             || state.operations[state.initializingRequestId]?.state !== 'pending')
         || state.phase !== 'initializing' && state.initializingRequestId !== null) fail('Invalid staffing initialization state');
 }
-module.exports = { MAX_LEDGER, LIMITS, fail, keys, id, validateInitial, emptyLedger, validateLedger };
+module.exports = { MAX_LEDGER, LIMITS, fail, keys, id, date, validateInitial, emptyLedger, validateLedger };

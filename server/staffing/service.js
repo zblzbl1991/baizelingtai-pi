@@ -1,7 +1,8 @@
 'use strict';
-const { createHash } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
 const { StaffingStore } = require('./store');
 const { fail, keys, id, LIMITS, validateInitial } = require('./validation');
+const rules = require('./rules');
 const BINDING_KEY = 'pivane-staffing:v1';
 const PROFILE = Object.freeze({ name: '人员调配', description: '查询人员台账，准备人员安排，并由用户确认具体变更。',
     soul: '你是人员调配助手。使用最新台账查询人员。说明安排缺口。推荐不占用人员。具体变更由用户通过安排卡片确认。不得用聊天记忆判断人员空闲。',
@@ -9,8 +10,9 @@ const PROFILE = Object.freeze({ name: '人员调配', description: '查询人员
 const canonical = value => Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']'
     : value !== null && typeof value === 'object' ? '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}' : JSON.stringify(value);
 const digest = value => createHash('sha256').update(canonical(value)).digest('hex');
+const stableSource = source => source && ({ sessionId: source.sessionId, sessionPath: source.sessionPath, cwd: source.cwd, profileId: source.profileId });
 const summary = state => ({ enabled: state.enabled, state: state.enabled ? state.phase : 'disabled',
-    revision: state.revision, initialized: state.initialized, profileId: state.profileId, historyComplete: state.historyComplete,
+    revision: state.revision, epoch: state.epoch, initialized: state.initialized, profileId: state.profileId, historyComplete: state.historyComplete,
     initialization: state.initializingRequestId ? { requestId: state.initializingRequestId,
         expectedRevision: state.operations[state.initializingRequestId]?.input?.expectedRevision } : null,
     counts: { people: state.people.length, projects: state.projects.length, occupancies: state.occupancies.length }, limits: LIMITS });
@@ -38,6 +40,12 @@ class StaffingService {
         const state = await this.store.snapshot(), op = Object.hasOwn(state.operations, requestId) ? state.operations[requestId] : null;
         return op ? op.state === 'completed' ? { state: 'completed', result: op.result } : { state: 'pending', noReplay: true }
             : { state: 'unknown', noReplay: true };
+    }
+    async operationForSource(requestId, source) {
+        if (!id(requestId)) fail('Invalid staffing request ID');
+        const state = await this.requireSource(source), op = Object.hasOwn(state.operations, requestId) ? state.operations[requestId] : null;
+        if (op && canonical(op.source) !== canonical(stableSource(source))) fail('Staffing operation source does not match', 403);
+        return this.operation(requestId);
     }
     validateRequest(input, fields = []) {
         keys(input, ['requestId', 'expectedRevision', ...fields]);
@@ -110,13 +118,126 @@ class StaffingService {
         input = structuredClone(input);
         return this.reserve(() => this.mutate(input, 'disable', next => {
             if (next.phase === 'initializing') fail('Finish the original initialization before disabling', 409);
-            next.enabled = false;
+            next.enabled = false; next.epoch++;
         }));
     }
     async requireReady() {
         const state = await this.store.snapshot();
         if (!state.enabled || !state.initialized || state.phase !== 'ready') fail('Staffing requires enablement and initial ledger review', 409);
         return state;
+    }
+    async requireSource(source) {
+        const state = await this.requireReady();
+        if (!source || source.profileId !== state.profileId || ['sessionId', 'sessionPath', 'cwd'].some(key => typeof source[key] !== 'string' || !source[key] || source[key].length > 8192)
+            || source.nativePlanIds !== undefined && (!Array.isArray(source.nativePlanIds) || source.nativePlanIds.some(value => !id(value)))) fail('Verified dedicated staffing session is required', 403);
+        return state;
+    }
+    validateProject(project) {
+        validateInitial({ people: [], projects: [project], occupancies: [], historyComplete: false });
+    }
+    async query(input, source) {
+        input = structuredClone(input);
+        keys(input, ['kind', 'project']);
+        if (input.kind !== 'recommend') fail('Unknown staffing query');
+        this.validateProject(input.project);
+        const state = await this.requireSource(source), available = rules.candidates(state, input.project);
+        const direct = available.find(person => person.direct), selected = direct ? [direct] : [];
+        for (const person of available) if (selected.length < input.project.minimum && !selected.includes(person)) selected.push(person);
+        return { revision: state.revision, project: input.project, candidates: available.slice(0, 200), totalCandidates: available.length,
+            selected, missing: Math.max(0, input.project.minimum - selected.length), missingDirect: !selected.some(person => person.direct),
+            historyComplete: state.historyComplete, warning: state.historyComplete ? '' : '按已录入记录排序，历史不完整' };
+    }
+    planProjection(state, plan) {
+        const people = plan.personIds.map(id => state.people.find(person => person.id === id));
+        const proposed = { ...state, occupancies: [...state.occupancies, ...plan.personIds.map(personId => ({ personId, projectId: plan.project.id,
+            kind: 'project', state: 'reserved', start: plan.project.start, end: plan.project.end }))] };
+        return { ...structuredClone(plan), people, candidates: rules.candidates(state, plan.project, plan.crossDepartment).slice(0, 200),
+            coverage: plan.outcome?.coverage || rules.coverage(proposed, plan.project), currentRevision: state.revision,
+            stale: !state.enabled || plan.epoch !== state.epoch || plan.revision !== state.revision,
+            warning: state.historyComplete ? '' : '按已录入记录排序，历史不完整' };
+    }
+    async plan(planId, source) {
+        if (!id(planId)) fail('Invalid staffing plan ID');
+        const state = await this.requireSource(source); let plan = state.plans[planId], hops = 0;
+        while (plan?.supersededBy && hops++ < LIMITS.operations) plan = state.plans[plan.supersededBy];
+        this.checkAuthority(state, plan, source);
+        return this.planProjection(state, plan);
+    }
+    checkAuthority(state, plan, source) {
+        if (!plan || canonical(plan.source) !== canonical(stableSource(source))) fail('Staffing plan source does not match', 403);
+        if (source.nativePlanIds && !source.nativePlanIds.includes(plan.originId || plan.id)) fail('Staffing plan is not referenced on the current native branch', 403);
+    }
+    checkPlan(state, plan) {
+        const existing = state.projects.find(project => project.id === plan.project.id);
+        if (existing && canonical(existing) !== canonical(plan.project)) fail('Project definition changed; prepare a project adjustment', 409);
+        const available = new Set(rules.candidates(state, plan.project, plan.crossDepartment).map(person => person.id));
+        if (plan.personIds.some(personId => !available.has(personId))) fail('Staffing person is unavailable or outside the allowed department', 409);
+    }
+    async planMutation(input, action, source, change) {
+        input = structuredClone(input); source = structuredClone(source);
+        return this.reserve(async () => {
+            const state = await this.requireSource(source), authorizedInput = { ...input, source: stableSource(source) }, previous = this.receipt(state, authorizedInput, action);
+            if (previous?.state === 'completed') return previous.result;
+            return this.store.mutate(input.expectedRevision, next => {
+                if (Object.keys(next.operations).length >= LIMITS.operations || next.history.length >= LIMITS.history) fail('Staffing history or operation limit reached', 413);
+                const before = { projects: structuredClone(next.projects), occupancies: structuredClone(next.occupancies) };
+                const result = change(next);
+                next.operations[input.requestId] = { digest: digest({ action, input: authorizedInput }), source: stableSource(source), state: 'completed', result };
+                const after = {};
+                for (const field of ['projects', 'occupancies']) {
+                    const old = new Map(before[field].map(row => [row.id, row])), current = new Map(next[field].map(row => [row.id, row]));
+                    const changed = new Set([...old.keys(), ...current.keys()].filter(key => canonical(old.get(key)) !== canonical(current.get(key))));
+                    before[field] = before[field].filter(row => changed.has(row.id)); after[field] = next[field].filter(row => changed.has(row.id)).map(row => structuredClone(row));
+                }
+                next.history.push({ requestId: input.requestId, action, at: new Date().toISOString(), planId: result.id || result.planId, before, after });
+                return result;
+            });
+        });
+    }
+    async prepareChange(input, source) {
+        input = structuredClone(input); source = structuredClone(source);
+        this.validateRequest(input, ['project', 'personIds']); this.validateProject(input.project);
+        if (!Array.isArray(input.personIds) || input.personIds.length > LIMITS.people || input.personIds.some(value => !id(value)) || new Set(input.personIds).size !== input.personIds.length) fail('Invalid staffing person IDs');
+        return this.planMutation(input, 'prepare-assign', source, next => {
+            if (Object.keys(next.plans).length >= LIMITS.operations) fail('Staffing plan limit reached', 413);
+            const plan = { id: randomUUID(), kind: 'assign', project: structuredClone(input.project), personIds: [...input.personIds],
+                source: stableSource(source), epoch: next.epoch, revision: next.revision + 1, crossDepartment: false };
+            plan.originId = plan.id;
+            this.checkPlan(next, plan); next.plans[plan.id] = plan;
+            return this.planProjection({ ...next, revision: next.revision + 1 }, plan);
+        });
+    }
+    async revisePlan(input, source) {
+        input = structuredClone(input); source = structuredClone(source);
+        this.validateRequest(input, ['planId', 'personIds', 'allowCrossDepartment']);
+        if (!id(input.planId) || !Array.isArray(input.personIds) || input.personIds.length > LIMITS.people
+            || input.personIds.some(value => !id(value)) || new Set(input.personIds).size !== input.personIds.length
+            || typeof input.allowCrossDepartment !== 'boolean') fail('Invalid staffing plan adjustment');
+        return this.planMutation(input, 'revise-plan', source, next => {
+            const old = next.plans[input.planId];
+            this.checkAuthority(next, old, source);
+            if (old.epoch !== next.epoch || old.revision !== next.revision) fail('Staffing plan changed; inspect a new plan', 409);
+            if (Object.keys(next.plans).length >= LIMITS.operations) fail('Staffing plan limit reached', 413);
+            const plan = { ...old, id: randomUUID(), personIds: [...input.personIds], crossDepartment: input.allowCrossDepartment, revision: next.revision + 1 };
+            this.checkPlan(next, plan); old.supersededBy = plan.id; next.plans[plan.id] = plan;
+            return this.planProjection({ ...next, revision: next.revision + 1 }, plan);
+        });
+    }
+    async commitPlan(input, source) {
+        input = structuredClone(input); source = structuredClone(source);
+        this.validateRequest(input, ['planId', 'action']);
+        if (!id(input.planId) || !['reserve', 'confirm'].includes(input.action)) fail('Invalid staffing plan confirmation');
+        return this.planMutation(input, 'commit-plan', source, next => {
+            const plan = next.plans[input.planId];
+            this.checkAuthority(next, plan, source);
+            if (plan.epoch !== next.epoch || plan.revision !== next.revision) fail('Staffing plan changed; inspect a new plan', 409);
+            this.checkPlan(next, plan);
+            if (!next.projects.some(project => project.id === plan.project.id)) next.projects.push(structuredClone(plan.project));
+            for (const personId of plan.personIds) next.occupancies.push({ id: randomUUID(), personId, projectId: plan.project.id, kind: 'project',
+                start: plan.project.start, end: plan.project.end, state: input.action === 'reserve' ? 'reserved' : 'confirmed' });
+            const result = { ...summary({ ...next, revision: next.revision + 1 }), planId: plan.id, action: input.action, coverage: rules.coverage(next, plan.project) };
+            plan.outcome = result; return result;
+        });
     }
 }
 module.exports = { StaffingService, BINDING_KEY };

@@ -7,6 +7,7 @@ import { createAgentSessionRuntime, createAgentSessionServices, createAgentSessi
     resolveCliModel, resolveModelScopeWithDiagnostics, initTheme } from '@earendil-works/pi-coding-agent';
 import './pi-subagent-native-loader.mjs';
 import { managedLoaderOptions, reloadableLoader } from './pi-bundled-loader.mjs';
+import staffing from './staffing/runtime-scope.js';
 
 let runtime;
 try {
@@ -31,8 +32,8 @@ try {
         if (!['direct', 'custom'].includes(process.env.PIVANE_NETWORK_MODE)) http.applyHttpProxySettings(settings.getGlobalSettings().httpProxy);
         http.configureHttpDispatcher(settings.getHttpIdleTimeoutMs());
         (await import('./workspace-network-transport.js')).default.markSdkNetworkReady();
-        const input = { cwd, agentDir, settings, parsed };
-        const { settingsView, options } = await managedLoaderOptions(input);
+        const input = { cwd, agentDir, settings, parsed, sessionManager };
+        const { settingsView, options, staffingScope } = await managedLoaderOptions(input);
         const services = await createAgentSessionServices({ cwd, agentDir, settingsManager: settingsView,
             modelRuntimeSignal: AbortSignal.timeout(15000), extensionFlagValues: parsed.unknownFlags, resourceLoaderOptions: options });
         services.resourceLoader = reloadableLoader(services.resourceLoader, input, options);
@@ -45,6 +46,7 @@ try {
         const created = await createAgentSessionFromServices({ services, sessionManager, sessionStartEvent, model,
             thinkingLevel: parsed.thinking ?? selected.thinkingLevel, scopedModels,
             tools: parsed.tools, excludeTools: parsed.excludeTools, noTools: parsed.noTools ? 'all' : parsed.noBuiltinTools ? 'builtin' : undefined });
+        await staffing.installRequestGuard(created.session, input, staffingScope);
         if (model && (parsed.thinking !== undefined || selected.thinkingLevel !== undefined)) created.session.setThinkingLevel(created.session.thinkingLevel);
         for (const diagnostic of diagnostics) process.stderr.write(`${diagnostic.message}\n`);
         return { ...created, services, diagnostics };

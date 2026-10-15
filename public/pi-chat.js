@@ -741,6 +741,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ? { cwd: state.cwd, sessionId: state.session.id, profileId: state.session.agentProfile.id, generation: state.socketGeneration, busy: knowledgeBusy() } : null });
     // Media plans become confirmation cards in the conversation (chat is the main media entry).
     const mediaRequests = window.PiMediaRequests?.create({ fetch: apiFetch });
+    const staffingCards = window.PiStaffingCards?.create({ fetch: apiFetch, context: () => state.connected && state.session ? { cwd: state.cwd, sessionId: state.session.id } : null });
     let accessBootstrapped = false;
     async function bootstrap() {
         await window.WorkspaceAccess?.ready;
@@ -2995,6 +2996,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const mediaCard = mediaRequests?.render(messages[index]);
             if (mediaCard) { elements.transcript.appendChild(mediaCard); records[index].nodes.push(mediaCard); changed.push(mediaCard); }
+            const staffingCard = staffingCards?.render(messages[index]);
+            if (staffingCard) { elements.transcript.appendChild(staffingCard); records[index].nodes.push(staffingCard); changed.push(staffingCard); }
             if (editCards.has(index)) {
                 const card = editCards.get(index);
                 elements.transcript.appendChild(card); records[index].nodes.push(card); changed.push(card);

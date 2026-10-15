@@ -9763,7 +9763,28 @@
         ["停用并保留数据","Disable and retain data"],
         ["查看完整台账记录","Review the complete ledger"],
         ["修改初始台账","Edit the initial ledger"],
-        ["返回核对","Return to review"]
+        ["返回核对","Return to review"],
+        ["人员安排方案","Staffing plan"],
+        ["还缺人数","People still needed"],
+        ["缺直签","Direct employee missing"],
+        ["直签已满足","Direct employee covered"],
+        ["方案已失效或能力不可用。请查询并准备新方案。","The plan is stale or unavailable. Query and prepare a new plan."],
+        ["选择人员","Select people"],
+        ["此卡片最多显示 200 名候选人员。","This card shows at most 200 candidates."],
+        ["仅此方案允许跨事业部查询和借人","Allow other departments for this plan only"],
+        ["检查调整后的名单","Check the revised selection"],
+        ["预占","Reserve"],
+        ["正式确认","Confirm"],
+        ["名单已修改。请先检查调整后的名单。","Selection changed. Check the revised selection first."],
+        ["正在读取方案…","Loading plan…"],
+        ["已预占","Reserved"],
+        ["已保存确认","Confirmation saved"],
+        ["全部人员已正式确认","All assignments formally confirmed"],
+        ["尚未全部正式确认","Not all assignments formally confirmed"],
+        ["此方案已有后续卡片。请使用最新卡片。","A newer card is available. Use the latest card."],
+        ["人员调配来源不能复制完整系统上下文。请选择 recent、quote 或 blank 侧聊模式。","Staffing sources cannot copy their full system context. Choose recent, quote or blank."],
+        ["侧聊来源会话已变化，请重新打开。","The side chat source session changed. Open it again."],
+        ["侧聊来源归属已变化，请重新打开。","The side chat source binding changed. Open it again."]
     );
     globalThis.PiI18nCatalog = Object.freeze(rows.map(row => Object.freeze(row)));
 })();
