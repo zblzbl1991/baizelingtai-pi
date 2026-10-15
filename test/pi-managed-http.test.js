@@ -16,9 +16,12 @@ async function until(fn, timeout = 20000) {
     throw new Error('Isolated maintenance test timed out');
 }
 test('managed launcher performs authenticated backup and restart with paused schedules and unchanged native data', { timeout: 90000 }, async t => {
+    const started = performance.now(), stage = name => t.diagnostic(`managed HTTP ${name}: ${Math.round(performance.now() - started)} ms`);
     const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-managed-http-')));
     const app = path.join(root, 'app'), data = path.join(root, 'data'), project = path.join(root, 'project');
+    stage('copy start');
     copyCode(path.resolve(__dirname, '..'), app);
+    stage('copy complete');
     fs.symlinkSync(path.resolve(__dirname, '../node_modules'), path.join(app, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
     fs.mkdirSync(path.join(data, 'agent/sessions'), { recursive: true }); fs.mkdirSync(project);
     fs.writeFileSync(path.join(data, 'agent/auth.json'), '{}');
@@ -42,10 +45,12 @@ test('managed launcher performs authenticated backup and restart with paused sch
         if (child.exitCode !== null) throw new Error('Isolated launcher exited: ' + output);
         return /running at http:\/\/localhost:(\d+)/.exec(output)?.[1];
     });
+    stage('launcher listening');
     const base = `http://127.0.0.1:${port}`;
     const headers = { Authorization: 'Bearer maintenance-fixture-only', Origin: base, 'Content-Type': 'application/json' };
     const api = (route, method = 'GET', body, extra = {}) => fetch(base + '/api/pi/settings/updates' + route, { method, headers: { ...headers, ...extra }, ...(body ? { body: JSON.stringify(body) } : {}) });
     const initial = await until(async () => { const response = await api('/maintenance'); const data = await response.json(); return data.supported && !data.busy && data; });
+    stage('maintenance ready');
     assert.equal((await fetch(base + '/api/pi/settings/updates/maintenance')).status, 401);
     assert.equal((await api('/review', 'POST', { action: 'backup' }, { Origin: 'https://untrusted.invalid' })).status, 403);
     assert.equal((await api('/review', 'POST', { action: 'backup', command: 'never run' })).status, 400);
@@ -56,9 +61,11 @@ test('managed launcher performs authenticated backup and restart with paused sch
     owner.send(JSON.stringify({ id: 'owner', type: 'open_session', cwd: project, sessionId: native.id, token: 'maintenance-fixture-only' }));
     assert.equal(JSON.parse((await opened)[0]).success, true);
     const ownerBytes = fs.readFileSync(native.path);
+    stage('native owner opened');
     const before = fs.readFileSync(path.join(data, 'agent/sessions/sentinel.jsonl'));
     let generation = initial.generation;
     for (const action of ['backup', 'restart']) {
+        stage(action + ' start');
         const review = await api('/review', 'POST', { action }); assert.equal(review.status, 200);
         const ticket = await review.json();
         const request = { ticket: ticket.id, confirmed: true, draftsSaved: true, externalWritersStopped: true };
@@ -70,6 +77,7 @@ test('managed launcher performs authenticated backup and restart with paused sch
             catch { return false; }
         });
         assert.equal(done.job.phase, 'succeeded', JSON.stringify(done.job)); assert.notEqual(done.generation, generation); generation = done.generation;
+        stage(action + ' complete');
         assert.equal(JSON.parse(fs.readFileSync(queue)).jobs[0].status, 'paused');
         assert.deepEqual(fs.readFileSync(path.join(data, 'agent/sessions/sentinel.jsonl')), before);
         assert.deepEqual(fs.readFileSync(native.path), ownerBytes);

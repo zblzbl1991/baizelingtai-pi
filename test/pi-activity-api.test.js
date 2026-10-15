@@ -25,6 +25,13 @@ test('activity and pins are protected, root-checked and do not launch workers', 
         for (const socket of wss.clients) socket.terminate();
         await gateway.dispose();
         await new Promise(resolve => server.close(resolve));
+        // Remove only this fixture's links; recursive Windows removal can reject
+        // the directory alias that points back into the tree being removed.
+        for (const name of ['alias', 'escape']) {
+            const link = path.join(root, name);
+            try { if (fs.lstatSync(link).isSymbolicLink()) fs.unlinkSync(link); }
+            catch (error) { if (error.code !== 'ENOENT') throw error; }
+        }
         fs.rmSync(root, { recursive: true, force: true });
     });
     const url = `http://127.0.0.1:${server.address().port}/api/pi`;
