@@ -31,7 +31,8 @@ function check(state, plan, { today } = {}) {
         for (const row of plan.import.upserts.occupancies) {
             const old = state.occupancies.find(item => item.id === row.id); if (!old || same(old, row)) continue;
             if (old.state === 'cancelled' && row.state !== 'cancelled' || row.end > old.end) fail('Import cannot implicitly restore released occupancy; use an explicit adjustment', 409);
-            if (old.start < today && (row.state === 'cancelled' || row.start !== old.start || row.end < today && row.end < old.end || ['personId', 'projectId', 'kind'].some(k => old[k] !== row[k]))) fail('Import cannot rewrite elapsed occupancy', 409);
+            const yesterday = require('./rules').iso(require('./rules').day(today) - 1);
+            if (old.start < today && (row.state === 'cancelled' || row.start !== old.start || row.end < yesterday && row.end < old.end || ['personId', 'projectId', 'kind'].some(k => old[k] !== row[k]))) fail('Import cannot rewrite elapsed occupancy', 409);
         }
         for (const row of plan.import.upserts.occupancies) {
             if (row.kind !== 'project' || row.state === 'cancelled' || same(state.occupancies.find(item => item.id === row.id), row)) continue;
