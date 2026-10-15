@@ -48,6 +48,7 @@ function check(state, plan, { today } = {}) {
 }
 function projection(state, plan) {
     const changes = plan.import.upserts ? collections.flatMap(kind => plan.import.upserts[kind].map(after => ({ kind, before: state[kind].find(row => row.id === after.id) || null, after }))) : [];
+    if (plan.import.upserts && plan.import.mode === 'initialize') for (const kind of collections) for (const before of state[kind]) if (!plan.import.upserts[kind].some(row => row.id === before.id)) changes.push({ kind, before, after: null });
     const projected = structuredClone(plan); delete projected.import.upserts;
     const visible = []; let bytes = 0; for (const change of changes) { bytes += Buffer.byteLength(JSON.stringify(change)); if (visible.length >= 200 || bytes > 64000) break; visible.push(change); }
     return { ...projected, currentRevision: state.revision, stale: !state.enabled || plan.epoch !== state.epoch || plan.revision !== state.revision,
