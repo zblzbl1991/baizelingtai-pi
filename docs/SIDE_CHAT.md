@@ -1,5 +1,7 @@
 # BTW / Side Chat
 
+人员调配专用来源的完整上下文侧聊受[独立隔离限制](STAFFING.md#启停与上下文)：请选择 `recent`、`quote` 或 `blank`。其他来源保持原有模式。
+
 能力与行为按当前运行接口核对。`GET /api/pi/status.sideChat` 表示侧聊可用；`sideChatContext=true` 表示有效上下文快照已启用，`sideChatRetention=true` 表示本页跨线程保留已启用。源码实现不等于生产已重启，以运行中的接口为准。
 
 `sideChatTools=true` 表示新建侧聊可以使用工具。新页面默认提交 `toolMode=assist`；旧页面省略该字段仍使用无工具兼容模式。能力以实际运行实例为准。

@@ -59,6 +59,7 @@ class AgentWorker extends EventEmitter {
         this.loadedAgentProfileId = null;
         this.loadedAgentProfileRevision = null;
         this.loadedAgentProfileConfirmed = false;
+        this.loadedStaffingEpoch = null;
         this.loadedAssistantProjectId = null;
         this.loadedAssistantProjectRevision = null;
         this.loadedAssistantProjectConfirmed = false;
@@ -413,6 +414,7 @@ class AgentWorker extends EventEmitter {
             if (!before) throw new Error('当前 runtime 尚未加载重载接口，请在任务结束后退出并重新打开会话');
             try {
                 this.loadedAgentProfileConfirmed = false;
+                this.loadedStaffingEpoch = null;
                 this.loadedAssistantProjectConfirmed = false;
                 await rpc('prompt', { message: `/${before.name} ${JSON.stringify({ mode: 'reload', token: this.navigationToken })}` }, 120000);
                 const raw = await this.client.request('get_commands');
@@ -570,6 +572,11 @@ class AgentWorker extends EventEmitter {
             try {
                 const result = privateReply(JSON.parse(event.message));
                 if (this.modelCatalog.handle(result) || this.mcpControl.handle(result) || this.modelSpeed.handle(result)) return;
+                if (result && Object.hasOwn(result, 'pivaneStaffingLoaded')) {
+                    if (this.managed && !this.noSession && result.sessionId === this.sessionId
+                        && Number.isSafeInteger(result.pivaneStaffingLoaded) && result.pivaneStaffingLoaded >= 0) this.loadedStaffingEpoch = result.pivaneStaffingLoaded;
+                    return; // Private resource lifecycle receipt, including late or malformed replies.
+                }
                 if (result && Object.hasOwn(result, 'pivaneAgentProfileLoaded')) {
                     if (this.managed && !this.noSession && result.sessionId === this.sessionId
                         && (result.pivaneAgentProfileLoaded === null && result.profileRevision === null

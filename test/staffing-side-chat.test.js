@@ -1,0 +1,50 @@
+'use strict';
+const test = require('node:test'), assert = require('node:assert/strict');
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http');
+const { once } = require('node:events'), express = require('express'), { WebSocket } = require('ws');
+const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'staffing-side-'))), agent = path.join(root, 'agent'), cwd = path.join(root, 'project');
+fs.mkdirSync(agent); fs.mkdirSync(cwd); process.env.PI_CODING_AGENT_DIR = agent; process.env.PI_PROJECT_ROOTS = root; process.env.PI_OFFLINE = '1';
+process.env.PI_WEB_DEFERRED_FILE = path.join(agent, 'deferred.json');
+test('dedicated native sources reject full-context side chat, allow a clean blank supplier request, and stay restricted after disable', { timeout: 120000 }, async t => {
+    const stage = text => console.log('staffing side:', text, new Date().toISOString()); stage('start');
+    const requests = [], sockets = [];
+    const provider = http.createServer(async (req, res) => {
+        let raw = ''; for await (const chunk of req) raw += chunk; requests.push(JSON.parse(raw));
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.end(`data: ${JSON.stringify({ id: 'fixture', object: 'chat.completion.chunk', model: 'fixture', choices: [{ index: 0, delta: { role: 'assistant', content: 'Fixture completed' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`);
+    });
+    provider.listen(0, '127.0.0.1'); await once(provider, 'listening');
+    fs.writeFileSync(path.join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture', defaultProjectTrust: 'never', enableInstallTelemetry: false }));
+    fs.writeFileSync(path.join(agent, 'models.json'), JSON.stringify({ providers: { fixture: { baseUrl: `http://127.0.0.1:${provider.address().port}/v1`, api: 'openai-completions', apiKey: 'synthetic', models: [{ id: 'fixture', input: ['text'], contextWindow: 32000, maxTokens: 1000 }] } } }));
+    const { WorkspaceAccessService } = require('../server/workspace-access-service'), { createPiAgentGateway } = require('../server/pi-agent-routes');
+    const access = new WorkspaceAccessService({ filePath: path.join(agent, 'access.json'), envToken: () => 'synthetic-side-token' });
+    const gateway = createPiAgentGateway({ accessService: access, deferredFilePath: path.join(agent, 'deferred.json'), cronFilePath: path.join(agent, 'cron.sqlite') });
+    const app = express(); access.mount(app); app.use(express.json()); gateway.mount(app);
+    const server = http.createServer(app); gateway.attachWebSocket(server); server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    const url = `ws://127.0.0.1:${server.address().port}/api/pi/ws`;
+    let cleaning;
+    const cleanup = () => cleaning ||= (async () => { for (const socket of sockets) socket.terminate(); await gateway.dispose(); access.dispose(); server.closeAllConnections(); provider.closeAllConnections();
+        await Promise.all([new Promise(resolve => server.close(resolve)), new Promise(resolve => provider.close(resolve))]); fs.rmSync(root, { recursive: true, force: true }); })();
+    t.after(cleanup);
+    const connect = async () => { const socket = new WebSocket(url); sockets.push(socket); const pending = new Map(); let next = 0;
+        socket.on('message', raw => { const event = JSON.parse(raw); if (event.type === 'response' && pending.has(event.id)) { pending.get(event.id)(event); pending.delete(event.id); } });
+        socket.call = (type, payload = {}) => new Promise(resolve => { const id = 'side-' + ++next; pending.set(id, resolve); socket.send(JSON.stringify({ type, id, ...payload })); });
+        await once(socket, 'open'); return socket; };
+    try {
+        const enabled = await gateway.staffing.enable({ requestId: 'enable', expectedRevision: 0 });
+        const imported = await gateway.staffing.initialize({ requestId: 'initial', expectedRevision: enabled.revision, people: [], projects: [], occupancies: [], historyComplete: false });
+        await gateway.staffing.confirmInitial({ requestId: 'review', expectedRevision: imported.revision, reviewed: true });
+        const session = await gateway.store.createSession(cwd, 'Synthetic side source', { agentProfileId: enabled.profileId });
+        const main = await connect(); assert.equal((await main.call('open_session', { token: 'synthetic-side-token', cwd, sessionId: session.id })).success, true); stage('source ready');
+        const denied = await main.call('prepare_side_chat', { mode: 'context' });
+        assert.equal(denied.success, false); assert.match(denied.error, /recent.*quote.*blank/); stage('context rejected');
+        const blank = await main.call('prepare_side_chat', { mode: 'blank' }); assert.equal(blank.success, true);
+        const side = await connect(); assert.equal((await side.call('open_side_chat', { token: 'synthetic-side-token', ticket: blank.data.ticket })).success, true);
+        const settled = new Promise(resolve => { const receive = raw => { if (JSON.parse(raw).type === 'agent_settled') { side.off('message', receive); resolve(); } }; side.on('message', receive); });
+        assert.equal((await side.call('prompt', { message: 'Neutral blank side request' })).success, true); await settled;
+        assert.equal(requests.length, 1); assert.doesNotMatch(JSON.stringify(requests[0]), /staffing_query|staffing_prepare_change|staffing_operation_status|staffing-management|pivane-staffing|人员调配/); stage('blank supplier checked');
+        await side.call('quit_side_chat'); side.close();
+        await gateway.staffing.disable({ requestId: 'disable', expectedRevision: (await gateway.staffing.status()).revision });
+        const disabled = await main.call('prepare_side_chat', { mode: 'context' }); assert.equal(disabled.success, false); assert.match(disabled.error, /recent.*quote.*blank/);
+    } finally { await cleanup(); }
+});

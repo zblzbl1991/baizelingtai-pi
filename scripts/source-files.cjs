@@ -5,6 +5,7 @@ const path = require('node:path');
 // Data, vendored assets and maintainer records are never discovered as source.
 const GROUPS = Object.freeze({
     server: { directory: 'server', extensions: ['.js', '.mjs', '.ts'] },
+    staffingSkills: { directory: 'server/staffing/skills', extensions: ['.md'] },
     public: { directory: 'public', extensions: ['.js', '.css', '.html'], excluded: ['vendor', 'brand', 'images', 'videos', 'audio', 'downloads', 'legacy-workspace'] },
     scripts: { directory: 'scripts', extensions: ['.cjs', '.ps1'] },
     tests: { directory: 'test', pattern: /\.test\.js$/ },

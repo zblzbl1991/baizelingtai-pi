@@ -142,7 +142,22 @@ function createPiAgentGateway(options = {}) {
     });
 
     router.use(access.middleware());
-    require('./staffing/routes').mountStaffingRoutes(router, staffing);
+    require('./staffing/routes').mountStaffingRoutes(router, staffing, { resolveSource: async (input, worker) => {
+        if (!input || typeof input.cwd !== 'string' || typeof input.sessionId !== 'string' || Object.keys(input).some(key => !['cwd', 'sessionId'].includes(key))) throw new Error('Invalid staffing source');
+        const session = await store.getSession(input.cwd, input.sessionId);
+        const { SessionManager } = await require('./pi-session-store').getSdk();
+        const manager = SessionManager.open(session.path), context = await profiles.context(manager, session.cwd);
+        const status = await staffing.status();
+        if (!context || context.profileId !== status.profileId || manager.getSessionId() !== session.id
+            || worker && (worker.disposed || worker.restarting || worker.noSession || worker.sessionPath !== session.path
+                || !worker.loadedAgentProfileConfirmed || worker.loadedAgentProfileId !== status.profileId
+                || worker.loadedStaffingEpoch !== status.epoch
+                || worker.client.env.PIVANE_PROFILE_AUTHORING_CONTEXT)) throw Object.assign(new Error('Verified dedicated staffing session required'), { status: 403 });
+        const nativePlanIds = manager.getBranch().filter(entry => entry.type === 'message' && entry.message?.role === 'toolResult'
+            && entry.message.toolName === 'staffing_prepare_change' && !entry.message.isError && entry.message.details?.pivaneStaffing?.version === 1)
+            .map(entry => entry.message.details.pivaneStaffing.plan?.id).filter(value => typeof value === 'string');
+        return { sessionId: session.id, sessionPath: fs.realpathSync.native(session.path), cwd: session.cwd, profileId: context.profileId, nativePlanIds };
+    } });
     require('./pi-update-service').mountUpdateRoutes(router, undefined, {
         maintenance, preferences,
         idle: () => !staffing.busy && !artifacts.busy && !fileRoots.jobs.size && !documents.active && !profiles.busy && !agentThreads.jobs.size && !agentThreads.catalogIndex.busy && !agentThreads.returns.busy && !agentThreads.messages.busy && !settingsService.mutating && !settingsService.loginService.busy && !nativeService.busy && !mcpSettingsService.busy && !sessionTransfer.running && !sessionMoves.running

@@ -1,6 +1,7 @@
 {
   "version": 1,
   "files": [
+    "server/staffing/skills/staffing-management/SKILL.md",
     "AGENTS.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
@@ -48,6 +49,7 @@
     "docs/SESSION_TRANSFER.md",
     "docs/SESSION_WORKFLOWS.md",
     "docs/SIDE_CHAT.md",
+    "docs/STAFFING.md",
     "docs/UPDATES.md",
     "docs/USAGE.md",
     "docs/USER_GUIDE.md",

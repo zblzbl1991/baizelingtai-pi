@@ -3,6 +3,7 @@ const { getSdk } = require('./pi-session-store');
 const { buildContextSeed, MAX_TICKET_BYTES } = require('./pi-side-context');
 const { STATUS_KEY, CONFIRM_TITLE } = require('./pi-side-tools');
 const { recordFromEntry } = require('./pi-usage-worker');
+const { isStaffingSource } = require('./staffing/runtime-scope');
 const UTC_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' });
 const ALL_DAYS = { from: '0000-01-01', to: '9999-12-31' };
 const SIDE_IDLE_MS = 12 * 60 * 60 * 1000;
@@ -367,6 +368,7 @@ class PiSideChatService {
         try {
             let runtime, prepared;
             if (!input.mode || input.mode === 'context') {
+                if (await isStaffingSource(this.store, source)) throw Object.assign(new Error('人员调配来源不能复制完整系统上下文。请选择 recent、quote 或 blank 侧聊模式。'), { code: 'STAFFING_SIDE_CONTEXT_UNAVAILABLE' });
                 const snapshot = await source.captureContext();
                 if (parent.closed || source.disposed || !isCurrent() || this.closed) throw new Error('主会话已切换，请重新打开侧聊');
                 runtime = { model: snapshot.model, thinkingLevel: snapshot.thinkingLevel, webSpeed: snapshot.speed, sessionId: snapshot.source.sessionId, sessionName: snapshot.source.name };
