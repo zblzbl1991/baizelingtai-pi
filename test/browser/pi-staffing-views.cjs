@@ -13,7 +13,8 @@ async function run(browser,width) {
     const project = {id:'A',name:'Synthetic Project',owner:'Owner',department:'A',start:'2026-11-01',end:'2026-11-05',minimum:2};
     const pagingPeople = width === 1440 ? Array.from({length:120},(_,index)=>({id:'B'+String(index).padStart(3,'0'),name:'测'.repeat(160),department:'B',direct:false})) : [];
     const initial = await service.initialize({requestId:'initial',expectedRevision:enabled.revision,historyComplete:false,projects:[project],
-        people:[{id:'D',name:'<Direct>',department:'A',direct:true},{id:'N',name:'Member',department:'A',direct:false},{id:'R',name:'Replacement',department:'A',direct:true},...pagingPeople],
+        people:[{id:'D',name:'<Direct>',department:'A',direct:true},{id:'N',name:'<Direct>',department:'A',direct:false},{id:'R',name:'Replacement',department:'A',direct:true},
+            ...['S1','S2'].map(id=>({id,name:'Replacement',department:'A',direct:true})),...pagingPeople],
         occupancies:[...['D','N'].map(personId=>({id:'O-'+personId,personId,projectId:'A',kind:'project',state:'reserved',start:project.start,end:project.end})),
             ...pagingPeople.flatMap(person=>Array.from({length:10},(_,index)=>({id:person.id+'-training-'+index,personId:person.id,kind:'training',state:'confirmed',start:'2026-11-03',end:'2026-11-03',reason:'训'.repeat(160)})))]});
     await service.confirmInitial({requestId:'review',expectedRevision:initial.revision,reviewed:true});
@@ -27,6 +28,10 @@ async function run(browser,width) {
         await page.locator('[data-staffing-view="projects"]').click();
         await page.locator('[data-staffing-project="A"]').waitFor();
         assert.match(await page.locator('[data-staffing-project="A"]').innerText(),/尚未全部正式确认/);
+        for(const id of ['D','N'])assert.ok((await page.locator('[data-staffing-project="A"]').innerText()).includes('<Direct> · '+id+' · 2026-11-01 至 2026-11-05'),'same-name project members display IDs and exact intervals');
+        await page.locator('[data-staffing-add-person="S2"]').waitFor();
+        for(const id of ['R','S1','S2'])assert.ok((await page.locator('[data-staffing-add-person="'+id+'"]').locator('..').innerText()).includes('Replacement · '+id),'same-name, same-department, same-contract candidates display distinct IDs');
+        if(process.env.PIVANE_TEST_SCREENSHOT_DIR)await page.locator('.staffing-views').screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR,'staffing-identities-'+width+'.png')});
         await page.selectOption('#staffing-change-kind','absence');
         await page.selectOption('#staffing-change-person','D');
         await page.fill('#staffing-change-start','2026-11-03');await page.fill('#staffing-change-end','2026-11-03');await page.fill('#staffing-change-reason','Temporary leave');
@@ -38,10 +43,13 @@ async function run(browser,width) {
         if(process.env.PIVANE_TEST_SCREENSHOT_DIR)await page.locator('.staffing-view-results').screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR,'staffing-project-gaps-'+width+'.png')});
         assert.equal(await page.locator('#staffing-tab img').count(),0);
         await page.selectOption('#staffing-change-kind','replace');
+        for(const id of ['R','S1','S2'])assert.ok((await page.locator('#staffing-change-replacement option[value="'+id+'"]').textContent()).includes('Replacement · '+id),'replacement option visibly identifies same-name people');
         await page.selectOption('#staffing-change-project','A');await page.selectOption('#staffing-change-occupancy','O-D');await page.selectOption('#staffing-change-replacement','R');
         await page.fill('#staffing-change-start','2026-11-03');await page.fill('#staffing-change-end','2026-11-03');await page.fill('#staffing-change-reason','Cover leave');
         await page.click('#staffing-prepare-adjustment');await page.locator('[data-staffing-action="apply"]').click();
         await page.locator('[data-staffing-project="A"]').filter({hasText:'人数和直签已达标'}).waitFor();
+        for(const interval of ['2026-11-01 至 2026-11-02','2026-11-04 至 2026-11-05'])assert.ok((await page.locator('[data-staffing-project="A"]').innerText()).includes('<Direct> · D · '+interval),'split assignments retain the same person ID and distinguish their date intervals');
+        if(process.env.PIVANE_TEST_SCREENSHOT_DIR)await page.locator('[data-staffing-project="A"]').screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR,'staffing-interval-identities-'+width+'.png')});
         await page.selectOption('#staffing-change-kind','formalize');await page.click('#staffing-prepare-adjustment');await page.locator('[data-staffing-action="apply"]').click();
         await page.locator('[data-staffing-project="A"]').filter({hasText:'全部人员已正式确认'}).waitFor();
         await page.locator('[data-staffing-view="availability"]').click();await page.fill('#staffing-view-start','2026-11-06');await page.fill('#staffing-view-end','2026-11-06');await page.click('#staffing-view-refresh');
