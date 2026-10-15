@@ -1,6 +1,6 @@
 # 白泽灵台内置能力包
 
-当前源码随应用交付子 Agent、档案记忆、网页搜索与阅读、桌面操作、guizang-ppt 演示文稿技能和公文生成，由白泽灵台验证后统一更新。精确组件版本以 `server/pi-bundled-capabilities.js` 和 `vendor/manifest.json` 为准，Pi 版本以根 package.json 为准。已发布归档的依赖与验收仍以其版本说明为准，源码完成不表示运行实例已经更新。
+当前源码随应用交付子 Agent、档案记忆、网页搜索与阅读、桌面操作、guizang-ppt 演示文稿技能、文档一致性审查、公文生成和 OfficeCLI 编辑，由白泽灵台验证后统一更新。精确组件版本以 `server/pi-bundled-capabilities.js`、`vendor/manifest.json` 和 `config/officecli.json` 为准，Pi 版本以根 package.json 为准。已发布归档的依赖与验收仍以其版本说明为准，源码完成不表示运行实例已经更新。
 
 ## 网页、桌面与演示文稿
 
@@ -15,6 +15,16 @@ guizang-ppt 的独立源码、模板、脚本和许可证完整保留在 `vendor
 ## 公文生成
 
 公文能力由独立 `pivane-gongwen` 包注册 `gongwen` 技能与 `generate_gongwen`、`revise_gongwen` 原生工具，默认可用，支持分别启停与重载。固定 MIT 上游 gongwen-kit 的原始目录及逐文件清单，运行依赖由根 lockfile 锁定；在无凭据独立进程生成、检查和另存带修订／批注的已有公文，原件与旧版本保留，文件与报告通过原生交付快照访问。字体不捆绑，实际版面核验与规则检查分开。用法、草稿状态与边界见[公文生成](GONGWEN.md)。
+
+## OfficeCLI 编辑
+
+内置 `pivane-officecli` 资源包，使用固定版本原生程序与 Pi 官方 MCP，注册 `office-documents` 技能、附件工作副本工具和 OfficeCLI 文档操作。程序随应用安装／归档准备，固定来源及 SHA256 由 `config/officecli.json` 管理；运行时无自动更新，不修改用户 MCP 配置。纯文本模型可以检查内容和结构，截图检查按能力启用；用法、部署位置、平台验收和失败边界见[Office 文档](OFFICE_DOCUMENTS.md)。
+
+## 文档一致性审查
+
+内置原创 `document-consistency-review` Skill，由 `pivane-document-review` 资源包注册，按应用 ISC 许可提供。先输出有位置、原文依据和修改建议的问题清单，用户在聊天确认报告和问题编号后再修改；修改前复核文件版本，默认保留原件并交付修订副本。它复用当前模型、办公附件读取、原生文件工具、进度和交付物，不增加专用扩展工具、后台队列或确认票据。Office 原件编辑依赖当前实际可用能力，详见[文档一致性审查](DOCUMENT_REVIEW.md)。
+
+此项无需另行安装；在“扩展 → 已安装”的技能资源中启停，保存后在空闲会话重载或重开运行实例。不同于发现页的第三方精选，此资源不要求访问外部仓库。
 
 ## 安装与配置
 

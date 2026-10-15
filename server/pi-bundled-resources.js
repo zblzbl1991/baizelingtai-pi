@@ -40,7 +40,7 @@ function identify(source, base) {
     if (typeof source !== 'string') return null;
     for (const entry of catalog) {
         if (source === `pivane:${entry.name}` || source === `npm:${entry.name}` || source.startsWith(`npm:${entry.name}@`)
-            || new RegExp(`github\\.com[/:]${entry.repository.replace('/', '\\/')}(?:\\.git)?(?:@[^\\s]+)?/?$`).test(source)) return entry;
+            || (entry.repository && new RegExp(`github\\.com[/:]${entry.repository.replace('/', '\\/')}(?:\\.git)?(?:@[^\\s]+)?/?$`).test(source))) return entry;
     }
     if (/^(?:npm:|git:|https?:|ssh:)/.test(source)) return null;
     return packageAt(path.resolve(base, source.replace(/^~(?=$|[/\\])/, os.homedir())))?.entry || null;

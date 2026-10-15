@@ -22,6 +22,8 @@ flowchart TD
 
 ## 职责和依赖方向
 
+- Office 编辑由 `pi-officecli-extension` 注册 Pi 原生 MCP 服务器及工作副本工具；`officecli/documents` 复用项目范围、目录身份、私有文件与原字节传输，原生分支记录副本索引。`mcp-host` 校验固定程序、过滤其环境并转发 stdio，不实现另一个 MCP 客户端；Pi 拥有连接及会话生命周期。文档语义由当前 Agent 与 Skill 决定，批准来自聊天，原件保持不可变。程序清单、安装及发行共用 `officecli/inventory`，详见 [Office 文档](../OFFICE_DOCUMENTS.md)。
+
 - `server.js` 装配访问验证、网关、媒体适配与静态资源，再监听 HTTP。旧媒体执行器仍在此入口，修改这些旧适配器时逐项迁移职责，不向入口添加新的业务存储。
 - `pi-agent-routes` 负责网关装配、项目/会话 HTTP 和连接协议。`server/routes/settings`、`server/routes/media` 只适配 HTTP；配置锁、修订、票据和持久化仍由服务拥有。
 - `PiAgentSupervisor` 拥有 worker 注册表、启动互斥、重开和回收。删除通过 `withSessionRemoval` 在 await 前预占规范会话路径，等待已有启动，在 worker 独占区停止并执行文件删除；删除未结束前禁止 `getWorker` 重建 worker，并计入全局停机等待。路由使用其生命周期接口，不复制 worker 内部字段清单。
@@ -66,6 +68,8 @@ Pi 1.1.0 原生 MCP/Codemode 经 `pi-native-mcp.mjs` 和受管 ResourceLoader �
 - 工具来源是调用时捕获的有界展示元数据，绑定调用 ID/工具名；旧记录不按当前清单追认来源，也不把来源标记当成权限验证。
 
 相关契约：[辅助模型](../AUXILIARY_MODELS.md)、[记忆适配](../PROFILE_MEMORY.md)、[任务线程](../AGENT_THREADS.md)、[侧聊](../SIDE_CHAT.md)、[原生设置](../NATIVE_SETTINGS.md)。
+
+文档一致性审查以独立 `pivane-document-review` 包提供原生 Skill，复用受管资源选择、启停和重载。当前模型按技能约定读取材料、报告原文证据与修改方案，等待聊天批准后使用已有工具生成修订副本；原生会话保留报告与用户确认，任务文件和交付快照只属于成果。没有新增审查数据库、worker 工作类型或执行票据；Skill 的确认步骤是行为约定，不是服务端权限校验。Office/PDF 的只读提取与实际编辑能力分开，见[文档一致性审查](../DOCUMENT_REVIEW.md)。
 
 公文生成通过 `pivane-gongwen` 登记 Skill 与受管原生工具。`server/gongwen` 将结构化输入、上游版式构件、检查和规范修正放在无凭据独立进程中；生成器不执行模型提供的代码，也不直接载入上游 CLI。最终 DOCX 先经有界 ZIP/XML 与结构校验，再检查体例、数字和文风；已验证字节作为检查故障时的草稿检查点。父侧占位在 await 前登记，取消／超时等待真实退出。项目输出目录持有完整目录／文件描述符证明并独占写入；完整请求可复用，残缺意图不重放。目录内数据属于任务成果，原生 `pivane-deliverable` 引用仍由唯一 worker 追加，未新增会话事实库、worker 工作类型或 HTTP 生成接口。
 

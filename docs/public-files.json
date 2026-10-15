@@ -83,6 +83,10 @@
     "docs/tts-providers/qwen3-gpu.md",
     "native/README.md",
     "pi-packages/media-workbench/skills/media-workbench/SKILL.md",
-    "pi-packages/gongwen/skills/gongwen/SKILL.md"
+    "pi-packages/gongwen/skills/gongwen/SKILL.md",
+    "docs/DOCUMENT_REVIEW.md",
+    "docs/OFFICE_DOCUMENTS.md",
+    "pi-packages/officecli/skills/office-documents/SKILL.md",
+    "pi-packages/document-review/skills/document-consistency-review/SKILL.md"
   ]
 }

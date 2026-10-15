@@ -119,7 +119,13 @@ function detectDocument(bytes, format) {
     const zip = officeZip(bytes), types = getXml(zip, '[Content_Types].xml');
     const main = { docx: 'word/document.xml', xlsx: 'xl/workbook.xml', pptx: 'ppt/presentation.xml' }[format];
     const expected = { docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml' }[format];
-    if (!main || !children(types, 'Override').some(item => item.attrs.PartName === '/' + main && item.attrs.ContentType === expected)) throw bad('Office 内容与扩展名不符或为启用宏的文件');
+    // OPC permits a main XML part to use Default's extension mapping. Open XML
+    // SDK writers use this valid form when all other XML parts have overrides.
+    const overrides = children(types, 'Override').filter(item => item.attrs.PartName === '/' + main);
+    const defaults = children(types, 'Default').filter(item => String(item.attrs.Extension || '').toLowerCase() === 'xml');
+    if (overrides.length > 1 || defaults.length > 1) throw bad('Office 主内容类型声明重复');
+    const effective = overrides[0]?.attrs.ContentType ?? defaults[0]?.attrs.ContentType;
+    if (!main || effective !== expected) throw bad('Office 内容与扩展名不符或为启用宏的文件');
     if (zip.names.some(name => /(?:^|\/)vbaProject\.bin$/i.test(name)) || children(types).some(item => /vbaProject|macroEnabled/i.test(item.attrs.ContentType || ''))) throw bad('暂不支持包含宏的 Office 文件');
     getXml(zip, main); return zip;
 }

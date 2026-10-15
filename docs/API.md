@@ -26,6 +26,14 @@ Windows 托盘与 `scripts/start-desktop.cjs` 使用继承的 stdin/stdout LF �
 
 工具结果的可选 `details.pi5ToolProvenance` 包含 `{version:1,toolName,toolCallId,source?:{source,path,scope,origin},skill?:{name,path}}`，由受管 worker 的调用前元数据生成，随原生 toolResult 和原有 WS 工具结果传递。缺失即未知，不通过设置清单补填；前端核对名称与调用 ID，仅作来源显示。扩展助手包确认取消时提供 `details.pi5PackageOperation.status='cancelled'`。不新增 REST 或改动原始正文、错误和用量，详见[执行来源](NATIVE_SETTINGS.md#执行记录中的技能与扩展来源)。
 
+## Office 工作副本与 MCP
+
+内置 `pivane-officecli` 扩展在启用 Pi 原生 MCP 的持久受管 RPC 会话注册 `prepare_office_document {id,requestId}`。id 为当前分支已发送 DOCX/XLSX/PPTX 附件标识，原件最大 16 MiB；requestId 沿用 1–160 字符请求标识格式。不接受原件路径。工具 details.pivaneOffice 为 `{version:1,id,sessionId,requestId,source,path,revision,size,reused}`；source 是原附件元数据，path 是项目工作副本实际路径，revision/size 是本次读取时副本的状态，不是之后所有编辑的预期版本。
+
+同一规范项目／原生会话／requestId 复用当前副本且不重置修改；原件冲突为 OFFICE_CONFLICT，准备残缺为 OFFICE_INCOMPLETE，并发／关闭为 OFFICE_BUSY，无效参数为 OFFICE_INPUT。来源资格和变化沿用 DOCUMENT_SCOPE／DOCUMENT_CONTEXT／DOCUMENT_CHANGED；工作文件沿用现有描述符检查及文件错误。原生 custom entry `pivane-office-document` 只保存副本索引，分支及会话事实仍归 SessionManager。
+
+扩展通过 `registerMcpServer` 注册运行时 `pivane-officecli` stdio 服务器，默认 codemode 暴露，原始工具名为 officecli；command 必须为字符串数组，文档命令由同一 native tool_call hook 检查，嵌套 Codemode 调用也经过该 hook。程序连接及清理由 Pi 官方 MCP 管理，不增加 HTTP 编辑接口或第二个 MCP 客户端。原件准备不是修改授权，聊天确认及可选视觉检查见[Office 文档](OFFICE_DOCUMENTS.md)。
+
 ## 公文生成工具
 
 内置资源 `pivane-gongwen` 在持久受管 RPC 会话注册 `generate_gongwen`，没有独立 HTTP 生成接口。输入为结构化 JSON：必填 `requestId/kind/title/body`；kind 为 `notice|report|request|letter|minutes|rules|enterprise`，正文构件为 `paragraph {text}`、`heading {level:1..4,text}`、`table {head,rows,widths?,caption?,numeric?}`。数字列为 `{column:1-based,kind:money|integer|decimal|percent,complete?:boolean}`。其他字段覆盖 `recipient/unit/date/redhead/agency/docNo/signers/copyNo/secret/urgency/preprinted/mark/issue/attendees/copyTo/issuer/printDate/note/sealed/attachments/missing`，精确范围由工具 schema 给出；未知字段和文件路径／代码输入拒绝。
@@ -38,7 +46,7 @@ Windows 托盘与 `scripts/start-desktop.cjs` 使用继承的 stdin/stdout LF �
 
 ## 办公文档附件（documentUploads）
 
-受管 worker 可通过既有私有 `POST /uploads/read {id,action:"source"}` 取得 `{reference,encoding:"base64",base64}`，供公文工具内部传输原字节。此动作仅接受 id/action，须为当前分支已发送的 DOCX 且不超过 16 MiB；工作台访问身份不能代替绑定 worker。原字节不进入模型工具输出；授权、描述符核验、变更复查、document-read 生命周期及 documentOperations 沿用附件链路。其他读取动作和 `read_document` 参数不变。
+受管 worker 可通过既有私有 `POST /uploads/read {id,action:"source"}` 取得 `{reference,encoding:"base64",base64}`，供公文与 Office 工作副本工具内部传输原字节。此动作仅接受 id/action，须为当前分支已发送的 DOCX、XLSX 或 PPTX 且不超过 16 MiB，PDF 拒绝；公文工具仍只接受 DOCX。工作台访问身份不能代替绑定 worker。原字节不进入模型工具输出；授权、描述符核验、变更复查、document-read 生命周期及 documentOperations 沿用附件链路。其他读取动作和 `read_document` 参数不变。
 
 状态 `GET /api/pi/status` 返回 `documentUploads` 和 `documentUploadLimits:{fileBytes:20971520,files:5}`；原生描述符组件不可用时能力为 false，接口拒绝。格式、存储与解析预算见[办公附件](COMPOSER_TOOLS.md#上传办公文档与-pdf)。
 

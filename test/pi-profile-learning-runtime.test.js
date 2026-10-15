@@ -380,7 +380,8 @@ test('real ModelRuntime calls only a local synthetic text provider with no tools
     f.append('请记住以后使用新清单。');
     await f.service.register(f.session);
     await waitFor(async () => (await f.service.snapshot(profileId)).recentRuns.length === 1);
-    assert.equal(received.length, 1);
+    const settled = (await f.service.snapshot(profileId)).recentRuns[0];
+    assert.equal(received.length, 1, JSON.stringify({ status: settled.status, error: settled.error, reason: settled.reason }));
     assert.ok(!received[0].tools?.length);
     assert.equal(f.mutations.length, 1);
     assert.equal((await f.service.snapshot(profileId)).recentRuns[0].status, 'completed');

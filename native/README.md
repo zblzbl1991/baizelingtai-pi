@@ -8,6 +8,10 @@
 
 白泽灵台's native artifacts ship with source and SHA256 build manifests, so normal installation does not compile these components. SQLite's separate platform requirements are documented under [bundled capabilities](../docs/BUNDLED_CAPABILITIES.md). The loaders check binary/source hashes; missing or mismatched modules fail closed. The Windows module is also required for private filesystem writes, so a damaged component can prevent configuration initialization.
 
+## OfficeCLI
+
+The third-party OfficeCLI program is pinned separately in `config/officecli.json`, including its official source commit and platform SHA256 values. `scripts/install-officecli.cjs` prepares only the host binary under `native/officecli/bin/` without a global install; archive discovery and runtime use the same verified inventory. The Apache license, NOTICE and dependency notices remain under `native/officecli/`. Pi owns the stdio connection; the host launcher filters the program environment and disables upstream updates/residents. See [Office documents](../docs/OFFICE_DOCUMENTS.md) for installation, supported targets and the Windows-only execution validation scope. This does not change the native filesystem backends below.
+
 ## macOS
 
 `pi-darwin-fd.node` is a universal arm64/x86_64 bundle. The module only queries an existing fd; it does not open paths or write files. Caller policy, lifetime and before/after checks remain in JavaScript.

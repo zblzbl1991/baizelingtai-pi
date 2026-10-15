@@ -4,6 +4,22 @@ const { parseDocument, officeZip, xml } = require('../server/pi-document-parser'
 const { DocumentParserPool } = require('../server/pi-document-pool');
 const { zip, docxFiles, xlsxFiles, pptxFiles, pdfBytes } = require('./document-fixtures.cjs');
 
+test('OPC Default content types identify SDK-produced main parts, with override precedence and macro/duplicate rejection', async () => {
+    for (const [format, factory] of [['docx', docxFiles], ['xlsx', xlsxFiles], ['pptx', pptxFiles]]) {
+        const files = factory(), original = files['[Content_Types].xml'];
+        const type = /ContentType="([^"]+)"/.exec(original)[1];
+        files['[Content_Types].xml'] = original.replace(/<Override\b[^>]+\/>/, `<Default Extension="xml" ContentType="${type}"/>`);
+        assert.deepEqual(await parseDocument(zip(files), format, {}, true), { format, valid: true });
+        const validDefault = files['[Content_Types].xml'];
+        files['[Content_Types].xml'] = validDefault.replace('</Types>', `<Default Extension="XML" ContentType="${type}"/></Types>`);
+        await assert.rejects(parseDocument(zip(files), format, {}, true), /重复/);
+        files['[Content_Types].xml'] = validDefault.replace(type, 'application/vnd.ms-office.macroEnabled.main+xml');
+        await assert.rejects(parseDocument(zip(files), format, {}, true), /宏|扩展名/);
+        files['[Content_Types].xml'] = original.replace('</Types>', '<Default Extension="xml" ContentType="application/octet-stream"/></Types>');
+        assert.deepEqual(await parseDocument(zip(files), format, {}, true), { format, valid: true });
+    }
+});
+
 test('Word reads Chinese runs, paragraph breaks and table rows in bounded ranges', async () => {
     const bytes = zip(docxFiles());
     const overview = await parseDocument(bytes, 'docx'); assert.equal(overview.total, 3);

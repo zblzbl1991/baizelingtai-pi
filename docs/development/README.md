@@ -17,6 +17,7 @@
 | 候选包、发布与恢复演练 | [发布流程](RELEASING.md) |
 | 字段和协议 | [API](../API.md)、对应功能文档（索引见 [文档目录](../README.md)） |
 | 平台原生组件 | [native](../../native/README.md) |
+| OfficeCLI 程序、原生 MCP、Office 工作副本与验收 | [Office 文档](../OFFICE_DOCUMENTS.md)、[模块导航](MODULES.md) |
 | guizang-ppt 与内网 SkillHub 来源、CLI 和接口依据 | [SkillHub 接入核查](research/skillhub-guizang-ppt.md) |
 | gongwen-kit 公文生成、机检与修订的接入建议 | [gongwen-kit 接入评估](research/gongwen-kit.md) |
 
