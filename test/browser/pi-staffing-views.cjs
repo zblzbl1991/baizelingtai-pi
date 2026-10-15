@@ -29,8 +29,11 @@ async function run(browser,width) {
         await page.selectOption('#staffing-change-person','D');
         await page.fill('#staffing-change-start','2026-11-03');await page.fill('#staffing-change-end','2026-11-03');await page.fill('#staffing-change-reason','Temporary leave');
         await page.click('#staffing-prepare-adjustment');
+        await page.locator('[data-staffing-action="apply"]').waitFor();
+        if(process.env.PIVANE_TEST_SCREENSHOT_DIR){fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR,{recursive:true});await page.locator('.staffing-plan-card').screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR,'staffing-change-'+width+'.png')});}
         await page.locator('[data-staffing-action="apply"]').click();
         await page.locator('[data-staffing-project="A"]').filter({hasText:'缺直签'}).waitFor();
+        if(process.env.PIVANE_TEST_SCREENSHOT_DIR)await page.locator('.staffing-view-results').screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR,'staffing-project-gaps-'+width+'.png')});
         assert.equal(await page.locator('#staffing-tab img').count(),0);
         await page.selectOption('#staffing-change-kind','replace');
         await page.selectOption('#staffing-change-project','A');await page.selectOption('#staffing-change-occupancy','O-D');await page.selectOption('#staffing-change-replacement','R');
