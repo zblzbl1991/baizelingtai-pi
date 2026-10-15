@@ -142,7 +142,7 @@ function createPiAgentGateway(options = {}) {
     });
 
     router.use(access.middleware());
-    require('./staffing/routes').mountStaffingRoutes(router, staffing, { resolveSource: async (input, worker) => {
+    const resolveStaffingSource = async (input, worker) => {
         if (!input || typeof input.cwd !== 'string' || typeof input.sessionId !== 'string' || Object.keys(input).some(key => !['cwd', 'sessionId'].includes(key))) throw new Error('Invalid staffing source');
         const session = await store.getSession(input.cwd, input.sessionId);
         const { SessionManager } = await require('./pi-session-store').getSdk();
@@ -154,13 +154,14 @@ function createPiAgentGateway(options = {}) {
                 || worker.loadedStaffingEpoch !== status.epoch
                 || worker.client.env.PIVANE_PROFILE_AUTHORING_CONTEXT)) throw Object.assign(new Error('Verified dedicated staffing session required'), { status: 403 });
         const nativePlanIds = manager.getBranch().filter(entry => entry.type === 'message' && entry.message?.role === 'toolResult'
-            && entry.message.toolName === 'staffing_prepare_change' && !entry.message.isError && entry.message.details?.pivaneStaffing?.version === 1)
+            && ['staffing_prepare_change', 'staffing_prepare_import'].includes(entry.message.toolName) && !entry.message.isError && entry.message.details?.pivaneStaffing?.version === 1)
             .map(entry => entry.message.details.pivaneStaffing.plan?.id).filter(value => typeof value === 'string');
         return { sessionId: session.id, sessionPath: fs.realpathSync.native(session.path), cwd: session.cwd, profileId: context.profileId, nativePlanIds };
-    } });
+    };
+    require('./staffing/routes').mountStaffingRoutes(router, staffing, { resolveSource: resolveStaffingSource });
     require('./pi-update-service').mountUpdateRoutes(router, undefined, {
         maintenance, preferences,
-        idle: () => !staffing.busy && !artifacts.busy && !fileRoots.jobs.size && !documents.active && !profiles.busy && !agentThreads.jobs.size && !agentThreads.catalogIndex.busy && !agentThreads.returns.busy && !agentThreads.messages.busy && !settingsService.mutating && !settingsService.loginService.busy && !nativeService.busy && !mcpSettingsService.busy && !sessionTransfer.running && !sessionMoves.running
+        idle: () => !staffing.busy && !staffingExcel.busy && !artifacts.busy && !fileRoots.jobs.size && !documents.active && !profiles.busy && !agentThreads.jobs.size && !agentThreads.catalogIndex.busy && !agentThreads.returns.busy && !agentThreads.messages.busy && !settingsService.mutating && !settingsService.loginService.busy && !nativeService.busy && !mcpSettingsService.busy && !sessionTransfer.running && !sessionMoves.running
             && !titles.jobs.size && !titles.savingModel && !transcription.active && !learning?.busy && !cron.busy && !deferred.running && !sideChat.connections.size && !sideChat.tickets.size
             && ![...sideChat.parents.values()].some(parent => parent.preparing) && supervisor.isIdle()
             && !options.mediaLabService?.inFlight && !options.mediaLabService?.chatRequests?.preparing && !options.mediaLabService?.chatRequests?.waiting?.length && !options.mediaLabService?.providerService?.busy && !options.mediaLabService?.providerService?.active,
@@ -170,6 +171,14 @@ function createPiAgentGateway(options = {}) {
     require('./pi-file-roots').mountFileRoots(router, fileRoots);
     const artifacts = require('./pi-artifacts-routes').mountArtifacts(router, { store, supervisor, preferences, mediaRoot: options.artifactMediaRoot,
         isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running) || Boolean(sessionTransfer.running) });
+    const staffingExcel = new (require('./staffing/excel-service').StaffingExcelService)({ staffing, artifacts, documents,
+        authorizeSource: async source => {
+            if (source.kind === 'page') { await staffing.requireSource(source, { phase: 'initial' }); return; }
+            const current = await resolveStaffingSource({ cwd: source.cwd, sessionId: source.sessionId });
+            if (['cwd', 'sessionId', 'sessionPath', 'profileId'].some(key => current[key] !== source[key])) throw Object.assign(new Error('Staffing generated source identity changed'), { status: 403 });
+            artifacts.qualify({ cwd: source.cwd });
+        } });
+    require('./staffing/excel-routes').mountStaffingExcelRoutes(router, staffingExcel, { resolveSource: resolveStaffingSource });
     require('./pi-document-uploads').mountDocumentUploads(router, documents);
     notifications.mount(router);
     require('./pi-extension-assistant').mountExtensionAssistant(router, { store, supervisor, resourceService, settingsService, access });
@@ -462,7 +471,7 @@ function createPiAgentGateway(options = {}) {
 
     router.get('/activity', (req, res) => {
         res.set('Cache-Control', 'no-store');
-        res.json({ staffingBusy: staffing.busy, cronBusy: cron.busy, agentThreadLaunches: agentThreads.jobs.size, agentTaskIndexing: agentThreads.catalogIndex.busy, agentTaskReturns: agentThreads.returns.busy, agentMessages: agentThreads.messages.busy, learningBusy: learning.busy, learningRuns: learning.active.size, archives: archives(), titleRevision: titles.revisionId, titleGenerations: titles.jobs.size, transcriptionActive: transcription.active, documentOperations: documents.active, artifactOperations: artifacts.jobs.size, runtimes: supervisor.getActivity(), profilesBusy: profiles.busy, nativeSettingsBusy: nativeService.busy || settingsService.mutating || Boolean(titles.savingModel) || auxiliaryModels.busy, sessionTransfers: sessionTransfer.running, sessionMoves: sessionMoves.running, pinnedProjects: pinnedProjects(), hiddenProjects: hiddenProjects(), replyNotices: replyNotices(), deferred: deferred.summary() });
+        res.json({ staffingBusy: staffing.busy || staffingExcel.busy, cronBusy: cron.busy, agentThreadLaunches: agentThreads.jobs.size, agentTaskIndexing: agentThreads.catalogIndex.busy, agentTaskReturns: agentThreads.returns.busy, agentMessages: agentThreads.messages.busy, learningBusy: learning.busy, learningRuns: learning.active.size, archives: archives(), titleRevision: titles.revisionId, titleGenerations: titles.jobs.size, transcriptionActive: transcription.active, documentOperations: documents.active, artifactOperations: artifacts.jobs.size, runtimes: supervisor.getActivity(), profilesBusy: profiles.busy, nativeSettingsBusy: nativeService.busy || settingsService.mutating || Boolean(titles.savingModel) || auxiliaryModels.busy, sessionTransfers: sessionTransfer.running, sessionMoves: sessionMoves.running, pinnedProjects: pinnedProjects(), hiddenProjects: hiddenProjects(), replyNotices: replyNotices(), deferred: deferred.summary() });
     });
 
     router.patch('/projects/pin', (req, res) => {
@@ -608,7 +617,7 @@ function createPiAgentGateway(options = {}) {
     const sessionTransfer = require('./pi-session-transfer').mountSessionTransfer(router, { store, supervisor, preferences });
     const sessionMoves = require('./pi-session-moves').mountSessionMoves(router, { store, supervisor, preferences, usage, deferred, cron, sideChat,
         isSuspended: () => maintenance.locked,
-        busy: () => Boolean(staffing.busy || artifacts.busy || documents.active || agentThreads.jobs.size || agentThreads.messages.busy || agentThreads.returns.busy
+        busy: () => Boolean(staffing.busy || staffingExcel.busy || artifacts.busy || documents.active || agentThreads.jobs.size || agentThreads.messages.busy || agentThreads.returns.busy
             || titles.jobs.size || cron.busy || deferred.running || profiles.busy || sessionTransfer.running
             || [...sideChat.parents.values()].some(parent => parent.preparing)) });
 
@@ -1062,7 +1071,7 @@ function createPiAgentGateway(options = {}) {
     return { mount, attachWebSocket, dispose: async () => {
         const stoppingStaffing = staffing.dispose();
         const stoppingFileRoots = fileRoots.dispose();
-        const stoppingArtifacts = artifacts.dispose();
+        const stoppingExcel = staffingExcel.dispose();
         sessionSearch.dispose();
         if (!options.accessService) access.dispose();
         await settingsService.loginService.dispose();
@@ -1075,7 +1084,8 @@ function createPiAgentGateway(options = {}) {
         const stoppingMoves = sessionMoves.dispose();
         const stoppingThreads = agentThreads.dispose();
         const stoppingSide = sideChat.dispose();
-        await stoppingArtifacts; // Finish native source reads before shutting down their workers.
+        await Promise.all([stoppingStaffing, stoppingExcel]); // Export dependencies remain live until reserved operations finish.
+        await artifacts.dispose();
         await stoppingSide; // Keep side workers alive until their in-memory usage is saved.
         await supervisor.dispose();
         await learning.flushRegistrations();
@@ -1086,7 +1096,7 @@ function createPiAgentGateway(options = {}) {
         await stoppingThreads;
         await Promise.all([stoppingFileRoots, stoppingDeferred, stoppingTitles, stoppingAuxiliaryModels, stoppingMoves, stoppingTranscription, stoppingDocuments]);
         await cron.dispose();
-    }, store, supervisor, cron, deferred, sideChat, titles, auxiliaryModels, learning, knowledgeService, agentThreads, sessionMoves, transcription, documents, artifacts, staffing };
+    }, store, supervisor, cron, deferred, sideChat, titles, auxiliaryModels, learning, knowledgeService, agentThreads, sessionMoves, transcription, documents, artifacts, staffing, staffingExcel };
 }
 
 module.exports = { createPiAgentGateway };

@@ -9839,5 +9839,33 @@
         ["培训", "Training"],
         ["已释放", "Released"]
     );
+    rows.push(
+        ["Excel 导入差异", "Excel import changes"],
+        ["变更记录", "Changed records"],
+        ["导入已保存。", "Import saved."],
+        ["确认导入", "Confirm import"],
+        ["结果待核对。不要重新提交。", "Outcome needs review. Do not resubmit."],
+        ["此处显示部分差异。请同时核对上传的完整 Excel。", "This preview shows some changes. Review the complete uploaded Excel file as well."],
+        ["方案已失效。请重新上传或准备差异。", "The plan is stale. Upload or prepare the changes again."],
+        ["Excel 台账与成果", "Excel ledger and artifacts"],
+        ["下载合成示例模板", "Download synthetic example template"],
+        ["选择 Excel 台账", "Select Excel ledger"],
+        ["检查 Excel 差异", "Check Excel changes"],
+        ["导出并保存到成果", "Export and save to artifacts"],
+        ["导出状态", "Export status"],
+        ["已生成", "Generated"],
+        ["可读取，尚未保存成果", "Available; not independently saved"],
+        ["已保存到成果", "Saved to artifacts"],
+        ["结果待核对", "Outcome needs review"],
+        ["打开成果中心", "Open artifacts"],
+        ["下载 Excel", "Download Excel"],
+        ["高级台账输入", "Advanced ledger input"],
+        ["历史完整性", "History completeness"],
+        ["完整", "Complete"],
+        ["不完整", "Incomplete"],
+        ["文件已上传。请重新选择同一文件并检查差异。", "File uploaded. Select the same file and inspect the changes."],
+        ["Excel 文件不得超过 20 MiB。", "Excel files must not exceed 20 MiB."],
+        ["请核对具体差异，再确认导入。", "Review the exact changes, then confirm the import."]
+    );
     globalThis.PiI18nCatalog = Object.freeze(rows.map(row => Object.freeze(row)));
 })();

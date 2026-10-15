@@ -78,3 +78,32 @@ Skill 索引与工具定义只加载到已验证的专用原生会话。普通�
 聊天来源由实际原生 SessionManager 核对，聊天方案必须在当前原生分支中有工具结果引用。页面方案只由通过工作台认证的页面入口建立，worker 不能自报页面身份。私有 worker 请求使用当前受管 worker 的私有认证，验证档案和已加载 epoch；此认证不能调用页面确认接口。不要在提示词、客户端存储或日志中放置该凭据。
 
 台账为受保护的身份私有 JSON 文件，最大 8 MiB；人员及项目各最多 5,000 条，占用最多 20,000 条，操作及方案各最多 10,000 条，历史最多 20,000 条。超限明确失败，不把截断结果当作完整台账。日常备份沿用身份目录的既有备份边界。
+
+## Excel 导入与成果
+
+启用后可以下载合成示例 XLSX。标准文件包含人员清单、项目需求、人员安排、其他占用、项目检查和导出说明六张工作表。首行为稳定字段名；人员、项目和占用使用明确 ID，重名不合并。日期填写 `YYYY-MM-DD` 文本，直签填写 `true/false`。项目生命周期使用 `lifecycleState` 和 `lifecycleEffectiveDate`，释放后的过去有效记录和取消记录保留。
+
+选择 XLSX 后点击“检查 Excel 差异”。页面展示新增和修改、原件版本及变更数量；大批量仅在卡片显示部分记录，需同时核对完整原件。点击“确认导入”才提交。首次导入完成后仍须核对初始台账。后续导入按 ID 合并，不因文件缺行删除记录，不隐式恢复已释放人员或重新开放已关闭项目；跨事业部新安排须使用明确允许借人的安排方案。
+
+解析在受限独立进程完成。原件最大 20 MiB；宏、公式、外部关系和非标准日期会被拒绝，不执行公式或使用缓存结果替代事实。全量解析超预算会明确失败，不会仅导入前 200 行。导入原件与报告分别最多占用 256 MiB 私密存储，并有条目上限；台账仍受自身 8 MiB 限制。
+
+就绪后可点击“导出并保存到成果”，或明确要求专用智能体导出。XLSX 固定同一台账版本，标明生成时间和版本，文字按字符串写入。原件最大 16 MiB，单个 XML 部分最大 8 MiB。返回 `generated` 仅表示已生成，`available` 表示已登记可核验的生成来源，`saved` 才表示成果库已有独立副本。成果保存失败不撤回人员安排，也不报告已保存。生成来源使用服务端导出操作证明，不伪造原生交付或会话记录。已保存副本在删除来源聊天或停用能力后仍可使用。
+
+新增接口（以下仍以 `/api/pi/staffing` 为前缀）：
+
+| 路径 | 用途 |
+|---|---|
+| `GET /excel/template` | 下载合成示例模板 |
+| `POST /excel/uploads?requestId=…` | 页面上传 XLSX，`application/octet-stream` |
+| `GET /excel/uploads/:requestId` | 核对原上传结果，不重放 |
+| `POST /excel/import` | `{requestId,expectedRevision,uploadId}` 准备差异 |
+| `POST /commit` | `action:apply-import`，页面来源选择器为 `source:{kind:"page"}` |
+| `POST /excel/export` | `{requestId,expectedRevision}` 导出并保存成果 |
+| `GET /excel/operations/:requestId` | 核对原导出阶段、哈希和成果结果 |
+| `GET /excel/exports/:exportId` | 经过原生成来源校验后下载固定报告 |
+| `POST /agent/import` | 私有工具用 `attachmentId` 准备标准 XLSX 差异 |
+| `POST /agent/export` | 私有工具按需导出 |
+| `POST /agent/export-status` | 私有工具核对原导出结果 |
+| `POST /agent/ledger-status` | 私有工具读取当前版本和数量，供导入导出使用 |
+
+页面来源由服务器构造；页面不能提交档案 ID 冒用专用 worker。聊天导入仍需要当前原生分支中的真实工具结果引用。导出结果不确定时保留原操作编号并查询，不自动创建新导出。Excel 是当前业务快照，完整操作历史仍以台账和备份为准。

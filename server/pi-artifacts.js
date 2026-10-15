@@ -25,6 +25,7 @@ class ArtifactsService {
         this.library = new (require('./pi-artifacts-library').ArtifactLibrary)({ directory: libraryRoot });
         this.management = new (require('./pi-artifacts-management').ArtifactManagement)(this);
         this.snapshots = new Map(); this.locators = new Map(); this.jobs = new Set(); this.stopping = false;
+        this.staffingSource = null;
         if (mediaRoot) this.mediaRoot = path.resolve(mediaRoot);
     }
     get busy() { return this.jobs.size > 0; }
@@ -112,7 +113,8 @@ class ArtifactsService {
         return service;
     }
     addLocator(value) {
-        const key = digest(value.source === 'delivery' ? [value.source, value.candidate.cwd, value.candidate.id, value.deliveryId, value.index, value.revision]
+        const key = digest(value.source === 'generated-staffing' ? [value.source, value.exportId, value.revision]
+            : value.source === 'delivery' ? [value.source, value.candidate.cwd, value.candidate.id, value.deliveryId, value.index, value.revision]
             : [value.source, value.media.kind, value.media.id, value.media.recordRevision]);
         this.locators.delete(key); this.locators.set(key, { ...value, at: Date.now() });
         return key;
@@ -228,7 +230,10 @@ class ArtifactsService {
                 return Object.fromEntries(['kind', 'mime', 'encoding', 'content', 'base64', 'width', 'height', 'delimiter', 'size', 'revision', 'readAt', 'modifiedAt', 'previewReason'].filter(k => data[k] !== undefined).map(k => [k, data[k]]));
             }
             const locator = this.locator(key);
-            if (locator.source === 'media') data = await this.mediaBytes(locator.media, cover ? 2 * 1024 * 1024 : 64 * 1024 * 1024);
+            if (locator.source === 'generated-staffing') {
+                const source = await this.management.source(key);
+                data = representation({ bytes: source.bytes, size: source.bytes.length, revision: require('./pi-artifacts-library').artifactHash(source.bytes) }, source.metadata.name);
+            } else if (locator.source === 'media') data = await this.mediaBytes(locator.media, cover ? 2 * 1024 * 1024 : 64 * 1024 * 1024);
             else {
                 const s = locator.candidate;
                 data = await this.deliveryService(s).request({ cwd: s.cwd, sessionId: s.id, id: locator.deliveryId, index: String(locator.index) });

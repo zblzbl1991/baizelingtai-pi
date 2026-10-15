@@ -2996,7 +2996,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const mediaCard = mediaRequests?.render(messages[index]);
             if (mediaCard) { elements.transcript.appendChild(mediaCard); records[index].nodes.push(mediaCard); changed.push(mediaCard); }
-            const staffingCard = staffingCards?.render(messages[index]);
+            const staffingCard = staffingCards?.render(messages[index]) || window.PiStaffingExcel?.render(messages[index], { fetch: apiFetch, context: () => state.connected && state.session ? { cwd: state.cwd, sessionId: state.session.id } : null });
             if (staffingCard) { elements.transcript.appendChild(staffingCard); records[index].nodes.push(staffingCard); changed.push(staffingCard); }
             if (editCards.has(index)) {
                 const card = editCards.get(index);
