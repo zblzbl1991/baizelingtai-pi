@@ -64,6 +64,25 @@ test('raw HTTP uploads require access and same Origin; only bound workers may in
     try { assert.equal((await fetch(`${origin}/api/pi/uploads?${query}`, { method: 'POST', body: bytes, headers })).status, 429); } finally { leave1(); leave2(); }
 });
 
+test('private source transfer is branch-authorized, retains read occupancy and refuses changed branch results', async () => {
+    const session = await store.createSession(cwd, 'Source race'), upload = await service.upload({ cwd, sessionId: session.id, requestId: 'source-race', name: '原件.docx' }, bytes);
+    let attached = true, entered, release;
+    const ready = new Promise(resolve => entered = resolve), gate = new Promise(resolve => release = resolve);
+    const worker = { cwd, sessionId: session.id, disposed: false, restarting: false,
+        request: async () => ({ entries: attached ? [{ id: 'source-user', type: 'message', message: { role: 'user', content: upload.marker } }] : [], leafId: attached ? 'source-user' : null }) };
+    const race = new DocumentUploads({ store, supervisor: { removing: new Set(), moving: new Set(), getActiveWorker: () => worker } });
+    const readBytes = race.bytes.bind(race); race.bytes = async object => { const result = await readBytes(object); entered(); await gate; return result; };
+    try {
+        const pending = race.read(worker, { id: upload.reference.id, action: 'source' });
+        await ready; assert.equal(worker.documentReads, 1); attached = false; release();
+        await assert.rejects(pending, { code: 'DOCUMENT_CONTEXT' }); assert.equal(worker.documentReads, 0);
+        attached = true; race.bytes = readBytes;
+        const source = await race.read(worker, { id: upload.reference.id, action: 'source' });
+        assert.deepEqual(Buffer.from(source.base64, 'base64'), bytes);
+        await assert.rejects(race.read(worker, { id: upload.reference.id, action: 'source', start: 1 }), { code: 'DOCUMENT_INPUT' });
+    } finally { release(); await race.dispose(); }
+});
+
 test('browser payload carries only validated metadata and enforces document and format limits', async () => {
     const reference = { id: 'a'.repeat(64), revision: 'b'.repeat(64), name: 'report.docx', format: 'docx', size: bytes.length };
     const file = new File([bytes], reference.name), document = await attachments.read(file, { upload: async () => ({ reference }) });

@@ -20,12 +20,14 @@ test('source discovery includes nested modules and tests without following user 
     const root = fixture(t);
     for (const file of ['server/session/runtime.js', 'server/session/bridge.ts', 'server/old.js.bak',
         'public/chat/transport.js', 'public/chat/view.css', 'public/images/private.js', 'public/vendor/library.js',
-        'public/legacy-workspace/chat.js', 'public/.private/record.js', 'test/session/runtime.test.js', 'test/browser/page.cjs', 'test/helpers/fixture.cjs']) put(root, file);
+        'public/legacy-workspace/chat.js', 'public/.private/record.js', 'test/session/runtime.test.js', 'test/browser/page.cjs', 'test/helpers/fixture.cjs',
+        'pi-packages/gongwen/package.json', 'pi-packages/gongwen/runtime/extension.ts', 'pi-packages/gongwen/.private/credentials.json']) put(root, file);
     assert.deepEqual(sourceFiles(root, 'server'), ['server/session/bridge.ts', 'server/session/runtime.js']);
     assert.deepEqual(sourceFiles(root, 'public'), ['public/chat/transport.js', 'public/chat/view.css']);
     assert.deepEqual(sourceFiles(root, 'tests'), ['test/session/runtime.test.js']);
     assert.deepEqual(sourceFiles(root, 'browser'), ['test/browser/page.cjs']);
     assert.ok(sourceFiles(root, 'testSupport').includes('test/helpers/fixture.cjs'));
+    assert.deepEqual(sourceFiles(root, 'packages'), ['pi-packages/gongwen/package.json', 'pi-packages/gongwen/runtime/extension.ts']);
     assert.throws(() => sourceFiles(root, 'unknown'), /Unknown/);
 });
 
@@ -49,6 +51,7 @@ test('release inventory includes its own discovery and checking tools and exclud
     const files = distributionFiles(path.resolve(__dirname, '..'));
     for (const file of ['scripts/source-files.cjs', 'scripts/check-syntax.cjs', 'scripts/run-tests.cjs',
         'server/pi-update-installer.js', 'test/source-files.test.js', 'pi-packages/media-workbench/skills/media-workbench/SKILL.md',
+        'pi-packages/gongwen/package.json', 'pi-packages/gongwen/skills/gongwen/SKILL.md', 'server/pi-gongwen-extension.ts',
         'scripts/desktop-tray.ps1', 'scripts/start-desktop.cjs', 'server/pivane-desktop-launcher.js',
         'server/pivane-desktop-startup.js', 'public/desktop-startup.html', 'public/desktop-startup.css', 'public/desktop-startup.js',
         'scripts/package-windows-portable.cjs', 'scripts/windows-portable-assets.json',

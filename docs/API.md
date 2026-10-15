@@ -26,7 +26,19 @@ Windows 托盘与 `scripts/start-desktop.cjs` 使用继承的 stdin/stdout LF �
 
 工具结果的可选 `details.pi5ToolProvenance` 包含 `{version:1,toolName,toolCallId,source?:{source,path,scope,origin},skill?:{name,path}}`，由受管 worker 的调用前元数据生成，随原生 toolResult 和原有 WS 工具结果传递。缺失即未知，不通过设置清单补填；前端核对名称与调用 ID，仅作来源显示。扩展助手包确认取消时提供 `details.pi5PackageOperation.status='cancelled'`。不新增 REST 或改动原始正文、错误和用量，详见[执行来源](NATIVE_SETTINGS.md#执行记录中的技能与扩展来源)。
 
+## 公文生成工具
+
+内置资源 `pivane-gongwen` 在持久受管 RPC 会话注册 `generate_gongwen`，没有独立 HTTP 生成接口。输入为结构化 JSON：必填 `requestId/kind/title/body`；kind 为 `notice|report|request|letter|minutes|rules|enterprise`，正文构件为 `paragraph {text}`、`heading {level:1..4,text}`、`table {head,rows,widths?,caption?,numeric?}`。数字列为 `{column:1-based,kind:money|integer|decimal|percent,complete?:boolean}`。其他字段覆盖 `recipient/unit/date/redhead/agency/docNo/signers/copyNo/secret/urgency/preprinted/mark/issue/attendees/copyTo/issuer/printDate/note/sealed/attachments/missing`，精确范围由工具 schema 给出；未知字段和文件路径／代码输入拒绝。
+
+结果 details 的 `pivaneGongwen` 包含 `version/status/label/machineChecks/rendering/missing/errors/hints/styles/faults/rounds/truncated/totals/source/reused/delivery`。status 为 `checked|needs-input|needs-review|unchecked|failed`；machineChecks 为 `passed|failed|incomplete`，rendering 当前始终为 `not-verified`。正常与有效草稿交付 DOCX 和 Markdown 报告；没有经过结构验证的字节时只交付报告。`source` 为当前项目私有草稿源路径，`delivery` 沿用原生交付清单和 `#pi-delivery=` 链接，下载接口及当前分支资格不变。
+
+相同 cwd/sessionId/requestId 的完整结果校验后复用，参数变化报 `GONGWEN_CONFLICT`；在途报 `GONGWEN_BUSY`，残缺保存报 `GONGWEN_INCOMPLETE` 并不重放，输出身份／字节变化报 `GONGWEN_CHANGED`。新版本使用新请求标识。规则错误通过报告交付，程序故障不得投影为通过，取消为 `GONGWEN_ABORTED`。状态、预算及使用见[公文生成](GONGWEN.md)。
+
+同一内置扩展注册 `revise_gongwen {requestId,id,action?:"inspect"|"revise",layout?:boolean,title?:string}`；id 为当前分支 DOCX 附件标识，不接受路径。默认 revise、layout=true；inspect 保留原件字节，revise 另存修订件，layout=false 保留版式。结果沿用 `pivaneGongwen` 和原生交付，附加 `operation/editing/originalSnapshot/checkView/revisionAuthor/layoutApplied/layoutNotes/comments/reviewPending/previousRevisions/original/audit`。检查针对 proposed 可见建议文本，待接受修订不代表已审批；comments 区分 placed/unplaced。标题默认从附件名取，original 返回原附件元数据，audit 为私有规范修正记录路径。新请求使用新标识，完整结果复用仍须原件身份、字节及当前分支授权成立。
+
 ## 办公文档附件（documentUploads）
+
+受管 worker 可通过既有私有 `POST /uploads/read {id,action:"source"}` 取得 `{reference,encoding:"base64",base64}`，供公文工具内部传输原字节。此动作仅接受 id/action，须为当前分支已发送的 DOCX 且不超过 16 MiB；工作台访问身份不能代替绑定 worker。原字节不进入模型工具输出；授权、描述符核验、变更复查、document-read 生命周期及 documentOperations 沿用附件链路。其他读取动作和 `read_document` 参数不变。
 
 状态 `GET /api/pi/status` 返回 `documentUploads` 和 `documentUploadLimits:{fileBytes:20971520,files:5}`；原生描述符组件不可用时能力为 false，接口拒绝。格式、存储与解析预算见[办公附件](COMPOSER_TOOLS.md#上传办公文档与-pdf)。
 

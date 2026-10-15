@@ -81,7 +81,7 @@ test('new bundled capabilities can be disabled and restored without changing leg
     const resources = new PiResourceService(new PiNativeService(new PiSessionStore()));
     const declarations = ['npm:pi-web-access@0.1.0', 'npm:@injaneity/pi-computer-use@0.1.0'];
     fs.writeFileSync(settingsFile, JSON.stringify({ packages: declarations, sentinel: 'keep' }));
-    for (const entry of catalog.filter(item => ['web', 'computer', 'presentations'].includes(item.id))) {
+    for (const entry of catalog.filter(item => ['web', 'computer', 'presentations', 'gongwen'].includes(item.id))) {
         let snapshot = await resources.snapshot(cwd, 'global');
         const resource = snapshot.resources.find(item => item.source === packagePath(entry));
         assert.ok(resource?.enabled, entry.id);
@@ -167,6 +167,9 @@ test('bundled subagent runs against a synthetic provider, with native host contr
     assert.equal(resources.tools.filter(item => item.name === 'subagents_enable').length, 1);
     assert.ok(resources.skills.some(item => item.name === 'pi-subagents'));
     assert.ok(resources.skills.some(item => item.name === 'guizang-ppt-skill'));
+    assert.equal(resources.tools.filter(item => item.name === 'generate_gongwen').length, 1);
+    assert.equal(resources.tools.filter(item => item.name === 'revise_gongwen').length, process.env.PI_WORKSPACE_INTERNAL_ORIGIN ? 1 : 0);
+    assert.equal(resources.skills.filter(item => item.name === 'gongwen').length, 1);
     for (const name of ['web_search', 'fetch_content', 'get_search_content', 'find_roots', 'observe_ui', 'act_ui'])
         assert.equal(resources.tools.filter(item => item.name === name).length, 1, name);
     assert.equal(resources.tools.some(item => item.name === 'memory_add'), false);

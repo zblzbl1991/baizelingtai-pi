@@ -6285,6 +6285,272 @@
           "sha256": "11140416d492dfd1ac5dd13e9c7d96da09a310f84ca365c80b98e89f5f0aa185"
         }
       ]
+    },
+    {
+      "name": "gongwen-kit",
+      "version": "0.3.1",
+      "source": "https://codeload.github.com/imhuhe/gongwen-kit/tar.gz/d8dfe6a24e20ecaa64c14f3a79159813ad92db70",
+      "sourceRef": "d8dfe6a24e20ecaa64c14f3a79159813ad92db70",
+      "sha256": "ffd04e959ff3e060e803ddc750bc9b354aca61a18d98626c93297ccc78585be2",
+      "license": "MIT",
+      "files": [
+        {
+          "path": "vendor/gongwen-kit/.github/workflows/ci.yml",
+          "sha256": "e260ea5456f39aad9beba00084af4a47075f6254f04760b9a2b4dfd8b739bfd9"
+        },
+        {
+          "path": "vendor/gongwen-kit/.gitignore",
+          "sha256": "6814544376c1870f59d2f5041dd0dbe630daae7723dcc014b5ddf92a1872dfdb"
+        },
+        {
+          "path": "vendor/gongwen-kit/assets/banner.png",
+          "sha256": "ec250bae12bcf784cc4759a3ad8d74af9f4389eee424108985538b933269affe"
+        },
+        {
+          "path": "vendor/gongwen-kit/assets/compare.png",
+          "sha256": "503bfdb69cf4f36da7f50fd1677a558a49c70f393246765d24d3542cd1b0550a"
+        },
+        {
+          "path": "vendor/gongwen-kit/assets/full.png",
+          "sha256": "11ac0fe51f9ba19723688cfb52e08b775d7df3b61a6f6250010d383a0776cc72"
+        },
+        {
+          "path": "vendor/gongwen-kit/assets/qiye.png",
+          "sha256": "2899a9ed81f586f074c61b392749d9e412cca0d0cc41db75faa251ea708467fc"
+        },
+        {
+          "path": "vendor/gongwen-kit/assets/samples.png",
+          "sha256": "5b27c8e7bf4898438b6029b7fb6df1ef3ef44c3060bd42dcf013f619357c9bee"
+        },
+        {
+          "path": "vendor/gongwen-kit/assets/src/banner.html",
+          "sha256": "0243ca52d32c0a0959cf87a7cf768d0dff57184ef37197b05dca380e2e437ee4"
+        },
+        {
+          "path": "vendor/gongwen-kit/assets/src/compare.html",
+          "sha256": "a9b85779a53193df8295a7caa1d1f50bf739b842cf47f68eaaed0190caf6506d"
+        },
+        {
+          "path": "vendor/gongwen-kit/assets/src/README.md",
+          "sha256": "f0ac88f4c9b775e90be67e4e0883801cee5d0aa3390504c8e2886a2e6a0b4e00"
+        },
+        {
+          "path": "vendor/gongwen-kit/assets/src/social.html",
+          "sha256": "63261b3aea3f0d7c9a4d54e66d9d678f1edc59fb1ab9adf747fbe1495dd653b4"
+        },
+        {
+          "path": "vendor/gongwen-kit/checks/check-doc.js",
+          "sha256": "52d84fd91d796d7ce755dd6dcf2877ef96aded799fc51f59f11062bffd6b6742"
+        },
+        {
+          "path": "vendor/gongwen-kit/checks/check-num.js",
+          "sha256": "221a5a5fe7f6df40830d45d3b2d4b1c0ca88f57cd906604feab72f7f378f9342"
+        },
+        {
+          "path": "vendor/gongwen-kit/checks/check-style.js",
+          "sha256": "2d53a7825dc3036e0dbb1f48af64855a4ac490d4d6a06ecb415495e8801b6bd0"
+        },
+        {
+          "path": "vendor/gongwen-kit/checks/style-scan.js",
+          "sha256": "ff97dad252ed4d324b22bb547b602ce88d7c2962b612af0465fb3cd23b85d381"
+        },
+        {
+          "path": "vendor/gongwen-kit/data/style-words.tsv",
+          "sha256": "f52eabb489978436393f9c0d4b878b0c0791e8773af6fa5634f07c9c804b7907"
+        },
+        {
+          "path": "vendor/gongwen-kit/data/yixingci.tsv",
+          "sha256": "cf2995b84ec473faf7b37e278d545c62a249538def6a99c49d76909fb756e5de"
+        },
+        {
+          "path": "vendor/gongwen-kit/docs/依据.md",
+          "sha256": "4baf37635c8a4402eb5518d6747cb96ca8afc6f33c782a5defc70fb454e471f3"
+        },
+        {
+          "path": "vendor/gongwen-kit/docs/修复.md",
+          "sha256": "a5ba4600133f97b34223a609074252af6cb93f7186022cc552c23d12021d601e"
+        },
+        {
+          "path": "vendor/gongwen-kit/docs/字体.md",
+          "sha256": "442ef13497935f09bbf9865aa3ac92dcc34a4340da0cf490b9c58cb02dffa122"
+        },
+        {
+          "path": "vendor/gongwen-kit/docs/文风.md",
+          "sha256": "21e086ec6e18cb43d22336e4bd17609697f2e995e475fc9c9f164827374c202b"
+        },
+        {
+          "path": "vendor/gongwen-kit/docs/样张/企业内部报告.pdf",
+          "sha256": "a9dc2983203a8379678fa82a5c916a0b692f3084dda8196796ac254bd266358c"
+        },
+        {
+          "path": "vendor/gongwen-kit/docs/样张/公文信函.pdf",
+          "sha256": "321943e52e45531528dfc869eaef8ae279b845b79cf0ca6f0a9e7d1e9cbae372"
+        },
+        {
+          "path": "vendor/gongwen-kit/docs/样张/公文管理办法.pdf",
+          "sha256": "4e046d3c6d7b412c9aed5b8c941c62c00aec35ccc378da827ff60962f14b5203"
+        },
+        {
+          "path": "vendor/gongwen-kit/docs/样张/公文纪要.pdf",
+          "sha256": "110ff5bb23dcda5c83dafa48eca552ad49529be12c882b425998f8bdf8d0bcb4"
+        },
+        {
+          "path": "vendor/gongwen-kit/docs/样张/公文要素全览.pdf",
+          "sha256": "7c17e96e45e36bd6bdbe8fd78d4681a1460d504721474a94ff437d9f8fa5abb7"
+        },
+        {
+          "path": "vendor/gongwen-kit/docs/样张/公文请示.pdf",
+          "sha256": "7daebb9c0e828216930912392a4ff8dfeaa3efe3887c0fcfc9a73e4dcab5627a"
+        },
+        {
+          "path": "vendor/gongwen-kit/docs/样张/公文通知.pdf",
+          "sha256": "ef353b44d41611a6c8453ff6664e4280625955f1fd88cb4c023cb4f20a67934b"
+        },
+        {
+          "path": "vendor/gongwen-kit/docs/版式.md",
+          "sha256": "a2ec62c57102510791628c2127d8d88bff10d5f23114f77ff535f308b6a86c71"
+        },
+        {
+          "path": "vendor/gongwen-kit/lib/banji.js",
+          "sha256": "dbebad579eeccd04c1c4eb3b35166e6cbd9e844329e428488f5ae7ca413bfe21"
+        },
+        {
+          "path": "vendor/gongwen-kit/lib/doc-integrity.js",
+          "sha256": "42cdaac06db40cfc536d39c9eaa1b11ce5c718fe0daa55bb16ac600e3c14c564"
+        },
+        {
+          "path": "vendor/gongwen-kit/lib/fix/comments.js",
+          "sha256": "8e96c7b40600d6e0de82a8696a4fec14d2a2d84dec5535d2919a247ff8dcf387"
+        },
+        {
+          "path": "vendor/gongwen-kit/lib/fix/layout.js",
+          "sha256": "a796e6a39523feba2a104eb0e58c1dec405ea35a87690b19e48063684922675c"
+        },
+        {
+          "path": "vendor/gongwen-kit/lib/fix/ooxml.js",
+          "sha256": "03f7ea12db866ba4b36d35d50fde7d6f2fa91217b67bc02b1ce92121992b5f98"
+        },
+        {
+          "path": "vendor/gongwen-kit/lib/fix/revisions.js",
+          "sha256": "13e36eb89a2835772d3adacc702b1df9a02140710f403cb8e7cc277d14cabdc3"
+        },
+        {
+          "path": "vendor/gongwen-kit/lib/fix/runs.js",
+          "sha256": "d2a7b6939ae6187931039a175b5b7e7775da376e2b944b6234688e3dca2dbe4f"
+        },
+        {
+          "path": "vendor/gongwen-kit/lib/fix/text-rules.js",
+          "sha256": "90b490784e0a2090db6763c85095f542e93d3f717d30483165b6bc6f6ae99881"
+        },
+        {
+          "path": "vendor/gongwen-kit/lib/gongwen-core.js",
+          "sha256": "e6ad660e7cd2f015d293ac377a4a20ff1efa56760451209c4e1690ead357cc00"
+        },
+        {
+          "path": "vendor/gongwen-kit/lib/letterhead.js",
+          "sha256": "727693caa8d3666edc768dc308464af71ae57fbbecdc17062f181e309af6043a"
+        },
+        {
+          "path": "vendor/gongwen-kit/lib/styles.js",
+          "sha256": "9318c26629658bb27f752ecd90ef6e87e20552395c53624b1909b9a1dc643b84"
+        },
+        {
+          "path": "vendor/gongwen-kit/lib/table-read.js",
+          "sha256": "224dcf56f8653db3d6ecbf79b821994c2f5dad54bab337d4d39c97c8916a6e97"
+        },
+        {
+          "path": "vendor/gongwen-kit/lib/xinhan.js",
+          "sha256": "20a41f76b8b67b2d8b871caecee69e0875048c67b13a009f63d05b97c9bdd01e"
+        },
+        {
+          "path": "vendor/gongwen-kit/LICENSE",
+          "sha256": "2bb277a9ea44bbc653609be1ea619a8b2903ba78943d0fb9284a372ad2941e51"
+        },
+        {
+          "path": "vendor/gongwen-kit/package-lock.json",
+          "sha256": "cb3cecaf4daafbd0bc8dbc218a92b79a8ceb0a9dd781dd4d1bbda892134ff9ba"
+        },
+        {
+          "path": "vendor/gongwen-kit/package.json",
+          "sha256": "f1dcb2f1c25e6b4ded089e2df2cd4dbabead9092e578a8329265a24bc2fb384e"
+        },
+        {
+          "path": "vendor/gongwen-kit/README.md",
+          "sha256": "6e763772176820ae2cf3b5e56806c128a44472a10388d4368c6fb5fdb3730d21"
+        },
+        {
+          "path": "vendor/gongwen-kit/SKILL.md",
+          "sha256": "f134b8d018169a619d4d0f9eada674076016f421a44bd1a59d20359e4593ca87"
+        },
+        {
+          "path": "vendor/gongwen-kit/templates/complete.js",
+          "sha256": "fd0b402f1f908b95177c0acc8788c4dcc990ade2ad3390711908f5c4e1a1fbf6"
+        },
+        {
+          "path": "vendor/gongwen-kit/templates/gongwen-guanli.js",
+          "sha256": "7e780a37bf07a8dd7583cc7802f958f24a3cc792225b594786a562608ad30f10"
+        },
+        {
+          "path": "vendor/gongwen-kit/templates/gongwen-qingshi.js",
+          "sha256": "9622bedc62ff99eaf8fe7a5795a0e8ba260ce3f9ce10467557029803efcd1cc6"
+        },
+        {
+          "path": "vendor/gongwen-kit/templates/jiyao.js",
+          "sha256": "f7b07eb7e8753fb96ee571df931f960a4eb2f3b14e9ade7f439c530337d7703f"
+        },
+        {
+          "path": "vendor/gongwen-kit/templates/notice.js",
+          "sha256": "4ac1f0be2e39662fca8f71949859a849d4985b42afcc5d818a0b4502d1ae80eb"
+        },
+        {
+          "path": "vendor/gongwen-kit/templates/qiye.js",
+          "sha256": "c41d66d741cc723a13dfc6e17fa69b7e650f2c67803852cf7a28aad3e33e68b1"
+        },
+        {
+          "path": "vendor/gongwen-kit/templates/xinhan.js",
+          "sha256": "ab51c24f10bd5eb964e8aa394087a259f36582ee6280bdca2aee3c8f2f34c315"
+        },
+        {
+          "path": "vendor/gongwen-kit/tests/fix.js",
+          "sha256": "c415a76fc0b7bc0c5032dbfde0c3ccb9aa7b41989849020eee0819a4634e4383"
+        },
+        {
+          "path": "vendor/gongwen-kit/tests/messy-docx.js",
+          "sha256": "c24eb2260a91711aa7a51fcd9c8a4e7b4ffbf1fdf64ef07a0219851c61a18231"
+        },
+        {
+          "path": "vendor/gongwen-kit/tests/negative.js",
+          "sha256": "a57b76a194f045d0fc40625cff3e73a294f79ce0eb3c2f331157f34f95b97bd5"
+        },
+        {
+          "path": "vendor/gongwen-kit/tests/run.sh",
+          "sha256": "8abfa03a52172ad052c541c018bf2cda345662fa20b26bd73cc5bb4dc9ec7e62"
+        },
+        {
+          "path": "vendor/gongwen-kit/tools/check-pdf.py",
+          "sha256": "c6b24b945b67a65878da0121b56caa3b8d7becb813e2c0136c2a2fcbe5b02d2e"
+        },
+        {
+          "path": "vendor/gongwen-kit/tools/fix-doc.js",
+          "sha256": "1698ea51f575a46887d0da4c1b58697d4d6a397512d36de90eeaf8cfa78413eb"
+        },
+        {
+          "path": "vendor/gongwen-kit/tools/measure-banji.py",
+          "sha256": "dd05940d9249317d65005d8b45927f32f05f9a1be95cb44b3210662d6557ce02"
+        },
+        {
+          "path": "vendor/gongwen-kit/tools/measure-letterhead.py",
+          "sha256": "855e804135f506aa5f659090bc4ac2aecf7c77fbd2e3b88b9a4288044c4a139f"
+        },
+        {
+          "path": "vendor/gongwen-kit/tools/measure-xinhan.py",
+          "sha256": "8e65cbbb72049085fde1faf2d2c7ea13da6dbae6582357d4c9d4232354e4cdb7"
+        },
+        {
+          "path": "vendor/gongwen-kit/tools/new-doc.js",
+          "sha256": "9a03a049389f714c572dcf276af39668bdbafddb867ce287ed4c1a1af28abd20"
+        }
+      ]
     }
   ]
 }

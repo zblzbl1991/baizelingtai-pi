@@ -11,7 +11,9 @@ const catalog = Object.freeze([
     Object.freeze({ id: 'computer', name: '@injaneity/pi-computer-use', version: '0.5.1', directory: 'vendor/pi-computer-use',
         repository: 'injaneity/pi-computer-use', mode: 'package' }),
     Object.freeze({ id: 'presentations', name: 'pivane-presentations', version: '1.0.0', directory: 'pi-packages/presentations',
-        repository: 'op7418/guizang-ppt-skill', mode: 'package' })
+        repository: 'op7418/guizang-ppt-skill', mode: 'package' }),
+    Object.freeze({ id: 'gongwen', name: 'pivane-gongwen', version: '1.0.0', directory: 'pi-packages/gongwen',
+        repository: 'imhuhe/gongwen-kit', mode: 'package' })
 ]);
 const packagePath = entry => path.join(root, entry.directory);
 const memoryBundle = () => path.join(root, 'server/profile-memory/upstream-bundle.mjs');

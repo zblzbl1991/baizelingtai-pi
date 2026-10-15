@@ -1,6 +1,6 @@
 # 白泽灵台内置能力包
 
-当前源码随应用交付子 Agent、档案记忆、网页搜索与阅读、桌面操作和 guizang-ppt 演示文稿技能，由白泽灵台验证后统一更新。精确组件版本以 `server/pi-bundled-capabilities.js` 和 `vendor/manifest.json` 为准，Pi 版本以根 package.json 为准。已发布归档的依赖与验收仍以其版本说明为准，源码完成不表示运行实例已经更新。
+当前源码随应用交付子 Agent、档案记忆、网页搜索与阅读、桌面操作、guizang-ppt 演示文稿技能和公文生成，由白泽灵台验证后统一更新。精确组件版本以 `server/pi-bundled-capabilities.js` 和 `vendor/manifest.json` 为准，Pi 版本以根 package.json 为准。已发布归档的依赖与验收仍以其版本说明为准，源码完成不表示运行实例已经更新。
 
 ## 网页、桌面与演示文稿
 
@@ -11,6 +11,10 @@
 - **制作演示文稿**：内置归藏的原版 `guizang-ppt-skill`，固定作者提交 `c91369c449d34755d320a8b81d0734000d99d1ab`，由独立资源登记包 `pivane-presentations` 加载。主要输出杂志风／瑞士风单文件 HTML，不承诺可编辑 PPTX。技能本身安装不需要 SkillHub；模板外链字体、图标和脚本仍需网络或另行离线准备。额外 SkillHub 技能继续从用户选择的仓库安装，不自动切换来源、更新内置目录或删除既有 PPT Master。
 
 guizang-ppt 的独立源码、模板、脚本和许可证完整保留在 `vendor/guizang-ppt-skill/`，按 GNU AGPLv3 提供；网页和桌面包按各自 MIT 许可提供。资源登记与宿主适配不改写上游文件，应用自身许可不替代这些独立组件的许可；再分发须保留对应许可证和源码。
+
+## 公文生成
+
+公文能力由独立 `pivane-gongwen` 包注册 `gongwen` 技能与 `generate_gongwen`、`revise_gongwen` 原生工具，默认可用，支持分别启停与重载。固定 MIT 上游 gongwen-kit 的原始目录及逐文件清单，运行依赖由根 lockfile 锁定；在无凭据独立进程生成、检查和另存带修订／批注的已有公文，原件与旧版本保留，文件与报告通过原生交付快照访问。字体不捆绑，实际版面核验与规则检查分开。用法、草稿状态与边界见[公文生成](GONGWEN.md)。
 
 ## 安装与配置
 

@@ -7,6 +7,7 @@ const GROUPS = Object.freeze({
     server: { directory: 'server', extensions: ['.js', '.mjs', '.ts'] },
     public: { directory: 'public', extensions: ['.js', '.css', '.html'], excluded: ['vendor', 'brand', 'images', 'videos', 'audio', 'downloads', 'legacy-workspace'] },
     scripts: { directory: 'scripts', extensions: ['.cjs', '.ps1'] },
+    packages: { directory: 'pi-packages', extensions: ['.json', '.js', '.cjs', '.mjs', '.ts'] },
     tests: { directory: 'test', pattern: /\.test\.js$/ },
     testSupport: { directory: 'test', extensions: ['.js', '.cjs', '.mjs', '.ts'] },
     browser: { directory: 'test/browser', extensions: ['.cjs'] },
@@ -65,9 +66,7 @@ function distributionFiles(root) {
         ...[64, 192, 512, 1024].map(size => `public/brand/logo-${size}.png`),
         'config/media-lab.json', 'config/tts-providers.json',
         'server/profile-memory/upstream-lock.json',
-        'test/private-file-helper.cjs', 'test/fixtures/pi-0843-session.jsonl', 'test/fixtures/release-video.mp4',
-        'pi-packages/media-workbench/package.json', 'pi-packages/media-workbench/extensions/media-tools.ts',
-        'pi-packages/presentations/package.json'
+        'test/private-file-helper.cjs', 'test/fixtures/pi-0843-session.jsonl', 'test/fixtures/release-video.mp4'
     ];
     const fonts = 'public/vendor/katex-0.18.7/fonts';
     for (const name of fs.readdirSync(path.join(root, fonts)).sort()) {

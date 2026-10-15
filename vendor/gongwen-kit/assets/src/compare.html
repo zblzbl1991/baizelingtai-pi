@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8">
+<title>公文工具对比</title>
+<style>
+  :root { --ink:#0C0C0C; --gray:#6B7075; --hair:#DCD6C8; --accent:#A8791F; --tint:#F7F2E6; --red:#C8261E; --ok:#1F6B3A; --okbg:#E6F0E6; --na:#9A9EA3; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1600px; background:var(--tint); }
+  body { padding:72px 80px 56px; font-family:"PingFang SC", sans-serif; color:var(--ink); }
+  .kicker { font:500 14px/1 "SF Mono", Menlo, monospace; letter-spacing:.16em; color:var(--accent); }
+  h1 { margin-top:16px; font:700 44px/1.25 "Songti SC", serif; letter-spacing:.02em; }
+  .lede { margin-top:14px; font:400 19px/1.6 "PingFang SC"; color:#3A3D40; max-width:1180px; }
+  .lede b { color:var(--ink); font-weight:600; }
+
+  table { margin-top:40px; width:100%; border-collapse:separate; border-spacing:0; background:#fff; border:1px solid var(--hair); border-radius:6px; overflow:hidden; }
+  th { text-align:left; font:600 14px/1.3 "PingFang SC"; color:var(--gray); letter-spacing:.04em; padding:16px 18px; background:#FBF8F1; border-bottom:1px solid var(--hair); }
+  td { vertical-align:top; padding:16px 18px; font:400 15px/1.55 "PingFang SC"; border-bottom:1px solid #EEE9DE; }
+  tr:last-child td { border-bottom:none; }
+  td.who { width:220px; }
+  .name { font:600 16px/1.35 "PingFang SC"; }
+  .meta { margin-top:4px; font:400 13px/1.4 "PingFang SC"; color:var(--gray); }
+  .grp td { background:#FBF8F1; padding:9px 18px; font:600 12px/1 "SF Mono", Menlo, monospace; letter-spacing:.14em; color:var(--accent); border-bottom:1px solid #EEE9DE; }
+  .na { color:var(--na); }
+  .strong { color:var(--ok); font-weight:600; }
+  .warn { color:var(--red); }
+  sup { font:500 11px/1 "SF Mono", Menlo, monospace; color:var(--accent); margin-left:2px; }
+  tr.me td { background:var(--ink); color:#F2EEE4; border-top:none; }
+  tr.me td.who { box-shadow: inset 6px 0 0 var(--accent); }
+  tr.me .name { color:#fff; font-size:18px; }
+  tr.me .meta { color:#B9B4A8; }
+  tr.me .na { color:#8F8A80; }
+  tr.me .strong { color:#E2B95A; }
+  tr.me sup { color:#E2B95A; }
+  .tag { display:inline-block; margin-left:8px; padding:3px 7px; font:600 11px/1 "PingFang SC"; color:var(--ink); background:#E2B95A; border-radius:3px; vertical-align:2px; }
+  .hl { background:#E2B95A; color:var(--ink); font-weight:600; padding:1px 6px; border-radius:3px; }
+  .plus { margin-top:18px; display:grid; grid-template-columns:repeat(5,1fr); gap:0; background:var(--ink); border-radius:6px; overflow:hidden; }
+  .plus div { padding:18px 20px; border-left:1px solid #2A2826; }
+  .plus div:first-child { border-left:none; }
+  .plus b { display:block; font:600 15px/1.35 "PingFang SC"; color:#E2B95A; margin-bottom:6px; }
+  .plus span { font:400 13px/1.6 "PingFang SC"; color:#D9D4C8; }
+
+  .notes { margin-top:28px; display:grid; grid-template-columns: 1.1fr 1fr; gap:40px; }
+  .notes h3 { font:600 14px/1 "PingFang SC"; color:var(--ink); margin-bottom:10px; }
+  .notes p, .notes li { font:400 13px/1.7 "PingFang SC"; color:#4A4D50; }
+  .notes ol { padding-left:18px; }
+  .notes li { word-break:break-all; }
+  .foot { margin-top:30px; padding-top:14px; border-top:1px solid var(--hair); display:flex; justify-content:space-between; font:400 12px/1 "SF Mono", Menlo, monospace; color:var(--gray); letter-spacing:.04em; }
+</style></head>
+<body>
+  <div class="kicker">官网与公开资料核对 · 2026-10-13</div>
+  <h1>公文工具横向对比</h1>
+  <p class="lede">按国标排版、查错别字和数字写法，大厂和开源都已经在做，有的做得比我们全。
+    <b>表格合计与分项对不对得上、正文说的「三点」是不是真列了三点、正文和表格的数是否一致</b>，是写材料最费校对时间的地方；这类跨段落的自洽检查，公开资料里未见别家在做。</p>
+
+  <table>
+    <thead><tr>
+      <th>产品</th><th style="width:250px">形态与获取</th><th>国标版式</th><th>正文机检</th><th style="width:230px">数据去向</th>
+    </tr></thead>
+    <tbody>
+      <tr class="grp"><td colspan="5">商业产品</td></tr>
+      <tr>
+        <td class="who"><div class="name">WPS 365 政务版</div><div class="meta">金山办公</div></td>
+        <td>商业软件，面向党政机关采购</td>
+        <td>公文排版、公文套红，官网称「严格遵照国家标准」<sup>1</sup></td>
+        <td>AI 校对与合规审校<sup>2</sup></td>
+        <td>公有云、私有云、混合云，全栈信创<sup>1</sup>；面向单位采购</td>
+      </tr>
+      <tr>
+        <td class="who"><div class="name">新华妙笔</div><div class="meta">新华社国家重点实验室与博特智能</div></td>
+        <td>网页与 App，个人版、团队版</td>
+        <td>格式排版「默认国标规范，支持私人定制」<sup>3</sup></td>
+        <td>AI 校对、文稿审校，侧重规避政治错误<sup>3</sup></td>
+        <td>私有化部署、AI 一体机、鸿蒙端侧全离线、内外网隔离的 AI 盒子<sup>3</sup></td>
+      </tr>
+      <tr>
+        <td class="who"><div class="name">讯飞</div><div class="meta">讯飞文书、讯飞公文校对</div></td>
+        <td>网页；校对按账号年费</td>
+        <td><span class="na">官网未见排版说明</span>；媒体报道星火 AIPC 有一键排版<sup>5</sup></td>
+        <td>错别字、标点、数字差错、量词单位、序号等十余类<sup>4</sup></td>
+        <td><span class="na">官网未见私有化说明</span>；星火 AIPC 部分操作在端侧<sup>5</sup></td>
+      </tr>
+      <tr>
+        <td class="who"><div class="name">通用大模型</div><div class="meta">豆包、Kimi、文心、通义</div></td>
+        <td>网页与 App</td>
+        <td class="na">未见按 GB/T 9704 输出 Word 的官方说明</td>
+        <td class="na">无专门的公文机检</td>
+        <td>云端</td>
+      </tr>
+      <tr>
+        <td class="who"><div class="name">秘塔写作猫</div></td>
+        <td>网页、浏览器与 Word 插件</td>
+        <td class="na">不做公文版式</td>
+        <td>文本纠错、改写润色<sup>6</sup></td>
+        <td>云端</td>
+      </tr>
+
+      <tr class="grp"><td colspan="5">开源 agent skill</td></tr>
+      <tr>
+        <td class="who"><div class="name">gongwen-gbt9704-skill</div><div class="meta">mizzlelover · 784 星 · MIT</div></td>
+        <td>本地运行的 agent skill</td>
+        <td class="strong">目前最全：电子红头与套打、联合行文、信函、命令、纪要、横排表格、附件、版记；版头坐标量测校验<sup>7</sup></td>
+        <td class="na">未见正文内容机检</td>
+        <td>工具在本机；起草看所接模型</td>
+      </tr>
+      <tr>
+        <td class="who"><div class="name">gongwen-skill</div><div class="meta">linhut · 76 星 · MIT</div></td>
+        <td>本地 Python 命令行与 skill</td>
+        <td>格式检查与修复，版头、版记、页码注入<sup>8</sup></td>
+        <td>人名职务等实体的事实核验，Word 修订与批注<sup>8</sup></td>
+        <td>工具在本机；事实核验<span class="warn">联网交叉核验</span><sup>8</sup></td>
+      </tr>
+      <tr class="me">
+        <td class="who"><div class="name">gongwen-kit<span class="tag">本仓</span></div><div class="meta">imhuhe · MIT</div></td>
+        <td>本地运行的 agent skill</td>
+        <td>红头两态、联合行文、上行文签发人、信函、纪要、非红头企业文书、版记、附件页；关键尺寸经 Word 渲染量测。修复现成 docx，体例写成修订痕迹。<span class="na" style="white-space:nowrap">缺命令格式</span></td>
+        <td><span class="hl">数字自洽</span>：表格合计与分项、跨表同一指标、正文「以下三点」与实际条数；正文与表格取值对照（提示）。<span class="hl">体例</span>与<span class="hl">文风</span>：异形词、半角标点、套话</td>
+        <td class="strong">工具在本机、不联网；起草看所接模型</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="plus">
+    <div><b>机检不调用大模型</b><span>规则确定，同一份稿子每次结果相同，可复现、可留档作合规凭据</span></div>
+    <div><b>每条规则有必错标本</b><span>14 例必错、12 例必过：规则报不出错或误报，测试就不通过</span></div>
+    <div><b>不绑模型</b><span>起草接任意宿主模型；涉密材料接本地模型，全链路不出本机</span></div>
+    <div><b>修复现成文件</b><span>版式直接改，体例写成修订，数字只插批注；全部拒绝等于原文，268 份真实稿回放无一改坏</span></div>
+    <div><b>免费、个人可用</b><span>MIT 开源，不需要单位采购，不需要账号</span></div>
+  </div>
+
+  <div class="notes">
+    <div>
+      <h3>怎么读这张表</h3>
+      <p>只比「从内容到合规成品」这一段，不比公文流转、签批、OFD 归档。
+      各家能力取自官网与官方报道，均为厂商口径，没有找到独立测试；「未见公开说明」表示查过但没有找到，不等于没有。
+      开源项目的星数取自 2026-10-13 的 GitHub。gongwen-kit 不判断内容与政治表述是否正确，那是写稿人的责任。</p>
+    </div>
+    <div>
+      <h3>来源</h3>
+      <ol>
+        <li>WPS 365 政务行业解决方案页 365.wps.cn/solution/gov</li>
+        <li>新华网 2026-08-20；科技日报 2026-08-19</li>
+        <li>新华妙笔官网 miaobi.xinhuaskl.com</li>
+        <li>讯飞开放平台公文校对方案 xfyun.cn/solutions/gwjd；讯飞文书 gw.iflydocs.com</li>
+        <li>IT之家 ithome.com/0/895/232.htm（媒体报道）</li>
+        <li>写作猫官网 xiezuocat.com</li>
+        <li>github.com/mizzlelover/gongwen-gbt9704-skill README</li>
+        <li>github.com/linhut/gongwen-skill README</li>
+      </ol>
+    </div>
+  </div>
+  <div class="foot"><span>github.com/imhuhe/gongwen-kit</span></div>
+</body></html>

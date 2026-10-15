@@ -67,6 +67,10 @@ Pi 1.1.0 原生 MCP/Codemode 经 `pi-native-mcp.mjs` 和受管 ResourceLoader �
 
 相关契约：[辅助模型](../AUXILIARY_MODELS.md)、[记忆适配](../PROFILE_MEMORY.md)、[任务线程](../AGENT_THREADS.md)、[侧聊](../SIDE_CHAT.md)、[原生设置](../NATIVE_SETTINGS.md)。
 
+公文生成通过 `pivane-gongwen` 登记 Skill 与受管原生工具。`server/gongwen` 将结构化输入、上游版式构件、检查和规范修正放在无凭据独立进程中；生成器不执行模型提供的代码，也不直接载入上游 CLI。最终 DOCX 先经有界 ZIP/XML 与结构校验，再检查体例、数字和文风；已验证字节作为检查故障时的草稿检查点。父侧占位在 await 前登记，取消／超时等待真实退出。项目输出目录持有完整目录／文件描述符证明并独占写入；完整请求可复用，残缺意图不重放。目录内数据属于任务成果，原生 `pivane-deliverable` 引用仍由唯一 worker 追加，未新增会话事实库、worker 工作类型或 HTTP 生成接口。
+
+已有公文由 `revise_gongwen` 通过附件服务的 worker 私有 source 动作获取当前分支授权原件；父侧核对元数据／SHA256 并在异步处理、交付前复查原生分支。`revise` 使用上游可导入的版式、文字修订与批注构件，不执行原修复 CLI；保护表格、版头与已有修订，拒绝本轮修订后的可见正文须与原稿一致。原稿的批注部件及关系保留，新增标记从既有 ID 之后分配；主题色与复杂表等不确定结构保留并提示。修改件完成结构校验后重新机检，再按原生交付发布；原上传字节不变，修订请求／完整差异记录属于版本成果。source 传输仍计入 document-read，规范处理期间由原生工具活动阻止空闲维护。
+
 ## 实例网络
 
 `WorkspaceNetworkService` 拥有私有 pivane-network.json 的监听与代理草稿修订、启动快照和固定目标诊断；访问认证仍由 WorkspaceAccessService 负责。配置保存不热切换网络；HOST 部署覆盖优先，新实例回环默认在首次启动持久化，已识别旧受管安装保留原默认。网络 API 经过现有认证、CSRF 和维护 HTTP 占用。

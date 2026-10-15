@@ -35,6 +35,8 @@ Windows 托盘启动器的交互设计参考 [dsh-tray-launcher](https://github.
 
 ## 内置第三方能力
 
+[gongwen-kit](https://github.com/imhuhe/gongwen-kit) 0.3.1，固定提交 `d8dfe6a24e20ecaa64c14f3a79159813ad92db70`，使用 MIT 许可证。完整原始源码、文档、样张与 [LICENSE](vendor/gongwen-kit/LICENSE) 保存于 `vendor/gongwen-kit/`，来源及逐文件哈希记录在 vendor manifest。白泽灵台在独立适配层生成和检查，不改写上游文件。根 lockfile 固定 docx 9.7.1（MIT）、jszip 3.10.2（MIT OR GPL-3.0-or-later，按 MIT 使用）和 sax 1.6.1（BlueOak-1.0.0）及实际传递依赖；许可证随依赖安装保留。字体只声明名称，不随应用分发，字体授权按各字体自身条款处理。
+
 [pi-subagents](https://github.com/nicobailon/pi-subagents) 0.74.0（Nico Bailon，MIT）官方 npm 发布内容原样保存于 `vendor/pi-subagents/`，包含 JavaScript、声明、source map、角色、技能、提示词和文档；原始 LICENSE 随包保留。Pivane 的安装与运行适配独立于上游文件，版本随应用更新。
 
 ## 可选档案记忆组件

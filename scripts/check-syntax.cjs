@@ -2,8 +2,8 @@ const { sourceFiles } = require('./source-files.cjs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
-const files = [...new Set(['server.js', ...['server', 'public', 'scripts', 'testSupport'].flatMap(group => sourceFiles(root, group))
-    .filter(file => /\.(?:js|cjs|mjs|ts)$/.test(file)), 'pi-packages/media-workbench/extensions/media-tools.ts'])];
+const files = [...new Set(['server.js', ...['server', 'public', 'scripts', 'packages', 'testSupport'].flatMap(group => sourceFiles(root, group))
+    .filter(file => /\.(?:js|cjs|mjs|ts)$/.test(file))])];
 for (const filename of files) {
     const result = spawnSync(process.execPath, ['--check', path.join(root, filename)], { stdio: 'inherit' });
     if (result.error) { console.error(result.error.message); process.exit(1); }

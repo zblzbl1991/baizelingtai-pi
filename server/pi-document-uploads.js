@@ -163,11 +163,19 @@ class DocumentUploads {
     }
     async readChecked(worker, raw, signal) {
         if (!raw || Object.keys(raw).some(key => !['id', 'action', 'start', 'count', 'sheet', 'column', 'columns'].includes(key)) || !idPattern.test(raw.id)) throw invalid();
-        const { id, ...args } = raw; validateRead(args);
+        const { id, ...args } = raw;
+        const source = args.action === 'source';
+        if (source && Object.keys(raw).some(key => !['id', 'action'].includes(key))) throw invalid();
+        if (!source) validateRead(args);
         const input = { cwd: worker.cwd, sessionId: worker.sessionId, id }, authorized = await this.authorized(input);
         if (authorized.initial.worker !== worker) throw fail('会话运行身份已变化', 409, 'DOCUMENT_CONTEXT');
-        const result = await this.pool.run(authorized.bytes, authorized.reference.format, args, { signal });
+        signal?.throwIfAborted();
+        if (source && (authorized.reference.format !== 'docx' || authorized.bytes.length > 16 * 1024 * 1024)) throw fail('公文修订仅支持不超过 16 MiB 的 DOCX', 415, 'DOCUMENT_FORMAT');
+        // Private worker transport only: bytes stay outside model/tool output.
+        const result = source ? { encoding: 'base64', base64: authorized.bytes.toString('base64') }
+            : await this.pool.run(authorized.bytes, authorized.reference.format, args, { signal });
         await this.checkCurrent(input, authorized);
+        signal?.throwIfAborted();
         if (worker.disposed || worker.restarting) throw fail('会话运行身份已变化', 409, 'DOCUMENT_CONTEXT');
         return { reference: authorized.reference, ...result };
     }

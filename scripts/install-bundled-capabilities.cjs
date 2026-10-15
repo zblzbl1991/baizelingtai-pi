@@ -84,6 +84,15 @@ function install() {
     const removed = enforceShrinkwrapFixes();
     if (removed.length) console.log('[baizelingtai] Replaced legacy nested ' + removed.join(', ') + ' with reviewed fixed release.');
     vendorFiles(root);
+    // Resolve exactly as the unmodified generator does. A nested copy must not
+    // silently replace the reviewed root lock or create two docx instances.
+    const gongwen = path.join(root, 'vendor/gongwen-kit');
+    for (const [name, version] of Object.entries(require('../server/gongwen/inventory').REVIEWED.dependencies)) {
+        const resolved = require.resolve(name, { paths: [gongwen] });
+        const expected = require.resolve(name, { paths: [root] });
+        if (resolved !== expected || packageVersion(path.join(root, 'node_modules', name)) !== version)
+            throw new Error(`gongwen-kit does not resolve reviewed ${name} ${version}`);
+    }
     for (const entry of catalog) {
         const metadata = JSON.parse(fs.readFileSync(path.join(packagePath(entry), 'package.json'), 'utf8'));
         if (metadata.name !== entry.name || metadata.version !== entry.version) throw new Error('Bundled integration catalog differs from upstream');

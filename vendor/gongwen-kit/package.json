@@ -1,0 +1,18 @@
+{
+  "name": "gongwen-kit",
+  "version": "0.3.1",
+  "description": "中文公文（GB/T 9704）生成、修复与机检工具包：文件进文件出、本地运行、可审计",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "bash tests/run.sh"
+  },
+  "dependencies": {
+    "docx": "^9.7.1",
+    "jszip": "^3.10.1",
+    "sax": "^1.6.0"
+  }
+}

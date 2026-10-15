@@ -1,0 +1,11 @@
+{
+  "name": "pivane-gongwen",
+  "version": "1.0.0",
+  "private": true,
+  "license": "ISC",
+  "description": "白泽灵台公文生成、数字核对与检查报告；独立适配固定版本 gongwen-kit",
+  "pi": {
+    "extensions": ["../../server/pi-gongwen-extension.ts"],
+    "skills": ["./skills/gongwen/SKILL.md"]
+  }
+}

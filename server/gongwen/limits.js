@@ -1,0 +1,1 @@
+module.exports = { MAX_FILE: 16 * 1024 * 1024, MAX_REPORT: 256 * 1024, MAX_SOURCE: 1024 * 1024 };
