@@ -55,6 +55,7 @@ test('initial Excel import and later differences require a source-bound inspecte
         const unchangedFile = await excel.upload(excel.workbook({ people: beforeRoundtrip.people, projects: beforeRoundtrip.projects, occupancies: beforeRoundtrip.occupancies, historyComplete: beforeRoundtrip.historyComplete }, { revision: confirmed.revision }), { requestId: 'upload-unchanged' }, source);
         const unchanged = await staffing.prepareImport({ requestId: 'prepare-unchanged', expectedRevision: confirmed.revision, uploadId: unchangedFile.id }, source);
         assert.equal(unchanged.totalChanges, 0, 'property order must not create changes in an unchanged workbook');
+        assert.equal(unchanged.warning, '', 'a freshly exported revision is not old merely because preparing a plan advances the revision');
         data.people[1].name = 'Changed';
         const changed = await excel.upload(excel.workbook(data, { revision: 0 }), { requestId: 'upload-change' }, source);
         const diff = await staffing.prepareImport({ requestId: 'prepare-change', expectedRevision: unchanged.revision, uploadId: changed.id }, source);
