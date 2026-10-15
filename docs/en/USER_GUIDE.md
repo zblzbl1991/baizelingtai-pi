@@ -13,6 +13,8 @@
 
 If Pi CLI has models but the browser does not, check its identity directory and startup environment using [existing Pi users](INSTALL.md#existing-pi-cli-users). Global models and extensions can be managed before selecting a project.
 
+In **Open project**, browse to the parent directory and choose **New folder** beside the current path. Enter a name and choose **Create**. Chinese names and spaces are supported; each submission creates one folder inside the displayed directory, regardless of an unbrowsed path typed above. Creation navigates into the new folder; choose **Open** to switch projects. Cancelling the name form creates nothing. Closing the dialog after creation keeps the folder. Name collisions and permission errors retain your input. If the result is uncertain, browse the directory to check before submitting again; requests are not retried automatically. This button is available in Work chat's project picker and respects the server's project roots, private-path rules and OS permissions.
+
 ## Workspace navigation
 
 白泽灵台 uses a dark green outlined mark with a muted green dot. The sidebar, start screen and login page use the transparent mark with light strokes in the dark theme; the startup waiting page uses the horizontal wordmark. Browser tabs, Windows desktop/tray and phone home screens use the background icon. The dot belongs to the brand and does not indicate online status.

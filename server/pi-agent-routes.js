@@ -93,6 +93,7 @@ function createPiAgentGateway(options = {}) {
     const files = new (require('./pi-file-service').PiFileService)(store);
     const fileBrowser = new (require('./pi-file-browser').PiFileBrowser)(store);
     const fileRoots = new (require('./pi-file-roots').PiFileRoots)({ store, browser: fileBrowser, preferences, isSuspended: () => maintenance.locked });
+    const projectDirectories = new (require('./pi-project-directories').PiProjectDirectories)({ store, isSuspended: () => maintenance.locked });
     const usage = new (require('./pi-usage-service').PiUsageService)(store);
     usage.start();
     const sessionSearch = new (require('./pi-session-search').PiSessionSearch)(store, preferences);
@@ -140,16 +141,25 @@ function createPiAgentGateway(options = {}) {
     });
 
     router.use(access.middleware());
-    require('./pi-update-service').mountUpdateRoutes(router, undefined, {
-        maintenance, preferences,
-        idle: () => !artifacts.busy && !fileRoots.jobs.size && !documents.active && !profiles.busy && !agentThreads.jobs.size && !agentThreads.catalogIndex.busy && !agentThreads.returns.busy && !agentThreads.messages.busy && !settingsService.mutating && !settingsService.loginService.busy && !nativeService.busy && !mcpSettingsService.busy && !sessionTransfer.running && !sessionMoves.running
-            && !titles.jobs.size && !titles.savingModel && !transcription.active && !learning?.busy && !cron.busy && !deferred.running && !sideChat.connections.size && !sideChat.tickets.size
+    const maintenanceIdle = () => !artifacts.busy && !fileRoots.jobs.size && !projectDirectories.jobs.size && !documents.active && !profiles.busy && !agentThreads.jobs.size && !agentThreads.catalogIndex.busy && !agentThreads.returns.busy && !agentThreads.messages.busy && !settingsService.mutating && !settingsService.loginService.busy && !nativeService.busy && !mcpSettingsService.busy && !sessionTransfer.running && !sessionMoves.running
+            && !titles.jobs.size && !titles.savingModel && !auxiliaryModels.busy && !transcription.active && !learning?.busy && !cron.busy && !deferred.running && !sideChat.connections.size && !sideChat.tickets.size
             && ![...sideChat.parents.values()].some(parent => parent.preparing) && supervisor.isIdle()
-            && !options.mediaLabService?.inFlight && !options.mediaLabService?.chatRequests?.preparing && !options.mediaLabService?.chatRequests?.waiting?.length && !options.mediaLabService?.providerService?.busy && !options.mediaLabService?.providerService?.active,
+            && !options.mediaLabService?.inFlight && !options.mediaLabService?.chatRequests?.preparing && !options.mediaLabService?.chatRequests?.waiting?.length && !options.mediaLabService?.providerService?.busy && !options.mediaLabService?.providerService?.active;
+    require('./pi-update-service').mountUpdateRoutes(router, undefined, {
+        maintenance, preferences, idle: maintenanceIdle,
         pause: () => deferred.pauseAll()
     });
+    function prepareDesktopRestart() {
+        maintenance.assertAvailable('restart', maintenanceIdle);
+        // Private owner IPC only. Reserve synchronously before replying to the tray.
+        maintenance.locked = true;
+        maintenance.tickets.clear();
+        try { deferred.pauseAll(); }
+        catch (error) { maintenance.locked = false; throw error; }
+    }
     require('./pi-file-routes').mountFilePreviews(router, { files, store, supervisor });
     require('./pi-file-roots').mountFileRoots(router, fileRoots);
+    require('./pi-project-directories').mountProjectDirectories(router, projectDirectories);
     const artifacts = require('./pi-artifacts-routes').mountArtifacts(router, { store, supervisor, preferences, mediaRoot: options.artifactMediaRoot,
         isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running) || Boolean(sessionTransfer.running) });
     require('./pi-document-uploads').mountDocumentUploads(router, documents);
@@ -266,6 +276,7 @@ function createPiAgentGateway(options = {}) {
             fileViewer: descriptorBackendAvailable(),
             fileBrowser: descriptorBackendAvailable(),
             fileRoots: descriptorBackendAvailable(),
+            createDirectories: descriptorBackendAvailable(),
             filePreviews: descriptorBackendAvailable(),
             deliverables: descriptorBackendAvailable(),
             artifacts: descriptorBackendAvailable(),
@@ -443,7 +454,7 @@ function createPiAgentGateway(options = {}) {
 
     router.get('/activity', (req, res) => {
         res.set('Cache-Control', 'no-store');
-        res.json({ cronBusy: cron.busy, agentThreadLaunches: agentThreads.jobs.size, agentTaskIndexing: agentThreads.catalogIndex.busy, agentTaskReturns: agentThreads.returns.busy, agentMessages: agentThreads.messages.busy, learningBusy: learning.busy, learningRuns: learning.active.size, archives: archives(), titleRevision: titles.revisionId, titleGenerations: titles.jobs.size, transcriptionActive: transcription.active, documentOperations: documents.active, artifactOperations: artifacts.jobs.size, runtimes: supervisor.getActivity(), profilesBusy: profiles.busy, nativeSettingsBusy: nativeService.busy || settingsService.mutating || Boolean(titles.savingModel) || auxiliaryModels.busy, sessionTransfers: sessionTransfer.running, sessionMoves: sessionMoves.running, pinnedProjects: pinnedProjects(), hiddenProjects: hiddenProjects(), replyNotices: replyNotices(), deferred: deferred.summary() });
+        res.json({ projectDirectoryOperations: projectDirectories.jobs.size, cronBusy: cron.busy, agentThreadLaunches: agentThreads.jobs.size, agentTaskIndexing: agentThreads.catalogIndex.busy, agentTaskReturns: agentThreads.returns.busy, agentMessages: agentThreads.messages.busy, learningBusy: learning.busy, learningRuns: learning.active.size, archives: archives(), titleRevision: titles.revisionId, titleGenerations: titles.jobs.size, transcriptionActive: transcription.active, documentOperations: documents.active, artifactOperations: artifacts.jobs.size, runtimes: supervisor.getActivity(), profilesBusy: profiles.busy, nativeSettingsBusy: nativeService.busy || settingsService.mutating || Boolean(titles.savingModel) || auxiliaryModels.busy, sessionTransfers: sessionTransfer.running, sessionMoves: sessionMoves.running, pinnedProjects: pinnedProjects(), hiddenProjects: hiddenProjects(), replyNotices: replyNotices(), deferred: deferred.summary() });
     });
 
     router.patch('/projects/pin', (req, res) => {
@@ -1040,7 +1051,8 @@ function createPiAgentGateway(options = {}) {
         return wss;
     }
 
-    return { mount, attachWebSocket, dispose: async () => {
+    return { mount, attachWebSocket, prepareDesktopRestart, dispose: async () => {
+        const stoppingProjectDirectories = projectDirectories.dispose();
         const stoppingFileRoots = fileRoots.dispose();
         const stoppingArtifacts = artifacts.dispose();
         sessionSearch.dispose();
@@ -1063,7 +1075,7 @@ function createPiAgentGateway(options = {}) {
         await profiles.dispose();
         await usage.dispose();
         await stoppingThreads;
-        await Promise.all([stoppingFileRoots, stoppingDeferred, stoppingTitles, stoppingAuxiliaryModels, stoppingMoves, stoppingTranscription, stoppingDocuments]);
+        await Promise.all([stoppingProjectDirectories, stoppingFileRoots, stoppingDeferred, stoppingTitles, stoppingAuxiliaryModels, stoppingMoves, stoppingTranscription, stoppingDocuments]);
         await cron.dispose();
     }, store, supervisor, cron, deferred, sideChat, titles, auxiliaryModels, learning, knowledgeService, agentThreads, sessionMoves, transcription, documents, artifacts };
 }

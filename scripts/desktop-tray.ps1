@@ -13,6 +13,9 @@ Add-Type -AssemblyName System.Drawing
 $script:result = 0
 $script:service = $null
 $script:stopping = $false
+$script:exitRequested = $false
+$script:restartPending = $false
+$script:restartApproved = $false
 $script:ready = $false
 $script:url = $null
 $script:logFile = $null
@@ -56,20 +59,73 @@ function Open-Workspace {
     } catch { Show-Failure ('打开浏览器失败：' + $_.Exception.Message) }
 }
 function Request-Stop {
-    if ($script:stopping -or -not $script:service -or $script:service.HasExited) { return }
+    if ($script:exitRequested -or -not $script:service) { return }
     if (-not $SmokeTest) {
         $answer = [System.Windows.Forms.MessageBox]::Show('退出将停止本实例。请先保存草稿、结束任务，并暂停预约。是否继续？', '白泽灵台', 'YesNo', 'Question')
         if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
     }
+    $script:exitRequested = $true
+    $script:restartApproved = $false
     $script:stopping = $true
     $tray.Text = '白泽灵台：正在正常退出'
     $miOpen.Enabled = $false
     $miExit.Enabled = $false
+    $miRestart.Enabled = $false
     $miStatus.Text = '正在等待服务和 Agent 退出…'
+    if ($script:service.HasExited) { return }
     try {
         $script:service.StandardInput.WriteLine('{"type":"stop"}')
         $script:service.StandardInput.Flush()
     } catch { Show-Failure ('无法发送退出请求：' + $_.Exception.Message) }
+}
+function Request-Restart {
+    if ($script:stopping -or $script:restartPending -or -not $script:ready -or -not $script:service -or $script:service.HasExited) { return }
+    # Reserve before MessageBox pumps another Windows event loop.
+    $script:restartPending = $true
+    $miRestart.Enabled = $false
+    if (-not $SmokeTest) {
+        $answer = [System.Windows.Forms.MessageBox]::Show('重启将重新加载当前运行版本的代码，网页连接会暂时中断。请先保存草稿、完成任务并暂停预约。是否继续？', '白泽灵台', 'YesNo', 'Question')
+        if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { $script:restartPending = $false; $miRestart.Enabled = $script:ready; return }
+    }
+    $miStatus.Text = '正在检查是否可以重启…'
+    try {
+        $script:service.StandardInput.WriteLine('{"type":"restart"}')
+        $script:service.StandardInput.Flush()
+        $script:events.Add(@{ type = 'restart-requested'; pid = $script:service.Id })
+    } catch {
+        # A broken control pipe leaves the outcome uncertain; never replay it.
+        $miStatus.Text = '重启结果尚未确认，请查看日志或正常退出。'
+        if ($ConsoleMode) { Write-Host $miStatus.Text -ForegroundColor Yellow }
+    }
+}
+function Start-ServiceProcess {
+    if ($script:service) { $script:service.Dispose() }
+    $script:ready = $false
+    $script:readyAt = $null
+    $script:url = $null
+    $script:stopping = $false
+    $script:restartPending = $false
+    $script:restartApproved = $false
+    $tray.Text = '白泽灵台：正在启动'
+    $miStatus.Text = '正在启动…'
+    $miRestart.Enabled = $false
+    $miOpen.Enabled = $false
+    $miLog.Enabled = $false
+    $start = [System.Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = $NodePath
+    $start.Arguments = '"' + $runner + '"'
+    $start.WorkingDirectory = $AppRoot
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardInput = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+    $start.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
+    $script:service = [System.Diagnostics.Process]::Start($start)
+    $script:service.StandardInput.NewLine = "`n"
+    $script:readTask = $script:service.StandardOutput.ReadLineAsync()
+    $script:errorTask = $script:service.StandardError.ReadLineAsync()
 }
 function Handle-Message([string]$Line) {
     if ($Line.Length -gt 8192) { throw '启动器响应超过预算。' }
@@ -96,16 +152,36 @@ function Handle-Message([string]$Line) {
             $miStatus.Text = '运行中 · ' + $script:url
             $miOpen.Enabled = $true
             $miLog.Enabled = $true
+            $miRestart.Enabled = -not $script:restartPending -and -not $script:exitRequested
             $script:events.Add(@{ type = 'ready'; url = $script:url; pid = $script:service.Id })
             if ($SmokeTest) {
                 $snapshot = ConvertTo-Json -Compress @{ type = 'ready'; url = $script:url; pid = $script:service.Id }
                 [Console]::Out.WriteLine($snapshot); [Console]::Out.Flush()
                 [IO.File]::WriteAllText((Join-Path $AppRoot '.pivane-runtime\desktop\smoke-ready.json'), $snapshot, [Text.UTF8Encoding]::new($false))
             }
-            if ($ConsoleMode) { Write-Host ('白泽灵台已启动：' + $script:url) }
+            if ($ConsoleMode) { Write-Host ('白泽灵台已启动：' + $script:url); Write-Host '按 R 重启服务，按 Q 正常退出；也可使用托盘右键菜单。' }
             if ($script:openPending) { Open-Workspace }
         }
         'stopping' { $miStatus.Text = '正在等待服务和 Agent 退出…' }
+        'restarting' {
+            if (-not $script:exitRequested) { $script:restartApproved = $true }
+            $script:stopping = $true
+            $script:ready = $false
+            $tray.Text = '白泽灵台：正在重启'
+            $miOpen.Enabled = $false
+            $miRestart.Enabled = $false
+            $miStatus.Text = '正在等待旧服务正常退出，再重新加载…'
+            $script:events.Add(@{ type = 'restarting'; pid = $script:service.Id })
+        }
+        'restart-pending' { $miStatus.Text = $message.message }
+        'restart-blocked' {
+            $script:restartPending = $false
+            $miRestart.Enabled = $script:ready -and -not $script:exitRequested
+            $miStatus.Text = $message.message
+            $script:events.Add(@{ type = 'restart-blocked'; message = $message.message })
+            if ($ConsoleMode) { Write-Host $message.message -ForegroundColor Yellow }
+            if (-not $SmokeTest) { [System.Windows.Forms.MessageBox]::Show($message.message, '暂不能重启', 'OK', 'Information') | Out-Null }
+        }
         'error' { Show-Failure ('启动失败：' + $message.message) }
         default { throw '启动器收到未知的私有响应。' }
     }
@@ -187,29 +263,17 @@ try {
         $miStatus = $menu.Items.Add('正在启动…'); $miStatus.Enabled = $false
         $miOpen = $menu.Items.Add('打开白泽灵台'); $miOpen.Enabled = $false
         $miLog = $menu.Items.Add('查看本次日志'); $miLog.Enabled = $false
+        $miRestart = $menu.Items.Add('重启服务'); $miRestart.Enabled = $false
         $menu.Items.Add([System.Windows.Forms.ToolStripSeparator]::new()) | Out-Null
         $miExit = $menu.Items.Add('正常退出')
         $miOpen.add_Click({ Open-Workspace })
         $miLog.add_Click({ if ($script:logFile) { $start = [Diagnostics.ProcessStartInfo]::new(); $start.FileName = $script:logFile; $start.UseShellExecute = $true; [Diagnostics.Process]::Start($start) | Out-Null } })
         $miExit.add_Click({ Request-Stop })
+        $miRestart.add_Click({ Request-Restart })
         $tray.add_DoubleClick({ Open-Workspace })
         $tray.ContextMenuStrip = $menu
         $context = [System.Windows.Forms.ApplicationContext]::new()
-        $start = [System.Diagnostics.ProcessStartInfo]::new()
-        $start.FileName = $NodePath
-        $start.Arguments = '"' + $runner + '"'
-        $start.WorkingDirectory = $AppRoot
-        $start.UseShellExecute = $false
-        $start.CreateNoWindow = $true
-        $start.RedirectStandardInput = $true
-        $start.RedirectStandardOutput = $true
-        $start.RedirectStandardError = $true
-        $start.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
-        $start.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
-        $script:service = [System.Diagnostics.Process]::Start($start)
-        $script:service.StandardInput.NewLine = "`n"
-        $script:readTask = $script:service.StandardOutput.ReadLineAsync()
-        $script:errorTask = $script:service.StandardError.ReadLineAsync()
+        Start-ServiceProcess
         $timer = [System.Windows.Forms.Timer]::new()
         $timer.Interval = 100
         $timer.add_Tick({
@@ -232,11 +296,26 @@ try {
                     $script:errorTask = $script:service.StandardError.ReadLineAsync()
                 }
                 if ($openEvent.WaitOne(0)) { Open-Workspace }
+                if ($ConsoleMode -and -not [Console]::IsInputRedirected) {
+                    while ([Console]::KeyAvailable) {
+                        $key = [Console]::ReadKey($true).Key
+                        if ($key -eq [ConsoleKey]::R) { Request-Restart }
+                        elseif ($key -eq [ConsoleKey]::Q) { Request-Stop }
+                    }
+                }
+                if ($SmokeTest -and $script:ready -and (Test-Path -LiteralPath (Join-Path $AppRoot '.pivane-launcher-restart'))) {
+                    Remove-Item -LiteralPath (Join-Path $AppRoot '.pivane-launcher-restart')
+                    $miRestart.PerformClick()
+                }
                 if ($SmokeTest -and $script:readyAt -and ((Test-Path -LiteralPath (Join-Path $AppRoot '.pivane-launcher-stop')) -or ([DateTime]::UtcNow - $script:readyAt).TotalSeconds -ge 120)) { $miExit.PerformClick() }
                 if ($script:service.HasExited -and -not $script:readTask -and -not $script:errorTask) {
                     $script:events.Add(@{ type = 'exited'; exitCode = $script:service.ExitCode })
-                    if ($script:service.ExitCode -ne 0 -and $script:result -eq 0) { Show-Failure '白泽灵台异常退出，请检查日志。' }
-                    $context.ExitThread()
+                    if ($script:restartApproved -and -not $script:exitRequested -and $script:service.ExitCode -eq 0 -and $script:result -eq 0) {
+                        Start-ServiceProcess
+                    } else {
+                        if ($script:service.ExitCode -ne 0 -and $script:result -eq 0) { Show-Failure '白泽灵台异常退出，请检查日志；未自动重启。' }
+                        $context.ExitThread()
+                    }
                 }
             } catch { Show-Failure $_.Exception.Message; $script:service.StandardInput.Close(); $context.ExitThread() }
             finally { $script:tickBusy = $false }

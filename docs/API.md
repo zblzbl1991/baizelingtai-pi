@@ -311,6 +311,14 @@ Body: `{ "cwd": "/workspace/demo" }`。先经过 token/Origin/realpath 根检查
 }
 ```
 
+### `POST /directories`
+
+`GET /status.createDirectories=true` 表示支持创建项目文件夹。Body 为 `{ "parent": "/workspace", "name": "新项目" }`，仅允许这两个字段；`parent` 必须是已存在、允许根范围内且可访问的服务器绝对目录。`name` 为非空单个名称，UTF-8 最多 255 字节；拒绝 `.`、`..`、路径分隔符、控制字符与平台非法名称。父目录与目标遵循私密路径规则，包括实际 Agent 身份目录；不递归创建，不复用已有文件、目录或链接。
+
+成功返回 HTTP 201：`{ "parent": "/workspace", "path": "/workspace/新项目", "name": "新项目" }`，路径为规范服务器路径。不启动 worker、不创建会话、不切换当前项目。复用鉴权与 Origin 校验，响应带 `no-store`、`nosniff`。
+
+错误包括 400 `DIRECTORY_NAME`、403 `DIRECTORY_PRIVATE` / `FILE_PROJECT` / `FILE_PRIVATE` / `DIRECTORY_DENIED`、409 `DIRECTORY_EXISTS` / `DIRECTORY_CHANGED` / `DIRECTORY_BUSY`。创建后无法完成位置／身份验证时返回 409 `DIRECTORY_UNCERTAIN`，保留磁盘结果并要求重新浏览核对；断连或超时不表示取消，也不自动重放。最多一个创建操作，await 前预占；`GET /activity.projectDirectoryOperations` 投影运行数量，维护空闲判断与异步停机等待该操作完成。创建前后检查父目录和新目录的内核路径、完整身份、类型与变化状态，Linux 通过已打开父目录的 `/proc/self/fd` 创建；其他平台使用描述符确认的内核路径并重新核验。
+
 ### `GET /sessions?cwd=<absolute-path>`
 
 返回该 cwd 的 Pi sessions，按修改时间倒序：

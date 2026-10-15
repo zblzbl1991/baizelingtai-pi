@@ -617,7 +617,15 @@
                 <div class="pi-directory-head">
                     <button id="pi-directory-up" class="icon-btn subtle" type="button" title="上级目录" aria-label="上级目录" data-i18n-title="s225" data-i18n-aria-label="s225"><i class="fa-solid fa-arrow-up"></i></button>
                     <span id="pi-directory-current"><!--i18n:s1503-->允许的项目根目录</span>
+                    <button id="pi-directory-create" class="pi-secondary-button" type="button" hidden disabled><i class="fa-solid fa-folder-plus" aria-hidden="true"></i><span data-project-directory-label>新建文件夹</span></button>
                 </div>
+                <form id="pi-directory-create-form" class="pi-directory-create-form" aria-labelledby="pi-directory-name-label" hidden>
+                    <label id="pi-directory-name-label" for="pi-directory-name">文件夹名称</label>
+                    <small id="pi-directory-create-parent"></small>
+                    <input id="pi-directory-name" type="text" autocomplete="off" spellcheck="false" aria-describedby="pi-directory-create-parent pi-directory-create-error">
+                    <div class="pi-directory-create-actions"><button id="pi-directory-create-cancel" class="pi-secondary-button" type="button">取消</button><button id="pi-directory-create-submit" class="pi-primary-button" type="submit">创建</button></div>
+                    <p id="pi-directory-create-error" role="alert" hidden></p>
+                </form>
                 <div id="pi-directory-list" class="pi-directory-list"></div>
             </div>
             <div class="pi-recent-projects">
@@ -1029,6 +1037,7 @@
     <link rel="stylesheet" href="pi-workbench.css">
     <script src="pi-workbench.js"></script>
     <script src="pi-request-stats.js"></script>
+    <script src="pi-project-directories.js"></script>
     <script src="pi-chat.js?v=subagent-runtime-1"></script>
 </body>
 </html>

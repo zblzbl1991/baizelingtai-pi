@@ -1712,6 +1712,23 @@ button.pi-action-pending:not(.icon-btn):not(.pi-message-action) .pi-spinner { ma
 .pi-directory-browser { border-bottom: 1px solid var(--line); }
 .pi-directory-head { min-height: 42px; padding: 5px 12px; border-bottom: 1px solid #24292a; color: #8d9893; font: 0.66rem ui-monospace, SFMono-Regular, Consolas, monospace; display: flex; align-items: center; gap: 9px; }
 .pi-directory-current { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#pi-directory-current { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#pi-directory-create { width: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; min-height: 38px; }
+.project-dialog { overflow-y: auto; overscroll-behavior: contain; }
+#pi-directory-create[hidden], .pi-directory-create-form[hidden] { display: none; }
+.pi-directory-create-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+.pi-directory-create-form label, .pi-directory-create-form small, #pi-directory-create-error { grid-column: 1 / -1; }
+.pi-directory-create-form label { color: var(--text-main); font-size: 0.8rem; }
+.pi-directory-create-form small { color: var(--text-muted); overflow-wrap: anywhere; }
+.pi-directory-create-form input { min-width: 0; width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-2); color: var(--text-main); font: inherit; }
+.pi-directory-create-actions { display: flex; align-items: stretch; gap: 7px; }
+#pi-directory-create-error { margin: 0; color: var(--danger, #d85b57); font-size: 0.8rem; overflow-wrap: anywhere; }
+@media (max-width: 680px) {
+    .pi-directory-create-form input { font-size: 16px; }
+    .pi-directory-create-actions button, #pi-directory-create { min-height: 44px; }
+    .pi-directory-create-form input, .pi-directory-create-actions { grid-column: 1 / -1; }
+    .pi-directory-create-actions { justify-content: flex-end; }
+}
 .pi-directory-list { height: 220px; padding: 6px 8px; overflow-y: auto; display: grid; align-content: start; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; }
 .pi-directory-list button,
 .pi-project-row {

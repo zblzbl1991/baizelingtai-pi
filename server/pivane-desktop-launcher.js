@@ -59,7 +59,7 @@ async function checkReady(url, fetcher = fetch) {
 
 // Only the owning tray's inherited stdin can request stop. No public stop API,
 // PID file, process-name matching, or control token is created.
-function listenForStop(input, stop) {
+function listenForStop(input, stop, restart) {
     const decoder = new StringDecoder('utf8');
     let pending = '';
     input.on('data', bytes => {
@@ -68,11 +68,37 @@ function listenForStop(input, stop) {
         let newline;
         while ((newline = pending.indexOf('\n')) !== -1) {
             const line = pending.slice(0, newline); pending = pending.slice(newline + 1);
-            try { if (JSON.parse(line).type === 'stop') void stop(); } catch { /* Ignore unknown input; never execute it. */ }
+            try {
+                const message = JSON.parse(line);
+                if (message.type === 'stop') void stop();
+                else if (message.type === 'restart' && restart) void restart();
+            } catch { /* Ignore unknown input; never execute it. */ }
         }
     });
     input.on('end', () => { void stop(); });
     input.on('error', () => { void stop(); });
+}
+
+function prepareDesktopRestart(launcher, { supported = false, onWaiting = () => {}, timeoutMs = 10000 } = {}) {
+    if (!supported) return Promise.reject(new Error('当前运行版本不支持托盘重启，请先正常退出并重新打开启动入口。'));
+    const child = launcher.child, id = randomUUID();
+    if (launcher.closed || launcher.operation || !child?.connected) return Promise.reject(new Error('服务尚未就绪或正在维护，请稍后重启。'));
+    return new Promise((resolve, reject) => {
+        const cleanup = () => { clearTimeout(timer); child.off('message', receive); child.off('exit', exited); child.off('disconnect', disconnected); };
+        const receive = message => {
+            if (message?.type !== 'desktop-restart-result' || message.nonce !== launcher.nonce || message.id !== id || launcher.child !== child) return;
+            cleanup();
+            if (message.accepted === true) resolve();
+            else reject(new Error(message.message || '实例当前不能重启，请完成任务后重试。'));
+        };
+        const exited = () => { cleanup(); reject(new Error('服务已退出，重启检查未完成。')); };
+        const disconnected = () => { cleanup(); reject(new Error('服务连接已断开，重启结果尚未确认。')); };
+        // A slow response does not cancel the request or allow another submission.
+        const timer = setTimeout(onWaiting, timeoutMs);
+        child.on('message', receive); child.once('exit', exited); child.once('disconnect', disconnected);
+        try { child.send({ type: 'desktop-restart', nonce: launcher.nonce, id }, error => { if (error) disconnected(); }); }
+        catch (error) { cleanup(); reject(error); }
+    });
 }
 
 async function startDesktop(options = {}) {
@@ -114,8 +140,12 @@ async function startDesktopService({ root, environment = process.env, emit, log 
         if (logFd !== undefined) fs.writeSync(logFd, new Date().toISOString() + ' ' + safe + '\n');
         log(safe);
     }
+    const restartCapableChildren = new WeakSet();
     const launcher = new Manager({ root, env, networkEnvironment, forkServer: (file, args, options) => {
         const child = forkServer(file, args, { ...options, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], windowsHide: true });
+        child.on('message', message => {
+            if (message?.nonce === launcher.nonce && message.type === 'maintenance-ready' && message.desktopRestart === true) restartCapableChildren.add(child);
+        });
         for (const name of ['stdout', 'stderr']) {
             const lines = outputLines(name, (_stream, text) => writeLog(text), redact);
             child[name].on('data', bytes => lines.write(bytes)); child[name].on('end', () => lines.end());
@@ -135,7 +165,19 @@ async function startDesktopService({ root, environment = process.env, emit, log 
         return stopping;
     };
     const shutdown = require('./pi-process-shutdown').registerProcessShutdown(stop);
-    listenForStop(process.stdin, shutdown);
+    let ready = false, restarting;
+    const restart = () => {
+        if (stopping || restarting) return restarting;
+        if (!ready) { emit({ type: 'restart-blocked', message: '服务尚未就绪，请稍后重启。' }); return; }
+        // Reserve before the first IPC await. The owning tray reopens a fresh Node
+        // runner only after this one has shut down successfully and drained its pipes.
+        restarting = prepareDesktopRestart(launcher, { supported: restartCapableChildren.has(launcher.child), onWaiting: () => emit({ type: 'restart-pending', message: '正在等待重启检查，请勿重复提交。' }) })
+            .then(() => { if (!stopping) emit({ type: 'restarting' }); return shutdown(); })
+            .catch(error => { if (!stopping) emit({ type: 'restart-blocked', message: redact(error.message) }); })
+            .finally(() => { if (!stopping) restarting = null; });
+        return restarting;
+    };
+    listenForStop(process.stdin, shutdown, restart);
     try {
         emit({ type: 'starting', logFile });
         await launcher.start();
@@ -143,6 +185,7 @@ async function startDesktopService({ root, environment = process.env, emit, log 
         const url = browserUrl(networkEnvironment.HOST, Number(launcher.env.PORT || env.PORT || 11408));
         await checkReady(url, fetcher);
         if (!stopping) {
+            ready = true;
             startup.ready(url);
             emit({ type: 'ready', url, logFile, agentDir: env.PI_CODING_AGENT_DIR, mediaDir: env.PI_MEDIA_DATA_DIR });
         }
@@ -158,4 +201,4 @@ async function startDesktopService({ root, environment = process.env, emit, log 
     return { launcher, stop, shutdown };
 }
 
-module.exports = { installationId, desktopEnvironment, browserUrl, checkReady, listenForStop, startDesktop };
+module.exports = { installationId, desktopEnvironment, browserUrl, checkReady, listenForStop, prepareDesktopRestart, startDesktop };
