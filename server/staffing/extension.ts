@@ -13,12 +13,27 @@ export default async function (pi: ExtensionAPI) {
         initialized = true;
         ctx.ui.notify(JSON.stringify({ pivaneStaffingLoaded: initial.epoch, sessionId: ctx.sessionManager.getSessionId() }));
         const definitions = [
-            { name: 'staffing_query', action: 'query', description: 'Query current staffing ledger and recommend a full-range available team. Recommendation does not occupy people. Returns workload order and headcount/direct-sign gaps.',
+            { name: 'staffing_query', action: 'query', description: 'Query current staffing ledger and recommend full-range available additions for the remaining headcount and direct-sign gaps. existingTeam is already assigned; selected contains only new additions. Recommendation does not occupy people. Returns workload order and headcount/direct-sign gaps.',
                 parameters: Type.Object({ kind: Type.Literal('recommend'), project }, { additionalProperties: false }) },
-            { name: 'staffing_prepare_change', action: 'prepare', description: 'Prepare an exact staffing plan card for user review. Never commits or occupies personnel. User must use the workspace card to adjust and confirm. Cross-department permission cannot be granted by a tool.',
-                parameters: Type.Object({ requestId: Type.String({ maxLength: 80 }), expectedRevision: Type.Integer({ minimum: 0 }), project, personIds: Type.Array(Type.String(), { maxItems: 5000 }) }, { additionalProperties: false }) },
+            { name: 'staffing_prepare_change', action: 'prepare', description: 'Prepare an exact assignment, absence, formal confirmation, future replacement, date adjustment or release card for user review. For an existing project use only recommended new additions. formalize changes existing reserved records without adding people. Never commits or occupies personnel. User must use the workspace card to adjust and confirm. Cross-department permission cannot be granted by a tool.',
+                parameters: Type.Union([
+                    Type.Object({ requestId: Type.String({ maxLength: 80 }), expectedRevision: Type.Integer({ minimum: 0 }), project, personIds: Type.Array(Type.String(), { maxItems: 5000 }) }, { additionalProperties: false }),
+                    Type.Object({ requestId: Type.String({ maxLength: 80 }), expectedRevision: Type.Integer({ minimum: 0 }), kind: Type.Literal('absence'), personId: Type.String(), absenceKind: Type.Union([Type.Literal('leave'), Type.Literal('training'), Type.Literal('unavailable')]), start: Type.String(), end: Type.String(), reason: Type.String() }, { additionalProperties: false }),
+                    Type.Object({ requestId: Type.String({ maxLength: 80 }), expectedRevision: Type.Integer({ minimum: 0 }), kind: Type.Literal('formalize'), projectId: Type.String(), occupancyIds: Type.Optional(Type.Array(Type.String())) }, { additionalProperties: false }),
+                    Type.Object({ requestId: Type.String({ maxLength: 80 }), expectedRevision: Type.Integer({ minimum: 0 }), kind: Type.Literal('replace'), projectId: Type.String(), occupancyId: Type.String(), replacementPersonId: Type.String(), start: Type.String(), end: Type.String(), reason: Type.String() }, { additionalProperties: false }),
+                    Type.Object({ requestId: Type.String({ maxLength: 80 }), expectedRevision: Type.Integer({ minimum: 0 }), kind: Type.Literal('release'), releaseKind: Type.Union([Type.Literal('withdraw'), Type.Literal('cancel'), Type.Literal('early-end')]), projectId: Type.String(), occupancyId: Type.Optional(Type.String()), effectiveDate: Type.String(), reason: Type.String() }, { additionalProperties: false }),
+                    Type.Object({ requestId: Type.String({ maxLength: 80 }), expectedRevision: Type.Integer({ minimum: 0 }), kind: Type.Union([Type.Literal('reschedule'), Type.Literal('extend')]), projectId: Type.String(), start: Type.Optional(Type.String()), end: Type.String(), reason: Type.String() }, { additionalProperties: false })
+                ]) },
             { name: 'staffing_operation_status', action: 'operation', description: 'Check the original staffing operation after an uncertain outcome. Do not replay an uncertain write.',
-                parameters: Type.Object({ requestId: Type.String({ maxLength: 80 }) }, { additionalProperties: false }) }
+                parameters: Type.Object({ requestId: Type.String({ maxLength: 80 }) }, { additionalProperties: false }) },
+            { name: 'staffing_prepare_import', action: 'import', description: 'Prepare a source-bound difference card from an attached standard staffing XLSX. Does not update the ledger. The user confirms the exact differences in the card.',
+                parameters: Type.Object({ requestId: Type.String({ maxLength: 80 }), expectedRevision: Type.Integer({ minimum: 0 }), attachmentId: Type.String({ pattern: '^[a-f0-9]{64}$' }) }, { additionalProperties: false }) },
+            { name: 'staffing_export', action: 'export', description: 'On explicit user request, export the current ledger revision to a standard XLSX and independently save it to artifacts. Report generated, available and saved phases accurately.',
+                parameters: Type.Object({ requestId: Type.String({ maxLength: 80 }), expectedRevision: Type.Integer({ minimum: 0 }) }, { additionalProperties: false }) },
+            { name: 'staffing_export_status', action: 'export-status', description: 'Query the original export result after an uncertain outcome. Never replay an uncertain export.',
+                parameters: Type.Object({ requestId: Type.String({ maxLength: 80 }) }, { additionalProperties: false }) },
+            { name: 'staffing_ledger_status', action: 'ledger-status', description: 'Read the latest ledger revision and record counts before preparing an Excel import or requesting an export.',
+                parameters: Type.Object({}, { additionalProperties: false }) }
         ];
         for (const definition of definitions) pi.registerTool({ name: definition.name, label: definition.name, description: definition.description,
             parameters: definition.parameters,
@@ -31,7 +46,7 @@ export default async function (pi: ExtensionAPI) {
                 const response = await fetch(url, { method: 'POST', redirect: 'error', signal,
                     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.PI_WEB_NAVIGATION_TOKEN}` }, body: JSON.stringify(raw) });
                 const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Staffing request failed');
-                return { content: [{ type: 'text', text: JSON.stringify(result) }], ...(definition.action === 'prepare' ? { details: { pivaneStaffing: { version: 1, plan: result } } } : {}) };
+                return { content: [{ type: 'text', text: JSON.stringify(result) }], ...(['prepare', 'import'].includes(definition.action) ? { details: { pivaneStaffing: { version: 1, plan: result } } } : {}) };
             } });
     });
 }
