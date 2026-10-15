@@ -21,6 +21,10 @@ function candidates(state, project, crossDepartment = false) {
         .sort((a, b) => a.workDays - b.workDays || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 function coverage(state, project) {
+    if (project.lifecycle && project.lifecycle.state !== 'active') {
+        if (project.lifecycle.effectiveDate <= project.start) return { segments: [], satisfied: true, allConfirmed: true, inactive: true };
+        project = { ...project, end: iso(day(project.lifecycle.effectiveDate) - 1) };
+    }
     const assignments = state.occupancies.filter(row => row.projectId === project.id && row.kind === 'project' && active(row) && overlaps(row, project));
     const assignedIds = new Set(assignments.map(row => row.personId));
     const absent = state.occupancies.filter(row => row.kind !== 'project' && assignedIds.has(row.personId) && active(row) && overlaps(row, project));

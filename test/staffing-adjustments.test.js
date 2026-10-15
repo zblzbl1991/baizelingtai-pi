@@ -41,3 +41,48 @@ test('truthful leave shows daily headcount and direct gaps in all three ledger v
     const history = await service.views({ kind: 'history' });
     assert.equal(history.events.at(-1).after.occupancies[0].kind, 'leave');
 });
+
+test('formalize existing reservations without duplicating people and recommend only missing additions', async t => {
+    const service = await fixture(); t.after(() => service.dispose());
+    const formal = await prepare(service, { kind: 'formalize', projectId: 'A' });
+    assert.equal((await service.views({ kind: 'projects' })).projects[0].coverage.allConfirmed, false);
+    await commit(service, formal);
+    let view = await service.views({ kind: 'projects' });
+    assert.equal(view.projects[0].team.length, 2); assert.equal(view.projects[0].coverage.allConfirmed, true);
+    const newProject = { ...project, id: 'five', start: '2026-12-01', end: '2026-12-05', minimum: 5 };
+    let plan = await service.prepareChange({ requestId: 'reserve-three', expectedRevision: view.revision, project: newProject, personIds: ['D','N','R'] }, await service.pageSource());
+    await commit(service, plan, 'reserve');
+    const result = await service.query({ kind: 'recommend', project: newProject }, await service.pageSource());
+    assert.equal(result.existingTeam.length, 3); assert.equal(result.additionalNeeded, 2);
+    assert.deepEqual(result.selected.map(p => p.id), ['F','G']);
+    plan = await service.prepareChange({ requestId: 'add-two', expectedRevision: result.revision, project: newProject, personIds: result.selected.map(p => p.id) }, await service.pageSource());
+    await commit(service, plan, 'reserve');
+    view = await service.views({ kind: 'projects' });
+    assert.equal(view.projects.find(p => p.id === 'five').team.length, 5);
+    assert.equal(view.projects.find(p => p.id === 'five').coverage.satisfied, true);
+});
+
+test('interval replacement and future release preserve elapsed workload and project history', async t => {
+    const service = await fixture(); t.after(() => service.dispose());
+    await commit(service, await prepare(service, { kind: 'absence', personId: 'D', absenceKind: 'leave', start: '2026-11-03', end: '2026-11-03', reason: 'Leave' }));
+    const replacement = await prepare(service, { kind: 'replace', projectId: 'A', occupancyId: 'O-D', replacementPersonId: 'R', start: '2026-11-03', end: '2026-11-03', reason: 'Cover leave' });
+    assert.equal(replacement.affectedProjects[0].coverage.satisfied, true);
+    await commit(service, replacement);
+    let result = await service.views({ kind: 'projects' });
+    assert.equal(result.projects[0].coverage.satisfied, true);
+    const early = await prepare(service, { kind: 'release', releaseKind: 'early-end', projectId: 'A', effectiveDate: '2026-11-04', reason: 'Early finish' });
+    assert.deepEqual(early.project.lifecycle, { state: 'ended', effectiveDate: '2026-11-04' });
+    assert.equal(early.lastRequiredDate, '2026-11-03');
+    await commit(service, early);
+    const available = await service.views({ kind: 'availability', department: 'A', start: '2026-11-04', end: '2026-11-05' });
+    assert.ok(available.people.some(p => p.id === 'D')); assert.ok(available.people.some(p => p.id === 'N'));
+    const days = await service.views({ kind: 'people', start: '2026-11-06', end: '2026-11-06' });
+    assert.equal(days.people.find(p => p.id === 'D').workDays, 2);
+    assert.equal(days.people.find(p => p.id === 'N').workDays, 3);
+    assert.equal(days.people.find(p => p.id === 'R').workDays, 1);
+    const history = await service.views({ kind: 'history' });
+    assert.ok(history.events.some(e => e.before?.occupancies?.some(o => o.id === 'O-D' && o.end === '2026-11-05')));
+    assert.ok(history.events.some(e => e.after?.projects?.some(p => p.lifecycle?.state === 'ended')));
+    await assert.rejects(prepare(service, { kind: 'release', releaseKind: 'withdraw', projectId: 'A', occupancyId: 'O-N', effectiveDate: '2026-11-02', reason: 'No retrospective release' }), /future|past|date/i);
+});
+

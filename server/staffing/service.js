@@ -168,10 +168,16 @@ class StaffingService {
         if (input.kind !== 'recommend') fail('Unknown staffing query');
         this.validateProject(input.project);
         const state = await this.requireSource(source), available = rules.candidates(state, input.project);
-        const direct = available.find(person => person.direct), selected = direct ? [direct] : [];
-        for (const person of available) if (selected.length < input.project.minimum && !selected.includes(person)) selected.push(person);
+        const currentCoverage = rules.coverage(state, input.project);
+        const existingTeam = state.occupancies.filter(row => row.projectId === input.project.id && row.kind === 'project' && rules.active(row));
+        const additionalNeeded = Math.max(0, ...currentCoverage.segments.map(row => row.missing));
+        const needsDirect = currentCoverage.segments.some(row => row.missingDirect);
+        const direct = needsDirect && available.find(person => person.direct), selected = direct ? [direct] : [];
+        for (const person of available) if (selected.length < additionalNeeded && !selected.includes(person)) selected.push(person);
+        const proposed = { ...state, occupancies: [...state.occupancies, ...selected.map(person => ({ personId: person.id, projectId: input.project.id, kind: 'project', state: 'reserved', start: input.project.start, end: input.project.end }))] };
+        const projectedCoverage = rules.coverage(proposed, input.project);
         return { revision: state.revision, project: input.project, candidates: available.slice(0, 200), totalCandidates: available.length,
-            selected, missing: Math.max(0, input.project.minimum - selected.length), missingDirect: !selected.some(person => person.direct),
+            existingTeam, currentCoverage, additionalNeeded, selected, missing: Math.max(0, ...projectedCoverage.segments.map(row => row.missing)), missingDirect: projectedCoverage.segments.some(row => row.missingDirect),
             historyComplete: state.historyComplete, warning: state.historyComplete ? '' : '按已录入记录排序，历史不完整' };
     }
     planProjection(state, plan) {
