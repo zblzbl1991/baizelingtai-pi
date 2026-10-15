@@ -33,6 +33,11 @@ function check(state, plan, { today } = {}) {
             if (old.state === 'cancelled' && row.state !== 'cancelled' || row.end > old.end) fail('Import cannot implicitly restore released occupancy; use an explicit adjustment', 409);
             if (old.start < today && (row.state === 'cancelled' || row.start !== old.start || row.end < today && row.end < old.end || ['personId', 'projectId', 'kind'].some(k => old[k] !== row[k]))) fail('Import cannot rewrite elapsed occupancy', 409);
         }
+        for (const row of plan.import.upserts.occupancies) {
+            if (row.kind !== 'project' || row.state === 'cancelled' || same(state.occupancies.find(item => item.id === row.id), row)) continue;
+            const person = data.people.find(item => item.id === row.personId), project = data.projects.find(item => item.id === row.projectId);
+            if (person.department !== project.department) fail('Cross-department import requires an explicit staffing plan with borrowing permission', 409);
+        }
         for (const row of plan.import.upserts.projects) {
             const old = state.projects.find(item => item.id === row.id);
             if (old?.lifecycle && old.lifecycle.state !== 'active' && !same(old.lifecycle, row.lifecycle)) fail('Import cannot reopen or rewrite a closed project', 409);
@@ -42,8 +47,10 @@ function check(state, plan, { today } = {}) {
 }
 function projection(state, plan) {
     const changes = plan.import.upserts ? collections.flatMap(kind => plan.import.upserts[kind].map(after => ({ kind, before: state[kind].find(row => row.id === after.id) || null, after }))) : [];
-    return { ...structuredClone(plan), currentRevision: state.revision, stale: !state.enabled || plan.epoch !== state.epoch || plan.revision !== state.revision,
-        changes: changes.slice(0, 200), totalChanges: changes.length, counts: plan.import.counts || Object.fromEntries(collections.map(name => [name, plan.import.upserts[name].length])),
+    const projected = structuredClone(plan); delete projected.import.upserts;
+    const visible = []; let bytes = 0; for (const change of changes) { bytes += Buffer.byteLength(JSON.stringify(change)); if (visible.length >= 200 || bytes > 64000) break; visible.push(change); }
+    return { ...projected, currentRevision: state.revision, stale: !state.enabled || plan.epoch !== state.epoch || plan.revision !== state.revision,
+        changes: visible, totalChanges: changes.length, counts: plan.import.counts || Object.fromEntries(collections.map(name => [name, plan.import.upserts[name].length])),
         warning: plan.import.sourceRevision < state.revision ? '导入文件版本较旧。请核对全部差异。' : '' };
 }
 function commit(state, plan, action, options) {
