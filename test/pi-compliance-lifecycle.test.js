@@ -28,6 +28,9 @@ test('disable accepts a held real import step, drains it and never publishes a p
     const pending = write(`/projects/${project.id}/documents`,{requestId:'held-import',sources:[{kind:'upload',name:'当前.csv',base64:Buffer.from('项目名称,日期\nHELD_IMPORT,2026-08-01\n').toString('base64')},{kind:'upload',name:'下一.csv',base64:Buffer.from('项目名称,日期\nNEXT_IMPORT,2026-08-02\n').toString('base64')}]});
     await event('held');
     try {
+        const refused=await write(`/projects/${project.id}/documents`,{requestId:'not-admitted-import',sources:[{kind:'upload',name:'拒绝.csv',base64:Buffer.from('项目名称\n拒绝\n').toString('base64')}]});
+        assert.equal(refused.status,409);assert.equal(refused.data.operationAccepted,false,'a distinct import rejected before admission has no durable intent');
+        assert.equal((await call('GET','/operations/not-admitted-import')).status,404);
         const state=(await call('GET','')).data;
         const disabled=await write('/settings',{enabled:false,expectedSettingsRevision:state.settingsRevision},'PUT');
         assert.equal(disabled.status,200,JSON.stringify(disabled.data)); assert.equal(disabled.data.status,'disabling');
@@ -69,4 +72,24 @@ test('accepted original reads remain busy until the real file read settles and u
     const result=await pending; assert.equal(result.status,200); assert.deepEqual(Buffer.from(result.data.base64,'base64'),bytes);
     await draining;
     assert.equal((await call('GET',`/projects/${project.id}/batches`)).status,409,'a first lazy recovery cannot start after unified shutdown has finished');
+});
+
+test('unified shutdown rejects new ordinary documents while the accepted PDF step finishes its subsequent shared-pool read', async () => {
+    child.send({type:'close'}); await once(child,'exit'); messages=[]; await open();
+    const project=(await write('/projects',{project:{name:'PDF 停机工程'}})).data.project;
+    const bytes=require('./compliance-fixtures.cjs').labeledPdf([{text:'日期：2026-08-31',y:650}]);
+    const imported=await write(`/projects/${project.id}/documents`,{sources:[{kind:'upload',name:'合同.pdf',base64:bytes.toString('base64')}]});
+    assert.equal(imported.status,200,JSON.stringify(imported.data)); const document=imported.data.documents[0];
+    assert.equal((await write(`/documents/${document.id}/assignment`,{role:'contract',identityConfirmed:true,selected:true},'PUT')).status,200);
+    child.send({type:'arm-parser-action',action:'inspect',matches:2}); await event('armed');
+    const pending=write(`/projects/${project.id}/batches`,{requestId:'shutdown-multiple-pdf-reads'}); await event('held');
+    child.send({type:'dispose'}); const draining=event('disposed');
+    try {
+        assert.equal(await Promise.race([draining.then(()=>true),new Promise(resolve=>setTimeout(()=>resolve(false),80))]),false);
+        assert.equal((await call('GET','/uploads',undefined,true)).status,503,'ordinary document admission stops immediately');
+    } finally { child.send({type:'release'}); }
+    const result=await pending; await draining; assert.equal(result.status,200,JSON.stringify(result.data));
+    assert.equal(result.data.batch.execution.steps[0].status,'completed','the same accepted PDF step can make its later pool read during draining');
+    assert.equal(result.data.batch.fields.find(field=>field.key==='date')?.raw,'2026-08-31');
+    assert.equal((await call('GET','/uploads',undefined,true)).status,503);
 });

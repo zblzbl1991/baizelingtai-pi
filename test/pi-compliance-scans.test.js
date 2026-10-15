@@ -5,7 +5,7 @@ const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivan
 fs.mkdirSync(agent); fs.mkdirSync(cwd);
 process.env.PI_CODING_AGENT_DIR = agent; process.env.PI_PROJECT_ROOTS = root; process.env.PI_OFFLINE = '1';
 let gateway, server, provider, origin, revision = 0, gatewayClosed=false, composed; const calls = [];
-let holdNext = false, held, release, responseFields, nativeArguments;
+let holdNext = false, held, release, responseFields, responseText, responseUsage, nativeArguments;
 async function call(method, route, input) {
     const res = await fetch(origin + '/api/pi/compliance' + route, { method, headers: { Authorization: 'Bearer synthetic-scans', 'Content-Type': 'application/json' }, body: input && JSON.stringify(input) });
     const data = await res.json(); if (res.ok && Number.isSafeInteger(data.revision)) revision = data.revision; return { status: res.status, data };
@@ -23,10 +23,11 @@ test.before(async () => {
         let raw = ''; for await (const chunk of req) raw += chunk; const body=JSON.parse(raw);calls.push(body);
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
         if (holdNext) { holdNext=false; held(); await new Promise(resolve=>{release=resolve;}); }
-        const content = JSON.stringify({ fields: responseFields || [{ key: 'date', raw: '2026-08-31', status: 'known', excerpt: '签订日期：2026-08-31', rect: [0, 0, 90, 20] }] });
+        const content = responseText ?? JSON.stringify({ fields: responseFields || [{ key: 'date', raw: '2026-08-31', status: 'known', excerpt: '签订日期：2026-08-31', rect: [0, 0, 90, 20] }] });
         const native = body.messages.at(-1)?.role==='user' && JSON.stringify(body.messages.at(-1)).includes('fixture native_scan');
         const delta=native?{role:'assistant',tool_calls:[{index:0,id:'native-scan',type:'function',function:{name:'compliance_check',arguments:JSON.stringify(nativeArguments)}}]}:{role:'assistant',content};
         res.write(`data: ${JSON.stringify({ id: 'scan', object: 'chat.completion.chunk', model: 'vision', choices: [{ index: 0, delta, finish_reason: native?'tool_calls':'stop' }] })}\n\n`);
+        if(responseUsage)res.write(`data: ${JSON.stringify({id:'scan',object:'chat.completion.chunk',model:'vision',choices:[],usage:responseUsage})}\n\n`);
         res.end('data: [DONE]\n\n');
     }); provider.listen(0, '127.0.0.1'); await once(provider, 'listening');
     fs.writeFileSync(path.join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'vision', defaultProjectTrust: 'never', enableInstallTelemetry: false }));
@@ -66,6 +67,18 @@ test('model-call budget pauses before the next request and an explicit allowance
     const continued = await write(`/batches/${batch.id}/continue`, { budget:{pages:1,modelCalls:1,runMs:60000} }); assert.equal(continued.status,200,JSON.stringify(continued.data));
     assert.equal(continued.data.batch.execution.status,'completed'); assert.equal(continued.data.batch.execution.usage.modelCalls,2); assert.equal(calls.length,before+2);
     assert.equal(continued.data.batch.results.find(r=>r.id==='contract-deadline').conclusion,'passed');
+});
+
+test('a schema-rejected recognition keeps provider-reported tokens instead of losing the completed request usage',async()=>{
+    const canvas=require('@napi-rs/canvas').createCanvas(100,80);canvas.getContext('2d').fillRect(12,12,22,22);
+    const project=await archive(canvas.toBuffer('image/png'));
+    responseText='not valid JSON';responseUsage={prompt_tokens:17,completion_tokens:9,total_tokens:26};
+    try {
+        const result=await write(`/projects/${project.id}/batches`); assert.equal(result.status,200,JSON.stringify(result.data));
+        const batch=result.data.batch;assert.equal(batch.execution.status,'failed');assert.equal(batch.execution.steps[0].code,'COMPLIANCE_MODEL_SCHEMA');
+        assert.equal(batch.execution.usage.modelCalls,1);assert.equal(batch.execution.usage.inputTokens,17);assert.equal(batch.execution.usage.outputTokens,9);
+        assert.equal((await call('GET',`/batches/${batch.id}`)).data.batch.execution.usage.inputTokens,17);assert.equal(batch.execution.usage.cost.actual,null);
+    } finally {responseText=undefined;responseUsage=undefined;}
 });
 test('a paused scan retains human input and conclusion history while later recognition fills original evidence for the composed report', {timeout:180000}, async () => {
     await call('GET',''); const session=(await write('/sessions',{cwd})).data;

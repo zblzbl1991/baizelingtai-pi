@@ -4,6 +4,7 @@ import { Type } from 'typebox';
 import { StringEnum } from '@earendil-works/pi-ai';
 import { complianceRuntime, isComplianceResource } from '../../../server/pi-compliance-runtime.js';
 import { reportRequest, deliverReport } from '../../../server/pi-compliance-report-runtime.ts';
+import { complianceRequest } from '../../../server/pi-compliance-client.js';
 
 export default function compliance(pi: ExtensionAPI) {
     const eligible = (ctx: any) => ctx.mode === 'rpc' && Boolean(complianceRuntime(ctx.sessionManager, ctx.cwd, getAgentDir()));
@@ -34,14 +35,8 @@ export default function compliance(pi: ExtensionAPI) {
             execute: async (_id, raw, signal, _update, ctx) => {
                 if (!eligible(ctx)) throw new Error('合规能力已停用，或当前会话不是已绑定的专用助手');
                 signal?.throwIfAborted();
-                const origin = process.env.PI_WORKSPACE_INTERNAL_ORIGIN!, url = new URL('/api/pi/compliance/tool', origin);
-                if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid compliance service origin');
-                const sessionFile = ctx.sessionManager.getSessionFile(), sessionId = ctx.sessionManager.getSessionId();
                 const input = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== undefined && value !== null && value !== ''));
-                const response = await fetch(url, { method: 'POST', redirect: 'error', signal, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.PI_WEB_NAVIGATION_TOKEN}` }, body: JSON.stringify(input) });
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error || '合规操作失败');
-                if (sessionId !== ctx.sessionManager.getSessionId() || sessionFile !== ctx.sessionManager.getSessionFile()) throw new Error('合规会话已变化，请查询原操作回执');
+                const result = await complianceRequest(ctx,input,signal);
                 return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { pivaneCompliance: result } };
             }
         });
@@ -54,20 +49,15 @@ export default function compliance(pi: ExtensionAPI) {
                 parameters: Type.Object({ action: StringEnum(operation === 'materials' ? ['import', 'list'] : operation === 'review' ? ['prepare', 'list', 'get', 'operation'] : ['run', 'list', 'get', 'evidence', 'continue', 'pause']),
                     projectId: Type.Optional(Type.String()), batchId: Type.Optional(Type.String()), fieldId: Type.Optional(Type.String()),
                     proposalId: Type.Optional(Type.String()), batchRevision: Type.Optional(Type.Integer({minimum:1})),
-                    change: Type.Optional(Type.Union([Type.Object({kind:Type.Literal('field'),documentId:Type.String(),key:StringEnum(['projectName','projectNumber','organization','year','phase','date','documentNumber']),raw:Type.Union([Type.String(),Type.Null()]),absent:Type.Optional(Type.Boolean()),reason:Type.String(),location:Type.Object({page:Type.Optional(Type.Integer({minimum:1})),region:Type.Optional(StringEnum(['upper','body'])),sheet:Type.Optional(Type.String()),row:Type.Optional(Type.Integer({minimum:1})),column:Type.Optional(Type.Integer({minimum:1})),excerpt:Type.String()})}),Type.Object({kind:Type.Literal('conclusion'),resultId:Type.String(),conclusion:StringEnum(['passed','issue','insufficient','not-applicable']),reason:Type.String()})])),
+                    change: Type.Optional(Type.Union([Type.Object({kind:Type.Literal('field'),documentId:Type.String(),key:StringEnum(['projectName','projectNumber','organization','year','phase','type','stage','applicability','date','documentNumber']),raw:Type.Union([Type.String(),Type.Null()]),absent:Type.Optional(Type.Boolean()),reason:Type.String(),location:Type.Object({page:Type.Optional(Type.Integer({minimum:1})),region:Type.Optional(StringEnum(['upper','body'])),sheet:Type.Optional(Type.String()),row:Type.Optional(Type.Integer({minimum:1})),column:Type.Optional(Type.Integer({minimum:1})),excerpt:Type.String()})}),Type.Object({kind:Type.Literal('conclusion'),resultId:Type.String(),conclusion:StringEnum(['passed','issue','insufficient','not-applicable']),reason:Type.String()})])),
                     requestId: Type.Optional(Type.String()), expectedRevision: Type.Optional(Type.Integer({ minimum: 0 })),
                     offset: Type.Optional(Type.Integer({ minimum:0, maximum:operation === 'review' ? 2000 : 500 })),
                     budget: Type.Optional(Type.Object({ pages: Type.Integer({ minimum:1, maximum:2000 }), modelCalls: Type.Integer({ minimum:1, maximum:200 }), runMs: Type.Integer({ minimum:1000, maximum:3600000 }) })),
                     sources: Type.Optional(Type.Array(Type.Union([Type.Object({ kind: Type.Literal('file'), path: Type.String() }), Type.Object({ kind: Type.Literal('attachment'), id: Type.String() })]), { maxItems: 32 })) }),
                 execute: async (_id, raw, signal, _update, ctx) => {
                     if (!eligible(ctx)) throw new Error('合规专用会话资格无效'); signal?.throwIfAborted();
-                    const origin = process.env.PI_WORKSPACE_INTERNAL_ORIGIN!, url = new URL('/api/pi/compliance/tool', origin);
-                    if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid compliance service origin');
-                    const sessionFile = ctx.sessionManager.getSessionFile(), sessionId = ctx.sessionManager.getSessionId();
                     const input = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== undefined));
-                    const response = await fetch(url, { method: 'POST', redirect: 'error', signal, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.PI_WEB_NAVIGATION_TOKEN}` }, body: JSON.stringify({ ...input, operation }) });
-                    const result = await response.json(); if (!response.ok) throw new Error(result.error || '合规操作失败');
-                    if (sessionFile !== ctx.sessionManager.getSessionFile() || sessionId !== ctx.sessionManager.getSessionId()) throw new Error('会话已变化，请查询原回执');
+                    const result = await complianceRequest(ctx,{...input,operation},signal);
                     return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { pivaneCompliance: result } };
                 }
             });

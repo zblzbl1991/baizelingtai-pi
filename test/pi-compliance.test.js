@@ -34,6 +34,12 @@ test('authenticated reviewer explicitly enables compliance and retains one dedic
     const initial = await call('GET', ''); assert.equal(initial.status, 200); assert.equal(initial.data.enabled, false); assert.equal(initial.data.profileId, null);
     const refused = await call('POST', '/projects', { requestId: 'before-enable', expectedRevision: 0, project: { name: '工程甲' } }); assert.equal(refused.status, 409);
     const input = { requestId: 'enable-1', expectedRevision: initial.data.revision, enabled: true, mainModel: { provider: 'fixture', modelId: 'text' }, extractionModel: null };
+    // A real profile temp write fails after the durable setup intent exists.
+    // The public response must keep this accepted ID available for reconciliation.
+    const writeFile=fs.writeFileSync;let injected=false;
+    fs.writeFileSync=function(file,...args){const result=writeFile.call(this,file,...args);if(!injected&&typeof file==='number'&&require('../server/pi-file-descriptor').descriptorPathSync(file).startsWith(path.join(agent,'pivane-profiles','profiles.json.'))){injected=true;throw Object.assign(new Error('synthetic profile save stopped after actual bytes'),{status:409,code:'COMPLIANCE_BUSY'});}return result;};
+    try {const stopped=await call('PUT','/settings',input);assert.equal(injected,true);assert.equal(stopped.status,409);assert.equal(stopped.data.operationAccepted,true);assert.equal((await call('GET','/operations/enable-1')).data.canResume,true);}
+    finally {fs.writeFileSync=writeFile;}
     const enabled = await call('PUT', '/settings', input); assert.equal(enabled.status, 200, JSON.stringify(enabled.data)); assert.equal(enabled.data.enabled, true); assert.equal(enabled.data.scanStatus, 'unconfigured');
     const id = enabled.data.profileId; assert.match(id, /^[a-f0-9-]{36}$/);
     assert.equal((await call('PUT', '/settings', input)).data.profileId, id);

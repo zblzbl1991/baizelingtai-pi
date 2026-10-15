@@ -35,6 +35,7 @@ class AgentWorker extends EventEmitter {
         this.compactPending = false;
         this.promptPending = 0;
         this.modelChangesPending = 0;
+        this.modelChangeGeneration = 0;
         this.modelChangeUncertain = false;
         this.compaction = null;
         this.live = new (require('./pi-live-state').PiLiveState)();
@@ -134,7 +135,7 @@ class AgentWorker extends EventEmitter {
         // Reserve before awaiting readiness so two browser clients cannot compact together.
         if (type === 'compact') this.compactPending = true;
         const changingModel = ['set_model', 'cycle_model'].includes(type);
-        if (changingModel) this.modelChangesPending++;
+        if (changingModel) { this.modelChangesPending++; this.modelChangeGeneration++; }
         const prompting = ['prompt', 'steer', 'follow_up'].includes(type);
         if (prompting) this.promptPending++;
         try {

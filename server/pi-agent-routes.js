@@ -1046,6 +1046,11 @@ function createPiAgentGateway(options = {}) {
     }
 
     return { mount, attachWebSocket, dispose: async () => {
+        documents.stopAdmission();
+        const stoppingCompliance = compliance.dispose();
+        // Accepted compliance PDF steps can perform several real pool reads.
+        // Reject ordinary uploads now, close their shared pool after that drain.
+        const stoppingDocuments = stoppingCompliance.then(() => documents.dispose());
         const stoppingFileRoots = fileRoots.dispose();
         const stoppingArtifacts = artifacts.dispose();
         sessionSearch.dispose();
@@ -1054,8 +1059,6 @@ function createPiAgentGateway(options = {}) {
         const stoppingAuxiliaryModels = auxiliaryModels.dispose();
         const stoppingTitles = titles.dispose();
         const stoppingTranscription = transcription.dispose();
-        const stoppingDocuments = documents.dispose();
-        const stoppingCompliance = compliance.dispose();
         cron.stopping = true;
         const stoppingDeferred = deferred.dispose();
         const stoppingMoves = sessionMoves.dispose();

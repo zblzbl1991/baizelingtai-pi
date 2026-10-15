@@ -19,6 +19,7 @@ test('managed launcher performs authenticated backup and restart with paused sch
     const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-managed-http-')));
     const app = path.join(root, 'app'), data = path.join(root, 'data'), project = path.join(root, 'project');
     copyCode(path.resolve(__dirname, '..'), app);
+    console.log('managed fixture: source copied');
     fs.symlinkSync(path.resolve(__dirname, '../node_modules'), path.join(app, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
     fs.mkdirSync(path.join(data, 'agent/sessions'), { recursive: true }); fs.mkdirSync(project);
     fs.writeFileSync(path.join(data, 'agent/auth.json'), '{}');
@@ -43,9 +44,11 @@ test('managed launcher performs authenticated backup and restart with paused sch
         return /running at http:\/\/localhost:(\d+)/.exec(output)?.[1];
     });
     const base = `http://127.0.0.1:${port}`;
+    console.log('managed fixture: launcher listening');
     const headers = { Authorization: 'Bearer maintenance-fixture-only', Origin: base, 'Content-Type': 'application/json' };
     const api = (route, method = 'GET', body, extra = {}) => fetch(base + '/api/pi/settings/updates' + route, { method, headers: { ...headers, ...extra }, ...(body ? { body: JSON.stringify(body) } : {}) });
     const initial = await until(async () => { const response = await api('/maintenance'); const data = await response.json(); return data.supported && !data.busy && data; });
+    console.log('managed fixture: maintenance ready');
     assert.equal((await fetch(base + '/api/pi/settings/updates/maintenance')).status, 401);
     assert.equal((await api('/review', 'POST', { action: 'backup' }, { Origin: 'https://untrusted.invalid' })).status, 403);
     assert.equal((await api('/review', 'POST', { action: 'backup', command: 'never run' })).status, 400);
@@ -55,21 +58,25 @@ test('managed launcher performs authenticated backup and restart with paused sch
     const opened = once(owner, 'message');
     owner.send(JSON.stringify({ id: 'owner', type: 'open_session', cwd: project, sessionId: native.id, token: 'maintenance-fixture-only' }));
     assert.equal(JSON.parse((await opened)[0]).success, true);
+    console.log('managed fixture: native owner ready');
     const ownerBytes = fs.readFileSync(native.path);
     const before = fs.readFileSync(path.join(data, 'agent/sessions/sentinel.jsonl'));
     let generation = initial.generation;
     for (const action of ['backup', 'restart']) {
+        console.log('managed fixture: review ' + action);
         const review = await api('/review', 'POST', { action }); assert.equal(review.status, 200);
         const ticket = await review.json();
         const request = { ticket: ticket.id, confirmed: true, draftsSaved: true, externalWritersStopped: true };
         assert.equal((await api('/execute', 'POST', { ...request, command: 'never run' })).status, 400);
         const executed = await api('/execute', 'POST', request); assert.equal(executed.status, 202);
         assert.equal((await executed.json()).id, ticket.id);
+        console.log('managed fixture: accepted ' + action);
         const done = await until(async () => {
             try { const response = await api('/maintenance'); if (!response.ok) return false; const value = await response.json(); return value.job?.id === ticket.id && !value.busy && value; }
             catch { return false; }
         });
         assert.equal(done.job.phase, 'succeeded', JSON.stringify(done.job)); assert.notEqual(done.generation, generation); generation = done.generation;
+        console.log('managed fixture: settled ' + action);
         assert.equal(JSON.parse(fs.readFileSync(queue)).jobs[0].status, 'paused');
         assert.deepEqual(fs.readFileSync(path.join(data, 'agent/sessions/sentinel.jsonl')), before);
         assert.deepEqual(fs.readFileSync(native.path), ownerBytes);

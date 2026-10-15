@@ -222,7 +222,8 @@ test('HTTP move routes enforce access, previews and persistent request identity 
         workspacePreferencesService: new WorkspacePreferencesService({ filePath: path.join(folder, 'prefs.json') }) });
     const express = require('express'), app = express(); app.use(express.json()); gateway.mount(app);
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
-    t.after(async () => { await gateway.dispose(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+    let serverSockets;
+    t.after(async () => { for (const socket of serverSockets?.clients || []) socket.terminate(); await gateway.dispose(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
     const base = `http://127.0.0.1:${server.address().port}/api/pi`;
     const session = await gateway.store.createSession(folder, 'HTTP move', { agentProfileId: null });
     const call = (suffix, body, headers = {}) => fetch(base + suffix, { method: body ? 'POST' : 'GET', headers: { Authorization: 'Bearer move-fixture', 'Content-Type': 'application/json', ...headers }, body: body ? JSON.stringify(body) : undefined });
@@ -239,7 +240,7 @@ test('HTTP move routes enforce access, previews and persistent request identity 
     // notified only after the original process has actually stopped.
     const live = await gateway.store.createSession(folder, 'Live move', { agentProfileId: null });
     const { WebSocket } = require('ws'), sockets = [], records = [];
-    gateway.attachWebSocket(server);
+    serverSockets = gateway.attachWebSocket(server);
     for (let index = 0; index < 2; index++) {
         const socket = new WebSocket(base.replace('http:', 'ws:') + '/ws'); sockets.push(socket);
         socket.on('message', raw => records.push(JSON.parse(raw)));

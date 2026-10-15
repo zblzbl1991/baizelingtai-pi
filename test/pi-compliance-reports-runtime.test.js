@@ -55,6 +55,7 @@ test('managed report tool and browser delivery share one native reference, XLSX 
         const delivered = await api('POST', `/compliance/reports/${report.id}/delivery`, input); assert.equal(delivered.report.status, 'delivered'); assert.ok(delivered.report.delivery.reference);
         assert.deepEqual((await api('POST', `/compliance/reports/${report.id}/delivery`, input)).report.delivery, delivered.report.delivery);
         const ref = delivered.report.delivery.reference, query = new URLSearchParams({ cwd, sessionId: dedicated.id, id: ref.id, index: '0' });
+        const oldSources=await api('GET',`/compliance/reports/${report.id}/sources`);assert.deepEqual(oldSources.reference,ref);
         const html = await api('GET', '/deliverables?' + query); assert.equal(html.absolutePath, null); assert.equal(html.kind, 'html'); assert.match(html.content, /&lt;script&gt;/);
         const entries = await worker.request('get_entries'); assert.equal(entries.entries.filter(e => e.customType === 'pivane-deliverable' && e.data.id === ref.id).length, 1);
         const repeated = await prompt(worker, { name: 'compliance_report', input: { action: 'deliver', reportId: report.id, requestId: input.requestId, expectedRevision: input.expectedRevision } }); assert.equal(repeated.report.status, 'delivered');
@@ -89,8 +90,11 @@ test('managed report tool and browser delivery share one native reference, XLSX 
         const beforeReconcileCalls = calls.length;
         const reconciled = await api('GET','/compliance/operations/native-before-ack'); assert.equal(reconciled.report?.status,'delivered','observing the durable native reference reconciles its receipt without a worker, inference or new native writes');
         assert.equal(calls.length,beforeReconcileCalls); assert.equal(gateway.supervisor.workers.size,0);
-        const artifacts = await api('GET', '/artifacts?' + new URLSearchParams({ cwd, sessionId: dedicated.id })); const group = artifacts.items.find(i => i.files.some(f => f.name === report.files[0].name)); assert.ok(group);
-        const saved = await api('POST', '/artifacts/batch', { requestId: 'save-report-independent', action: 'save', files: group.files.map(f => ({ key: f.key })) }); assert.ok(saved.results.every(r => r.ok)); const libraryId = saved.results[0].item.key;
+        const olderSaved=await api('POST','/artifacts/batch',{requestId:'save-old-identical-delivery',action:'save',files:oldSources.files.map(f=>({key:f.key}))});assert.ok(olderSaved.results.every(r=>r.ok));
+        assert.ok((await api('GET',`/compliance/reports/${report.id}`)).report.savedFiles.every(f=>f===null),'an older same-name same-size native delivery never satisfies the current origin');
+        const exact=await api('GET',`/compliance/reports/${report.id}/sources`);assert.deepEqual(exact.reference,reconciled.report.delivery.reference);assert.notEqual(exact.reference.id,oldSources.reference.id);
+        assert.ok(exact.files.every((file,index)=>file.index===index&&file.sha256===report.files[index].sha256));
+        const saved = await api('POST', '/artifacts/batch', { requestId: 'save-report-independent', action: 'save', files: exact.files.map(f => ({ key: f.key })) }); assert.ok(saved.results.every(r => r.ok)); const libraryId = saved.results[0].item.key;
         assert.ok((await api('GET', `/compliance/reports/${report.id}`)).report.savedFiles.every(Boolean));
         await api('GET', '/compliance'); await write('/settings', { enabled: false }, 'PUT');
         await api('DELETE', '/sessions/' + dedicated.id + '?' + new URLSearchParams({ cwd }));

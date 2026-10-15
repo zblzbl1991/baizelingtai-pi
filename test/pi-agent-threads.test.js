@@ -118,13 +118,16 @@ test('Agent creates a persistent task, runs immediately with defaults, preserves
         const chosen = await api('/agent-threads/create', { ...initial, requestId: 'chosen', provider: 'fixture', modelId: 'chosen-model', thinkingLevel: 'off' }, token);
         assert.equal(chosen.data.model.modelId, 'chosen-model');
         await deadline(async () => (await api('/agent-threads/status', { requestId: 'chosen' }, token)).data.status === 'completed');
+        await gateway.supervisor.stopSession((await gateway.store.getSession(cwd, chosen.data.session.id)).path);
         // Completion can precede the source's idle-only receipt append; a user prompt
         // must wait for that native write reservation instead of racing the fixture.
         await deadline(() => !worker.operation && !worker.activity.snapshot().busy && worker.promptPending === 0);
         await worker.request('prompt', { message: 'CREATE_TASK_FIXTURE' });
         // This tool starts a second cold managed worker before returning the receipt.
         // Under memory pressure that launch can exceed the generic 20s polling window.
-        await deadline(async () => (await worker.request('get_messages')).messages.some(message => message.customType === TASK_RECEIPT), 60000);
+        let toolMessages=[];
+        try { await deadline(async () => { toolMessages=(await worker.request('get_messages')).messages;return toolMessages.some(message => message.customType === TASK_RECEIPT); }, 60000); }
+        catch(error){console.error('from-tool receipt stage',JSON.stringify({calls:calls.length,activity:gateway.supervisor.getActivity(),tools:toolMessages.filter(m=>m.role==='toolResult').map(m=>({tool:m.toolName,isError:m.isError,content:m.isError?m.content:undefined}))}));throw error;}
         await deadline(() => !worker.activity.snapshot().busy && worker.promptPending === 0);
         const messages = (await worker.request('get_messages')).messages;
         assert.ok(messages.some(message => message.role === 'toolResult' && message.toolName === 'agent_thread' && !message.isError));

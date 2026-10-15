@@ -17,8 +17,8 @@ async function run(browser, origin, width, theme) {
     const fixtureDirectory=path.join(temporary,'files-'+width);fs.mkdirSync(fixtureDirectory);
     const fixtureFiles=files=>files.map(file=>{const target=path.join(fixtureDirectory,file.name);fs.writeFileSync(target,file.buffer);return target;});
     const context = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: width < 900 ? 852 : 1000 }, isMobile: width < 900, hasTouch: width < 900 });
-    const page = await context.newPage(), errors = [], sessions = [{ id: 'ordinary', cwd, name: '普通会话', messageCount: 0 }]; let active = 'ordinary', loseImport = false, holdEvidence = false, releaseEvidence, importPosts = 0;
-    const pendingFonts=new Map(), businessResponses=[];
+    const page = await context.newPage(), errors = [], sessions = [{ id: 'ordinary', cwd, name: '普通会话', messageCount: 0 }]; let active = 'ordinary', loseImport = false, busyImport = true, holdEvidence = false, releaseEvidence, importPosts = 0;
+    const pendingFonts=new Map(), businessResponses=[]; let holdBatchId, releaseBatch, batchRequested, busySettings=true, acceptedSettings=true, busyProject=true, busyChat=true, settingsPosts=0;
     page.on('response',async response=>{const request=response.request(),pathname=new URL(response.url()).pathname;if(request.method()!=='GET'&&pathname.startsWith('/api/pi/compliance'))try{const value=await response.json();businessResponses.push({path:pathname,status:response.status(),input:pathname.endsWith('/batches')?JSON.parse(request.postData()):undefined,revision:value.revision,error:value.error,settings:value.extractionModel,batch:value.batch&&{id:value.batch.id,revision:value.batch.revision,configuration:value.batch.configurationSnapshot,execution:value.batch.execution,documents:value.batch.documents.map(d=>({id:d.id,name:d.name,assignment:d.assignment,processing:d.processing}))}});}catch{}});
     page.on('request',request=>{if(request.resourceType()==='font'){const url=new URL(request.url());pendingFonts.set(request,url.origin+url.pathname);}});
     for(const event of ['requestfinished','requestfailed'])page.on(event,request=>pendingFonts.delete(request));
@@ -30,8 +30,18 @@ async function run(browser, origin, width, theme) {
     await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, route => route.abort());
     await page.route('**/api/**', async route => {
         const req = route.request(), endpoint = new URL(req.url()).pathname, json = data => route.fulfill({ json: data });
+        if(endpoint==='/api/pi/compliance/settings'&&req.method()==='PUT') {
+            settingsPosts++;
+            if(busySettings){busySettings=false;return route.fulfill({status:409,json:{error:'设置请求尚未接纳',code:'COMPLIANCE_BUSY',operationAccepted:false}});}
+            if(acceptedSettings){acceptedSettings=false;await route.fetch();return route.fulfill({status:409,json:{error:'设置请求已接纳，请查询原回执',code:'COMPLIANCE_BUSY',operationAccepted:true}});}
+        }
+        if(endpoint==='/api/pi/compliance/projects'&&req.method()==='POST'&&busyProject){busyProject=false;return route.fulfill({status:409,json:{error:'工程请求尚未接纳',code:'COMPLIANCE_BUSY',operationAccepted:false}});}
+        if(endpoint==='/api/pi/compliance/sessions'&&req.method()==='POST'&&busyChat){busyChat=false;return route.fulfill({status:409,json:{error:'原生聊天请求尚未接纳',code:'COMPLIANCE_BUSY',operationAccepted:false}});}
+        if(holdBatchId && endpoint === '/api/pi/compliance/batches/'+holdBatchId && req.method()==='GET') {
+            holdBatchId=null; const response=await route.fetch();batchRequested();await new Promise(resolve=>{releaseBatch=()=>route.fulfill({response}).then(resolve);});return;
+        }
         if (endpoint.startsWith('/api/pi/compliance') && endpoint.endsWith('/documents') && req.method() === 'POST') {
-            importPosts++; if (loseImport) { loseImport = false; await route.fetch(); return route.abort(); }
+            importPosts++; if (busyImport) { busyImport = false; return route.fulfill({status:409,json:{error:'另一项资料导入仍在执行，尚未接纳本次导入',code:'COMPLIANCE_BUSY',operationAccepted:false}}); } if (loseImport) { loseImport = false; await route.fetch(); return route.abort(); }
         }
         if (endpoint.includes('/compliance/batches/') && endpoint.includes('/evidence/') && holdEvidence) {
             holdEvidence = false; const response = await route.fetch(); await new Promise(resolve => { releaseEvidence = () => { route.fulfill({response}).then(resolve); }; }); return;
@@ -66,7 +76,9 @@ async function run(browser, origin, width, theme) {
         console.log(`compliance ${width}: settings ready`);
         await page.locator('#compliance-enabled').waitFor(); assert.equal(await page.locator('#compliance-enabled').isChecked(), false);
         await page.locator('#compliance-enabled').check(); await page.locator('#compliance-main-model').selectOption('fixture/text'); await page.locator('#compliance-extraction-model').selectOption('');
-        await page.locator('#compliance-save').click(); await page.locator('#compliance-open-chat').waitFor({ state: 'visible' });
+        await page.locator('#compliance-save').click();await page.waitForFunction(()=>document.querySelector('#compliance-settings-status')?.textContent.includes('设置请求尚未接纳'));
+        await page.locator('#compliance-save').click();await page.waitForFunction(()=>document.querySelector('#compliance-settings-status')?.textContent.includes('设置请求已接纳'));
+        await page.locator('#compliance-save').click(); await page.locator('#compliance-open-chat').waitFor({ state: 'visible' });assert.equal(settingsPosts,2,'accepted settings error recovers its durable receipt without a third POST');
         console.log(`compliance ${width}: enabled`);
         assert.match(await page.locator('#compliance-settings-status').textContent(), /已启用/);
         assert.match(await page.locator('#compliance-settings-status').textContent(), /部分可用/);
@@ -78,6 +90,7 @@ async function run(browser, origin, width, theme) {
         await page.locator('#compliance-save').click();
         await page.waitForFunction(() => document.querySelector('#compliance-settings-status')?.textContent.includes('已启用') && document.querySelector('#compliance-settings-status')?.textContent.includes('本地条件可用'));
         assert.equal((await (await fetch(origin + '/api/pi/compliance', { headers: auth })).json()).extractionModel.modelId, 'vision');
+        await page.locator('#compliance-open-chat').click();await page.getByText('原生聊天请求尚未接纳',{exact:true}).waitFor();
         await page.locator('#compliance-open-chat').click();
         await page.locator('#pi-compliance-open').waitFor({ state: 'visible' }); assert.notEqual(active, 'ordinary');
         console.log(`compliance ${width}: dedicated chat ready`);
@@ -100,6 +113,7 @@ async function run(browser, origin, width, theme) {
         const projectState = await (await fetch(origin + '/api/pi/compliance/projects', { headers: auth })).json();
         assert.equal((await fetch(origin + '/api/pi/compliance/projects', { method: 'POST', headers: auth, body: JSON.stringify({ requestId: 'other-project-' + width, expectedRevision: projectState.revision, project: { name: '另一个聊天的工程' } }) })).status, 200);
         await page.locator('#compliance-project-save').click();
+        await page.waitForFunction(()=>document.querySelector('#compliance-project-status')?.textContent.includes('工程请求尚未接纳'));await page.locator('#compliance-project-save').click();
         await page.waitForFunction(() => document.querySelector('#compliance-project-status')?.textContent.includes('已变化'));
         await page.locator('#compliance-project-save').click();
         await page.waitForFunction(width => document.querySelector('#pi-compliance-drawer').textContent.includes('C-' + width), width);
@@ -108,11 +122,14 @@ async function run(browser, origin, width, theme) {
         console.log(`compliance ${width}: project saved`);
         const name = '工程 <script> ' + width;
         await page.locator('#compliance-upload').setInputFiles(fixtureFiles(['中标通知书', '合同'].map((title, index) => ({ name: title + '.csv', buffer: Buffer.from(`项目名称,项目编号,日期\n${name},C-${width},2026-08-${index ? '31' : '01'}\n`) }))));
+        await page.locator('#compliance-import-upload').click();
+        await page.waitForFunction(() => document.querySelector('#compliance-material-status')?.textContent.includes('尚未接纳本次导入'));
+        assert.equal(await page.locator('[data-compliance-document]').count(),0,'definite busy rejects without publishing any document');
         loseImport = width > 900;
         await page.locator('#compliance-import-upload').click();
         if (width > 900) { await page.waitForFunction(() => document.querySelector('#compliance-material-status')?.textContent.includes('Failed') || document.querySelector('#compliance-material-status')?.textContent.includes('fetch')); await page.locator('#compliance-import-upload').click(); }
         await page.waitForFunction(() => document.querySelectorAll('[data-compliance-document]').length === 2);
-        assert.equal(importPosts,2,'lost response recovers receipt without resending the first import');
+        assert.equal(importPosts,3,'definite busy permits an explicit retry; lost response recovers receipt without resending');
         for (const [title, role] of [['中标通知书.csv', 'award-notice'], ['合同.csv', 'contract']]) {
             const row = page.locator('[data-compliance-document]').filter({ hasText: title });
             await row.locator('select').selectOption(role); await row.getByLabel('归属已核对').check(); await row.getByLabel('选用于新批次').check(); await row.getByRole('button', { name: '保存资料核对' }).click();
@@ -137,6 +154,14 @@ async function run(browser, origin, width, theme) {
         await page.locator('#compliance-continue').click();
         await page.waitForFunction(()=>document.querySelector('#compliance-execution')?.textContent.includes('执行完成'));
         assert.match(await page.locator('#compliance-results').textContent(),/合同签订期限：通过/);
+        const projects=(await(await fetch(origin+'/api/pi/compliance/projects',{headers:auth})).json()).projects;
+        const project=projects.find(p=>p.number==='C-'+width), history=(await(await fetch(origin+'/api/pi/compliance/projects/'+project.id+'/batches',{headers:auth})).json()).batches;
+        const oldBatch=history[0].id,newBatch=history.at(-1).id;assert.notEqual(oldBatch,newBatch);
+        holdBatchId=oldBatch;const requested=new Promise(resolve=>{batchRequested=resolve;});
+        const historySelect=page.locator('.compliance-materials label').filter({hasText:'历史批次'}).locator('select');await historySelect.selectOption(oldBatch);await requested;
+        await historySelect.selectOption(newBatch);await page.waitForFunction(id=>document.querySelector('#compliance-results')?.textContent.includes(id),newBatch);
+        const late=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/pi/compliance/batches/'+oldBatch);await releaseBatch();await late;await page.waitForTimeout(80);
+        assert.ok((await page.locator('#compliance-results').textContent()).includes(newBatch),'a late old batch response cannot replace the user’s latest selected batch or its report/review operations');
         // External model boundary is synthetic here; real runtime/provider request
         // capture and process-kill recovery are exercised at their approved seam.
         for(const title of ['中标通知书.csv','合同.csv']){const row=page.locator('[data-compliance-document]').filter({hasText:title});await row.getByLabel('选用于新批次').uncheck();await row.getByRole('button',{name:'保存资料核对'}).click();await page.waitForFunction(()=>document.querySelector('#compliance-material-status')?.textContent.includes('已保存资料核对'));}
@@ -169,7 +194,7 @@ async function run(browser, origin, width, theme) {
         assert.equal(await page.locator('#compliance-open-chat').isVisible(), false);
         await page.evaluate(() => { location.hash = '#/chat'; }); assert.equal(await page.locator('#pi-compliance-open').isVisible(), false);
         assert.deepEqual(errors, []); console.log(`compliance ${width} ${theme}: actual authenticated settings, dedicated session, project drawer, persistence and disable passed`);
-    } catch (error) {fs.writeFileSync(path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-business-'+width+'.json'),JSON.stringify({businessResponses,execution:await page.locator('#compliance-execution').textContent().catch(()=>null)},null,2)); console.error({ errors, url: page.url(), message: error.message, status:await page.locator('#compliance-material-status').textContent().catch(()=>null),fileErrors:await page.evaluate(()=>window.syntheticReadErrors).catch(()=>null) }); await page.screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-failure-'+width+'.png'),timeout:10000}).catch(()=>{});throw error; }
+    } catch (error) {fs.writeFileSync(path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-business-'+width+'.json'),JSON.stringify({businessResponses,execution:await page.evaluate(()=>document.querySelector('#compliance-execution')?.textContent||null)},null,2)); console.error({ errors, url: page.url(), message: error.message, status:await page.evaluate(()=>document.querySelector('#compliance-material-status')?.textContent||null),fileErrors:await page.evaluate(()=>window.syntheticReadErrors).catch(()=>null) }); await page.screenshot({path:path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR||os.tmpdir(),'compliance-failure-'+width+'.png'),timeout:10000}).catch(()=>{});throw error; }
     finally { await context.close(); }
 }
 (async () => {
