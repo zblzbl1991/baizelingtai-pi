@@ -8,6 +8,7 @@ const io = require('../pi-file-io');
 const { descriptorPathSync } = require('../pi-file-descriptor');
 const { replaceFileSync } = require('../pi-win32-native');
 const privateFiles = require('../pi-private-files');
+const { acquireStorageOwnership } = require('../pi-installation-lock');
 const { emptyLedger, validateLedger, fail, MAX_LEDGER } = require('./validation');
 const stamp = stat => [stat.dev, stat.ino, stat.mode, stat.size, stat.mtimeNs, stat.ctimeNs].map(String).join(':');
 const changed = () => fail('Staffing ledger changed during read or save', 409);
@@ -53,29 +54,28 @@ class StaffingStore {
     async mutate(expectedRevision, update) {
         if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw fail('Expected revision is required');
         const { file, root } = await this.paths(true);
-        const lock = path.join(root, 'ledger.lock');
-        let directoryFd;
+        let directoryFd, owner, publicationStarted = false;
         try {
-            directoryFd = io.openReadSync(root);
-            const parent = fs.fstatSync(directoryFd, { bigint: true }), identity = io.identity(directoryFd);
-            const checkParent = () => {
-                try {
-                    const current = fs.lstatSync(root, { bigint: true });
-                    const openedNow = fs.fstatSync(directoryFd, { bigint: true });
-                    if (!parent.isDirectory() || !current.isDirectory() || current.isSymbolicLink()
-                        || stamp(current) !== stamp(openedNow)
-                        || parent.dev !== current.dev || parent.ino !== current.ino || parent.mode !== current.mode
-                        || descriptorPathSync(directoryFd) !== root || fs.realpathSync.native(root) !== root
-                        || !io.sameIdentityAtPath(root, identity)) throw changed();
-                } catch (error) {
-                    if (error.status) throw error;
-                    throw changed();
-                }
-            };
-            checkParent();
-            try { fs.mkdirSync(lock, { mode: 0o700 }); } catch { throw fail('Staffing ledger is being saved', 409); }
             try {
+                directoryFd = io.openReadSync(root);
+                const parent = fs.fstatSync(directoryFd, { bigint: true }), identity = io.identity(directoryFd);
+                const checkParent = () => {
+                    try {
+                        const current = fs.lstatSync(root, { bigint: true });
+                        const openedNow = fs.fstatSync(directoryFd, { bigint: true });
+                        if (!parent.isDirectory() || !current.isDirectory() || current.isSymbolicLink()
+                            || stamp(current) !== stamp(openedNow)
+                            || parent.dev !== current.dev || parent.ino !== current.ino || parent.mode !== current.mode
+                            || descriptorPathSync(directoryFd) !== root || fs.realpathSync.native(root) !== root
+                            || !io.sameIdentityAtPath(root, identity)) throw changed();
+                    } catch (error) {
+                        if (error.status) throw error;
+                        throw changed();
+                    }
+                };
                 checkParent();
+                owner = await acquireStorageOwnership(root, 'ledger.lock');
+                checkParent(); // Revalidate the held parent after asynchronous ownership acquisition.
                 const { state, raw } = readLedger(file);
                 if (state.revision !== expectedRevision) throw fail('Staffing ledger changed; reload before saving', 409);
                 const result = update(state);
@@ -88,6 +88,8 @@ class StaffingStore {
                     privateFiles.writePrivateFileSync(tmp, text, true);
                     checkParent();
                     if (readLedger(file).raw !== raw) throw changed();
+                    // From this point an exception cannot prove that publication did not occur.
+                    publicationStarted = true;
                     replaceFileSync(tmp, file);
                     privateFiles.privateFileMode(file);
                     checkParent();
@@ -96,12 +98,15 @@ class StaffingStore {
                 } finally { try { fs.unlinkSync(tmp); } catch {} }
                 return result;
             } finally {
-                // A moved parent may no longer own this pathname. Never remove a lock
-                // from an unverified replacement directory.
-                checkParent();
-                fs.rmdirSync(lock);
+                try { if (owner) await owner.close(); }
+                finally { if (directoryFd !== undefined) fs.closeSync(directoryFd); }
             }
-        } finally { if (directoryFd !== undefined) fs.closeSync(directoryFd); }
+        } catch (error) {
+            if (publicationStarted) throw Object.assign(new Error('Staffing save outcome is unknown; query the original request ID before any new submission'), {
+                status: 503, code: 'STAFFING_OUTCOME_UNKNOWN', outcomeUnknown: true, cause: error
+            });
+            throw error;
+        }
     }
 
 }

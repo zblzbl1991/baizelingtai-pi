@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const net = require('node:net');
+const path = require('node:path');
 const { createHash } = require('node:crypto');
 
 // All managed starts and offline writers must acquire this same kernel lock.
@@ -28,4 +29,28 @@ async function acquireInstallationLock(root) {
     };
 }
 
-module.exports = { acquireInstallationLock };
+// Storage writers use the same proven OS ownership, scoped to their private real
+// directory. Legacy mkdir owners are unknown: never remove or age them out. A
+// protocol upgrade requires stopping old writers; mixed lock versions are unsafe.
+async function acquireStorageOwnership(root, legacyName) {
+    if (!['ledger.lock', 'profiles.lock'].includes(legacyName)) throw new Error('Unknown storage lock scope');
+    const checkLegacy = () => {
+        try { fs.lstatSync(path.join(root, legacyName)); }
+        catch (error) { if (error.code === 'ENOENT') return; throw error; }
+        throw Object.assign(new Error('Unknown legacy storage lock; stop old writers and inspect it under maintenance'), {
+            status: 409, code: 'STORAGE_LEGACY_LOCK'
+        });
+    };
+    checkLegacy();
+    let owner;
+    try { owner = await acquireInstallationLock(root); }
+    catch (error) {
+        throw Object.assign(new Error(error.code === 'EADDRINUSE' ? 'Storage is being saved by another process' : 'Storage ownership is unavailable'), {
+            status: error.code === 'EADDRINUSE' ? 409 : 503, code: 'STORAGE_OWNERSHIP', cause: error
+        });
+    }
+    try { checkLegacy(); return owner; }
+    catch (error) { await owner.close(); throw error; }
+}
+
+module.exports = { acquireInstallationLock, acquireStorageOwnership };
