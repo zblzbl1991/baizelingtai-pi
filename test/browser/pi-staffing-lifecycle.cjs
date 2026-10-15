@@ -68,9 +68,10 @@ async function main() {
         for (const type of ['workspace:tabchanged', 'workspace:access-ready', 'workspace:staffing-changed', 'workspace:agent-profiles-changed']) window.addEventListener(type, () => record(type), true);
         document.addEventListener('DOMContentLoaded', () => new MutationObserver(records => { if (records.some(row => row.target.matches?.('.staffing-panel'))) record('panel render'); }).observe(document.body, { subtree: true, childList: true }));
     }, cwd);
-    const screenshot = async (phase, locator) => {
+    const screenshot = async (phase, locator, focus) => {
         for (const width of [1440, 393, 320]) {
             await page.setViewportSize({ width, height: 1000 }); await page.emulateMedia({ colorScheme: width === 393 ? 'dark' : 'light' });
+            if (focus) await focus.scrollIntoViewIfNeeded();
             assert.deepEqual(await page.evaluate(() => ['body', '#staffing-tab', '.staffing-panel', '.staffing-views', '.staffing-plan-card'].filter(selector => { const node = document.querySelector(selector); return node && node.offsetParent !== null && node.scrollWidth > node.clientWidth + 1; })), [], phase + ' actual width at ' + width);
             if (process.env.PIVANE_TEST_SCREENSHOT_DIR) { fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR, { recursive: true }); await (locator || page).screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, `staffing-lifecycle-${phase}-${width}.png`) }); }
         }
@@ -139,7 +140,7 @@ async function main() {
         await page.getByText('合成 Excel 已保存到成果。', { exact: true }).last().waitFor();
         const exportEntries = await worker.request('get_entries'), exportMessage = exportEntries.entries.findLast(entry => entry.message?.toolName === 'staffing_export')?.message;
         assert.equal(exportMessage?.isError, false, JSON.stringify(exportMessage)); const report = JSON.parse(exportMessage.content.find(part => part.type === 'text').text);
-        assert.equal(report.phase, 'saved', JSON.stringify(report)); await screenshot('excel-saved');
+        assert.equal(report.phase, 'saved', JSON.stringify(report)); await screenshot('excel-saved', undefined, page.getByText('合成 Excel 已保存到成果。', { exact: true }).last());
         await page.goto(origin + '/#/staffing', { waitUntil: 'domcontentloaded' }); await page.locator('[data-staffing-project="J1"]').waitFor();
         const deleted = await fetch(origin + '/api/pi/sessions/' + session.id + '?' + new URLSearchParams({ cwd }), { method: 'DELETE', headers: { Origin: origin } }); assert.equal(deleted.status, 200, await deleted.clone().text());
         assert.equal((await gateway.artifacts.preview(report.artifactKey)).revision, report.sha256); await assert.rejects(gateway.artifacts.preview(report.sourceKey));
