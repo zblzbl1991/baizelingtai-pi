@@ -27,6 +27,7 @@ pivane-uploads/
 pivane-artifacts/
 .pivane-gongwen/
 .pivane-office/
+.scratch/
 /native/officecli/bin/
 *.log
 *.lnk

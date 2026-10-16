@@ -66,6 +66,8 @@ Node 用例的清理必须先等待网关、worker 和 SQLite 连接关闭，再
 
 ## 浏览器与重型专项
 
+按场景定位真实后端 E2E、模拟接口的 UI 回归及准确包／实机脚本，见 [E2E 导航](E2E.md)。
+
 `npm test` **不执行** `test/browser/*.cjs` 或 `test/release/*.cjs`；语法检查和打包发现这些文件不代表执行过它们。
 
 ```bash

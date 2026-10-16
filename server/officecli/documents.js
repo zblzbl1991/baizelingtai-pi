@@ -3,6 +3,22 @@ const path = require('node:path');
 const { fileScope, fail } = require('../pi-file-scope');
 const files = require('../gongwen/outputs');
 const { MAX_FILE } = require('../pi-document-source');
+const { valid: validReference } = require('../../public/pi-document-references');
+function copies(branch, sessionId) {
+    const found = new Map();
+    for (const entry of branch) {
+        const data = entry.type === 'custom' && entry.customType === 'pivane-office-document' && entry.data;
+        if (data?.version !== 1 || data.sessionId !== sessionId || !/^[a-f0-9]{64}$/.test(data.id)
+            || !/^[a-f0-9]{64}$/.test(data.revision) || typeof data.path !== 'string' || data.path.length > 4096
+            || !Number.isSafeInteger(data.size) || data.size < 0 || data.size > MAX_FILE || !validReference(data.source)) continue;
+        try { validate({ id: data.source.id, requestId: data.requestId }); } catch { continue; }
+        const source = Object.fromEntries(['id', 'revision', 'name', 'format', 'size'].map(key => [key, data.source[key]]));
+        found.set(data.id, { version: 1, id: data.id, sessionId, requestId: data.requestId, source, path: data.path, revision: data.revision, size: data.size });
+    }
+    const result = [...found.values()].slice(-20);
+    while (Buffer.byteLength(JSON.stringify(result)) > 64 * 1024) result.shift();
+    return result;
+}
 function validate(input) {
     if (!input || Object.keys(input).some(key => !['id', 'requestId'].includes(key)) || typeof input.id !== 'string' || !/^[a-f0-9]{64}$/.test(input.id)
         || typeof input.requestId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(input.requestId)) throw fail('Office 工作副本参数无效', 400, 'OFFICE_INPUT');
@@ -50,10 +66,10 @@ class OfficeDocuments {
                 current(); files.writeNew(folder, 'ready.json', Buffer.from(JSON.stringify({ id, originalRevision: source.reference.revision })), scope.check);
             }
             const working = await files.read(folder, name, scope.check, MAX_FILE); current();
-            return { version: 1, id, requestId: input.requestId, source: source.reference, path: working.absolutePath,
+            return { version: 1, id, sessionId: context.sessionId, requestId: input.requestId, source: source.reference, path: working.absolutePath,
                 revision: working.revision, size: working.size, reused };
         } finally { for (const proof of proofs.reverse()) proof.close(); }
     }
     async dispose() { this.closed = true; await Promise.allSettled([...this.jobs.values()].map(job => job.promise)); }
 }
-module.exports = { OfficeDocuments, validate };
+module.exports = { OfficeDocuments, validate, copies };

@@ -27,6 +27,8 @@ node scripts/pi-agent-dir.cjs
 
 [macOS](MACOS.md)、[Linux](INSTALL_RECOVERY.md)和[Windows](WINDOWS.md)安装示例会捕获这个结果，写入实例的 `PI_CODING_AGENT_DIR`。配置文件保存真实绝对路径，避免服务管理器没有加载 shell 初始化而选错身份。`.env` 不展开 `~`、`$HOME`、`%USERPROFILE%` 或 PowerShell 变量。
 
+Windows 会话入口也会通过 Pi 公开目录解析器取得默认或覆盖路径，再规范化真实路径，交给 Pi 原生 API 创建和打开会话；目录联接（junction）与其目标沿用同一身份，首次创建仍使用私有权限。此操作仅规范当前进程使用的路径，不搬移会话或改写已有会话正文。
+
 只在用户明确要求独立身份或进行隔离验收时，改用实例专用目录。例如 POSIX 设置 `AGENT_DIR="$BASE/data/agent"`，PowerShell 设置 `$agentDir = Join-Path $base 'data\agent'`，再生成配置。保留已有目录，不复制其他身份的认证文件。
 
 ## 已经安装成空身份：切换到原 Pi 目录

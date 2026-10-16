@@ -53,6 +53,52 @@ test('creation and reopening keep the same session identity through an Agent dir
     } finally { process.env.PI_CODING_AGENT_DIR = previous; }
 });
 
+test('the first session through an Agent alias creates one private native session in the real directory', async () => {
+    const target = path.join(testRoot, 'fresh-agent'); fs.mkdirSync(target);
+    const alias = path.join(testRoot, 'fresh-agent-alias'); fs.symlinkSync(target, alias, 'junction');
+    const previous = process.env.PI_CODING_AGENT_DIR;
+    try {
+        process.env.PI_CODING_AGENT_DIR = alias;
+        assert.equal(fs.existsSync(path.join(target, 'sessions')), false);
+        const store = new PiSessionStore();
+        const session = await store.createSession(testRoot, 'First alias session', {
+            initializeSession(manager) { manager.appendCustomEntry('alias-regression', { marker: 'synthetic' }); }
+        });
+        assert.equal(session.path, fs.realpathSync.native(session.path));
+        assert.ok(session.path.startsWith(fs.realpathSync.native(target) + path.sep));
+        const { SessionManager } = await getSdk();
+        const reopened = SessionManager.open(session.path);
+        assert.equal(reopened.getSessionId(), session.id);
+        assert.equal(reopened.getCwd(), testRoot);
+        assert.ok(reopened.getBranch().some(entry => entry.type === 'custom' && entry.customType === 'alias-regression'));
+        assert.deepEqual(fs.readdirSync(path.dirname(session.path)).filter(name => name.endsWith('.jsonl')), [path.basename(session.path)]);
+        assert.equal((await store.getSession(testRoot, session.id)).path, session.path);
+        require('./private-file-helper.cjs').assertPrivateFile(session.path);
+        await store.deleteSession(testRoot, session.id);
+    } finally { process.env.PI_CODING_AGENT_DIR = previous; }
+});
+
+test('Windows SDK resolution preserves Pi tilde and default identity rules through a junction', { skip: process.platform !== 'win32' }, () => {
+    const home = path.join(testRoot, 'synthetic-home'), target = path.join(testRoot, 'tilde-agent');
+    fs.mkdirSync(path.join(home, '.pi'), { recursive: true }); fs.mkdirSync(target);
+    fs.symlinkSync(target, path.join(home, '.pi', 'agent'), 'junction');
+    const script = `const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+        const {getSdk,PiSessionStore}=require(process.argv[1]);
+        (async()=>{for(const value of ['~/.pi/agent',undefined]){
+            if(value===undefined)delete process.env.PI_CODING_AGENT_DIR;else process.env.PI_CODING_AGENT_DIR=value;
+            const sdk=await getSdk();assert.equal(sdk.getAgentDir(),fs.realpathSync.native(process.argv[2]));
+            const store=new PiSessionStore(),session=await store.createSession(process.argv[3],'Synthetic native identity');
+            assert.ok(session.path.startsWith(fs.realpathSync.native(process.argv[2])+path.sep));
+            assert.equal((await store.getSession(process.argv[3],session.id)).path,session.path);
+            await store.deleteSession(process.argv[3],session.id);
+        }assert.equal(fs.existsSync(path.join(process.cwd(),'~')),false);})().catch(e=>{console.error(e);process.exitCode=1;});`;
+    const result = require('node:child_process').spawnSync(process.execPath, ['-e', script,
+        path.resolve(__dirname, '../server/pi-session-store.js'), target, testRoot], {
+        cwd: home, env: { ...process.env, USERPROFILE: home, PI_CODING_AGENT_DIR: '~/.pi/agent' }, encoding: 'utf8', windowsHide: true
+    });
+    assert.equal(result.status, 0, result.stderr);
+});
+
 test('case-insensitive project aliases resolve to the same canonical session path', async () => {
     const { PiSessionStore } = require('../server/pi-session-store');
     const store = new PiSessionStore();

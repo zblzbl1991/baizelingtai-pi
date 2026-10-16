@@ -4,7 +4,7 @@ const inventory = require('../server/officecli/inventory');
 const { install } = require('../scripts/install-officecli.cjs');
 const { environment } = require('../server/officecli/mcp-host.js');
 const { commandError } = require('../server/officecli/commands');
-const { OfficeDocuments } = require('../server/officecli/documents');
+const { OfficeDocuments, copies } = require('../server/officecli/documents');
 const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-office-'))), agent = path.join(root, 'agent'), cwd = path.join(root, 'project');
 fs.mkdirSync(agent); fs.mkdirSync(cwd);
 process.env.PI_CODING_AGENT_DIR = agent; process.env.PI_PROJECT_ROOTS = root; process.env.PI_OFFLINE = '1';
@@ -41,6 +41,9 @@ test('Office work copies preserve originals and modified bytes across reuse, iso
         const preparing = service.prepare(context, input, source);
         await assert.rejects(service.prepare(context, input, source), { code: 'OFFICE_BUSY' });
         const saved = await preparing; assert.deepEqual(fs.readFileSync(saved.path), bytes);
+        const entry = { type: 'custom', customType: 'pivane-office-document', data: { ...saved, unexpected: 'never into model context' } };
+        assert.equal(copies([entry], context.sessionId).length, 1); assert.equal(copies([entry], 'fork').length, 0);
+        assert.equal(JSON.stringify(copies([entry], context.sessionId)).includes('unexpected'), false);
         require('./private-file-helper.cjs').assertPrivateFile(saved.path);
         fs.writeFileSync(saved.path, 'synthetic edited bytes');
         const reused = await service.prepare(context, input, source);
@@ -56,4 +59,13 @@ test('Office work copies preserve originals and modified bytes across reuse, iso
         assert.equal(fs.readFileSync(path.join(cwd, '.pivane-office/.gitignore'), 'utf8'), '*\n');
     } finally { await service.dispose(); }
     await assert.rejects(service.prepare(context, { ...input, requestId: 'closed' }, source), { code: 'OFFICE_BUSY' });
+});
+
+test('disabled native MCP removes the Office extension while retaining normal resource selection', async () => {
+    const sdk = await import('@earendil-works/pi-coding-agent'), { managedLoaderOptions } = await import('../server/pi-bundled-loader.mjs');
+    const settings = sdk.SettingsManager.create(cwd, agent, { projectTrusted: false });
+    for (const noMcp of [false, true]) {
+        const { options } = await managedLoaderOptions({ cwd, agentDir: agent, settings, parsed: { noMcp } });
+        assert.equal(options.additionalExtensionPaths.some(file => file.endsWith('pi-officecli-extension.ts')), !noMcp);
+    }
 });

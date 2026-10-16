@@ -36,7 +36,7 @@ runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,met
 
 ## Office 工作副本与 MCP
 
-内置 `pivane-officecli` 扩展在启用 Pi 原生 MCP 的持久受管 RPC 会话注册 `prepare_office_document {id,requestId}`。id 为当前分支已发送 DOCX/XLSX/PPTX 附件标识，原件最大 16 MiB；requestId 沿用 1–160 字符请求标识格式。不接受原件路径。工具 details.pivaneOffice 为 `{version:1,id,requestId,source,path,revision,size,reused}`；source 是原附件元数据，path 是项目工作副本实际路径，revision/size 是本次读取时副本的状态，不是之后所有编辑的预期版本。
+内置 `pivane-officecli` 扩展在启用 Pi 原生 MCP 的持久受管 RPC 会话注册 `prepare_office_document {id,requestId}`。id 为当前分支已发送 DOCX/XLSX/PPTX 附件标识，原件最大 16 MiB；requestId 沿用 1–160 字符请求标识格式。不接受原件路径。工具 details.pivaneOffice 为 `{version:1,id,sessionId,requestId,source,path,revision,size,reused}`；source 是原附件元数据，path 是项目工作副本实际路径，revision/size 是本次读取时副本的状态，不是之后所有编辑的预期版本。
 
 同一规范项目／原生会话／requestId 复用当前副本且不重置修改；原件冲突为 OFFICE_CONFLICT，准备残缺为 OFFICE_INCOMPLETE，并发／关闭为 OFFICE_BUSY，无效参数为 OFFICE_INPUT。来源资格和变化沿用 DOCUMENT_SCOPE／DOCUMENT_CONTEXT／DOCUMENT_CHANGED；工作文件沿用现有描述符检查及文件错误。原生 custom entry `pivane-office-document` 只保存副本索引，分支及会话事实仍归 SessionManager。
 

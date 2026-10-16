@@ -78,7 +78,7 @@ test('uploaded original → managed copy → native MCP edit/rollback/validate �
         for (const [name, file] of [['sheet', spreadsheet], ['slides', slides]]) {
             const uploadQuery = new URLSearchParams({ cwd, sessionId: session.id, requestId: name, name: path.basename(file) });
             const upload = await fetch(`${origin}/api/pi/uploads?${uploadQuery}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' }, body: fs.readFileSync(file) });
-            assert.equal(upload.status, 200); const item = await upload.json();
+            const item = await upload.json(); assert.equal(upload.status, 200, name + ': ' + JSON.stringify(item));
             const result = await run('prepare_office_document', { id: item.reference.id, requestId: name + '-copy' }, '准备工作副本\n' + item.marker);
             assert.ok(result && !result.isError, JSON.stringify(result)); assert.deepEqual(fs.readFileSync(result.details.pivaneOffice.path), fs.readFileSync(file));
         }

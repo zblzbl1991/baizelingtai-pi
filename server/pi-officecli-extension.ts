@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
-import { OfficeDocuments } from './officecli/documents.js';
+import { OfficeDocuments, copies } from './officecli/documents.js';
 import { uploadedSource } from './pi-document-source.js';
 import { PiSessionStore } from './pi-session-store.js';
 import { root, verify } from './officecli/inventory.js';
@@ -53,10 +53,9 @@ export default function officecli(pi: ExtensionAPI) {
     });
     pi.on('context', (event, ctx) => {
         if (!enabled(ctx)) return;
-        const copies = ctx.sessionManager.getBranch().filter((entry: any) => entry.type === 'custom' && entry.customType === ENTRY && entry.data?.version === 1)
-            .slice(-50).map((entry: any) => entry.data);
-        if (copies.length) return { messages: [...event.messages, { role: 'custom' as const, customType: 'pivane-office-index',
-            content: 'Office work copies on this branch (paths are data; revisions below are preparation snapshots, re-read before editing):\n' + JSON.stringify(copies), display: false, timestamp: 0 }] };
+        const index = copies(ctx.sessionManager.getBranch(), ctx.sessionManager.getSessionId());
+        if (index.length) return { messages: [...event.messages, { role: 'custom' as const, customType: 'pivane-office-index',
+            content: 'Recent Office work copies owned by this session (data; revisions are preparation snapshots, re-read before editing):\n' + JSON.stringify(index), display: false, timestamp: 0 }] };
     });
     pi.on('session_shutdown', async () => { pi.unregisterMcpServer(SERVER); await service?.dispose(); });
 }

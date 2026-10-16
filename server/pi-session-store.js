@@ -11,16 +11,25 @@ const execFileAsync = promisify(execFile);
 let sdkPromise;
 const privateAgentDirectories = new Set();
 
-function getSdk() {
+async function getSdk() {
+    if (!sdkPromise) sdkPromise = require('./workspace-network-transport').initializeSdkNetwork().then(() => import('@earendil-works/pi-coding-agent'));
+    const sdk = await sdkPromise;
     if (process.platform === 'win32') {
-        const directory = path.resolve(process.env.PI_CODING_AGENT_DIR || path.join(require('node:os').homedir(), '.pi', 'agent'));
+        // Resolve Pi's own tilde/shell-path/default rules before securing the
+        // directory; importing the SDK does not create a session or identity.
+        let directory = path.resolve(sdk.getAgentDir());
+        try { directory = fs.realpathSync.native(directory); }
+        catch (error) { if (error.code !== 'ENOENT') throw error; }
         if (!privateAgentDirectories.has(directory)) {
             require('./pi-private-files').privateDirectory(directory);
+            directory = fs.realpathSync.native(directory);
             privateAgentDirectories.add(directory);
         }
+        // Pi resolves this variable on each native factory call. Use the same
+        // physical identity before it creates directories or exclusively opens a file.
+        process.env.PI_CODING_AGENT_DIR = directory;
     }
-    if (!sdkPromise) sdkPromise = require('./workspace-network-transport').initializeSdkNetwork().then(() => import('@earendil-works/pi-coding-agent'));
-    return sdkPromise;
+    return sdk;
 }
 
 function isWithin(root, candidate) {
