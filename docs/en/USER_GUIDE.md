@@ -15,6 +15,8 @@ If Pi CLI has models but the browser does not, check its identity directory and 
 
 ## Workspace navigation
 
+The workbench uses locally available fonts and does not download fonts during startup.
+
 白泽灵台 uses a dark green outlined mark with a muted green dot. The sidebar, start screen and login page use the transparent mark with light strokes in the dark theme; the startup waiting page uses the horizontal wordmark. Browser tabs, Windows desktop/tray and phone home screens use the background icon. The dot belongs to the brand and does not indicate online status.
 
 Replies use the identity name bound to the current session, or **Assistant** when no identity is bound. Subagent extension sources appear in expanded notice details. Engine versions are under **Settings → Versions and updates → Engine and dependencies**.
