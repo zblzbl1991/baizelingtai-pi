@@ -6,6 +6,9 @@
     const terminal = new Set(['sent', 'cancelled']);
     const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const date = value => new Date(value).toLocaleString(globalThis.PiI18n?.locale || 'zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    // Short due label for the chip: time only when it is today.
+    const dueLabel = value => new Date(value).toDateString() === new Date().toDateString()
+        ? new Date(value).toLocaleTimeString(globalThis.PiI18n?.locale || 'zh-CN', { hour: '2-digit', minute: '2-digit' }) : date(value);
     const uuid = () => {
         const bytes = crypto.getRandomValues(new Uint8Array(16));
         bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
@@ -26,6 +29,7 @@
             this.deferredRevision = null;
             this.deferredGeneration = null;
             this.pollRequest = null;
+            this.forkRequests = new Map();
             this.dialog = $('pi-workflow-dialog');
             this.content = $('pi-workflow-content');
             this.submit = $('pi-workflow-submit');
@@ -74,9 +78,57 @@
         usable() { const ctx = this.context(); return this.enabled && ctx.connected && ctx.session && !ctx.session.ephemeral; }
         busy() { const ctx = this.context(); return ctx.busy || !this.usable(); }
         url(tail, ctx = this.context()) { return `/api/pi/sessions/${encodeURIComponent(ctx.session.id)}/${tail}`; }
-        async get(tail, ctx = this.context()) { return this.host.apiFetch(`${this.url(tail, ctx)}${tail.includes('?') ? '&' : '?'}cwd=${encodeURIComponent(ctx.cwd)}`); }
+        async get(tail, ctx = this.context(), options) { return this.host.apiFetch(`${this.url(tail, ctx)}${tail.includes('?') ? '&' : '?'}cwd=${encodeURIComponent(ctx.cwd)}`, options); }
         async post(tail, body, method = 'POST', ctx = this.target || this.context()) {
             return this.host.apiFetch(this.url(tail, ctx), { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, cwd: ctx.cwd }), signal: AbortSignal.timeout(150000) });
+        }
+        forkStorageKey() { return `pivane.fork-request:${this.targetKey}`; }
+        pendingFork() {
+            const key = this.forkStorageKey();
+            let raw;
+            try { raw = sessionStorage.getItem(key); } catch { /* Keep same-page recovery when storage is unavailable. */ }
+            const record = raw ? JSON.parse(raw) : this.forkRequests.get(key);
+            if (record && (!/^[A-Za-z0-9-]{16,80}$/.test(record.requestId) || !record.body)) throw new Error(translateUi('创建请求记录无效，请先核对线程列表'));
+            return record;
+        }
+        rememberFork(record) {
+            const key = this.forkStorageKey();
+            if (record) this.forkRequests.set(key, record); else this.forkRequests.delete(key);
+            try { if (record) sessionStorage.setItem(key, JSON.stringify(record)); else sessionStorage.removeItem(key); } catch { /* In-memory recovery remains available. */ }
+        }
+        offerForkRecovery() {
+            if (!this.pendingFork()) return;
+            this.submit.textContent = translateUi('查看创建结果');
+            this.content.insertAdjacentHTML('afterbegin', `<p class="pi-workflow-warning">${translateUi('上次创建结果尚未确认，将先找回该线程。')}</p>`);
+        }
+        offerForkReset() {
+            if (this.content.querySelector('[data-workflow-action="reset-fork"]')) return;
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'pi-request-cancel';
+            button.dataset.workflowAction = 'reset-fork'; button.textContent = translateUi('已核对线程列表，结束这次创建');
+            this.content.append(button);
+        }
+        async createFork(mode) {
+            const body = { entryId: mode === 'clone' ? undefined : this.entryId,
+                position: mode === 'reply-fork' ? 'at' : undefined, expectedLeafId: this.expectedLeafId };
+            let record = this.pendingFork();
+            if (!this.forkRequestsSupported) {
+                if (record) { this.offerForkReset(); throw new Error(translateUi('当前服务无法查询上次创建结果，请先核对线程列表')); }
+                return this.post('fork', body);
+            }
+            if (record) {
+                const status = await this.get(`forks/${encodeURIComponent(record.requestId)}`, this.target, { signal: AbortSignal.timeout(30000) });
+                if (status.status === 'completed') { this.rememberFork(null); return status.result; }
+                if (status.status !== 'not_found') {
+                    if (['uncertain', 'unavailable', 'failed'].includes(status.status)) this.offerForkReset();
+                    throw new Error(status.error || (status.status === 'pending' ? translateUi('正在创建，请稍后再查看结果') : translateUi('创建结果待确认，请先核对线程列表；不会重复创建')));
+                }
+            } else record = { requestId: uuid(), body };
+            this.assertTarget();
+            this.rememberFork(record);
+            this.submit.textContent = translateUi('查看创建结果');
+            const result = await this.post('fork', { ...record.body, requestId: record.requestId });
+            this.rememberFork(null);
+            return result;
         }
         async run(action) { try { await action(); } catch (error) { this.host.toast(error.message, 'error'); } }
         setStoreError(error) {
@@ -84,7 +136,7 @@
             if (next === this.storeError) return;
             this.storeError = next; this.update();
         }
-        setEnabled(enabled) { this.enabled = enabled; this.update(); }
+        setEnabled(enabled, forkRequests = false) { this.enabled = enabled; this.forkRequestsSupported = forkRequests; this.update(); }
         update() {
             const key = this.identity();
             if (key !== this.key) {
@@ -97,10 +149,24 @@
             $('pi-history-more').disabled = !this.usable();
             $('pi-schedule-button').hidden = !this.enabled;
             $('pi-schedule-button').disabled = !this.usable() || this.context().draftBusy;
-            const count = this.jobs.filter(job => !terminal.has(job.status)).length;
-            $('pi-deferred-banner').hidden = !this.usable() || !count && !this.storeError;
-            $('pi-deferred-count').textContent = this.storeError || translateUi("{0} 条待发送{1}", count, this.jobs.some(job => ['expired', 'paused', 'uncertain', 'failed'].includes(job.status)) ? translateUi(" · 需确认") : '');
+            this.renderChip();
             this.decorate();
+        }
+
+        // Status chip beside progress/subagent chips: count plus the next due time or what needs attention.
+        renderChip() {
+            const pending = this.jobs.filter(job => !terminal.has(job.status));
+            const attention = pending.some(job => ['expired', 'paused', 'uncertain', 'failed'].includes(job.status));
+            const chip = $('pi-deferred-banner'), next = $('pi-deferred-next');
+            chip.hidden = !this.usable() || !pending.length && !this.storeError;
+            chip.dataset.tone = this.storeError || attention ? 'attention' : 'idle';
+            $('pi-deferred-count').textContent = this.storeError || translateUi("{0} 条待发送", pending.length);
+            const due = pending.filter(job => job.status === 'scheduled' && Number.isFinite(job.dueAt)).sort((a, b) => a.dueAt - b.dueAt)[0];
+            next.textContent = this.storeError ? '' : attention ? translateUi("需确认") : due ? dueLabel(due.dueAt)
+                : pending.some(job => job.status === 'waiting') ? translateUi("等待会话空闲") : '';
+            const button = $('pi-deferred-open');
+            button.title = [translateUi("待发送消息"), ...pending.slice(0, 5).map(job => `${statusText[job.status] || job.status} · ${job.preview || ''}`.slice(0, 120))].join('\n');
+            button.setAttribute('aria-label', [$('pi-deferred-count').textContent, next.textContent].filter(Boolean).join(' · '));
         }
 
         async refresh(includeHistory = false, { deferredRevision } = {}) {
@@ -179,6 +245,7 @@
             this.entryId = reply.entryId; this.expectedLeafId = this.snapshot.leafId;
             if (!this.show('reply-fork', translateUi("从此回复后分叉"), translateUi("创建分叉"))) return;
             this.content.innerHTML = `${this.warning(translateUi("新线程与原线程共享项目文件，不复制目录。"))}${this.sourcePreview(message ? this.messageText(message, '\n') : reply.text, translateUi('原回复 · 分叉将保留到此处'))}`;
+            this.offerForkRecovery();
         }
 
         show(mode, title, command) {
@@ -340,7 +407,10 @@
             this.entryId = entryId; this.expectedLeafId = payload.leafId;
             this.submit.disabled = false;
             if (mode === 'retry') this.editorFields(payload, false);
-            else this.content.innerHTML = `${this.warning(translateUi("新线程与原线程共享项目文件，不复制目录。"))}${this.sourcePreview(payload.message || translateUi("图片消息"), translateUi('原问题 · 将填入新线程草稿'))}`;
+            else {
+                this.content.innerHTML = `${this.warning(translateUi("新线程与原线程共享项目文件，不复制目录。"))}${this.sourcePreview(payload.message || translateUi("图片消息"), translateUi('原问题 · 将填入新线程草稿'))}`;
+                this.offerForkRecovery();
+            }
         }
         async openClone() {
             if (this.busy()) throw new Error(translateUi("请等待会话空闲后操作"));
@@ -349,6 +419,7 @@
             this.expectedLeafId = this.snapshot.leafId;
             this.submit.disabled = false;
             this.content.innerHTML = this.warning(translateUi("新线程与原线程共享项目文件，不复制目录。"));
+            this.offerForkRecovery();
         }
         async openList(mode) {
             if (!this.show(mode, { history: translateUi("历史问题"), versions: translateUi("历史版本"), deferred: translateUi("待发送消息") }[mode])) return;
@@ -372,6 +443,7 @@
         }
         async listAction(button) {
             if (this.inFlight) return;
+            if (button.dataset.workflowAction === 'reset-fork') { this.assertTarget(); this.rememberFork(null); this.close(); return; }
             const id = button.closest('[data-item-id]').dataset.itemId, action = button.dataset.workflowAction;
             if (['fork', 'retry'].includes(action)) return this.openPrompt(id, action);
             if (action === 'restore') {
@@ -408,7 +480,7 @@
             if (this.inFlight || this.loadingPanel || this.submit.disabled || !this.mode || this.editor && this.loadingFiles === this.editor) return;
             this.inFlight = true; this.error.hidden = true;
             const mode = this.mode;
-            const label = ({
+            const label = ['clone', 'fork', 'reply-fork'].includes(mode) && this.submit.textContent === translateUi('查看创建结果') ? translateUi('正在查询…') : ({
                 schedule: translateUi("正在预约…"), 'schedule-edit': translateUi("正在保存预约…"),
                 retry: translateUi("正在回退并发送…"), restore: translateUi("正在恢复…"),
                 clone: translateUi("正在创建线程…"), fork: translateUi("正在创建分叉…"), 'reply-fork': translateUi("正在创建分叉…"),
@@ -434,8 +506,7 @@
                         if (mode === 'schedule' && this.targetKey === this.identity()) this.host.consumeDraft(this.originalDraft);
                     }
                 } else if (['clone', 'fork', 'reply-fork'].includes(mode)) {
-                    const result = await this.post('fork', { entryId: mode === 'clone' ? undefined : this.entryId,
-                        position: mode === 'reply-fork' ? 'at' : undefined, expectedLeafId: this.expectedLeafId });
+                    const result = await this.createFork(mode);
                     completed = true;
                     if (this.targetKey === this.identity()) await this.host.openFork(result);
                 } else if (mode === 'restore') await this.post('restore', { entryId: this.entryId, expectedLeafId: this.expectedLeafId });
@@ -451,11 +522,16 @@
                 }
             } finally {
                 this.inFlight = false; finish(); controls.forEach(([item, disabled]) => { item.disabled = disabled; });
+                if (!completed && this.forkRequestsSupported && ['clone', 'fork', 'reply-fork'].includes(mode)) this.submit.textContent = translateUi('查看创建结果');
                 this.status.hidden = true;
                 if (completed || this.targetKey !== this.identity()) this.close();
             }
             if (completed) {
-                try { await this.host.reconcile(); await this.refresh(true); }
+                try {
+                    // Deferred-only changes are visible in the chip at once; the transcript reconcile can follow.
+                    if (['schedule', 'schedule-edit', 'job-cancel'].includes(mode)) { await this.refresh(); return; }
+                    await this.host.reconcile(); await this.refresh(true);
+                }
                 catch { this.host.toast(translateUi("操作已完成，列表刷新失败，请刷新查看"), 'info'); }
             }
         }

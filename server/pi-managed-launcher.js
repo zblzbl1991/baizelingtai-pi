@@ -9,6 +9,7 @@ const { stagePi, exactVersion } = require('./pi-update-installer');
 const { stageApplication, validRelease } = require('./pi-application-installer');
 const { outputRedactor, appendOutput } = require('./pi-update-output');
 const portable = require('./pi-portable-installer');
+const retention = require('./pi-managed-retention');
 
 class ManagedLauncher {
     constructor({ root, env = process.env, networkEnvironment = env, stage = stagePi, stageApp = stageApplication, backup = backupRoots, forkServer = fork, startupTimeoutMs = 45000, requireShutdownProof = false, onCleanupUnknown = () => {} } = {}) {
@@ -19,7 +20,9 @@ class ManagedLauncher {
         this.networkEnvironment = { ...networkEnvironment };
         this.redact = outputRedactor(this.networkEnvironment);
         this.stage = stage; this.stageApp = stageApp; this.backup = backup; this.forkServer = forkServer;
+        this.retention = retention.retentionLimits(this.env); this.cleaning = null; this.lastRetention = null;
         this.child = null; this.operation = null; this.closed = false;
+        this.stoppingChildren = new WeakMap();
         this.nonce = randomUUID();
         if (!Number.isSafeInteger(startupTimeoutMs) || startupTimeoutMs <= 0) throw Error('Invalid service startup budget');
         this.startupTimeoutMs = startupTimeoutMs;
@@ -60,8 +63,39 @@ class ManagedLauncher {
         return { supported: true, updateSupported: ['22', '24'].includes(process.versions.node.split('.')[0]) && !this.env.PI_WEB_CLI && !this.env.PI_PACKAGE_DIR,
             appUpdateSupported: ['22', '24'].includes(process.versions.node.split('.')[0]) && !this.env.PI_WEB_CLI && !this.env.PI_PACKAGE_DIR,
             portableUpdateSupported: portable.supported(this.releasePath(this.state.active)) && Boolean(require('./pi-update-feed').configuredFeed(this.root, this.env)),
-            activeRelease: this.state.active, previousRelease: this.state.previous, busy: Boolean(this.operation), job: this.state.job,
-            storage: this.directory, backupScope: 'agent-sessions-media-config-history', nodeVersion: process.versions.node };
+            activeRelease: this.state.active, previousRelease: this.state.previous, busy: Boolean(this.operation || this.cleaning || this.starting), job: this.state.job,
+            storage: this.directory, backupScope: 'agent-sessions-media-config-history', nodeVersion: process.versions.node,
+            retention: { releases: this.retention.releases, backups: this.retention.backups, last: this.lastRetention } };
+    }
+    // Cleanup owns admission until actual completion. Failure is reported in its
+    // own status; it does not roll back a service that has already started.
+    cleanup(job = null) {
+        if (this.cleaning) return this.cleaning;
+        if (this.closed) return Promise.resolve();
+        const controller = new AbortController(); this.cleanupController = controller;
+        this.lastRetention = { at: new Date().toISOString(), phase: 'running' };
+        this.cleaning = Promise.resolve().then(async () => {
+            if (controller.signal.aborted) throw new Error('Retention cancelled');
+            if (this.retention.releases === null && this.retention.backups === null) { this.lastRetention = { at: new Date().toISOString(), phase: 'disabled' }; return; }
+            const expected = { active: this.state.active, previous: this.state.previous };
+            const plan = retention.planRetention(this.directory, this.state, this.retention, { completedJobId: job?.phase === 'retaining' ? job.id : undefined });
+            if (plan.skipped) {
+                this.lastRetention = { at: new Date().toISOString(), phase: 'skipped', reason: plan.skipped }; return;
+            }
+            const moved = retention.moveToTrash(this.directory, plan, expected);
+            const purged = await retention.purgeTrash(this.directory, this.retention, { signal: controller.signal, completedJobId: job?.phase === 'retaining' ? job.id : undefined });
+            this.lastRetention = { at: new Date().toISOString(), phase: 'succeeded', quarantinedReleases: moved.releases.length, quarantinedBackups: moved.backups.length, purged,
+                keptReleases: plan.keepReleases.length, keptBackups: plan.keepBackups.length, incomplete: plan.incompleteReleases.length + plan.incompleteBackups.length };
+            if (job) this.log(job, 'system', `Retention: kept ${plan.keepReleases.length} releases and ${plan.keepBackups.length} backups; quarantined ${moved.releases.length} releases and ${moved.backups.length} backups; purged ${purged} items.`);
+        }).catch(() => {
+            this.lastRetention = { at: new Date().toISOString(), phase: controller.signal.aborted ? 'cancelled' : 'failed', error: 'cleanup-incomplete' };
+            if (job) this.log(job, 'system', 'Retention did not complete; preserved remaining items.');
+            else console.error('白泽灵台 retention did not complete; preserved remaining items.');
+        }).finally(() => {
+            this.cleaning = null; this.cleanupController = null;
+            this.send({ type: 'maintenance-status', status: this.status() });
+        });
+        return this.cleaning;
     }
     send(message) {
         if (this.child?.connected) {
@@ -98,16 +132,19 @@ class ManagedLauncher {
         return true;
     }
     start() {
+        if (this.starting) return this.starting;
         if (this.closed) return Promise.reject(new Error('Launcher is stopping'));
-        if (!this.starting) this.starting = Promise.resolve().then(async () => {
-            if (this.closed) return;
+        this.starting = Promise.resolve().then(async () => {
             this.lockAcquisition = acquireInstallationLock(this.root);
             this.guard = await this.lockAcquisition;
-            if (this.closed) return;
+            if (this.closed) throw new Error('Launcher is stopping');
             this.loadState();
+            await this.cleanup();
+            if (this.closed) throw new Error('Launcher is stopping');
             await this.boot(this.state.active);
-            if (!this.closed) this.send({ type: 'maintenance-activate' });
-        });
+            if (this.closed) throw new Error('Launcher is stopping');
+            this.send({ type: 'maintenance-activate' });
+        }).finally(() => { this.starting = null; this.send({ type: 'maintenance-status', status: this.status() }); });
         return this.starting;
     }
     boot(release) {
@@ -126,7 +163,7 @@ class ManagedLauncher {
             this.child = child; let ready = false, checking = false, expired = false;
             const facts = { requested: false, acknowledged: false, code: null }; this.childFacts.set(child, facts); this.lastChildFacts = facts;
             const timer = setTimeout(() => {
-                if (!ready) { expired = true; this.send({ type: 'maintenance-shutdown' }); reject(new Error('Service startup timed out')); }
+                if (!ready) { expired = true; void this.stopChild().catch(() => {}); reject(new Error('Service startup timed out')); }
             }, this.startupTimeoutMs);
             child.on('message', async message => {
                 if (message?.nonce !== this.nonce || this.child !== child) return;
@@ -184,22 +221,32 @@ class ManagedLauncher {
             });
         });
     }
-    async stopChild() {
+    stopChild() {
         const child = this.child;
         const facts = child ? this.childFacts.get(child) : this.lastChildFacts;
         const proven = () => !this.requireShutdownProof || !child && !facts || facts?.acknowledged && facts.code === 0;
-        if (!child || child.exitCode !== null || child.signalCode !== null) {
-            if (!proven()) throw Object.assign(Error('Service cleanup could not be confirmed'), { code: 'DESKTOP_CLEANUP_UNKNOWN' });
-            return;
-        }
+        const unknown = () => this.requireShutdownProof
+            ? Object.assign(new Error('Service cleanup could not be confirmed'), { code: 'DESKTOP_CLEANUP_UNKNOWN' })
+            : new Error('Service shutdown did not complete cleanly');
+        if (!child || child.exitCode !== null || child.signalCode !== null) return proven() ? Promise.resolve() : Promise.reject(unknown());
+        const pending = this.stoppingChildren.get(child);
+        if (pending) return pending;
         if (facts) facts.requested = true;
-        const exited = new Promise((resolve, reject) => child.once('exit', code => code === 0 && proven() ? resolve() : reject(Object.assign(new Error('Service cleanup could not be confirmed'), { code: 'DESKTOP_CLEANUP_UNKNOWN' }))));
-        this.send({ type: 'maintenance-shutdown' });
-        // No timeout is treated as cancellation. Never start another identity owner before exit.
-        await exited;
+        let failure;
+        const onError = () => { failure = unknown(); };
+        const exited = new Promise((resolve, reject) => child.once('exit', code => {
+            child.removeListener('error', onError);
+            if (!failure && code === 0 && proven()) resolve();
+            else reject(Object.assign(failure || unknown(), { exitCode: code }));
+        }));
+        child.once('error', onError);
+        this.stoppingChildren.set(child, exited);
+        void exited.catch(() => {});
+        try { this.send({ type: 'maintenance-shutdown' }); } catch { onError(); }
+        return exited;
     }
     execute(message) {
-        if (this.operation || this.closed) { this.send({ type: 'maintenance-rejected', id: message.id }); return Promise.resolve(); }
+        if (this.operation || this.cleaning || this.starting || this.closed) { this.send({ type: 'maintenance-rejected', id: message.id }); return Promise.resolve(); }
         if (!['update', 'application', 'backup', 'restart'].includes(message.action) || message.action === 'application' && (!validRelease(message.release) || !this.status().appUpdateSupported
             || message.release.format && (!this.status().portableUpdateSupported || !portable.validPortable(message.release, require('./pi-update-feed').configuredFeed(this.root, this.env)))) || !/^[a-f0-9-]{36}$/.test(message.id || '') || message.action === 'update' && (!exactVersion(message.version) || !this.status().updateSupported)) {
             this.send({ type: 'maintenance-rejected', id: message.id }); return Promise.resolve();
@@ -246,11 +293,16 @@ class ManagedLauncher {
             await this.boot(next);
             this.state.previous = next === previous ? this.state.previous : previous;
             this.state.active = next;
+            // Retaining is a nonterminal phase: admission remains owned until
+            // cleanup finishes and the ready child still exists.
+            job.phase = 'retaining'; this.save();
+            await this.cleanup(job);
+            if (!this.child || this.closed) throw Object.assign(new Error('Service stopped before maintenance completed'), { maintenancePhase: 'starting' });
             job.phase = 'succeeded'; job.finishedAt = new Date().toISOString(); job.exitCode = 0;
             job.installedVersion = message.action === 'application' ? message.release.version : message.action === 'update' ? message.version : job.fromVersion;
             this.log(job, 'system', `Completed. Running ${message.action === 'application' ? '白泽灵台' : 'Pi'} ${job.installedVersion}.`); this.save();
         }).catch(async error => {
-            const failedPhase = job.phase;
+            const failedPhase = error?.maintenancePhase || job.phase;
             job.exitCode = Number.isInteger(error?.exitCode) ? error.exitCode : null;
             this.log(job, 'stderr', `Failed during ${failedPhase}: ${error?.message || 'Unknown error'}`);
             job.phase = 'failed'; job.error = failedPhase; job.finishedAt = new Date().toISOString();
@@ -293,18 +345,30 @@ class ManagedLauncher {
         return this.operation;
     }
     close() {
-        if (!this.closing) {
-            this.closed = true; this.controller?.abort();
-            this.closing = Promise.resolve().then(async () => {
-                // A pending acquisition must settle before deciding there is no
-                // lock to release. Failed acquisition never grants ownership.
+        if (this.closing) return this.closing;
+        this.closed = true; this.controller?.abort(); this.cleanupController?.abort();
+        // Observe all work immediately, before waiting for any single promise.
+        const work = Promise.allSettled([this.starting, this.operation, this.cleaning]);
+        const stopping = this.child ? this.stopChild() : null;
+        const stopped = Promise.resolve(stopping).then(() => null, error => error);
+        let cleanupFailure;
+        this.closing = Promise.resolve().then(async () => {
+            let failure;
+            try {
+                const results = await work;
+                failure = cleanupFailure = await stopped;
+                if (!stopping) {
+                    try { await this.stopChild(); } catch (error) { cleanupFailure = error; failure ||= error; }
+                }
+                failure ||= results.find(result => result.status === 'rejected')?.reason;
+            } finally {
                 await this.lockAcquisition?.catch(() => {});
-                await this.operation;
-                await this.stopChild();
-                await this.guard?.close();
-            });
-        }
+                if (!cleanupFailure || !this.requireShutdownProof) await this.guard?.close();
+            }
+            if (failure) throw failure;
+        });
         return this.closing;
     }
+
 }
 module.exports = { ManagedLauncher };

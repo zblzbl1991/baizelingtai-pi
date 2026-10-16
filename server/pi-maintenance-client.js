@@ -1,4 +1,5 @@
 const { randomUUID } = require('node:crypto');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const fail = (message, status = 409) => Object.assign(new Error(message), { status });
 class MaintenanceClient {
     constructor({ send, managed = Boolean(process.send && process.env.PI_MANAGED_LAUNCHER), nonce = process.env.PI_MANAGED_LAUNCHER } = {}) {
@@ -11,6 +12,8 @@ class MaintenanceClient {
         });
         this.locked = managed; this.active = 0; this.activeMutations = 0; this.activityRevision = 0n;
         this.desktopStopping = false; this.tickets = new Map();
+        this.operations = new Set(); this.httpRequests = new WeakSet();
+        this.operationContext = new AsyncLocalStorage(); this.referenceLease = null;
         this.state = { supported: false, busy: false, reason: 'managed-launcher-required' };
         this.generation = randomUUID();
     }
@@ -26,38 +29,59 @@ class MaintenanceClient {
     get locked() { return this.maintenanceLocked || this.desktopStopping; }
     set locked(value) { this.maintenanceLocked = Boolean(value); }
     touch() { this.activityRevision++; }
+    get referenceLocked() { return this.referenceLease !== null; }
+    assertReferenceWritable() {
+        if (this.referenceLocked) throw Object.assign(fail('正在核对或清理附件，请稍后再试'), { code: 'DOCUMENT_STORAGE_BUSY' });
+    }
+    // Reuse request admission while keeping cleanup ownership independent of
+    // launcher IPC. Only this exact HTTP operation may be excluded from idleness.
+    acquireReferenceLease(idle) {
+        const caller = this.operationContext.getStore();
+        const ownRequest = caller && this.operations.has(caller) ? caller : null;
+        const available = () => !this.locked && !this.state.busy
+            && this.active === (ownRequest ? 1 : 0) && this.operations.size === this.active
+            && (!ownRequest || this.operations.has(ownRequest)) && typeof idle === 'function' && idle() === true;
+        const conflict = () => Object.assign(fail('请等待消息、文件和后台操作完成后再清理附件'), { code: 'DOCUMENT_STORAGE_BUSY' });
+        if (this.referenceLocked || !available()) throw conflict();
+        this.touch();
+        const owner = {}; this.referenceLease = owner;
+        return {
+            check: () => { if (this.referenceLease !== owner || !available()) throw conflict(); },
+            release: () => { if (this.referenceLease === owner) { this.referenceLease = null; this.touch(); } }
+        };
+    }
     enter({ readOnly = false } = {}) {
         if (this.locked) throw fail('实例正在维护，请等待完成');
+        this.assertReferenceWritable();
         if (!readOnly) { this.touch(); this.activeMutations++; }
         this.active++; let released = false;
-        return () => { if (!released) { released = true; this.active--; if (!readOnly) this.activeMutations--; } };
+        const leave = () => { if (!released) { released = true; this.active--; if (!readOnly) this.activeMutations--; this.operations.delete(leave); } };
+        this.operations.add(leave); return leave;
     }
     http(req, res, next) {
-        if (!req.path.startsWith('/api/') || req.method === 'GET' && req.path === '/api/access/status') return next();
-        // Existing maintenance routes manage their own request occupancy; they
-        // still must not cross a desktop stop reservation.
-        if (req.path.startsWith('/api/pi/settings/updates')) {
+        const pathname = req.originalUrl?.split('?')[0] || req.path;
+        if (!pathname.startsWith('/api/') || req.method === 'GET' && pathname === '/api/access/status') return next();
+        if (pathname.startsWith('/api/pi/settings/updates')) {
             if (this.desktopStopping) return res.status(503).json({ error: '实例正在维护，请等待完成' });
             if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) this.touch();
             return next();
         }
+        if (this.httpRequests.has(req)) return next();
+        if (['GET', 'HEAD'].includes(req.method) && !['/api/pi/activity', '/api/pi/status', '/api/pi/cron'].includes(pathname)) this.touch();
         let leave;
-        // Plain status polling never occupies business eligibility. Other reads
-        // can start bounded file/model jobs; invalidate an older confirmation
-        // even when such a job completes before the next snapshot.
-        if (['GET', 'HEAD'].includes(req.method) && !['/api/pi/activity', '/api/pi/status', '/api/pi/cron'].includes(req.path)) this.touch();
-        try { leave = this.enter({ readOnly: ['GET', 'HEAD', 'OPTIONS'].includes(req.method) }); } catch (error) { return res.status(503).json({ error: error.message }); }
+        try { leave = this.enter({ readOnly: ['GET', 'HEAD', 'OPTIONS'].includes(req.method) }); } catch (error) { return res.status(503).json({ error: error.message, errorCode: error.code }); }
+        this.httpRequests.add(req);
         const end = res.end;
         res.end = function (...args) { leave(); return end.apply(this, args); };
         // A disconnected response alone does not imply its asynchronous work stopped.
         res.once('finish', leave);
-        next();
+        this.operationContext.run(leave, next);
     }
-    status() { return { ...this.state, busy: this.locked || this.state.busy, generation: this.generation }; }
+    status() { return { ...this.state, busy: this.locked || this.referenceLocked || this.state.busy, generation: this.generation }; }
     assertAvailable(action, idle) {
         if (!this.managed || !this.state.supported) throw fail('请通过 npm start 启用独立维护启动器', 503);
-        if (this.locked || this.state.busy || this.active || !idle()) throw fail('实例仍有任务、侧聊、临时会话、配置或请求正在处理，请完成后再试');
-        if (action === 'application' && !this.state.appUpdateSupported) throw fail('当前启动器不支持白泽灵台应用更新，请先加载新版启动器');
+        if (this.locked || this.referenceLocked || this.state.busy || this.active || !idle()) throw fail('实例仍有任务、侧聊、临时会话、配置或请求正在处理，请完成后再试');
+        if (action === 'application' && !this.state.appUpdateSupported) throw fail('当前启动器不支持 白泽灵台 应用更新，请先加载新版启动器');
         if (action === 'update' && !this.state.updateSupported) throw fail('Pi 更新需要 Node 22 或 24 和默认的本地 Pi 安装');
     }
     review({ action, version, release }, idle) {

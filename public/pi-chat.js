@@ -107,6 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const transcriptScroll = new window.PiTranscriptScroll({
         viewport: $('pi-transcript'),
         content: elements.transcript,
+        archive: $('pi-transcript-archive'),
         track: $('pi-transcript-track'),
         thumb: $('pi-transcript-thumb'),
         latest: $('pi-jump-latest')
@@ -117,6 +118,23 @@ document.addEventListener('DOMContentLoaded', () => {
         controls: $('pi-transcript-modes'),
         scroll: transcriptScroll
     });
+
+    // What Pi is doing before visible output arrives, and the last compaction result, at the tail.
+    const activityRoot = $('pi-transcript-activity');
+    const transcriptActivity = activityRoot && window.PiTranscriptActivity?.create({ root: activityRoot, content: elements.transcript,
+        onChange: () => transcriptScroll.update(), locateSummary: () => locateCompactionSummary() }) || null;
+    if (activityRoot) transcriptScroll.resizeObserver?.observe(activityRoot);
+    function locateCompactionSummary() {
+        const notice = [...elements.transcript.querySelectorAll(':scope > .pi-summary-notice.compactionSummary')].at(-1);
+        if (!notice || !transcriptView.reveal(notice)) return false;
+        if (notice.tagName === 'DETAILS') notice.open = true;
+        requestAnimationFrame(() => { if (notice.isConnected) transcriptScroll.scrollToNode(notice); });
+        return true;
+    }
+    function syncTranscriptActivity() {
+        transcriptActivity?.sync({ connected: state.connected, streaming: state.streaming,
+            compacting: state.compacting || state.compactRequested, compaction: state.compaction });
+    }
 
     const modelPicker = new window.PiModelPicker({ button: elements.modelSelect, onSelect: changeModel, api: apiFetch });
 
@@ -183,7 +201,13 @@ document.addEventListener('DOMContentLoaded', () => {
         pendingUi: new Map(),
         shownUiId: null,
         activityFresh: false,
+        activityLoaded: false,
         activityEnabled: false,
+        // Loading placeholders: never show "no projects" or a welcome page before the answer is known.
+        projectsDiscovered: false,
+        assistantListLoading: false,
+        transcriptBooting: true,
+        pendingRestore: false,
         projectSessions: new Map(),
         loadingProjects: new Set(),
         sessionListRequests: new Map(),
@@ -224,6 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
         commands: [],
         lastAssistantText: '',
         attachmentFiles: [],
+        documentStorageSupported: false,
         attachmentEpoch: 0,
         attachmentReads: 0,
         attachmentQueue: Promise.resolve(),
@@ -384,6 +409,38 @@ document.addEventListener('DOMContentLoaded', () => {
         context: () => ({ cwd: state.cwd, session: state.session, connected: state.connected, generation: state.socketGeneration }),
         api: apiFetch, toast, fetchBytes: url => (window.WorkspaceAccess?.fetch || fetch)(url, { headers: apiHeaders() })
     });
+    const documentStorageOpen = document.createElement('button');
+    documentStorageOpen.id = 'pi-document-storage-open'; documentStorageOpen.type = 'button'; documentStorageOpen.hidden = true;
+    documentStorageOpen.setAttribute('role', 'menuitem'); documentStorageOpen.tabIndex = -1;
+    const storageIcon = document.createElement('i'); storageIcon.className = 'fa-solid fa-box-archive'; storageIcon.setAttribute('aria-hidden', 'true');
+    const storageCaption = document.createElement('span'); storageCaption.textContent = translateUi('附件管理');
+    const storageHelp = document.createElement('small'); storageHelp.textContent = translateUi('查看原件占用与清理选项'); storageCaption.append(storageHelp);
+    documentStorageOpen.append(storageIcon, storageCaption); elements.attachButton.after(documentStorageOpen);
+    const documentStorageSettings = document.createElement('button');
+    documentStorageSettings.id = 'settings-document-storage'; documentStorageSettings.type = 'button'; documentStorageSettings.hidden = true;
+    documentStorageSettings.className = 'settings-secondary-button'; documentStorageSettings.textContent = translateUi('附件用量与清理');
+    $('settings-usage-panel').querySelector('.settings-panel-header').after(documentStorageSettings);
+    function currentDocumentDraftIds() {
+        const ids = new Set();
+        const collect = message => { for (const part of window.PiDocumentReferences.split(message || '')) if (part.reference) ids.add(part.reference.id); };
+        collect(attachments.payload(elements.input.value, state.attachmentFiles).message);
+        for (const [key, draft] of state.composerDrafts) if (key !== state.composerSessionKey) collect(attachments.payload(draft.text, draft.files).message);
+        if (workflows.editor) {
+            collect($('pi-workflow-message')?.value);
+            for (const reference of workflows.editor.documents || []) ids.add(reference.id);
+        }
+        return [...ids];
+    }
+    const documentStorage = window.PiDocumentStorage?.mount({
+        t: translateUi, getContext: () => ({ cwd: state.cwd }), getDraftIds: currentDocumentDraftIds,
+        request: (route, options) => apiFetch('/api/pi' + route, { ...options,
+            ...(options.body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(options.body) }) }),
+        onDeleted: () => toast(translateUi('已清理附件原件'), 'success')
+    });
+    for (const button of [documentStorageOpen, documentStorageSettings]) button.addEventListener('click', () => {
+        if (!state.documentStorageSupported) return;
+        try { documentStorage.open(); } catch (error) { toast(error.message, 'error'); }
+    });
     const workflows = new window.PiSessionWorkflows({
         getContext: () => ({ cwd: state.cwd, session: state.session, connected: state.connected, model: state.model, generation: state.socketGeneration,
             busy: state.shellBusy || state.streaming || state.compacting || state.compactRequested || state.controlRequested || state.controlsStopping || state.pendingUi.size > 0,
@@ -409,9 +466,10 @@ document.addEventListener('DOMContentLoaded', () => {
             await loadSessions(result.session.cwd);
             sessionClassified(result.session);
             await openSession(result.session);
-            if (result.draft) {
-                elements.input.value = result.draft.message;
-                state.attachmentFiles = result.draft.images.map((image, index) => ({ id: `fork-image-${index}`, kind: 'image', name: translateUi("图片 {0}", index + 1), data: image.data, mimeType: image.mimeType, preview: `data:${image.mimeType};base64,${image.data}` }));
+            if (result.draft && state.cwd === result.session.cwd && state.session?.id === result.session.id) {
+                const draft = attachments.fromPayload(result.draft);
+                elements.input.value = draft.text;
+                state.attachmentFiles = draft.files;
                 renderAttachments(); autoResizeInput(); elements.input.focus();
             }
         }
@@ -467,10 +525,24 @@ document.addEventListener('DOMContentLoaded', () => {
         changed: () => { subagentRuns.apply(nativeControls.value?.subagents); state.controlsStopping = Boolean(nativeControls.value?.stopping); editorSuggestions.apply(nativeControls.value); setStreaming(state.streaming); },
         toast, copy: copyTextToClipboard,
         take: stop => takeRuntimeQueue(stop),
-        ack: async recoveryId => {
+        readRecovery: async (recoveryId, identity) => {
+            const generation = state.socketGeneration, key = state.composerSessionKey;
+            const value = await requestRpc('get_recovery_payload', { recoveryId, ...identity }, 60000);
+            if (generation !== state.socketGeneration || key !== state.composerSessionKey) throw new Error(translateUi('会话已切换，取回内容未加入当前草稿'));
+            return value;
+        },
+        ack: async (recoveryId, identity) => {
             const generation = state.socketGeneration;
-            const value = await requestRpc('ack_recovery', { recoveryId });
+            const value = await requestRpc('ack_recovery', { recoveryId, ...identity });
             return generation === state.socketGeneration ? value : null;
+        },
+        appendRecovery: payload => {
+            if (!state.connected || state.attachmentReads || state.submittingDrafts.has(state.composerSessionKey)) throw new Error(translateUi('请等待连接、附件读取或消息投递完成'));
+            const restored = attachments.fromPayload(payload);
+            const text = elements.input.value + (elements.input.value && restored.text ? '\n\n' : '') + restored.text;
+            const files = [...state.attachmentFiles, ...restored.files];
+            attachments.validateDraft(text, files);
+            elements.input.value = text; state.attachmentFiles = files; renderAttachments(); autoResizeInput();
         },
         append: text => {
             if (!state.connected || state.attachmentReads || state.submittingDrafts.has(state.composerSessionKey)) throw new Error(translateUi("请等待连接、附件读取或消息投递完成"));
@@ -510,7 +582,73 @@ document.addEventListener('DOMContentLoaded', () => {
             attachments.validateDraft(text, files); elements.input.value = text; state.attachmentFiles = files; renderAttachments(); autoResizeInput();
             return true;
         },
-        showPane: mode => sideChat.showPane(mode)
+        showPane: mode => sideChat.showPane(mode),
+        locate: async entryId => {
+            // Archived (pre-compaction) records load their segment before locating.
+            const node = timeline?.nodeFor(entryId) || await archive?.revealEntry(entryId);
+            return locateTranscriptNode(node, true);
+        },
+        canLocate: entryId => Boolean(timeline?.nodeFor(entryId) || archive?.has(entryId))
+    });
+
+    // Unfold, scroll to and briefly highlight one transcript node: question outline
+    // jumps and the history panel's "show in conversation".
+    function locateTranscriptNode(node, closeOverlay) {
+        if (!node?.isConnected || !transcriptView.reveal(node)) return false;
+        if (closeOverlay && document.querySelector('.pi-workbench').classList.contains('pi-inspector-overlay')) elements.inspector.classList.remove('open');
+        transcriptScroll.scrollToNode(node);
+        node.classList.remove('pi-transcript-located'); void node.offsetWidth; node.classList.add('pi-transcript-located');
+        node.addEventListener('animationend', () => node.classList.remove('pi-transcript-located'), { once: true });
+        return true;
+    }
+    // Background history reads (outline bookmarks, archived turns) run one at a time so the
+    // history panel keeps a slot of the worker's two. Only the read-only "busy" refusal is
+    // retried, once; writes never pass through here.
+    let backgroundHistoryChain = Promise.resolve();
+    function backgroundHistory(type, input, timeout = 45000) {
+        // A read queued for one thread or connection never reaches another one.
+        const key = JSON.stringify([state.cwd, state.session?.id]), generation = state.socketGeneration;
+        const current = () => key === JSON.stringify([state.cwd, state.session?.id]) && generation === state.socketGeneration;
+        const send = async () => {
+            // Opening a thread also refreshes its model catalog, which takes the worker's
+            // operation lock. Wait for that local operation instead of racing its history read.
+            while (current() && state.modelRefreshOp?.finished) await state.modelRefreshOp.finished;
+            if (!current()) {
+                return Promise.reject(Object.assign(new Error(translateUi("线程已切换")), { stale: true }));
+            }
+            return requestRpc(type, input, timeout);
+        };
+        const attempt = async () => {
+            try { return await send(); } catch (error) {
+                const busy = ['历史查询正在进行，请稍后重试', '会话正在执行命令、切换或重新加载，请稍后查询历史'].some(text => error.message === text || error.message === translateUi(text));
+                if (!busy) throw error;
+                await new Promise(resolve => setTimeout(resolve, 1200));
+                return send();
+            }
+        };
+        const run = backgroundHistoryChain.then(attempt, attempt);
+        backgroundHistoryChain = run.catch(() => {});
+        return run;
+    }
+    const historyRead = (type, input, timeout = 45000) => type === 'set_history_bookmark' ? requestRpc(type, input, timeout) : backgroundHistory(type, input, timeout);
+
+    // Read-only pre-compaction turns above the live transcript, loaded in segments on demand.
+    const archive = window.PiTranscriptArchive?.create({
+        scroller: $('pi-transcript'), content: elements.transcript, container: $('pi-transcript-archive'), track: $('pi-transcript-track'),
+        request: backgroundHistory, scroll: transcriptScroll, toast,
+        context: () => ({ key: JSON.stringify([state.cwd, state.session?.id]), generation: state.socketGeneration, session: state.session, connected: state.connected }),
+        render: renderArchivedMessage,
+        openEntry: (entryId, view) => historyView.show(entryId, view),
+        onChange: () => timeline?.archiveChanged()
+    });
+    // Codex-style question outline with previews and native-label bookmarks.
+    const timeline = window.PiTranscriptTimeline?.create({
+        host: $('pi-transcript').parentElement, scroller: $('pi-transcript'), content: elements.transcript, archive,
+        anchors: () => state.messageAnchors,
+        context: () => ({ key: JSON.stringify([state.cwd, state.session?.id]), generation: state.socketGeneration, session: state.session, connected: state.connected, streaming: state.streaming }),
+        request: historyRead, toast,
+        locate: node => locateTranscriptNode(node, false),
+        openHistory: () => historyView.open('search')
     });
 
     const conversationSearch = new window.PiSessionSearch({
@@ -593,7 +731,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showTokenDialog();
             throw new Error(translateUi("需要工作台访问令牌"));
         }
-        if (!response.ok) throw Object.assign(new Error(translateUi(data?.error || `HTTP ${response.status}`)), { status: response.status, data });
+        if (!response.ok) throw Object.assign(new Error(translateUi(data?.error || `HTTP ${response.status}`)), { status: response.status, data, code: data?.code || data?.errorCode });
         return data;
     }
 
@@ -611,13 +749,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }, timeout);
     }
 
+    // Transcript placeholder while a thread opens or the saved thread is being restored.
+    // The label follows connection phases (setConnection); the skeleton keeps the reading layout.
+    function transcriptLoadingMarkup(label, placeholder = '') {
+        const skeleton = window.PiSkeleton?.html('chat', { rows: 2, decorative: true }) || '';
+        return `<div class="pi-transcript-loading" role="status" aria-live="polite" aria-busy="true"${placeholder ? ` data-placeholder="${placeholder}"` : ''}><span class="pi-transcript-loading-label"><span class="pi-spinner" aria-hidden="true"></span><span data-loading-label>${escapeHtml(label)}</span></span>${skeleton}</div>`;
+    }
+
+    // Boot and restore placeholders give way to the real welcome page once the answer is known.
+    function settleTranscriptPlaceholder() {
+        if (state.session || state.transcriptBooting || state.pendingRestore) return;
+        if (elements.transcript.querySelector(':scope > .pi-transcript-loading[data-placeholder]')) renderEmptySession();
+    }
+
     function setConnection(kind, text) {
         elements.connectionBanner.dataset.state = kind;
         elements.connectionText.textContent = text;
         // Only the loading placeholder follows connection phases. Reconnecting
         // an already visible transcript must not replace the reader's content.
         const loading = elements.transcript.querySelector('.pi-transcript-loading');
-        if (loading) {
+        // Boot/restore placeholders only follow progress and errors; an interim idle text would flash.
+        if (loading && !(kind === 'idle' && loading.dataset.placeholder)) {
             loading.setAttribute('role', kind === 'error' ? 'alert' : 'status');
             loading.setAttribute('aria-busy', String(kind === 'connecting'));
             loading.querySelector('.pi-spinner')?.toggleAttribute('hidden', kind !== 'connecting');
@@ -766,6 +918,8 @@ document.addEventListener('DOMContentLoaded', () => {
             transfer.setEnabled(status.sessionTransfer === true);
             transfer.movesEnabled = status.sessionMoves === true;
             historyView.setEnabled(status.historySearch === true);
+            timeline?.setEnabled(status.historySearch === true);
+            archive?.setEnabled(status.historySearch === true && status.historyArchive === true);
             historyView.setCapabilities(status);
             filesPanel.viewer.setEnabled(status.fileViewer === true);
             filesPanel.setEnabled(status.fileBrowser === true);
@@ -774,6 +928,10 @@ document.addEventListener('DOMContentLoaded', () => {
             state.composerTools = status.composerTools === true;
             voice?.setEnabled(status.transcription === true);
             documentAttachments.enabled = status.documentUploads === true;
+            state.documentStorageSupported = status.documentStorage === true && Boolean(documentStorage);
+            for (const button of [documentStorageOpen, documentStorageSettings]) {
+                button.hidden = !state.documentStorageSupported; button.disabled = !state.cwd;
+            }
             state.nativeSettings = status.nativeSettings === true;
             state.nativeResources = status.nativeResources === true;
             extensionAssistant.setEnabled(status.extensionAssistant === true);
@@ -795,7 +953,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.manualUnread = status.manualUnread === true;
             state.archiveEnabled = status.archives === true;
             conversationSearch.setArchivesEnabled(state.archiveEnabled);
-            workflows.setEnabled(status.sessionWorkflows === true);
+            workflows.setEnabled(status.sessionWorkflows === true, status.sessionForkRequests === true);
             sideChat.setEnabled(status.sideChat === true, status.sideChatContext === true, status.sideChatRetention === true, status.sideChatTools === true, status.sideChatModels === true, status.sideChatLifecycle === true);
             window.PiReplyTts.setEnabled(status.replyTts === true);
             elements.tokenDialog.classList.add('hidden');
@@ -865,6 +1023,7 @@ document.addEventListener('DOMContentLoaded', () => {
             toast(error.message, 'error');
         } finally {
             elements.projectButton.disabled = false;
+            if (accessBootstrapped) { state.transcriptBooting = false; settleTranscriptPlaceholder(); }
         }
     }
 
@@ -876,8 +1035,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const recent = [...new Set([localStorage.getItem('pi.web.cwd'), ...recentProjects.map(item => item.cwd),
             ...state.projects.map(item => item.cwd), ...state.expandedProjects].filter(Boolean))].slice(0, 64);
         const query = state.projectIdentity ? `?recent=${encodeURIComponent(JSON.stringify(recent))}` : '';
-        const data = await apiFetch(`/api/pi/projects${query}`);
-        if (revision !== state.projectPreferenceRevision || state.visibilityRequests.size || state.pinRequests.size) return;
+        let data;
+        // The boot placeholder names the step it is actually waiting on.
+        if (!state.projectsDiscovered) {
+            const label = elements.transcript.querySelector(':scope > .pi-transcript-loading[data-placeholder] [data-loading-label]');
+            if (label) label.textContent = translateUi("正在读取项目");
+        }
+        try { data = await apiFetch(`/api/pi/projects${query}`); }
+        catch (error) {
+            // A failed discovery is still an answer: stop the placeholder and show the real empty/error state.
+            if (!state.projectsDiscovered) { state.projectsDiscovered = true; renderSessions(); }
+            throw error;
+        }
+        state.projectsDiscovered = true;
+        if (revision !== state.projectPreferenceRevision || state.visibilityRequests.size || state.pinRequests.size) { renderSessions(); return; }
         for (const { input, cwd } of data.projectAliases || []) {
             state.projectAliases.set(input, cwd);
             if (cwd && cwd !== input) {
@@ -1062,7 +1233,9 @@ document.addEventListener('DOMContentLoaded', () => {
         running: [translateUi("处理中"), 'fa-spinner fa-spin'], tool: [translateUi("工具执行"), 'fa-screwdriver-wrench'],
         compacting: [translateUi("压缩中"), 'fa-compress'], retrying: [translateUi("重试中"), 'fa-rotate-right'],
         idle: [translateUi("空闲"), 'fa-circle-check'], error: [translateUi("失败"), 'fa-circle-exclamation'],
-        stopped: [translateUi("已停止"), 'fa-stop'], waiting: [translateUi("等待确认"), 'fa-hand'], inactive: [translateUi("未运行"), 'fa-circle'], unknown: [translateUi("状态未知"), 'fa-question-circle']
+        stopped: [translateUi("已停止"), 'fa-stop'], waiting: [translateUi("等待确认"), 'fa-hand'], inactive: [translateUi("未运行"), 'fa-circle'], unknown: [translateUi("状态未知"), 'fa-question-circle'],
+        // Before the first activity answer the state is not "unknown" yet; keep rows quiet.
+        pending: ['', 'fa-circle']
     };
 
     // Each thread has one row; section placement is only a reversible DOM projection.
@@ -1178,7 +1351,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.sessionList.querySelectorAll('[data-session-id]').forEach(row => {
             const key = activityKey(row.dataset.cwd, row.dataset.sessionId);
             const activity = state.activityFresh ? state.activity.get(key) : null;
-            let phase = state.activityFresh ? activity?.phase || 'inactive' : 'unknown';
+            let phase = state.activityFresh ? activity?.phase || 'inactive' : state.activityLoaded ? 'unknown' : 'pending';
             if (row.classList.contains('ephemeral')) {
                 phase = !state.connected ? 'unknown' : state.pendingUi.size ? 'waiting' : state.shellBusy ? 'tool' : state.compacting ? 'compacting' : state.streaming ? 'running' : 'idle';
             }
@@ -1202,7 +1375,7 @@ document.addEventListener('DOMContentLoaded', () => {
             delayedBadge.textContent = deferred?.count ? translateUi("{0} 条待发送{1}", deferred.count, deferred.attention ? translateUi(" · 需确认") : '') : '';
             const attention = unread || deferred?.attention || ['waiting', 'error'].includes(phase);
             const busy = Boolean(activity?.busy) || ['running', 'tool', 'compacting', 'retrying'].includes(phase);
-            row.dataset.workStage = attention ? 'attention' : busy ? 'running' : phase === 'unknown' ? 'unknown'
+            row.dataset.workStage = attention ? 'attention' : busy ? 'running' : ['unknown', 'pending'].includes(phase) ? 'unknown'
                 : !row.classList.contains('ephemeral') && !isThreadArchived(row.dataset.cwd, row.dataset.sessionId) ? 'recent'
                     : state.includeArchived && elements.sessionSearch.value.trim() && !row.classList.contains('ephemeral') ? 'archive' : '';
             row.hidden = state.sessionFilter === 'work' && state.activityFresh;
@@ -1215,7 +1388,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const unread = [...state.replyNotices.values()].filter(item => item.cwd === group.dataset.projectCwd).length;
             const delayedAttention = [...state.deferredSummary.values()].filter(item => item.cwd === group.dataset.projectCwd && item.attention).length;
             const badge = group.querySelector('.pi-project-activity');
-            badge.textContent = !state.activityFresh ? translateUi("状态未知") : [delayedAttention && translateUi("{0} 个延迟待确认", delayedAttention), waiting && translateUi("{0} 个待确认", waiting), unread && translateUi("{0} 个未读", unread), busy && translateUi("{0} 个处理中", busy), failed && translateUi("{0} 个失败", failed)].filter(Boolean).join(' · ');
+            badge.textContent = !state.activityFresh ? (state.activityLoaded ? translateUi("状态未知") : '') : [delayedAttention && translateUi("{0} 个延迟待确认", delayedAttention), waiting && translateUi("{0} 个待确认", waiting), unread && translateUi("{0} 个未读", unread), busy && translateUi("{0} 个处理中", busy), failed && translateUi("{0} 个失败", failed)].filter(Boolean).join(' · ');
             badge.dataset.phase = !state.activityFresh ? 'unknown' : waiting ? 'waiting' : unread ? 'unread' : busy ? 'running' : failed ? 'error' : 'idle';
             badge.hidden = !badge.textContent;
             group.hidden = state.sessionFilter === 'work' && state.activityFresh;
@@ -1297,6 +1470,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.activityFresh = false;
         } finally {
             activityInFlight = false;
+            state.activityLoaded = true;
             renderActivityBadges();
         }
     }
@@ -1348,6 +1522,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (projectChanged) {
             disconnectSocket(true);
+            state.pendingRestore = Boolean(options.restoreSession && localStorage.getItem(`pi.web.session:${cwd}`));
             state.cwd = cwd;
             state.session = null;
             state.sessions = [];
@@ -1377,6 +1552,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (saved) await openSession(saved);
             }
         } finally {
+            if (selectionEpoch === state.projectSelectionEpoch) { state.pendingRestore = false; settleTranscriptPlaceholder(); }
             elements.newSession.disabled = state.assistantMode && !state.assistantGroups.some(group => group.id === state.assistantProjectId && !group.unclassified && !group.archived);
         }
     }
@@ -1465,7 +1641,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function refreshAssistant(requested = {}) {
         const pending = loadAssistant(requested), epoch = state.assistantEpoch;
-        void pending.catch(error => { if (state.assistantMode && state.assistantEpoch === epoch) showAssistantError(error); });
+        void pending.catch(error => { if (state.assistantMode && state.assistantEpoch === epoch) { state.assistantListLoading = false; showAssistantError(error); } });
         return pending;
     }
 
@@ -1508,6 +1684,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.assistantSessions = new Map();
         state.assistantProjectId = null;
         status.textContent = translateUi('正在读取项目');
+        state.assistantListLoading = true;
         renderAssistantSessions();
         const data = await apiFetch(`/api/pi/assistant-projects?profileId=${encodeURIComponent(chosen)}`);
         if (epoch !== state.assistantEpoch || chosen !== state.assistantProfileId || !state.assistantMode) return;
@@ -1520,6 +1697,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const cwds = [...new Set([...listedGroups.map(group => group.cwd), ...(unclassifiedCwd ? [unclassifiedCwd] : [])])];
         state.assistantDiscovery = { epoch, profileId: chosen, cwds: new Set(cwds) };
         state.assistantRevision = data.revision;
+        state.assistantListLoading = false;
         state.assistantGroups = listedGroups;
         state.assistantProjectId = listedGroups.some(group => group.id === previousProjectId) ? previousProjectId : groups[0]?.id || null;
         renderAssistantSessions();
@@ -1609,8 +1787,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const options = { query, expanded: state.assistantExpandedLists.get(state.assistantProfileId), cwd: state.cwd, sessionId: state.session?.id };
         elements.sessionList.innerHTML = window.PiAssistantProjects.renderGroups(active, sessions, state.assistantProjectId, renderSessionItem, options)
             + (archived.length ? `<details class="pi-archive-group pi-archived-projects" data-archive-kind="assistant-projects" ${state.assistantArchivedOpen || query ? 'open' : ''}><summary>${translateUi('已归档项目（{0}）', archived.length)}</summary>${window.PiAssistantProjects.renderGroups(archived, sessions, state.assistantProjectId, renderSessionItem, options)}</details>` : '')
+            || (state.assistantListLoading && !query && window.PiSkeleton?.html('projects', { rows: 3, label: translateUi('正在读取项目') }))
             || `<div class="pi-list-state">${translateUi(query ? '没有匹配的项目或线程' : '还没有助手项目')}</div>`;
-        elements.sessionCount.textContent = translateUi('{0} 个项目', state.assistantGroups.length);
+        elements.sessionCount.textContent = state.assistantListLoading && !state.assistantGroups.length ? '' : translateUi('{0} 个项目', state.assistantGroups.length);
         elements.newSession.disabled = !state.assistantGroups.some(group => group.id === state.assistantProjectId && !group.unclassified && !group.archived);
         renderActivityBadges();
         restoreSessionListAnchor(anchor);
@@ -1718,7 +1897,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         document.addEventListener('pointerdown', hide, true);
         document.addEventListener('keydown', event => { if (event.key === 'Escape') hide(); }, true);
-        document.addEventListener('scroll', hide, true);
+        document.addEventListener('scroll', event => {
+            const anchor = target || pending;
+            if (anchor && (event.target === document || event.target?.contains?.(anchor))) hide();
+        }, true);
         window.addEventListener('blur', hide);
     })();
 
@@ -1786,7 +1968,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let threadContent = '';
             if (loading && !source.length) {
-                threadContent = `<div class="pi-project-loading"><span class="pi-spinner"></span>${translateUi("正在读取线程")}</div>`;
+                threadContent = window.PiSkeleton?.html('threads', { rows: Math.min(4, Math.max(2, project.sessionCount || 3)), label: translateUi("正在读取线程") })
+                    || `<div class="pi-project-loading"><span class="pi-spinner"></span>${translateUi("正在读取线程")}</div>`;
             } else if (expanded && sessions.length) {
                 const archived = state.sessionFilter === 'all' ? sessions.filter(session => state.archivedSessions.has(activityKey(cwd, session.id))) : [];
                 const regular = sessions.filter(session => state.sessionFilter !== 'all' || !state.archivedSessions.has(activityKey(cwd, session.id)));
@@ -1820,11 +2003,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
         const archiveSection = archivedCount ? `<details class="pi-archive-group pi-archived-projects" data-archive-kind="projects" ${state.archiveProjectsOpen || query ? 'open' : ''}><summary>${translateUi('已归档项目（{0}）', archivedCount)}</summary>${archivedGroups}</details>` : '';
 
-        elements.sessionCount.textContent = translateUi('{0} 个项目', orderedProjects().length);
+        // Until project discovery answers, an empty list means "not known yet", not "no projects".
+        const discovering = !groups && !archiveSection && !query && !state.projectsDiscovered;
+        elements.sessionCount.textContent = discovering ? '' : translateUi('{0} 个项目', orderedProjects().length);
         elements.sessionCount.title = translateUi("{0} 个项目 · {1} 个当前线程", orderedProjects().length, state.sessions.length);
-        elements.sessionList.innerHTML = groups + archiveSection || (state.sessionFilter === 'work' ? '' : `<div class="pi-list-state">${query ? translateUi("没有匹配的项目或线程") : translateUi("还没有项目")}</div>`);
+        elements.sessionList.innerHTML = groups + archiveSection || (discovering ? window.PiSkeleton?.html('projects', { rows: 4, label: translateUi('正在读取') }) || `<div class="pi-list-state"><span class="pi-spinner"></span>${translateUi('正在读取')}</div>`
+            : state.sessionFilter === 'work' ? '' : `<div class="pi-list-state">${query ? translateUi("没有匹配的项目或线程") : translateUi("还没有项目")}</div>`);
         renderActivityBadges();
-        if (!groups && !archiveSection && state.sessionFilter !== 'work') {
+        if (!groups && !archiveSection && !discovering && state.sessionFilter !== 'work') {
             const action = document.createElement('button'); action.type = 'button'; action.className = 'pi-list-state-action';
             action.textContent = query ? translateUi('改搜对话正文') : translateUi('打开服务器目录');
             action.hidden = Boolean(query && $('pi-search-conversations').hidden);
@@ -2157,6 +2343,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 forgetDeletedSession(session, cwd);
                 dialog.querySelector('h3').textContent = translateUi('线程已删除');
                 description.textContent = result?.trashed === true ? translateUi('会话已移入回收站') : result?.trashed === false ? translateUi('会话已永久删除') : translateUi('会话已删除');
+                if (result?.queueRecoveryWarning) description.textContent += '；' + translateUi(result.queueRecoveryWarning);
                 dialog.classList.add('is-complete');
                 submit.hidden = true;
                 closeButtons[1].textContent = translateUi('完成');
@@ -2232,7 +2419,10 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.compactButton.disabled = true;
         elements.currentThreadMenu.disabled = false;
         transcriptScroll.reset();
-        elements.transcript.innerHTML = `<div class="pi-transcript-loading" role="status" aria-live="polite" aria-busy="true"><span class="pi-spinner" aria-hidden="true"></span><span data-loading-label>${session.ephemeral ? translateUi("正在启动临时会话") : translateUi("正在加载会话")}</span></div>`;
+        transcriptActivity?.reset();
+        elements.transcript.innerHTML = transcriptLoadingMarkup(session.ephemeral ? translateUi("正在启动临时会话") : translateUi("正在加载会话"));
+        // The previous thread's pre-compaction turns leave with its transcript.
+        archive?.sync();
         document.getElementById('pi-chat-knowledge').hidden = true;
         setConnection('connecting', translateUi("正在连接"));
         setAgentState('connecting', translateUi("正在启动"), getSessionTitle(session));
@@ -2538,6 +2728,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!$('workspace-settings-dialog').classList.contains('hidden')) return;
         state.modelRefreshPending = false;
         const operation = { generation: state.socketGeneration };
+        operation.finished = new Promise(resolve => { operation.finish = resolve; });
         state.modelRefreshOp = operation; state.modelRefreshError = ''; setStreaming(state.streaming); syncModelGuidance();
         try {
             const data = await requestRpc(state.modelCatalogSupported ? 'refresh_models' : 'get_available_models', {}, 20000);
@@ -2548,6 +2739,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             if (operation.generation === state.socketGeneration && state.modelRefreshOp === operation) state.modelRefreshError = error.message;
         } finally {
+            operation.finish();
             if (state.modelRefreshOp === operation) {
                 state.modelRefreshOp = null;
                 if (operation.generation === state.socketGeneration) {
@@ -2569,7 +2761,16 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.thinkingSelect.innerHTML = state.thinkingLevels.map(level => `<option value="${escapeHtml(level)}">${labels[level] || level}</option>`).join('');
         elements.thinkingSelect.value = state.thinkingLevel;
         elements.thinkingSelect.disabled = state.thinkingLevels.length <= 1;
+        syncThinkingSelectSize();
         syncMobileHeader();
+    }
+
+    function syncThinkingSelectSize() {
+        // Older browsers size a select to its longest option. Measure only the selected label.
+        const context = document.createElement('canvas').getContext('2d');
+        context.font = getComputedStyle(elements.thinkingSelect).font;
+        const label = elements.thinkingSelect.selectedOptions[0]?.textContent || '';
+        elements.thinkingSelect.style.setProperty('--pi-thinking-label-width', `${Math.ceil(context.measureText(label).width) + 2}px`);
     }
 
     function messageText(content) {
@@ -2578,8 +2779,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return content.filter(block => block.type === 'text').map(block => block.text).join('\n');
     }
 
-    function createMessageElement(message, showReplyActions = false, lazyTools = false) {
-        const element = createMessageContentElement(message, showReplyActions, lazyTools);
+    function createMessageElement(message, showReplyActions = false, lazyTools = false, options = {}) {
+        const element = createMessageContentElement(message, showReplyActions, lazyTools, options);
         if (element && message.role === 'custom') element._piCustomMessage = message;
         if (element && message.timestamp != null) {
             element.dataset.messageKey = JSON.stringify([message.role, message.timestamp, message.toolCallId || '']);
@@ -2667,7 +2868,19 @@ document.addEventListener('DOMContentLoaded', () => {
         text.after(button);
     }
 
-    function createMessageContentElement(message, showReplyActions, lazyTools) {
+    // Archived (pre-compaction) records are read-only display copies: same rendering, no
+    // live-transcript identity keys and no effect on the current reply state.
+    function renderArchivedMessage(message) {
+        const element = createMessageElement(message, message.role === 'assistant', false, { archived: true });
+        if (!element) return null;
+        for (const node of [element, ...element.querySelectorAll('[data-message-key], [data-reading-key], [data-detail-key]')]) {
+            delete node.dataset.messageKey; delete node.dataset.readingKey; delete node.dataset.detailKey;
+        }
+        decorateCodeBlocks(element);
+        return element;
+    }
+
+    function createMessageContentElement(message, showReplyActions, lazyTools, options = {}) {
         const role = message.role || 'custom';
         if (role === 'toolResult') return createToolResultElement(message, lazyTools);
         if (role === 'bashExecution') return createBashElement(message);
@@ -2696,7 +2909,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const subagentNotice = role === 'custom' && Boolean(window.PiSubagentNotices?.decorate(article, header, message));
         const responseText = role === 'assistant' ? messageText(message.content).trim() : '';
-        if (responseText) state.lastAssistantText = responseText;
+        if (responseText && !options.archived) state.lastAssistantText = responseText;
         if (role === 'user') {
             if (typeof message.timestamp === 'number' || typeof message.timestamp === 'string') {
                 const sentAt = new Date(message.timestamp);
@@ -3019,6 +3232,8 @@ document.addEventListener('DOMContentLoaded', () => {
         chatKnowledge?.decorate();
         transcriptScroll.restore(readingPosition);
         workflows.decorate();
+        archive?.sync();
+        timeline?.sync();
     }
 
     // Starter prompts only fill the draft. The bracketed part is selected so it can be typed over.
@@ -3039,6 +3254,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderEmptySession() {
+        if (!state.session && (state.transcriptBooting || state.pendingRestore)) {
+            elements.transcript.innerHTML = transcriptLoadingMarkup(elements.connectionText.textContent || translateUi("正在连接 Pi Agent"), 'boot');
+            return;
+        }
         const extension = state.session?.assistant?.kind === 'extensions';
         const root = document.createElement('div'); root.className = 'pi-empty-state session-ready pi-start';
         const hero = document.createElement('header'); hero.className = 'pi-start-hero';
@@ -3098,6 +3317,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function clearSessionView() {
         state.recoveryNotice = null;
+        transcriptActivity?.reset();
         renderRecoveryNotice();
         state.renderedTranscript = null;
         state.dirtyTranscriptIndex = Infinity;
@@ -3121,6 +3341,7 @@ document.addEventListener('DOMContentLoaded', () => {
         modelPicker.update([], null, true, translateUi('等待会话'));
         elements.thinkingSelect.innerHTML = `<option>${translateUi("关闭")}</option>`;
         elements.thinkingSelect.disabled = true;
+        syncThinkingSelectSize();
         syncMobileHeader();
         elements.input.disabled = true;
         elements.sendButton.disabled = true;
@@ -3208,13 +3429,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             case 'agent_start':
                 state.retrying = false;
+                transcriptActivity?.agentStart();
                 setStreaming(true);
                 setConnection('working', translateUi("正在执行"));
                 setAgentState('working', translateUi("执行中"), state.model?.id || assistantName());
                 break;
             case 'agent_settled':
                 state.retrying = false;
+                transcriptActivity?.idle();
                 historyView.changed();
+                timeline?.settled();
                 if (chatKnowledge?.settled) chatKnowledge.settled(); else void chatKnowledge?.refresh();
                 setStreaming(false);
                 setConnection('connected', translateUi("已连接"));
@@ -3226,21 +3450,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             case 'message_update':
                 updateLiveMessage(event.assistantMessageEvent);
+                transcriptActivity?.output(event.assistantMessageEvent?.type);
                 break;
             case 'message_end':
                 endLiveMessage(event.message);
                 break;
             case 'tool_execution_start':
                 updateToolExecution(event, 'running');
+                transcriptActivity?.tool(state.toolRows.get(event.toolCallId)?.querySelector('summary > strong')?.textContent?.trim() || event.toolName);
                 break;
             case 'tool_execution_update':
                 updateToolExecution(event, 'running');
                 break;
             case 'tool_execution_end':
                 updateToolExecution(event, event.isError ? 'error' : 'done');
+                transcriptActivity?.toolEnd();
                 break;
             case 'gateway_history_changed':
                 historyView.changed(event.entryId);
+                timeline?.changed(event.entryId);
                 break;
             case 'gateway_models':
                 state.models = event.models || []; state.modelAuthError = false; state.modelRefreshError = '';
@@ -3267,6 +3495,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setConnection('working', translateUi("正在压缩上下文"));
                 setAgentState('working', translateUi("压缩中"), state.model?.id || assistantName());
                 renderCompactionStatus();
+                transcriptActivity?.compaction(state.compaction, { streaming: state.streaming });
                 break;
             case 'compaction_end':
                 state.compacting = false;
@@ -3278,6 +3507,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     willRetry: Boolean(event.willRetry)
                 };
                 renderCompactionStatus();
+                transcriptActivity?.compaction(state.compaction, { streaming: state.streaming });
                 setStreaming(state.streaming);
                 setConnection(state.streaming ? 'working' : 'connected', state.streaming ? translateUi("正在执行") : translateUi("已连接"));
                 setAgentState(state.streaming ? 'working' : 'connected', state.streaming ? translateUi("执行中") : translateUi("空闲"), state.model?.id || assistantName());
@@ -3289,6 +3519,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!state.compacting) break;
                 state.compaction = { ...state.compaction, status: 'retrying', attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs };
                 renderCompactionStatus();
+                transcriptActivity?.compaction(state.compaction);
                 setConnection('working', translateUi("压缩摘要等待重试"));
                 refreshAgentState();
                 break;
@@ -3296,6 +3527,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!state.compacting) break;
                 state.compaction = { ...state.compaction, status: 'running' };
                 renderCompactionStatus();
+                transcriptActivity?.compaction(state.compaction);
                 setConnection('working', translateUi("正在重试压缩摘要"));
                 refreshAgentState();
                 break;
@@ -3303,10 +3535,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             case 'auto_retry_start':
                 state.retrying = true; refreshAgentState();
+                transcriptActivity?.retry(event.attempt, event.delayMs);
                 appendEventNotice('retry', translateUi("请求失败，{0} 秒后进行第 {1} 次重试", Math.ceil((event.delayMs || 0) / 1000), event.attempt));
                 break;
             case 'auto_retry_end':
                 state.retrying = false; refreshAgentState();
+                transcriptActivity?.retryEnd();
                 appendEventNotice(event.success ? 'success' : 'error', event.success ? translateUi("自动重试成功") : event.finalError || translateUi("自动重试失败"));
                 break;
             case 'extension_ui_request':
@@ -3521,7 +3755,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (event.toolName) row.dataset.toolName = event.toolName;
         const result = event.partialResult || event.result;
-        if (result) setToolOutput(row, result);
+        if (result) setToolOutput(row, event.type === 'tool_execution_end' && event.durationMs !== undefined
+            ? { ...result, durationMs: event.durationMs } : result);
         else window.PiToolLabels?.update(row);
         transcriptView.schedule(row);
         scrollTranscript();
@@ -3704,6 +3939,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.agentDetail.textContent = `${state.model.provider}/${state.model.id}`;
         }
         if (state.thinkingLevel) elements.thinkingSelect.value = state.thinkingLevel;
+        syncThinkingSelectSize();
         syncMobileHeader();
         setStreaming(state.streaming);
     }
@@ -3768,6 +4004,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setStreaming(streaming) {
         state.streaming = streaming;
+        syncTranscriptActivity();
         chatKnowledge?.setBusy?.(knowledgeBusy());
         transcriptView.setTailActive(streaming);
         nativeContext.sync();
@@ -3794,8 +4031,10 @@ document.addEventListener('DOMContentLoaded', () => {
         syncModelGuidance();
         elements.thinkingSelect.disabled = busy || !state.connected || state.thinkingLevels.length <= 1;
         modelSpeed.setBlocked(busy || !state.connected || state.pendingUi.size > 0);
-        elements.composerStatus.textContent = !state.connected ? translateUi("未打开会话") : state.shellBusy ? translateUi("Shell 正在执行，可继续编辑草稿；停止请使用命令卡片") : state.treeBusy ? translateUi("正在切换对话位置，请在历史页查看进度或取消") : state.resourceRequested ? translateUi("正在重新加载原生资源") : stopping ? translateUi("正在停止 / 取回，请等待确认") : compacting ? translateUi("上下文压缩中") : streaming ? translateUi("Agent 运行中：引导在本轮工具后送达，后续在任务完成后送达") : translateUi("已就绪");
+        elements.composerStatus.textContent = !state.connected ? translateUi("未打开会话") : state.shellBusy ? translateUi("Shell 正在执行，可继续编辑草稿；停止请使用命令卡片") : state.treeBusy ? translateUi("正在切换对话位置，请在历史页查看进度或取消") : state.resourceRequested ? translateUi("正在重新加载原生资源") : stopping ? translateUi("正在停止 / 取回，请等待确认") : compacting ? '' : streaming ? (elements.deliveryMode.value === 'follow_up' ? translateUi("运行中 · 新消息在任务完成后送达") : translateUi("运行中 · 新消息在本轮工具后送达")) : '';
         historyView.sync();
+        archive?.sync();
+        timeline?.sync();
         workflows.update();
         sideChat.updateParent();
         refreshAgentState();
@@ -4064,9 +4303,11 @@ document.addEventListener('DOMContentLoaded', () => {
         state.submittingDrafts.add(key);
         autoResizeInput(); workflows.update();
         composer.hide();
+        if (command === 'prompt' && !selectedCommand && !state.streaming) transcriptActivity?.sending();
         const optimistic = selectedCommand ? null : appendOptimisticUser(hasQuotes || state.attachmentFiles.some(file => file.kind === 'document') ? attachments.payload(text, state.attachmentFiles.filter(file => ['quote', 'document'].includes(file.kind))).message : text || textAttachments.map(file => translateUi("附件：{0}", file.name)).join(', '), images, message);
         try {
             await requestRpc(command, { message, images }, 60000);
+            if (key === state.composerSessionKey) transcriptActivity?.accepted();
             state.uncertainDrafts.delete(key);
             const current = key === state.composerSessionKey ? { text: elements.input.value, files: state.attachmentFiles } : state.composerDrafts.get(key);
             if (current?.text === draft.text && current.files.length === draft.files.length && current.files.every((file, index) => file === draft.files[index])) {
@@ -4075,6 +4316,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             optimistic?.remove();
+            if (key === state.composerSessionKey) transcriptActivity?.cancelSending();
             if (error.errorCode === 'MODEL_AUTH_REQUIRED') { state.modelAuthError = true; syncModelGuidance(); }
             if (error.deliveryUnknown) state.uncertainDrafts.add(key);
             const notice = error.deliveryUnknown ? translateUi("发送结果不确定，草稿已保留；请先核对会话，勿直接重复发送") : translateUi("{0}；草稿已保留", error.message);
@@ -4148,9 +4390,10 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.sendButton.querySelector('i').className = shellInput ? 'fa-solid fa-terminal' : 'fa-solid fa-arrow-up';
         elements.sendButton.disabled = Boolean(state.modelRefreshOp) || state.treeBusy || !state.connected || (state.shellBusy && elements.input.value.trim() !== '/quit') || (shellInput && (state.streaming || state.pendingUi.size > 0)) || state.resourceRequested || nativeControls.value?.stopping || state.controlRequested || state.compacting || state.compactRequested || pending || submitting || (!elements.input.value.trim() && !state.attachmentFiles.length);
         elements.attachButton.disabled = !state.connected || submitting;
+        for (const button of [documentStorageOpen, documentStorageSettings]) button.disabled = !state.documentStorageSupported || !state.cwd;
         cronAddButton.disabled = !state.connected || !state.session || Boolean(state.session.ephemeral);
         const status = $('pi-attachment-status');
-        status.textContent = pending ? translateUi("正在读取附件…") : submitting ? translateUi("正在提交消息…") : state.uncertainDrafts.has(state.composerSessionKey) ? translateUi("上次发送结果不确定，草稿已保留，请先核对会话") : '';
+        status.textContent = pending ? translateUi("正在读取附件…") : submitting ? (window.PiTranscriptActivity ? '' : translateUi("正在提交消息…")) : state.uncertainDrafts.has(state.composerSessionKey) ? translateUi("上次发送结果不确定，草稿已保留，请先核对会话") : '';
         status.hidden = !status.textContent;
         elements.attachments.setAttribute('aria-busy', String(pending));
     }
@@ -4243,7 +4486,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!state.models.some(model => model.provider === selection?.provider && model.id === selection?.id)) return;
         const { provider, id: modelId } = selection;
         const generation = state.socketGeneration;
-        const operation = { generation, kind: 'selection' }; state.modelRefreshOp = operation;
+        const operation = { generation, kind: 'selection' };
+        operation.finished = new Promise(resolve => { operation.finish = resolve; });
+        state.modelRefreshOp = operation;
         setStreaming(state.streaming);
         try {
             const model = await requestRpc('set_model', { provider, modelId });
@@ -4264,6 +4509,7 @@ document.addEventListener('DOMContentLoaded', () => {
             toast(error.message, 'error');
             renderModels();
         } finally {
+            operation.finish();
             if (state.modelRefreshOp === operation) state.modelRefreshOp = null;
             if (generation === state.socketGeneration) {
                 setStreaming(state.streaming);
@@ -4288,6 +4534,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (generation === state.socketGeneration) {
                 elements.thinkingSelect.disabled = state.streaming || state.compacting || !state.connected || state.thinkingLevels.length <= 1;
                 elements.thinkingSelect.value = state.thinkingLevel;
+                syncThinkingSelectSize();
                 syncMobileHeader();
             }
         }
@@ -4491,6 +4738,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...(state.archiveEnabled ? [command(archived ? translateUi('恢复线程') : translateUi('归档线程'),
                     'fa-box-archive', () => setArchive(cwd, session, !archived),
                     { disabled: session.ephemeral || state.archiveRequests.has(activityKey(cwd, session.id)) })] : []),
+                ...(state.documentStorageSupported && !session.ephemeral && state.connected && cwd === state.cwd && session.id === state.session?.id
+                    ? [command(translateUi('退出运行实例'), 'fa-right-from-bracket', () => {
+                        if (cwd !== state.cwd || session.id !== state.session?.id || !state.connected) throw new Error(translateUi('运行实例已变化'));
+                        if ((state.streaming || state.compacting || state.shellBusy || state.controlRequested || state.controlsStopping)
+                            && !window.confirm(translateUi('退出运行实例会中断当前任务，已发生的外部操作不会撤销。仍要退出吗？'))) return;
+                        return quitRuntime();
+                    }, { disabled: state.attachmentReads > 0 || state.submittingDrafts.has(state.composerSessionKey) || state.pendingUi.size > 0
+                        || Boolean(nativeControls.value?.drafts?.length) || Boolean(nativeControls.value?.subagents?.background?.active)
+                        || Boolean(nativeControls.value && !nativeControls.value.durable && (nativeControls.value.recoveries.length
+                            || nativeControls.value.queue.steering.length || nativeControls.value.queue.followUp.length)) })] : []),
                 command(translateUi("删除线程"), 'fa-trash', () => deleteOneSession(session, cwd), { disabled: session.ephemeral, danger: true })
             ];
         } else {
@@ -4708,6 +4965,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('workspace:tabchanged', event => {
         const { tab, params } = event.detail;
         const routeKey = location.hash || '#/chat';
+        const previousTab = /^#\/([^?]+)/.exec(state.routeKey || '')?.[1];
         if (routeKey !== state.routeKey) { state.routeKey = routeKey; state.navigationEpoch++; }
         if (tab !== 'chat' && tab !== 'assistant') { state.assistantEpoch++; return; }
         const wasAssistant = state.assistantMode;
@@ -4724,7 +4982,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.sessionFilters.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.filter === 'all')));
         }
         if (state.assistantMode) {
-            if (!wasAssistant || params.get('profileId') !== state.assistantProfileId || params.get('projectId') && params.get('projectId') !== state.assistantProjectId) {
+            if (!wasAssistant || previousTab !== 'assistant' || params.get('profileId') !== state.assistantProfileId || params.get('projectId') && params.get('projectId') !== state.assistantProjectId) {
                 refreshAssistant({ profileId: params.get('profileId'), projectId: params.get('projectId'), sessionId: params.get('sessionId') });
             } else if (params.get('sessionId') && state.session?.id !== params.get('sessionId')) {
                 const session = state.assistantSessions.get(state.assistantProjectId)?.find(item => item.id === params.get('sessionId'));
@@ -4888,6 +5146,8 @@ document.addEventListener('DOMContentLoaded', () => {
         reloadResources().catch(error => toast(error.message, 'error'));
     });
     elements.thinkingSelect.addEventListener('change', changeThinking);
+    window.addEventListener('resize', syncThinkingSelectSize);
+    document.fonts.ready.then(syncThinkingSelectSize);
     elements.deliveryMode.addEventListener('change', () => { composer.closeActions(true); setStreaming(state.streaming); });
     elements.sendButton.addEventListener('click', sendMessage);
     elements.stopButton.addEventListener('click', () => takeRuntimeQueue(true).catch(error => toast(error.message, 'error')));
@@ -4944,7 +5204,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (innerWidth <= 900) elements.inspector.classList.remove('open');
         elements.sessionPane.classList.toggle('open');
     });
-    elements.transcript.addEventListener('click', async event => {
+    async function copyFromTranscript(event) {
         const messageCopy = event.target.closest('.pi-message-copy');
         if (messageCopy) {
             try {
@@ -4967,7 +5227,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             toast(error.message, 'error');
         }
-    });
+    }
+    elements.transcript.addEventListener('click', copyFromTranscript);
+    $('pi-transcript-archive')?.addEventListener('click', copyFromTranscript);
 
     const extensionAssistant = window.PiExtensionAssistant.create({
         toast,
@@ -5054,6 +5316,42 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (state.session && !state.session.ephemeral && !state.connected) void connectSocket(state.session).catch(() => {});
     });
     window.addEventListener('beforeunload', () => { sideChat.disposeAll(); disconnectSocket(true); });
+    // Deliberate same-tab reloads (switching the interface language) keep unsent text drafts and
+    // report what a reload would lose. Attachments, temporary sessions and side chats are not kept.
+    const RELOAD_DRAFTS_KEY = 'pi.web.reloadDrafts';
+    function composerDraftEntries() {
+        const entries = new Map(state.composerDrafts);
+        if (state.composerSessionKey) entries.set(state.composerSessionKey, { text: elements.input.value, files: state.attachmentFiles });
+        const ephemeral = state.session?.ephemeral ? state.composerSessionKey : null;
+        return [...entries].filter(([key, draft]) => key !== ephemeral && (draft?.text?.trim() || draft?.files?.length));
+    }
+    window.PiWorkbenchReload = Object.freeze({
+        assess() {
+            const drafts = composerDraftEntries(), blockers = [];
+            const withFiles = drafts.filter(([, draft]) => draft.files?.length).length;
+            if (withFiles) blockers.push(translateUi('{0} 个未发送草稿中的附件', withFiles));
+            if (state.attachmentReads) blockers.push(translateUi('正在读取的附件'));
+            if (state.submittingDrafts.size) blockers.push(translateUi('正在发送的消息'));
+            if (state.session?.ephemeral) blockers.push(translateUi('当前临时会话（刷新后结束）'));
+            const sides = sideChat.liveCount?.() || 0;
+            if (sides) blockers.push(translateUi('{0} 个侧聊（刷新后结束）', sides));
+            return { blockers, restorable: drafts.filter(([, draft]) => draft.text?.trim()).length };
+        },
+        prepare() {
+            const drafts = composerDraftEntries().filter(([, draft]) => draft.text?.trim()).slice(0, 50).map(([key, draft]) => [key, draft.text]);
+            try { sessionStorage.setItem(RELOAD_DRAFTS_KEY, JSON.stringify({ at: Date.now(), drafts })); } catch { return 0; }
+            return drafts.length;
+        }
+    });
+    try {
+        const saved = JSON.parse(sessionStorage.getItem(RELOAD_DRAFTS_KEY) || 'null');
+        sessionStorage.removeItem(RELOAD_DRAFTS_KEY);
+        if (saved && Date.now() - saved.at < 120000 && Array.isArray(saved.drafts)) {
+            for (const [key, text] of saved.drafts) {
+                if (typeof key === 'string' && typeof text === 'string' && !state.composerDrafts.has(key)) state.composerDrafts.set(key, { text, files: [] });
+            }
+        }
+    } catch { /* A missing or unreadable stash only means nothing to restore. */ }
     syncMobileHeader();
     bootstrap();
 });

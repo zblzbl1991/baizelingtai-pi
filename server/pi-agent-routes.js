@@ -95,7 +95,7 @@ function createPiAgentGateway(options = {}) {
     const composer = new (require('./pi-composer-service').PiComposerService)(store);
     const files = new (require('./pi-file-service').PiFileService)(store);
     const fileBrowser = new (require('./pi-file-browser').PiFileBrowser)(store);
-    const fileRoots = new (require('./pi-file-roots').PiFileRoots)({ store, browser: fileBrowser, preferences, isSuspended: () => maintenance.locked });
+    const fileRoots = new (require('./pi-file-roots').PiFileRoots)({ store, browser: fileBrowser, preferences, isSuspended: () => maintenance.locked || maintenance.referenceLocked });
     const projectDirectories = new (require('./pi-project-directories').PiProjectDirectories)({ store, isSuspended: () => maintenance.locked });
     const usage = new (require('./pi-usage-service').PiUsageService)(store, { isSuspended: () => maintenance.locked, onActivity: () => maintenance.touch() });
     usage.start();
@@ -104,7 +104,7 @@ function createPiAgentGateway(options = {}) {
     const transcription = new (require('./pi-transcription-service').PiTranscriptionService)({
         createModelRuntime: () => settingsService.createModelRuntime(),
         providerService: options.mediaLabService?.providerService,
-        blocked: () => settingsService.mutating || maintenance?.locked
+        blocked: () => settingsService.mutating || maintenance?.locked || maintenance?.referenceLocked
     });
     const titles = new (require('./pi-session-title-service').PiSessionTitleService)({ preferences,
         createModelRuntime: () => settingsService.createModelRuntime(), isSuspended: () => maintenance.locked, onActivity: () => maintenance.touch() });
@@ -120,10 +120,14 @@ function createPiAgentGateway(options = {}) {
     settingsService.nativeService = nativeService;
     const mediaAgentService = options.mediaAgentService || null;
     const router = express.Router();
-    const documents = new (require('./pi-document-uploads').DocumentUploads)({ store, supervisor,
+    supervisor.referenceGuard = { assertWritable: () => maintenance.assertReferenceWritable(), get locked() { return maintenance.referenceLocked; } };
+    const deferred = new PiDeferredMessages({ store, supervisor, filePath: options.deferredFilePath,
+        isSuspended: () => maintenance.locked || maintenance.referenceLocked, onActivity: () => maintenance.touch() });
+    const storageIntegration = require('./pi-document-storage-gateway').documentStorageIntegration({ maintenance, supervisor, deferred, cron: () => cron, store,
+        idle: () => workbenchIdle(1) });
+    const documents = new (require('./pi-document-uploads').DocumentUploads)({ store, supervisor, ...storageIntegration,
         isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running) });
     Object.assign(profiles, { nativeService, settingsService, maintenance });
-    const deferred = new PiDeferredMessages({ store, supervisor, filePath: options.deferredFilePath, isSuspended: () => maintenance.locked, onActivity: () => maintenance.touch() });
     const sideChat = new PiSideChatService({ store, supervisor, usage });
     const notifications = new (require('./pi-notification-service').PiNotificationService)({ access, store });
     supervisor.on('attention', event => { void notifications.notify(event); });
@@ -143,6 +147,20 @@ function createPiAgentGateway(options = {}) {
     });
 
     router.use(access.middleware());
+    // The shared application already admits requests; standalone gateway hosts
+    // need the same boundary. MaintenanceClient deduplicates the exact request.
+    router.use((req, res, next) => maintenance.http(req, res, next));
+    function workbenchIdle(documentOperations = 0) {
+        return !artifacts.busy && !fileRoots.jobs.size && !projectDirectories.jobs.size && documents.active === documentOperations && !documents.writing
+            && !profiles.busy && !agentThreads.jobs.size && !agentThreads.catalogIndex.busy && !agentThreads.returns.busy && !agentThreads.messages.busy
+            && !settingsService.mutating && !settingsService.loginService.busy && !nativeService.busy && !mcpSettingsService.busy
+            && !sessionTransfer.running && !sessionMoves.running && !auxiliaryModels.busy
+            && !titles.jobs.size && !titles.savingModel && !transcription.active && !learning?.busy && !cron.busy && !deferred.running
+            && !sideChat.connections.size && !sideChat.tickets.size && ![...sideChat.parents.values()].some(parent => parent.preparing)
+            && !supervisor.queueStore?.operations && supervisor.isIdle()
+            && !options.mediaLabService?.inFlight && !options.mediaLabService?.chatRequests?.preparing && !options.mediaLabService?.chatRequests?.waiting?.length
+            && !options.mediaLabService?.providerService?.busy && !options.mediaLabService?.providerService?.active;
+    }
     const updateService = new (require('./pi-update-service').UpdateService)();
     require('./pi-update-service').mountUpdateRoutes(router, updateService, {
         maintenance, preferences,
@@ -153,7 +171,7 @@ function createPiAgentGateway(options = {}) {
     require('./pi-file-roots').mountFileRoots(router, fileRoots);
     require('./pi-project-directories').mountProjectDirectories(router, projectDirectories);
     const artifacts = require('./pi-artifacts-routes').mountArtifacts(router, { store, supervisor, preferences, mediaRoot: options.artifactMediaRoot,
-        isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running) || Boolean(sessionTransfer.running) });
+        isSuspended: () => maintenance.locked || maintenance.referenceLocked || Boolean(store.sessionMoves?.running) || Boolean(sessionTransfer.running) });
     require('./pi-document-uploads').mountDocumentUploads(router, documents);
     notifications.mount(router);
     require('./pi-extension-assistant').mountExtensionAssistant(router, { store, supervisor, resourceService, settingsService, access });
@@ -196,8 +214,8 @@ function createPiAgentGateway(options = {}) {
         service: knowledgeService, knowledgeService });
     learning = new (require('./profile-memory/learning-service').ProfileLearningService)({ profiles, store, preferences,
         knowledge: knowledgeService, getAgentDir, createModelRuntime: () => settingsService.createModelRuntime(),
-        idle: job => !maintenance.locked && (job ? supervisor.isSessionIdle(job.sessionPath) : supervisor.isIdle()),
-        isSuspended: () => maintenance.locked, onActivity: () => maintenance.touch(),
+        idle: job => !maintenance.locked && !maintenance.referenceLocked && (job ? supervisor.isSessionIdle(job.sessionPath) : supervisor.isIdle()),
+        isSuspended: () => maintenance.locked || maintenance.referenceLocked, onActivity: () => maintenance.touch(),
         auxiliaryModels, legacyReviewModel: async () => (await profileMemory.snapshot()).reviewModel });
     learning.resumePromise = learning.resume();
     router.get('/profiles/:id/learning', profileRoute(req => learning.snapshot(req.params.id)));
@@ -208,10 +226,10 @@ function createPiAgentGateway(options = {}) {
     require('./pi-profile-avatar').mountProfileAvatarRoutes(router, profileResources);
     require('./pi-profile-authoring').mountProfileAuthoringRoutes(router, { store, profiles });
     const agentThreads = require('./pi-agent-threads').mountAgentThreads(router, { store, supervisor, settingsService, access,
-        isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running) });
+        isSuspended: () => maintenance.locked || maintenance.referenceLocked || Boolean(store.sessionMoves?.running) });
 
     const cron = new (require('./pi-cron-service').CronService)({ store, supervisor, profiles,
-        catalog: cwd => agentThreads.catalog(cwd), isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running), onActivity: () => maintenance.touch(), filename: options.cronFilePath });
+        catalog: cwd => agentThreads.catalog(cwd), isSuspended: () => maintenance.locked || maintenance.referenceLocked || Boolean(store.sessionMoves?.running), onActivity: () => maintenance.touch(), filename: options.cronFilePath });
     require('./pi-cron-service').mountCron(router, cron);
 
     router.get('/status', async (req, res) => {
@@ -257,6 +275,7 @@ function createPiAgentGateway(options = {}) {
             liveRecovery: true,
             extensionDrafts: true,
             historySearch: true,
+            historyArchive: true,
             sessionTree: true,
             treePresentation: true,
             historyBody: true,
@@ -264,6 +283,8 @@ function createPiAgentGateway(options = {}) {
             composerTools: true,
             transcription: true,
             documentUploads: descriptorBackendAvailable(),
+            documentStorage: descriptorBackendAvailable(),
+            durableQueueRecovery: true,
             documentUploadLimits: { fileBytes: 20 * 1024 * 1024, files: 5 },
             modelCatalog: true,
             fileViewer: descriptorBackendAvailable(),
@@ -282,6 +303,7 @@ function createPiAgentGateway(options = {}) {
             modelThinking: true,
             extensionStatus: true,
             sessionWorkflows: true,
+            sessionForkRequests: true,
             replyFork: true,
             sideChat: true,
             sideChatContext: true,
@@ -573,6 +595,8 @@ function createPiAgentGateway(options = {}) {
                     await supervisor.stopSession(session.path);
                     await usage.preserveSession(session.path);
                     const result = await store.deleteSession(req.query.cwd, req.params.id);
+                    try { await supervisor.forgetDeletedSession(session.path); }
+                    catch { result.queueRecoveryWarning = '会话已移除，但排队内容清理未完成，请核对恢复记录'; }
                     await cron.removing(session);
                     supervisor.emit('sessionRemoval', { ...session, deleted: true, result });
                     return result;
@@ -592,7 +616,7 @@ function createPiAgentGateway(options = {}) {
     mountSessionWorkflows(router, { store, supervisor, deferred, preferences });
     const sessionTransfer = require('./pi-session-transfer').mountSessionTransfer(router, { store, supervisor, preferences });
     const sessionMoves = require('./pi-session-moves').mountSessionMoves(router, { store, supervisor, preferences, usage, deferred, cron, sideChat,
-        isSuspended: () => maintenance.locked,
+        isSuspended: () => maintenance.locked || maintenance.referenceLocked,
         busy: () => Boolean(artifacts.busy || documents.active || agentThreads.jobs.size || agentThreads.messages.busy || agentThreads.returns.busy
             || titles.jobs.size || cron.busy || deferred.running || profiles.busy || sessionTransfer.running
             || [...sideChat.parents.values()].some(parent => parent.preparing)) });
@@ -604,6 +628,7 @@ function createPiAgentGateway(options = {}) {
         source('artifacts', '成果处理', () => count(artifacts.busy)),
         source('files', '文件或项目目录处理', () => fileRoots.jobs.size + projectDirectories.jobs.size),
         source('documents', '文档解析', () => documents.active),
+        source('document-storage', '附件引用核对或清理', () => Number(maintenance.referenceLocked)),
         source('profiles', '助手档案变更', () => count(profiles.busy)),
         source('tasks', '任务线程或任务目录', () => agentThreads.jobs.size + count(agentThreads.catalogIndex.busy) + count(agentThreads.returns.busy) + count(agentThreads.messages.busy)),
         source('settings', '模型、认证或原生配置', () => count(settingsService.mutating) + count(settingsService.loginService.busy) + count(nativeService.busy) + count(mcpSettingsService.busy) + count(auxiliaryModels.busy)),
@@ -866,11 +891,16 @@ function createPiAgentGateway(options = {}) {
                 if (message.type === 'quit_session') {
                     if (!worker) throw new Error('No active Pi runtime');
                     if (worker.noSession) await releaseCurrentWorker(true);
-                    else await worker.exclusive(async () => {
-                        deferred.pauseSession(worker.cwd, worker.sessionId, 'runtime 已退出，请重新确认发送');
-                        await learning.register(worker, 'exit');
-                        await releaseCurrentWorker(true);
-                    }, { idle: false });
+                    else {
+                        const source = worker;
+                        await source.shutdown(async () => {
+                            deferred.pauseSession(source.cwd, source.sessionId, 'runtime 已退出，请重新确认发送');
+                            await learning.register(source, 'exit');
+                            if (worker === source) await releaseCurrentWorker(true);
+                            else if (supervisor.getActiveWorker(source.sessionPath) === source) await supervisor.stopSession(source.sessionPath);
+                            else await source.dispose();
+                        });
+                    }
                     safeSend(socket, {
                         type: 'response',
                         id: message.id,
@@ -895,8 +925,8 @@ function createPiAgentGateway(options = {}) {
                     safeSend(socket, { type: 'response', id: message.id, command: message.type, success: true, data });
                     return;
                 }
-                if (['get_session_tree', 'search_history', 'get_history_entry', 'set_history_bookmark'].includes(message.type)) {
-                    const kind = { get_session_tree: 'tree', search_history: 'search', get_history_entry: 'preview', set_history_bookmark: 'bookmark' }[message.type];
+                if (['get_session_tree', 'get_history_archive', 'search_history', 'get_history_entry', 'set_history_bookmark'].includes(message.type)) {
+                    const kind = { get_session_tree: 'tree', get_history_archive: 'archive', search_history: 'search', get_history_entry: 'preview', set_history_bookmark: 'bookmark' }[message.type];
                     const { id, type, token, ...input } = message;
                     const data = await worker.historyRequest(kind, input);
                     safeSend(socket, { type: 'response', id, command: type, success: true, data });
@@ -1015,10 +1045,17 @@ function createPiAgentGateway(options = {}) {
                     safeSend(socket, { type: 'response', id: message.id, command: message.type, success: true, data: worker.controls.snapshot() });
                     return;
                 }
-                if (['stop_and_recover', 'take_queue', 'ack_recovery'].includes(message.type)) {
+                if (['stop_and_recover', 'take_queue', 'ack_recovery', 'get_recovery_payload'].includes(message.type)) {
                     const source = worker;
-                    if (message.type === 'ack_recovery' && (typeof message.recoveryId !== 'string' || message.recoveryId.length > 100)) throw new Error('Invalid recovery ID');
-                    const data = message.type === 'ack_recovery' ? source.acknowledgeRecovery(message.recoveryId)
+                    const identified = ['ack_recovery', 'get_recovery_payload'].includes(message.type);
+                    if (identified && (typeof message.recoveryId !== 'string' || message.recoveryId.length > 100)) throw new Error('Invalid recovery ID');
+                    let identity;
+                    if (message.type === 'get_recovery_payload' || message.runtimeId !== undefined || message.revision !== undefined) {
+                        if (typeof message.runtimeId !== 'string' || !Number.isSafeInteger(message.revision) || message.revision < 0) throw new Error('Invalid recovery identity');
+                        identity = { runtimeId: message.runtimeId, revision: message.revision };
+                    }
+                    const data = message.type === 'get_recovery_payload' ? source.recoveryPayload({ recoveryId: message.recoveryId, ...identity })
+                        : message.type === 'ack_recovery' ? source.acknowledgeRecovery(message.recoveryId, identity)
                         : await source.recoverQueue(message.type === 'stop_and_recover');
                     safeSend(socket, { type: 'response', id: message.id, command: message.type, success: true, data });
                     return;

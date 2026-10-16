@@ -5,6 +5,8 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { once } = require('node:events');
+// This fixture hosts a parent session even when the test runner was delegated.
+for (const key of Object.keys(process.env).filter(key => /^PI_SUBAGENT(?:_|S_)/.test(key))) delete process.env[key];
 const { catalog, packagePath, memoryBundle } = require('../server/pi-bundled-capabilities');
 const { ProfileMemoryConfiguration } = require('../server/profile-memory/config');
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-bundled-')));
@@ -19,6 +21,8 @@ test('vendor inventory is byte-identical upstream and excludes dependency trees'
     const files = require('../scripts/vendor-files.cjs').vendorFiles(path.resolve(__dirname, '..'));
     const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../vendor/manifest.json'), 'utf8'));
     assert.equal(files.length, 1 + manifest.packages.reduce((count, entry) => count + entry.files.length, 0));
+    assert.equal(manifest.packages.find(entry => entry.name === 'pi-subagents').version, '0.78.0');
+    assert.equal(manifest.packages.find(entry => entry.name === 'pi-hermes-memory').version, '0.9.9');
     assert.equal(files.some(file => file.includes('/node_modules/')), false);
     for (const entry of manifest.packages) assert.ok(files.includes(`vendor/${entry.directory || entry.name}/LICENSE`));
     assert.ok(files.includes('vendor/pi-computer-use/prebuilt/windows/windows-bridge.exe'));
@@ -190,7 +194,7 @@ test('bundled subagent runs against a synthetic provider, with native host contr
     const session = await store.createSession(cwd, 'Bundled fixture');
     const worker = await supervisor.getWorker({ cwd, sessionPath: session.path, sessionId: session.id });
     const resources = await worker.getNativeResources();
-    assert.equal(resources.tools.filter(item => item.name === 'subagents_enable').length, 1);
+    assert.equal(resources.tools.filter(item => item.name === 'subagent').length, 1);
     assert.ok(resources.skills.some(item => item.name === 'pi-subagents'));
     assert.ok(resources.skills.some(item => item.name === 'guizang-ppt-skill'));
     assert.equal(resources.skills.filter(item => item.name === 'document-consistency-review').length, 1);
@@ -265,7 +269,7 @@ test('bundled subagent runs against a synthetic provider, with native host contr
     settings.pivaneBuiltins = { subagents: { extensions: [] }, web: { extensions: [] }, computer: { extensions: [] }, presentations: { skills: [] }, 'document-review': { skills: [] } };
     fs.writeFileSync(settingsFile, JSON.stringify(settings));
     await worker.reloadResources();
-    assert.equal((await worker.getNativeResources()).tools.some(item => item.name === 'subagents_enable'), false);
+    assert.equal((await worker.getNativeResources()).tools.some(item => item.name === 'subagent'), false);
     assert.equal((await worker.getNativeResources()).tools.some(item => ['web_search', 'find_roots'].includes(item.name)), false);
     assert.equal((await worker.getNativeResources()).skills.some(item => item.name === 'guizang-ppt-skill'), false);
     assert.equal((await worker.getNativeResources()).skills.some(item => item.name === 'document-consistency-review'), false);
@@ -275,7 +279,7 @@ test('bundled subagent runs against a synthetic provider, with native host contr
     delete settings.pivaneBuiltins['document-review'];
     fs.writeFileSync(settingsFile, JSON.stringify(settings));
     await worker.reloadResources();
-    assert.equal((await worker.getNativeResources()).tools.filter(item => item.name === 'subagents_enable').length, 1);
+    assert.equal((await worker.getNativeResources()).tools.filter(item => item.name === 'subagent').length, 1);
     assert.equal((await worker.getNativeResources()).tools.filter(item => item.name === 'web_search').length, 1);
     assert.equal((await worker.getNativeResources()).tools.filter(item => item.name === 'find_roots').length, 1);
     assert.equal((await worker.getNativeResources()).skills.filter(item => item.name === 'guizang-ppt-skill').length, 1);

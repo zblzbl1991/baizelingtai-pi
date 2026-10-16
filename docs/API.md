@@ -61,12 +61,27 @@ runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,met
 - `POST /api/pi/uploads?cwd&sessionId&requestId&name`：持久线程原件上传，Content-Type 必须为 application/octet-stream，非空原始字节最多 20 MiB。requestId 为 1–160 字符的字母/数字/点/短横线/下划线/冒号，首字符为字母或数字；name 为不含路径分隔符或控制字符的 1–240 字符文件名。返回 `{reference:{id,revision,name,format,size},marker,reused?}`，id/revision 是 64 位小写 hex。先预占两项操作额度再读取 HTTP body，不自动解压请求 body。重复同一规范 cwd/sessionId/requestId 只返回相同原件，参数或字节不同返回 DOCUMENT_CONFLICT，不覆盖。
 - `GET /api/pi/uploads/status?cwd&sessionId&requestId`：仅查询同一上传标识的已保存原件，返回 reference/marker。404 只表示尚未找到已发布原件，不表示在途上传已取消，不能据此自动重传。
 - `GET /api/pi/uploads?cwd&sessionId`：从当前完整原生分支返回 `{items:[reference]}`，最多 500 个引用，不启动关闭的 worker。
-- 同接口加 `id`：核对引用、描述符及 SHA256 后返回原始字节，使用 attachment、application/octet-stream、nosniff、no-store、sandbox CSP 与同源资源策略。未发送原件仅原上传 cwd/sessionId 可下载。浏览器不使用公开静态目录或 URL Token。
+- 同接口加 `id`：核对引用、描述符及 SHA256 后返回原始字节，使用 attachment、application/octet-stream、nosniff、no-store、sandbox CSP 与同源资源策略。未发送原件可由原上传 cwd/sessionId 下载；新建网页分叉可按服务器登记的来源证明下载其回填问题的精确文档引用，仍核对证明修订、原生文件前缀和线程身份。此例外仅用于下载，不扩展分支列表或 read_document 的资格。浏览器不使用公开静态目录或 URL Token。
 - `POST /api/pi/uploads/read`：只允许当前活跃持久 worker 的受限内部凭据；普通工作台 Cookie/Bearer 不能调用。JSON 为 `{id,action?:inspect|read,start?,count?,sheet?,column?,columns?}`，默认 inspect/start=1/count=20/column=1/columns=20。Word start 为正文段落／表格行，Excel 为行，PPT/PDF 为页；全部从 1 开始。count 1–200，PPT/PDF 实际最多 10 页；column 1–16384、columns 1–50。sheet 为准确工作表名，省略取首张表。读取前后核对同一 worker 与当前分支；不存在于分支返回 DOCUMENT_SCOPE，变化返回 DOCUMENT_CONTEXT。原生 `read_document` 工具复用此接口，其结果存入原生 toolResult。
 
 原生用户消息使用规范 `<pivane_document ... />` 标记保留原件引用，不存二进制或另一份会话。仅用户消息中的有效引用参与分支授权；助手／工具输出不授予读取资格。继承或显式携带原引用的分支可以读取同一身份存储中的原件；单独导入到其他实例不会复制原件。分支属于授权输入，标记本身不是服务器文件路径。
 
-错误为 `{error,code}`：400 DOCUMENT_INPUT/DOCUMENT_SHEET，401/403 访问/作用域，409 DOCUMENT_CONTEXT/DOCUMENT_CHANGED/DOCUMENT_CONFLICT，413 DOCUMENT_LIMIT/DOCUMENT_STORAGE/DOCUMENT_TIMEOUT，415 DOCUMENT_FORMAT，429 DOCUMENT_BUSY，503 服务关闭或描述符/进程不可用。读取结果提供 format、unit、warnings、范围、truncated、nextStart；Excel 同时提供工作表名、日期系统、单元格地址、原始值、公式与缓存值；公式未保存计算结果时 cachedValue 为 null，不将缺失结果当作零。临时上传目录不对外开放；已保存原件不自动清理。 `GET /activity.documentOperations` 和 worker 的 document-read 生命周期投影参与空闲与停机等待。
+错误为 `{error,code}`：400 DOCUMENT_INPUT/DOCUMENT_SHEET，401/403 访问/作用域，409 DOCUMENT_CONTEXT/DOCUMENT_CHANGED/DOCUMENT_CONFLICT/FORK_ACCESS_CHANGED，413 DOCUMENT_LIMIT/DOCUMENT_STORAGE/DOCUMENT_TIMEOUT，415 DOCUMENT_FORMAT，429 DOCUMENT_BUSY，503 服务关闭或描述符/进程不可用。读取结果提供 format、unit、warnings、范围、truncated、nextStart；Excel 同时提供工作表名、日期系统、单元格地址、原始值、公式与缓存值；公式未保存计算结果时 cachedValue 为 null，不将缺失结果当作零。临时上传目录不对外开放；已保存原件不自动清理。 `GET /activity.documentOperations` 和 worker 的 document-read 生命周期投影参与空闲与停机等待。
+
+## 附件用量与清理（documentStorage）
+
+`/api/pi/status.documentStorage=true` 表示提供以下受身份、Origin 和允许项目范围保护的接口；均为 no-store。不接受文件路径。`draftIds` 可省略或为最多 10000 个文档 ID，供当前页面额外保护未发送草稿，不授予读取权限。
+
+| Method | Path（前缀 `/api/pi`） | 请求与结果 |
+|---|---|---|
+| POST | `/uploads/storage/usage` | `{cwd,draftIds?}`；返回实例 `totalBytes/count/limits`、当前项目 `items`、`complete/revision/warning`。item 包含 `id/name/size/sessionId/savedReference`；引用状态为 protected/not-found/unknown。不完整时仍可显示用量，但不能清理 |
+| POST | `/uploads/storage/preview` | `{cwd,id,draftIds?}`；全局空闲、全部受管运行实例实际退出且引用核验通过后返回 `{ticket,revision,item,expiresAt}`，票据五分钟有效 |
+| POST | `/uploads/storage/cleanup` | `{cwd,ticket,revision,requestId,draftIds?,confirmed:true,externalWritersStopped:true}`；一次只清理票据指定原件，返回持久回执 `state:deleted|uncertain`。requestId 沿用上传标识字符集和 160 字符上限；同一编号不重放删除 |
+| GET | `/uploads/storage/status?cwd&requestId` | 只查询原请求的已保存回执；404 不表示在途删除已取消，不能自动重提 |
+
+预览和执行同步关闭新的 HTTP/WS 引用写入，暂停后台派发，核对已有 worker 的只读原生状态并要求所有运行实例实际退出，不能用 idle 快照排除扩展后台写入；停止中的 owner 继续阻止新 writer 与清理，失败不视作退出。独立门禁不能由维护 IPC 解锁。保留所有原生分支、受管嵌套会话、分叉凭据、预约、持久排队意图、定时任务与未确认运行的引用，并核对前后文件／目录身份。会话与凭据扫描上限 4 GiB／30000 项；定时 SQLite 经核验描述符复制到私有只读快照，并合并当前连接记录，上限 512 MiB 数据库、64 MiB 所需行、100 个任务和 10000 个未终结运行。未知自定义根、配置损坏、引用不完整或超限均拒绝清理，不追随正文中任意路径。其他浏览器草稿、外部副本和其他文件里的链接仍须由用户核对。
+
+拒绝返回 `{error,code}`，包括 DOCUMENT_STORAGE_BUSY、DOCUMENT_STORAGE_CHANGED、DOCUMENT_SCAN_INCOMPLETE、DOCUMENT_PROTECTED、DOCUMENT_SCOPE、DOCUMENT_INPUT、DOCUMENT_CONFLICT；全局入口忙碌可能返回 503/errorCode。已进入删除发布阶段的 I/O 失败保留不确定凭据和删除标记，不自动恢复、重放或复活同一上传 ID。没有存储守卫／完整引用提供者时只能列出用量。操作仍计入 documentOperations；详细用户边界见[附件用量与清理](COMPOSER_TOOLS.md#附件用量与清理)。
 
 ## 任务进度（taskProgress）
 
@@ -184,7 +199,9 @@ runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,met
 
 当前绑定 Pi 的应用对 `POST /settings/updates/review {action:'update'}` 返回 409，需同时更新白泽灵台与已验证适配；备份、重启和应用票据保留原语义。
 
-原生资源清单包含 `builtin:mcp`、`builtin:codemode`、`builtin:tool-search`、`builtin:llama.cpp`，沿用 `path/enabled/override` 开关语义；它们不是可独立安装的 npm 包。新增或更新可识别的旧 `pi-mcp-adapter` 包返回 400 管理说明，移除旧声明仍可执行。原生 MCP/Codemode 不新增白泽灵台 MCP HTTP 网关；嵌套工具事件沿用原生 `parentToolCallId`，当前工具调用仍受权限钩子。旧配置的显式停机迁移见 [MCP.md](MCP.md)。
+保存的线程模型／新线程默认不在当前可用目录或缺少认证时，受管启动保持可连接的原生 unknown 模型状态；`get_available_models` 仍返回真实目录，使用既有 `set_model` 明确恢复。不会写入替代默认／model_change 或自动发请求。本次显式 CLI／用户选择、合法扩展／虚拟模型与从未选择过的原生发现保持原生语义，详见 [模型选择](PROVIDER_SETTINGS.md#会话模型快速选择)。
+
+原生资源清单包含 `builtin:mcp`、`builtin:codemode`、`builtin:tool-search`、`builtin:llama.cpp`，沿用 `path/enabled/override` 开关语义；它们不是可独立安装的 npm 包。新增或更新可识别的旧 `pi-mcp-adapter` 包返回 400 管理说明，移除旧声明仍可执行。原生 MCP/Codemode 不新增 白泽灵台 MCP HTTP 网关；嵌套工具事件沿用原生 `parentToolCallId`，当前工具调用仍受权限钩子。旧配置的显式停机迁移见 [MCP.md](MCP.md)。
 
 `nativeMcpManagement=true` 标记 MCP 网页接口：
 
@@ -207,6 +224,8 @@ runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,met
 
 `sessionTree=true` / `historyBody=true` 标记可读会话树、受控导航和正文优先搜索。主WS新增 get_session_tree（有界分页/折叠/定位）、navigate_history（entryId/expectedLeafId/revision/summarize/customInstructions?）与 cancel_history_navigation（navigationId）；当前持久worker/空闲互斥，原生可选分支摘要，预约暂停、草稿仅调用者返回，无文件回滚或自动发送。get_state.webNavigation / gateway_navigation为无正文修订状态，取消ACK不提前解锁，错误后重读位置，超时不重放。搜索新增conversation筛选、详情新增view=body|record，助手筛选不搜索工具参数，纯工具型助手归tool。完整预算、持久化与失败语义见 [HISTORY.md](HISTORY.md)。
 
+`historyArchive=true` 标记主连接已开放只读的压缩前问答回看 `get_history_archive`（index/turns/process 三种视图），见 [3.11](#压缩前问答回看)。
+
 `historySearch=true` 标记主连接已开放原生历史搜索、分页预览和原生 label 书签。新命令 search_history/get_history_entry/set_history_bookmark 只作用于当前已打开的持久 worker，侧聊和 no-session 拒绝；不增加裸 RPC 透传或独立聊天历史。完整参数、修订和限额见 [HISTORY.md](HISTORY.md)。
 
 `composerTools=true` 标记原生模板 CRUD、内置命令 Web 映射目录、项目文件搜索和主 WS `reload_resources` 已启用。REST 包括 `GET /composer/catalog?cwd`、`GET/PUT/DELETE /composer/template` 与 `GET /composer/files?cwd&q`，复用 token/Origin，响应 no-store。模板写入使用 scope/name/content/expectedRevision，修订冲突 409；重载成功广播 `gateway_commands`。完整字段、限制、命令映射及未接入项见 [COMPOSER_TOOLS.md](COMPOSER_TOOLS.md)。
@@ -221,7 +240,7 @@ runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,met
 
 `subagentRuntime=true` 标记 pi-subagents 运行适配：`webControls`/`gateway_controls` 增加 `subagents:{snapshot,background}`。`snapshot` 为 null 或 `{version:1,generatedAt,runs:[{id,kind,label,state,startedAt?,updatedAt?,endedAt?,activity?,children?}],omitted:{runs,children}}`，由插件的状态快照规范化而来，不再出现在通用扩展 widget 中；`background` 为 null 或 `{supported,active,sources}`，active 表示会话因后台子 Agent 或待送达完成通知而保持。主 WS `subagent_control` 接收 `{method,params}`：`status`（可选 `id`，查看记录需 `id`+`view:'transcript'`+`lines≤500`）、`cost`、`steer`（`id`,`message≤8000`,`mode:'steer'|'follow_up'`，可选 `index`）、`stop`（`id`）、`interrupt`（`id`,可选 `index`）、`resume`（`id`,`message`,可选 `index`）；不开放 spawn、manage、目录或任意参数。响应只含 `text/state/isError/snapshot` 或 `cost`（usage 不含子会话路径）。未收到确认的修改返回“结果不确定”，不自动重试。`/activity.runtimes[].backgroundWork` 与维护空闲检查同步。
 
-`runtimeControls=true` 标记主 WS 已支持 stop_and_recover/take_queue/ack_recovery、get_state.webControls 与 gateway_controls；`extensionStatus=true` 标记扩展文字状态的内存快照。完整契约见 [NATIVE_CONTROLS.md](NATIVE_CONTROLS.md)。
+`runtimeControls=true` 标记主 WS 已支持 stop_and_recover/take_queue/ack_recovery、get_state.webControls 与 gateway_controls；`durableQueueRecovery=true` 表示支持持久主线程排队意图日志和 `get_recovery_payload {recoveryId,runtimeId,revision}`。恢复载荷只在显式读取时返回，元数据快照不附带完整 base64；新客户端 ack_recovery 也携带 runtimeId/revision。日志保留原稿与可验证的变换结果，不自动重发，临时／旧运行实例仍按文字内存恢复。明确删除成功后才清理对应日志，附带失败返回 queueRecoveryWarning。`extensionStatus=true` 标记扩展文字状态的内存快照。完整契约见 [NATIVE_CONTROLS.md](NATIVE_CONTROLS.md)。
 
 `manualUnread=true` 标记已启用持久线程的手动未读接口；`projectIdentity=true` 标记项目路径 resolve 和 recent 别名归一化契约。需新后端启用，旧后端前端隐藏未读操作并保留原路径行为。
 
@@ -236,6 +255,8 @@ runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,met
 以下维护接口供既有集成、受控恢复和内网 Windows 一键更新使用。`GET /settings/updates/maintenance`返回启动器能力、generation、busy、版本指针和最近维护结果；`POST /settings/updates/review`只接受 `{action:"update"或"application"或"backup"或"restart",channel?}`（channel 仅用于 application），返回绑定服务端目标版本和进程代次的 10 分钟票据。`POST /settings/updates/execute`只接受 `{ticket,confirmed:true,draftsSaved:true,externalWritersStopped:true}`，再次检查空闲并暂停预约，接受返回 202。票据一次有效，不接受命令、URL、路径或版本覆盖；忙碌/过期/重复为 409，格式错误 400，不支持或交接失败 503。交接不确定不自动解锁或重试。
 
 所有接口复用身份/Origin、响应 no-store。`maintenance.job`增加脱敏 `output`、`outputTruncated`、`exitCode`、`fromVersion`与`installedVersion`；输出按行回传并保留有界尾部，只有实际退出后才返回退出码，成功后刷新版本卡片。普通`node server.js`与`npm start`自动支持，无需改服务启动命令；`--direct`为不含自动维护的开发入口。维护期间拒绝普通 API/WS 新工作；关闭页面不取消已接受操作。Pi 精确依赖在独立快照中安装并验证，然后停机备份和启动；白泽灵台应用更新使用 `action:"application"`、可选 `channel` 复用 review/execute，票据绑定服务器选择的版本和 SHA256；能力以 `maintenance.appUpdateSupported` 为准。兼容字段 `installMode:"manual"`不表示受管维护不可用。Windows 整包票据的 release 还绑定 `format:"windows-portable-zip"`、feed、channel、downloadUrl、bytes、piVersion 和 sha256，execute 仍不接受这些字段的浏览器覆盖。review 在远程 await 前预占维护 HTTP 互斥；安装器重新读取清单，目标变化时失败。快照附带 maintenance 能力及进度；portableUpdateSupported 仅在 Windows x64 便携版、受管启动器和已配置源同时满足时为 true。状态增加 extracting，失败启动自动恢复备份；恢复失败记录 needsRecovery，禁止启动。字段、文件权限、预算、失败处理及恢复边界见[版本与更新](UPDATES.md)。
+
+`maintenance.retention` 是只读摘要：`releases`、`backups` 为配置的保留数，`null` 表示对应类型关闭（包含已排队回收区）。`last` 初始为 `null`，随后含 `at` 和 `phase`：`running`、`disabled`、`skipped`、`succeeded`、`failed` 或 `cancelled`。成功含 `quarantinedReleases`、`quarantinedBackups`（移入隔离的数量）、`purged`（实际删除的槽位数）、`keptReleases`、`keptBackups`、`incomplete`；跳过含 `reason`，失败／取消含 `error:"cleanup-incomplete"`，不把部分删除计为成功。数值上限不覆盖恢复保护。自动删除仅支持 Linux 描述符边界，权限、原生完整性或能力不足时保留。`busy` 包含启动／清理的完整生命周期；维护任务的 `retaining` 是非终态，清理结束且已就绪子进程仍存在后才记主要任务成功。主要维护与随后保留清理各自记录结果，清理失败不自动回退已启动的服务。安全范围、预算和不确定删除保留规则见[版本与更新](UPDATES.md)。
 
 ### `GET /projects`
 
@@ -442,6 +463,8 @@ POST `/sessions/:id/title` 接受 `{cwd}`，使用请求开始时冻结的标题
 
 `/status.replyFork=true` 标记已支持回复后分叉：`GET /sessions/:id/workflow` 增加 replies（entryId、timestamp、文本预览）；`POST /sessions/:id/fork` 新增可选 `position=at`，必须同时提供一个已完成且无工具调用的文本 assistant entryId，返回 draft=null。省略 position 仍从用户问题之前分叉，省略 entryId 仍复制当前活动分支。任意其他 position、错误角色、未完成/toolCall 消息会被拒绝，不退化为 clone。
 
+`/status.sessionForkRequests=true` 标记复制请求去重：`POST /sessions/:id/fork` 可带 `requestId`（16–80 位字母、数字、连字符），绑定来源原生身份和 expectedLeafId/entryId/position。相同参数的并发调用只创建一次，已完成调用返回原 session/draft/requestId；不同参数返回 409 `FORK_REQUEST_CONFLICT`。`GET /sessions/:id/forks/:requestId?cwd=...` 返回 `status`：not_found、pending、completed（含 result）、failed、uncertain 或 unavailable；查询不启动 worker。中断或不确定请求不再次执行，已删除结果不重建；回执只存元数据，草稿从原生来源问题重读。未传 requestId 的旧调用保持原行为，完整持久化与恢复限制见[创建契约](SESSION_WORKFLOWS.md#rest-契约)。
+
 `/activity.deferred` 含不透明队列 `revision`、各线程 cwd/sessionId/count/attention 和可选通用存储错误，不含待发送正文。`GET /sessions/:id/deferred` 返回 `{revision,jobs}`；队列修订在进程启动或成功保存变更时更新，仅供判断详情是否变化，不代替各 job 的修改 revision。无修订字段时客户端继续普通刷新；同线程和连接代次的已读修订未变化时可跳过自动详情查询，主动查看与操作后仍重新读取。普通 `get_state` 另含 `webOperation` 布尔值。回退后向全部当前订阅者广播 `gateway_context_changed`，浏览器重读原生消息/状态。原生 fork/clone/navigate 命令没有直接加入透传白名单。
 
 ## 3. Pi WebSocket
@@ -531,7 +554,7 @@ gateway 当前白名单：
 
 主连接 `get_messages`（包括打开会话的 messages 快照）返回原生压缩范围内的原始聊天记录，过滤 system 消息；Pi 0.87 的上下文编辑不替换或隐藏这些原文。内部通过同一 worker 的 `get_entries` 和公开 SDK 同步投影，`webLive` / `webProgress` / controls 的事件边界保持一致。受管 worker 的结果另带 `webAnchors: [[entryId, role, timestamp, toolCallId], ...]`，只含当前上下文中的原生消息条目，供网页把知识回执的来源条目对应到已渲染的消息。原生 Pi RPC 的 `get_messages` 是模型上下文投影，与此网页展示接口不同；完整上下文侧聊使用编辑后投影。`get_entries` 继续保留 `context_edit`、`usage` 和所有分支记录。
 
-`get_tree` 保留原生只读透传；新会话树 UI 使用独立有界 `get_session_tree`，导航只走受控 `navigate_history`。原生 `clear_queue` 仍未作为裸命令开放；主会话改由 `stop_and_recover` 先取回再 abort，`take_queue` 仅取回，`ack_recovery` 按组 ID 移除结果。队列文字、取回列表、停止状态与扩展文字状态以 controls 快照/修订事件同步，详见 [NATIVE_CONTROLS.md](NATIVE_CONTROLS.md)。Pi 0.85.0 abort 允许取消压缩，runtimeControls 启用后压缩期间显示该入口。
+`get_tree` 保留原生只读透传；新会话树 UI 使用独立有界 `get_session_tree`，导航只走受控 `navigate_history`。原生 `clear_queue` 仍未作为裸命令开放；主会话改由 `stop_and_recover` 先取回再 abort，`take_queue` 仅取回，`ack_recovery` 按组 ID 移除结果。队列文字、恢复摘要、停止状态与扩展文字状态以 controls 快照/修订事件同步；持久恢复的完整文字／图片／文档引用按 `get_recovery_payload` 显式读取，详见 [NATIVE_CONTROLS.md](NATIVE_CONTROLS.md)。Pi 0.85.0 abort 允许取消压缩，runtimeControls 启用后压缩期间显示该入口。
 
 浏览器本地分派内置 slash command 到对应 Web 操作，包括 `/model`、`/thinking`、`/settings`、`/session`、`/name`、`/new`、`/resume`、`/fork`、`/clone`、`/compact`、`/copy`、`/quit`、`/reload` 等。`/templates` 打开设置中的 Skills/提示词模板入口；命令/Skill/模板与项目文件直接通过输入框 `/`、`@` 联想，不另开资源面板。加号只协调既有附件选择与延迟发送窗口，不新增业务请求。未接入的分享命令明确标注，不转发给模型；`/tree` 在 sessionTree 启用后打开历史页会话树，只接收无参数入口，不直接导航或调用模型。新后端 `/trust` 打开当前项目的独立信任窗口，`/scoped-models` 打开 Pi 配置并展开常用模型所属分类。项目菜单可直接管理该项目的信任，不切换线程；会话详情按需读取 `get_native_resources`。Skills 页的可恢复启停复用 `/settings/native/resources`，不删除文件。模型高级 JSON 和手写 Skill 编辑器已从网页移除，相关 REST 继续兼容。导入/导出通过项目/线程菜单的 REST 实现；本地 `/import`、`/export` 同样打开对应窗口，不接收参数，不透传终端命令或文件路径。
 
@@ -726,6 +749,16 @@ Web `/btw [问题]` 本地路由到侧聊，不进入主 prompt/steer/follow_up�
 
 原生 setLabel 追加 metadata，因此 leaf ID 会推进，但原活动路径的消息顺序不变。预览不导航，标签不回滚文件。写超时不重试，查询仍可用于核对；运行中任务不被自动中断。预算与第一条 assistant 保存前的限制见完整历史文档。
 
+#### 压缩前问答回看
+
+`/api/pi/status.historyArchive=true` 时主连接开放只读的 `get_history_archive`，按 Pi `buildContextEntries` 的相同规则投影当前分支上最后一次压缩之前、不再进入模型上下文的 entries（保留原生 JSONL，不改压缩机制、不写入、不缓存）。与其他历史查询共用当前持久 worker、2 个并发名额、256 KiB 私有响应、50000 条与 1.5 秒预算；侧聊和 no-session 拒绝。
+
+- `{view:'index',offset?,revision?}`：每页 100 个回合，≤160 KiB。返回 `revision,total,offset,hasMore,pageSize,continues,compactionId,turns[]`；每项 `index,kind:'user'|'agent'|'summary',entryId,timestamp,title(≤160),images,tools,continues?,customType?,summaryType?,tokensBefore?,reply:{entryId,excerpt(≤600),stopReason?,failed?}|null`。
+- `{view:'turns',start,end,revision}`：`end-start≤24`，从末尾向前装入且 ≤192 KiB（实际返回的 `start` 可能大于请求，客户端按返回范围继续读取）。每项含 `text(≤12000),textTruncated`、`reply:{entryId,timestamp,model,stopReason,errorMessage,text(≤20000),truncated}|null` 和 `process:{steps,tools,errors,startedAt,endedAt}`；单个回合超出预算时依次截短回复、问题和错误文字并标记截断。
+- `{view:'process',index,offset?,revision}`：每页 100 步，≤160 KiB；`steps[]` 为 `{entryId,kind:'tool'|'text'|'bash',name?,label(≤200),isError,timestamp,resultEntryId?}`，不返回思考或工具结果原文。
+
+`revision` 绑定会话、压缩 entry 与切分位置，追加新消息时不变；新的压缩或导航后旧 revision 返回 `HISTORY_STALE`。参数错误为 `HISTORY_INVALID`，超出预算为 `HISTORY_LIMIT`。被压缩切开的回合标 `continues:true` 且 `reply:null`。旧 worker 需重新打开线程以加载 `history-archive-v1` 扩展 marker，未加载时拒绝。界面行为见 [HISTORY.md](HISTORY.md#压缩前问答回看2026-10-11)。
+
 ### 3.12 手动 Shell 与队列投递模式
 
 `userShell=true`启用主连接的受控`bash`/`abort_bash`，`queueModes=true`启用`set_steering_mode`/`set_follow_up_mode`。这些命令不加入裸RPC白名单；只在已打开且已认证的主会话处理，侧聊拒绝。
@@ -762,7 +795,7 @@ Shell仅空闲单项执行，期间消息/压缩/导航/重载及预约投递互
 | GET | `/models` | Provider auth 状态、脱敏模型目录、默认值、自定义配置摘要 |
 | POST | `/providers/:id/api-key` | 通过 `ModelRuntime.login(..., "api_key")` 持久保存新 Key |
 | DELETE | `/providers/:id/credential` | 通过 `ModelRuntime.logout()` 删除 stored credential |
-| POST | `/models/refresh` | 强制刷新已配置动态 Provider catalog |
+| POST | `/models/refresh` | 通过原生 ModelRuntime 显式刷新已配置动态 Provider catalog；与凭据／配置写入互斥，不切换会话模型 |
 | POST | `/models/preferences` | 设置完整 Pi Agent 的全局默认 Provider/模型和可选 enabledModels |
 | PATCH | `/media-agent` | 设置模块 Agent 的 Provider/模型；下一次 plan 立即生效 |
 | POST | `/models/test` | 发起真实最小模型请求，返回 latency/text/usage |

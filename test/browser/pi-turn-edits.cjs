@@ -21,6 +21,8 @@ function edit(id, file, source = patch, options = {}) {
 async function run(browser, viewport) {
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width <= 900, hasTouch: viewport.width <= 900 });
     const page = await context.newPage();
+    // Optional webfonts must not change diff geometry during snapshot/reconnect assertions.
+    await page.route(/https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com)\//, route => route.abort());
     const errors = [], writes = [], commands = [];
     let socket, sideSocket, busy = false, activeId = session.id, sideStarts = 0, sideCloses = 0, heldState = null, holdState = false;
     const initial = [user('调整界面'), ...edit('a', path), ...edit('b', path, reverse), ...edit('c', 'docs/说明.md'), ...edit('d', 'public/style.css'),
@@ -36,7 +38,7 @@ async function run(browser, viewport) {
     const refresh = async () => {
         const count = commands.filter(c => c === 'get_messages').length;
         emit({ type: 'agent_settled' });
-        await page.waitForFunction(() => document.querySelector('#pi-composer-status').textContent === '已就绪');
+        await page.waitForFunction(() => document.querySelector('#pi-composer-status').textContent === '' && document.querySelector('.pi-composer').dataset.running === 'false');
         await assertEventually(() => commands.filter(c => c === 'get_messages').length > count);
     };
     page.on('pageerror', e => errors.push(e.message));
@@ -89,6 +91,15 @@ async function run(browser, viewport) {
     assert.match(await cards.first().locator('.pi-edit-file').first().textContent(), /2 次 · \+2 −2/);
     assert.equal(await page.locator('#pi-inspector').evaluate(n => n.classList.contains('open')), false, 'completion does not open the panel');
     assert.equal(await cards.last().evaluate(n => n.previousElementSibling.textContent.includes('回复已停止')), true);
+    // Release the disclosure's queued frame after an explicit new focus choice.
+    await cards.first().locator('.pi-edits-more > summary').evaluate(summary => {
+        const nativeFrame = window.requestAnimationFrame;
+        window.__disclosureFrames = [];
+        summary.addEventListener('click', () => {
+            window.requestAnimationFrame = callback => { window.__disclosureFrames.push(callback); return 0; };
+        }, { capture: true, once: true });
+        summary.addEventListener('click', () => { window.requestAnimationFrame = nativeFrame; }, { once: true });
+    });
     await cards.first().locator('.pi-edits-more > summary').click();
     const more = cards.first().locator('.pi-edits-more'), collapse = more.locator('.pi-edits-collapse');
     await collapse.waitFor({ state: 'visible' });
@@ -97,7 +108,13 @@ async function run(browser, viewport) {
         const footer = n.querySelector('.pi-edits-collapse').getBoundingClientRect();
         return [...n.querySelectorAll('.pi-edit-file')].every(file => file.getBoundingClientRect().bottom <= footer.top + 1);
     }), true, 'collapse control is below every file');
-    await collapse.focus(); await page.keyboard.press('Space');
+    await collapse.focus();
+    await page.evaluate(() => {
+        window.__disclosureFrames.forEach(callback => callback(performance.now()));
+        delete window.__disclosureFrames;
+    });
+    assert.equal(await collapse.evaluate(node => node === document.activeElement), true, 'queued disclosure focus must preserve the subsequent explicit choice');
+    await page.keyboard.press('Space');
     assert.equal(await more.evaluate(n => n.open), false);
     assert.equal(await cards.first().locator('.pi-edit-file:visible').count(), 3);
     assert.equal(await more.locator('summary').evaluate(n => n === document.activeElement), true);

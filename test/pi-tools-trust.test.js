@@ -34,7 +34,7 @@ test.after(() => fs.rmSync(root, { recursive: true, force: true }));
 test('default tools preserve empty, inherited and native defaults, with actual new-worker activation and strict CLI distinction', { timeout: 120000 }, async () => {
     const supervisor = new PiAgentSupervisor();
     const active = async worker => (await worker.getNativeResources()).tools.filter(t => t.active).map(t => t.name).sort();
-    const extensionTools = ['bg_wait', 'fixture_custom', 'subagent', 'subagent_supervisor', 'update_plan',
+    const extensionTools = ['bg_wait', 'contact_supervisor', 'fixture_custom', 'subagent', 'subagent_supervisor', 'update_plan',
         'web_search', 'fetch_content', 'get_search_content', 'source_check',
         'find_roots', 'observe_ui', 'search_ui', 'expand_ui', 'inspect_ui', 'act_ui', 'read_text', 'wait_for',
         'launch_browser', 'navigate_browser', 'evaluate_browser'].sort();
@@ -51,6 +51,14 @@ test('default tools preserve empty, inherited and native defaults, with actual n
         await original.dispose();
         const empty = await supervisor.createEphemeralWorker(cwd);
         assert.deepEqual(await active(empty), extensionTools, 'bundled extension tools survive the empty built-in list; auto activation is eager without a dynamic-tool model');
+        const { topLevelSupervisorTool, TOP_LEVEL_SUPERVISOR_REFUSAL } = await import('../vendor/pi-subagents/src/intercom/native-supervisor-channel.js');
+        const refusing = topLevelSupervisorTool(), notifications = [];
+        assert.equal(refusing.name, 'contact_supervisor', 'the active parent declaration is the native refusing tool');
+        assert.deepEqual(await refusing.execute('fixture-parent-request', { reason: 'need_decision', message: 'Synthetic parent request' },
+            new AbortController().signal, update => notifications.push(update), { sendMessage: message => notifications.push(message) }), {
+            isError: true, content: [{ type: 'text', text: TOP_LEVEL_SUPERVISOR_REFUSAL }], details: {}
+        });
+        assert.deepEqual(notifications, [], 'top-level declaration sends no supervisor message or update');
         await empty.dispose();
         await save({ defaultTools: ['read', 'grep'] });
         await trust(true);

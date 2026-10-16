@@ -16,7 +16,7 @@ async function check(browser, base, width, language, scenario = 'normal') {
         Object.defineProperty(Crypto.prototype, 'randomUUID', { value: undefined, configurable: true });
         window.__cronLoadingSeen = false;
         document.addEventListener('DOMContentLoaded', () => new MutationObserver(() => {
-            if (document.querySelector('.cron-loading')) window.__cronLoadingSeen = true;
+            if (document.querySelector('#cron-tab .pv-skeleton[role="status"][aria-label]')) window.__cronLoadingSeen = true;
         }).observe(document.body, { subtree: true, childList: true }));
     });
     const jobs = [], homes = [], now = Date.now();
@@ -28,7 +28,8 @@ async function check(browser, base, width, language, scenario = 'normal') {
         if (url.pathname === '/api/pi/status') return send({ ok: true, scheduledTasks: true, projectRoots: ['/synthetic'] });
         if (url.pathname === '/api/pi/projects') return new Promise(resolve => setTimeout(() => { send({ projects: [{ cwd, name: 'Assistant', sessionCount: 1 }], roots: ['/synthetic'] }); resolve(); }, scenario === 'slow' ? 1800 : 0));
         if (url.pathname === '/api/pi/profiles') return send({ profiles: [{ id: profileId, name: 'Assistant <img src=x onerror=alert(1)>', enabled: true }] });
-        if (url.pathname === '/api/pi/sessions') return send({ sessions: [{ id: sessionId, cwd, name: 'Main conversation', agentProfile: { id: profileId } }] });
+        if (url.pathname === '/api/pi/sessions') return send({ sessions: url.searchParams.get('cwd') === cwd
+            ? [{ id: sessionId, cwd, name: 'Main conversation', agentProfile: { id: profileId } }] : [] });
         if (url.pathname === '/api/pi/activity') return send({ runtimes: [], replyNotices: [] });
         if (url.pathname === '/api/pi/cron') return new Promise(resolve => setTimeout(() => { send({ jobs, homes, limits, today: { runs: 0, tokens: 0, cost: 0 } }); resolve(); }, scenario === 'slow' ? 350 : 0));
         if (url.pathname === '/api/pi/cron/preview') return send({ times: Array.from({ length: 5 }, (_, i) => now + (i + 1) * 86400000) });
@@ -45,7 +46,7 @@ async function check(browser, base, width, language, scenario = 'normal') {
     const zh = language === 'zh-CN';
     if (scenario === 'slow') {
         assert.equal(await page.evaluate(() => window.__cronLoadingSeen), true, 'initial task loading should have a visible placeholder');
-        await page.locator('.cron-loading').waitFor({ state: 'detached', timeout: 1500 });
+        await page.locator('#cron-tab .pv-skeleton').first().waitFor({ state: 'detached', timeout: 1500 });
     }
     await page.getByRole('button', { name: zh ? '新建任务' : 'New task', exact: true }).click();
     await page.getByLabel(zh ? '任务名称' : 'Task name').fill('Daily briefing <img src=x onerror=alert(1)>');

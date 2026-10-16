@@ -35,6 +35,14 @@ test('assembled stop projection covers conservative side chat and private confir
     const before = gateway.desktopStop.snapshot();
     assert.equal(before.complete, true, JSON.stringify(before));
     assert.deepEqual(before.blockers, []);
+    const beforeCleanup = gateway.desktopStop.review({ action: 'stop' });
+    const lease = maintenance.acquireReferenceLease(() => true);
+    const cleaning = gateway.desktopStop.review({ action: 'stop' });
+    assert.equal(cleaning.ticket, undefined, 'attachment cleanup cannot overlap desktop stop');
+    assert.equal(cleaning.blockers.find(row => row.type === 'document-storage').count, 1);
+    await assert.rejects(gateway.supervisor.createEphemeralWorker(root), { code: 'DOCUMENT_STORAGE_BUSY' });
+    lease.release();
+    assert.throws(() => gateway.desktopStop.execute({ ticket: beforeCleanup.ticket, draftsSaved: true, externalWritersStopped: true }), { code: 'DESKTOP_REVIEW_STALE' });
     mediaLabService.pendingReviews = 1;
     assert.equal(gateway.desktopStop.review({ action: 'stop' }).ticket, undefined, 'pending media confirmation blocks stopping');
     mediaLabService.pendingReviews = 0;
