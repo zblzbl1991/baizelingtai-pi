@@ -178,7 +178,7 @@ async function run(browser, base, width, locale) {
     await context.close(); console.log(`PASS lifecycle ${width} ${locale}: deferred startup, model selection, local history, expiry, no inheritance, clear and safe layout`);
 }
 (async () => { const app = express(), root = path.resolve(__dirname, '../..'); app.use(express.static(path.join(root, 'public'))); for (const [n, d] of [['marked','marked/lib'], ['dompurify','dompurify/dist'], ['highlight','@highlightjs/cdn-assets']]) app.use('/vendor/' + n, express.static(path.join(root, 'node_modules', d)));
-    const server = app.listen(0, '127.0.0.1'); await once(server, 'listening'); const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    const server = app.listen(0, '127.0.0.1'); await once(server, 'listening'); const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try { for (const locale of ['zh-CN', 'en-US']) for (const width of [1440, 393, 320]) await run(browser, 'http://127.0.0.1:' + server.address().port, width, locale); }
     finally { await browser.close(); server.closeAllConnections(); await new Promise(r => server.close(r)); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

@@ -1,7 +1,9 @@
 # 人员调配第一版：实现规格
 
-Status: ready-for-agent
-Labels: ready-for-agent
+Status: implemented-source; acceptance-incomplete
+Labels: implementation-complete, validation-open
+
+功能源码已在 `codex/staffing-integration` 实现。人员调配专项及两轴审查通过，但共享完整回归仍有失败，受管工作树归档尚未确认完成。06 票继续开放；此状态不表示整体验收、部署或发布完成。
 
 ## Problem Statement
 

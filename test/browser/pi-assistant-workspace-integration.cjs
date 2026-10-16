@@ -25,6 +25,51 @@ async function main() {
     for (const key of Object.keys(process.env)) if (/^(?:PI_|PIVANE_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|OPENROUTER_|AZURE_OPENAI_|AWS_|BEDROCK_|MISTRAL_|GROQ_|XAI_|DEEPSEEK_)/.test(key)) delete process.env[key];
     const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-assistant-browser-')));
     let provider, access, gateway, server, wss, browser;
+    // [DEBUG-authoring] Passive bounded evidence for the existing final-reply wait.
+    const began = performance.now(), trace = { sourceSha, status: 'running', records: [], omitted: 0 };
+    let diagnosticPage, diagnosticSessionId, diagnosticSessionPath, diagnosticSessionManager;
+    const record = (phase, data = {}) => {
+        if (trace.records.length === 120) { trace.records.shift(); trace.omitted++; }
+        trace.records.push({ ms: Math.round(performance.now() - began), phase, ...data });
+    };
+    const hasFinal = message => JSON.stringify(message?.content || '').includes('Synthetic drafting response.');
+    const lifecycle = worker => {
+        const value = worker.lifecycle();
+        return { phase: value.activity.phase, busy: value.activity.busy, blockers: value.blockers.slice(0, 12), disposed: worker.disposed };
+    };
+    const nativeSnapshot = phase => {
+        try {
+            const entries = diagnosticSessionPath && diagnosticSessionManager.open(diagnosticSessionPath).getEntries();
+            const messages = entries?.filter(entry => entry.type === 'message').map(entry => entry.message) || [];
+            const worker = [...(gateway?.supervisor.workers.values() || [])].find(item => item.sessionId === diagnosticSessionId);
+            record(phase, { native: { available: Boolean(entries), messages: messages.length,
+                finalAssistantMarker: messages.some(message => message.role === 'assistant' && hasFinal(message)),
+                profileDraftResult: messages.some(message => message.role === 'toolResult' && message.toolName === 'profile_draft'),
+                worker: worker ? lifecycle(worker) : null } });
+        } catch { record(phase, { native: { unavailable: true } }); }
+    };
+    const domSnapshot = async phase => {
+        if (!diagnosticPage) return;
+        let timer;
+        try {
+            const dom = await Promise.race([diagnosticPage.evaluate(() => {
+                const matches = [...document.querySelectorAll('#pi-transcript .pi-message.assistant .pi-markdown')]
+                    .filter(node => node.textContent.includes('Synthetic drafting response.'));
+                return { route: location.hash.split('?')[0], hasSessionParameter: location.hash.includes('sessionId='),
+                    transcript: Boolean(document.querySelector('#pi-transcript')), markerCount: matches.length,
+                    markers: matches.slice(0, 4).map(node => {
+                        const rect = node.getBoundingClientRect(), style = getComputedStyle(node), details = [];
+                        for (let parent = node.parentElement; parent && details.length < 6; parent = parent.parentElement)
+                            if (parent.tagName === 'DETAILS') details.push({ open: parent.open, turn: parent.classList.contains('pi-turn-group'), process: parent.classList.contains('pi-process-group') });
+                        return { connected: node.isConnected, visible: node.checkVisibility({ visibilityProperty: true }) && rect.width > 0 && rect.height > 0, display: style.display, visibility: style.visibility,
+                            rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, details };
+                    }), inputDisabled: document.querySelector('#pi-input')?.disabled,
+                    authoringReturnHidden: document.querySelector('#pi-profile-authoring-return')?.hidden };
+            }), new Promise(resolve => { timer = setTimeout(() => resolve({ unavailable: 'diagnostic-timeout' }), 2000); })]);
+            record(phase, { dom });
+        } catch { record(phase, { dom: { unavailable: 'page-unavailable' } }); }
+        finally { clearTimeout(timer); }
+    };
     try {
     const agentDir = path.join(root, 'agent'), cwd = path.join(root, 'work');
     fs.mkdirSync(path.join(agentDir, 'pivane-profiles'), { recursive: true, mode: 0o700 });
@@ -36,6 +81,7 @@ async function main() {
     const { createPiAgentGateway } = sourceRequire('./server/pi-agent-routes.js');
     const { WorkspaceAccessService } = sourceRequire('./server/workspace-access-service.js');
     const { SessionManager } = await import('@earendil-works/pi-coding-agent');
+    diagnosticSessionManager = SessionManager;
     const calls = [];
     const base = () => `http://127.0.0.1:${server.address().port}`;
     const api = async (method, suffix, body) => {
@@ -64,6 +110,9 @@ async function main() {
         page.on('websocket', socket => socket.on('framereceived', frame => {
             try {
                 const data = JSON.parse(frame.payload.toString());
+                const event = data.type === 'event' ? data.event : data;
+                if (diagnosticSessionId && ['agent_start', 'agent_end', 'agent_settled', 'message_end'].includes(event?.type))
+                    record('browser-native-event', { type: event.type, finalMarker: hasFinal(event.message) });
                 if (data.command === 'open_session' && data.success) snapshots.push({ id: data.data?.session?.id,
                     profileAuthoring: data.data?.session?.profileAuthoring ?? null });
             } catch { /* Other native frames are not snapshot responses. */ }
@@ -86,12 +135,20 @@ async function main() {
         return { page, context, errors, snapshots };
     };
         provider = http.createServer(async (req, res) => {
+            const requestStarted = performance.now();
+            record('provider-request-start');
             let text = ''; for await (const part of req) text += part;
             const body = JSON.parse(text); calls.push(body);
             const last = body.messages?.at(-1);
             const proposal = { name: 'Fixture Reviewed', description: 'Suggested by synthetic model',
                 soul: 'Ask before changing saved facts.', user: 'Verified user fact', memory: 'Verified shared fact' };
             const useTool = last?.role === 'user' && JSON.stringify(last.content).includes('PROFILE_DRAFT_FIXTURE');
+            const ordinal = calls.length;
+            record('provider-request-parsed', { ordinal, useTool, inputMarker: JSON.stringify(last?.content || '').includes('PROFILE_DRAFT_FIXTURE'),
+                elapsedMs: Math.round(performance.now() - requestStarted) });
+            res.on('finish', () => record('provider-response-finish', { ordinal, status: res.statusCode, useTool,
+                finalMarker: !useTool, elapsedMs: Math.round(performance.now() - requestStarted) }));
+            res.on('close', () => record('provider-response-close', { ordinal, finished: res.writableFinished }));
             const delta = useTool ? { role: 'assistant', tool_calls: [{ index: 0, id: 'call-profile-draft-fixture', type: 'function',
                 function: { name: 'profile_draft', arguments: JSON.stringify(proposal) } }] }
                 : { role: 'assistant', content: 'Synthetic drafting response.' };
@@ -110,16 +167,27 @@ async function main() {
         fs.writeFileSync(path.join(agentDir, 'pivane-profiles', 'runtime.json'), JSON.stringify({ version: 1, bundlePath: bundle }));
         access = new WorkspaceAccessService({ envToken: () => '' });
         gateway = createPiAgentGateway({ accessService: access, deferredFilePath: process.env.PI_WEB_DEFERRED_FILE });
+        gateway.supervisor.on('worker', worker => {
+            worker.client.on('event', event => {
+                if (worker.sessionId !== diagnosticSessionId || !['agent_start', 'agent_end', 'agent_settled', 'message_end', 'tool_execution_start', 'tool_execution_end'].includes(event.type)) return;
+                try { record('native-worker-event', { type: event.type, finalMarker: hasFinal(event.message),
+                    profileDraft: event.toolName === 'profile_draft' || event.message?.toolName === 'profile_draft', worker: lifecycle(worker) }); }
+                catch { record('native-worker-event-unavailable'); }
+            });
+            worker.on('exit', () => { if (worker.sessionId === diagnosticSessionId) record('native-worker-exit'); });
+        });
         const app = express(); access.mount(app); app.use(express.json({ limit: '32mb' })); gateway.mount(app);
         for (const [url, dir] of [['marked', 'marked/lib'], ['dompurify', 'dompurify/dist'], ['highlight', '@highlightjs/cdn-assets']])
             app.use(`/vendor/${url}`, express.static(path.join(sourceRoot, 'node_modules', dir)));
         app.use(express.static(path.join(sourceRoot, 'public')));
         server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
         wss = gateway.attachWebSocket(server);
-        browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+        browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
 
         const desktop = await open(1440, 'en', 'dark');
         const { page } = desktop;
+        diagnosticPage = page;
+        record('desktop-ready');
         await page.locator('#workspace-profiles-toggle').click();
         await page.locator('#pi-profiles-list .pi-profile-note').waitFor();
         assert.equal((await api('GET', '/profiles')).profiles.length, 0);
@@ -283,6 +351,8 @@ async function main() {
             && document.querySelector('#pi-profile-authoring-return')?.hidden === false && document.querySelector('#pi-input')?.value.length > 0);
         const helperId = new URLSearchParams(page.url().split('?')[1]).get('sessionId');
         const helper = await gateway.store.getSession(cwd, helperId);
+        diagnosticSessionId = helperId; diagnosticSessionPath = helper.path;
+        record('authoring-session-ready');
         assert.equal(helper.agentProfile, null);
         assert.equal(helper.profileAuthoring.profileId, profileId);
         const helperSnapshot = desktop.snapshots.find(frame => frame.id === helperId);
@@ -293,12 +363,16 @@ async function main() {
         assert.equal(calls.length, 0, 'opening authoring conversation never calls the provider');
         assert.equal(SessionManager.open(helper.path).getEntries().some(e => e.type === 'message'), false);
         await page.locator('#pi-input').fill('PROFILE_DRAFT_FIXTURE: write a synthetic profile proposal with profile_draft.');
+        record('authoring-before-send'); nativeSnapshot('native-before-send');
         await page.locator('#pi-send-button').click();
+        record('authoring-send-clicked');
         await page.waitForFunction(async ({ cwd, id }) => {
             const response = await fetch(`/api/pi/profiles/authoring-sessions/${id}/draft?cwd=${encodeURIComponent(cwd)}`);
             return response.ok && (await response.json()).status === 'ready';
         }, { cwd, id: helperId }, { timeout: 25000 });
+        record('profile-draft-ready'); nativeSnapshot('native-at-draft-ready'); void domSnapshot('dom-at-draft-ready');
         await page.locator('#pi-transcript').getByText('Synthetic drafting response.', { exact: false }).waitFor({ timeout: 20000 });
+        record('final-reply-visible'); nativeSnapshot('native-at-reply-visible'); void domSnapshot('dom-at-reply-visible');
         assert.ok(calls.length >= 2, 'real Pi RPC made a tool-call and final local SSE request');
         try { await page.locator('#pi-profile-authoring-return').click({ timeout: 4000 }); }
         catch (error) {
@@ -356,7 +430,14 @@ async function main() {
             localProviderCalls: calls.length, projects: groups.length, profileRevisions: true,
             partialDocumentRepair: true, helperDraftReview: true, issues }));
         assert.deepEqual(issues, [], 'Frozen-source assistant integration defects');
+        trace.status = 'passed';
+    } catch (error) {
+        trace.status = 'failed'; record('original-failure', { timeout: error?.name === 'TimeoutError', assertion: error?.code === 'ERR_ASSERTION' });
+        throw error;
     } finally {
+        nativeSnapshot('native-before-cleanup'); await domSnapshot('dom-before-cleanup');
+        try { fs.mkdirSync(screenshots, { recursive: true }); fs.writeFileSync(path.join(screenshots, 'authoring-phase-trace.json'), JSON.stringify(trace, null, 2)); }
+        catch { console.error('[DEBUG-authoring] phase trace write unavailable'); }
         if (browser) await browser.close();
         for (const socket of wss?.clients || []) socket.terminate();
         if (gateway) await gateway.dispose();

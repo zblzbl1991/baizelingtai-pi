@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const express = require('express'), { once } = require('node:events');
 const { openInspector } = require('./pi-mobile-view-helper.cjs');
+const { browserFailureDiagnostics } = require('./pi-failure-diagnostics.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = path.resolve(__dirname, '../..'), cwd = '/projects/artifacts-fixture';
 const key = n => n.toString(16).padStart(64, '0');
@@ -21,6 +22,8 @@ const items = [group(1, 'Research report', [0, 1, 4, 5], ['document', 'web']), g
 async function run(browser, base, width, locale, theme) {
     const context = await browser.newContext({ viewport: { width, height: width < 900 ? 852 : 1000 }, locale, hasTouch: width < 900, acceptDownloads: true });
     const page = await context.newPage(), errors = [], network = [], writes = [], previews = [];
+    const diagnostic = await browserFailureDiagnostics(page, { name: 'artifacts', width, locale });
+    try {
     let listError = false, partial = false, hold = false, delayed, revoke = false;
     page.on('pageerror', e => errors.push(e.message));
     await page.route('https://invalid.test/**', r => { network.push(r.request().url()); return r.abort(); });
@@ -57,7 +60,9 @@ async function run(browser, base, width, locale, theme) {
         const response = cmd.type === 'open_session' ? { session: { id: 'delivery', cwd, name: 'Fixture', messageCount: 1 }, state, messages: { messages: [] }, stats: {}, models: { models: [model] }, thinkingLevels: { levels: ['off'] }, commands: { commands: [] } } : cmd.type === 'get_state' ? state : {};
         ws.send(JSON.stringify({ type: 'response', id: cmd.id, command: cmd.type, success: true, data: response }));
     }));
+    diagnostic.phase('goto:begin', ['html', '#artifacts-tab', '.artifacts-header']);
     await page.goto(base + '/#/artifacts', { waitUntil: 'domcontentloaded' });
+    diagnostic.phase('goto:done');
     await page.locator('.artifacts-header').waitFor();
     assert.equal(await page.locator('.artifacts-create').count(), 0);
     assert.equal(await page.locator('#artifacts-tab .fa-wand-magic-sparkles').count(), 0);
@@ -130,6 +135,7 @@ async function run(browser, base, width, locale, theme) {
     if (process.env.ARTIFACT_SCREENSHOT_DIR) { fs.mkdirSync(process.env.ARTIFACT_SCREENSHOT_DIR, { recursive: true }); listError = partial = false; await page.locator('#artifacts-refresh').click(); await card('Research report').waitFor(); await page.locator('#artifacts-tab').evaluate(n => { n.scrollTop = 0; }); await page.screenshot({ path: path.join(process.env.ARTIFACT_SCREENSHOT_DIR, `artifacts-${width}-${locale}.png`) }); }
     assert.deepEqual(network, []); assert.deepEqual(errors, []); assert.deepEqual(writes, []);
     console.log(`artifacts: ${width}px ${locale} ${theme} passed`); await context.close();
+    } catch (error) { try { await diagnostic.failure(); } catch { /* Preserve the original failure. */ } throw error; }
 }
 async function widths(page) {
     await page.waitForFunction(() => document.getAnimations().filter(a => a.effect?.target?.matches('.artifacts-manage-dialog, #artifacts-detail')).every(a => a.playState === 'finished'));

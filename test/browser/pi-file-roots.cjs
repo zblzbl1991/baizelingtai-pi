@@ -96,7 +96,10 @@ async function run(browser, base, width, locale) {
     await dialog.getByRole('button', { name: text('仅打开文件', 'Open file only'), exact: true }).click(); await page.locator('#pi-file-body h1').filter({ hasText: '任务报告' }).waitFor();
     assert.equal(extLists(), before); assert.equal(await page.locator('#pi-file-locate').isVisible(), false); assert.equal(roots.includes(external), false);
     await page.locator('#pi-transcript-content a').filter({ hasText: '外部报告' }).evaluate(n => n.click());
-    await dialog.getByRole('button', { name: text('关联目录并打开', 'Link folder and open'), exact: true }).click(); await page.locator('#pi-file-body h1').filter({ hasText: '任务报告' }).waitFor();
+    await dialog.getByRole('button', { name: text('关联目录并打开', 'Link folder and open'), exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+    await page.locator('#pi-file-locate').waitFor({ state: 'visible' });
+    await page.locator('#pi-file-body h1').filter({ hasText: '任务报告' }).waitFor();
     assert.ok(roots.includes(external));
     assert.equal(await page.locator('#pi-file-locate').isVisible(), true, 'promoting a single file restores folder navigation');
     assert.equal(await page.locator('.pi-file-breadcrumb button:disabled').count(), 0);
