@@ -287,11 +287,11 @@ async function widths(page) {
             await page.locator('#pi-token-dialog').waitFor({ state: 'hidden' });
             assert.equal(await page.locator('#pi-input').inputValue(), '保留未发送草稿'); assert.equal(await page.evaluate(() => sessionStorage.getItem('pi.web.token')), null);
             assert.ok((await context.cookies()).some(c => c.name === 'pi_access_fixture' && c.expires > Date.now() / 1000 + 29 * 86400));
-            await page.locator('[data-settings-tab="access"]').click();
+            await page.evaluate(() => window.PiWorkspaceRoute.navigate('settings', { tab: 'access' }));
             release = state.hold('POST', '/api/access/revoke'); await page.locator('#workspace-access-revoke').click();
             await pending(page, 'workspace-access-revoke', 'workspace-access-result', '#network-security'); release();
             await page.locator('#pi-token-dialog:not(.hidden)').waitFor(); await page.locator('#pi-token-input').fill(token); await page.locator('#pi-token-form button[type="submit"]').click();
-            await page.locator('#pi-token-dialog').waitFor({ state: 'hidden' }); await page.locator('[data-settings-tab="access"]').click();
+            await page.locator('#pi-token-dialog').waitFor({ state: 'hidden' }); await page.evaluate(() => window.PiWorkspaceRoute.navigate('settings', { tab: 'access' }));
             await page.locator('#workspace-access-generate').check(); await page.locator('#workspace-access-save').click(); await page.locator('#workspace-access-generated:not([hidden])').waitFor();
             assert.ok((await page.locator('#workspace-access-generated-token').inputValue()).length >= 32); assert.equal(await page.locator('#workspace-access-token').inputValue(), '');
             for (const theme of ['daylight', 'mint', 'dark']) {
