@@ -40,9 +40,11 @@ test('native waiting host keeps one read-only address across service generations
     const head=await fetch(url,{method:'HEAD'}); assert.equal(head.status,200);assert.equal(await head.text(),'');assert.ok(Number(head.headers.get('content-length'))>100);
     const foreign=net.createConnection(Number(new URL(url).port),'127.0.0.1'); await once(foreign,'connect');let foreignResponse='';foreign.on('data',bytes=>foreignResponse+=bytes);foreign.write('GET /status HTTP/1.1\r\nHost: attacker.example\r\n\r\n');await once(foreign,'close');assert.ok(foreignResponse.includes('HTTP/1.1 403'));
     const slow=net.createConnection(Number(new URL(url).port),'127.0.0.1');await once(slow,'connect');const began=Date.now();slow.write('G');const trickle=setInterval(()=>slow.write('E'),350);try{await once(slow,'close');assert.ok(Date.now()-began<4500,'whole header deadline rejects slow trickle')}finally{clearInterval(trickle);slow.destroy()}
+    let updates = 0;
     for (const [state, generation] of [['starting', randomUUID()], ['stopped', randomUUID()], ['ready', randomUUID()]]) {
         child.stdin.write(JSON.stringify({ state, instance, generation, ...(state === 'ready' ? { url: 'http://127.0.0.1:14444/' } : {}) }) + '\n');
-        await pause(50);
+        updates++;
+        await waitFor(() => (output.match(/^updated\r?$/gm) || []).length === updates, child, () => output);
         assert.deepEqual(await fetch(new URL('status', url)).then(r => r.json()), { state, instance, generation, ...(state === 'ready' ? { url: 'http://127.0.0.1:14444/' } : {}) });
     }
     child.stdin.end(); assert.equal((await exited)[0], 0, output);
