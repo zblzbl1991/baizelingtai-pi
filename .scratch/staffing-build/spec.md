@@ -3,7 +3,7 @@
 Status: implemented-source; acceptance-incomplete
 Labels: implementation-complete, validation-open
 
-功能源码已在 `codex/staffing-integration` 实现。人员调配专项及两轴审查通过，但共享完整回归仍有失败，受管工作树归档尚未确认完成。06 票继续开放；此状态不表示整体验收、部署或发布完成。
+功能源码已在 `codex/staffing-integration` 实现。2026-10-16 继续验收：完整 Node 814/814、人员调配浏览器 5/5、语法 623 文件、文档 81 文件通过。共享浏览器分批覆盖 102/102，原检查 101 通过、1 项学习流程会话加载超时；该项一次被动诊断通过，但原失败原因未确定。两轴审查问题已修复，受管工作树归档仍未确认完成，06 票继续开放。详细结果与新试验包见 06 票；此状态不表示整体验收、部署或发布完成。
 
 ## Problem Statement
 
