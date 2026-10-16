@@ -109,13 +109,26 @@ public sealed class PivaneStartupHost : IDisposable
         }
         status = System.Text.Encoding.UTF8.GetBytes("{\"state\":\"starting\",\"instance\":\"" + instance + "\",\"generation\":\"\"}");
         // The service has a separate deterministic 40000-59999 allocation range.
-        for (int attempt = 0; attempt < 64; attempt++)
+        using (var ports = System.Security.Cryptography.RandomNumberGenerator.Create())
         {
-            System.Net.Sockets.TcpListener candidate = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
-            candidate.Start(8);
-            int port = ((System.Net.IPEndPoint)candidate.LocalEndpoint).Port;
-            if ((port >= 40000 && port < 60000) || Array.IndexOf(reservedPorts ?? new int[0], port) >= 0) { candidate.Stop(); continue; }
-            listener = candidate; authority = "127.0.0.1:" + port; Url = "http://" + authority + "/"; break;
+            byte[] randomPort = new byte[4];
+            for (int attempt = 0; attempt < 64; attempt++)
+            {
+                ports.GetBytes(randomPort);
+                int requestedPort = attempt == 0 ? 0 : 60000 + (int)(BitConverter.ToUInt32(randomPort, 0) % 5536);
+                var candidate = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, requestedPort);
+                try { candidate.Start(8); }
+                catch (System.Net.Sockets.SocketException error)
+                {
+                    candidate.Stop();
+                    if (error.SocketErrorCode == System.Net.Sockets.SocketError.AddressAlreadyInUse
+                        || error.SocketErrorCode == System.Net.Sockets.SocketError.AccessDenied) continue;
+                    throw;
+                }
+                int port = ((System.Net.IPEndPoint)candidate.LocalEndpoint).Port;
+                if ((port >= 40000 && port < 60000) || Array.IndexOf(reservedPorts ?? new int[0], port) >= 0) { candidate.Stop(); continue; }
+                listener = candidate; authority = "127.0.0.1:" + port; Url = "http://" + authority + "/"; break;
+            }
         }
         if (listener == null) throw new IOException("Unable to allocate waiting entry.");
         System.Threading.Thread thread = new System.Threading.Thread(Accept);

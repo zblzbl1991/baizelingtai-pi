@@ -4,9 +4,9 @@
   "platform": "win32",
   "arch": "anycpu",
   "runtime": ".NET Framework 4",
-  "sourceSha256": "fef59ffc289a9a9ed5be7f04bc9f7245d4219a02c2bd6ede871180ecb42f14bd",
+  "sourceSha256": "7173676816d73cbdd1527dbbd6f12db10b79ea37fe8dec9a869e1df94ddf1887",
   "manifestSha256": "621e70839f47fc6c84a269c8059632ff4abbecc6da6050093b9f4b6c6ada8f03",
   "iconSha256": "e3b7518855dab3addb741486c87364819766fc555d4f12dc19090dcfdcfdc4bf",
-  "compilerSha256": "46809206887326d2d24db1eff1f3064de972c3451abe766b49111450a5e08e00",
-  "binarySha256": "874e1b92447572248c7e197c5a5f01ed57d3b7bf8a0cf78c62387a54458f75cd"
+  "compilerSha256": "eca02e6b15cde93009a59a3d129d5a77fb5008f2e1cf62cf573b6737c747ecc3",
+  "binarySha256": "f6d7c2e2836eb032edb82ac4ab77a8b9a8f31cf55b7c32df8acef45785026fb2"
 }
