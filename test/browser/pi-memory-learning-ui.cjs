@@ -466,6 +466,7 @@ async function runWave2(browser, base, width, locale) {
             { items: [{ itemId: hash('c'), itemRevision: hash('9'), preview: 'Third source entry', category: 'preference' },
                 { itemId: hash('b'), itemRevision: hash('2'), preview: 'Second source entry', category: 'fact' }],
                 content: 'Stale merge', category: 'fact' } ] };
+    let projectDetailGate = null;
     const state = { learningRevision: 1, proposals: undefined, drafts: undefined, usage: { memory: { chars: 13600, limit: 16000 }, user: { chars: 100, limit: 8000 } },
         settings: structuredClone(settings), actions: ['save', 'propose-consolidation', 'dismiss-proposal'], consolidates: [], undos: [], mutations: [],
         health: { state: 'ok', missingModels: [], lastFailure: null, today: { runs: 0, maxRuns: 4, reservedTokens: 0, maxTokens: 24000 } } };
@@ -490,6 +491,10 @@ async function runWave2(browser, base, width, locale) {
                     profile: { chars: 21, entries: 3 }, project: null, lastRead: null });
         if (p.includes('/knowledge/items/') && req.method() === 'GET') {
             const row = items.find(entry => entry.id === p.split('/').pop());
+            if (row?.id === hash('p') && projectDetailGate) {
+                const gate = projectDetailGate; projectDetailGate = null;
+                gate.entered = true; await gate.released;
+            }
             return fulfill(row ? { version: 1, status: 'ready', item: row } : { version: 1, status: 'missing' });
         }
         if (p.endsWith('/knowledge') && req.method() === 'GET') return fulfill(snapshot());
@@ -611,9 +616,20 @@ async function runWave2(browser, base, width, locale) {
     assert.ok((await text('#pi-profiles-memory')).includes(say('项目记忆按当前会话目录核实。', 'Project memory is verified against the current session directory.')));
     await page.locator('.pi-profile-kinds button').first().click();
     const projectRow = page.locator('.pi-knowledge-row').filter({ hasText: 'Project entry' });
-    await projectRow.click();
-    await page.waitForFunction(() => (document.querySelector('.pi-knowledge-detail')?.textContent || '').includes('r'.repeat(64)));
     const detail = page.locator('.pi-knowledge-detail');
+    let releaseProjectDetail;
+    const gate = { entered: false, released: new Promise(resolve => { releaseProjectDetail = resolve; }) };
+    projectDetailGate = gate;
+    const detailRequest = page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/knowledge/items/' + hash('p')) && request.method() === 'GET');
+    try {
+        await Promise.all([detailRequest, projectRow.click()]);
+        await page.waitForFunction(() => (document.querySelector('.pi-knowledge-detail')?.textContent || '').includes('r'.repeat(64)));
+        assert.equal(gate.entered, true, 'project details response is held at the public HTTP boundary');
+        assert.equal(await detail.locator('pre').innerText(), say('正在读取正文…', 'Loading content…'));
+        assert.equal(await detail.locator('.pi-knowledge-actions').count(), 0, 'write controls wait for project details');
+    } finally { projectDetailGate = null; releaseProjectDetail(); }
+    // The selected row already contains its revision; only the loaded body proves detail readiness.
+    await page.waitForFunction(() => document.querySelector('.pi-knowledge-detail pre')?.textContent === 'Project entry');
     assert.equal(await detail.locator('button').filter({ hasText: say('编辑', 'Edit') }).count(), 1, 'project entry is editable with a session id');
     assert.equal(await detail.locator('button').filter({ hasText: say('删除', 'Delete') }).count(), 1, 'project entry can be deleted with a session id');
     // Undo of the project receipt is offered from the receipt history with the session id.
