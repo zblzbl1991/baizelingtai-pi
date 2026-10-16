@@ -13,7 +13,7 @@ const messages = [{ role: 'user', content: 'Fixture only', timestamp: 1 },
     { role: 'assistant', timestamp: 4, stopReason: 'stop', content: [{ type: 'text', text: 'Finished fixture.' }] }];
 async function run(browser, base, width, locale) {
     const ctx = await browser.newContext({ locale, viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
-    const page = await ctx.newPage(), errors = [], actions = []; let socket, reconnectAuth = false, outcome = 'completed';
+    const page = await ctx.newPage(), errors = [], actions = []; let socket, reconnectAuth = false, outcome = 'completed', runtimeGate = null;
     const auth = { server: 'demo', runtimeId: 'runtime', url: 'https://example.invalid/oauth?state=synthetic' };
     page.on('pageerror', error => errors.push(error.message)); page.on('dialog', dialog => dialog.accept());
     await page.addInitScript(({ cwd, id }) => { localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem(`pi.web.session:${cwd}`, id); }, { cwd, id: session.id });
@@ -24,7 +24,11 @@ async function run(browser, base, width, locale) {
         if (endpoint === '/api/pi/sessions') return route.fulfill({ json: { sessions: [session] } });
         if (endpoint === '/api/pi/activity') return route.fulfill({ json: { runtimes: [], replyNotices: [], deferred: [] } });
         if (endpoint === '/api/pi/settings/mcp') return route.fulfill({ json: { cwd, scope: url.searchParams.get('scope'), revision: 'r1', trust: { effective: true }, autoEnableCodemode: { global: null, project: null, value: true }, servers: [{ name: 'demo', scope: 'global', valid: true, transport: 'http', enabled: true, exposure: 'codemode', timeout: 60, config: { url: null }, secretFields: { url: { present: true } } }] } });
-        if (endpoint.endsWith('/mcp')) { const body = req.postDataJSON(); actions.push(body); return route.fulfill({ json: { runtimeId: 'runtime', servers: [{ name: 'demo', state: 'connected', toolCount: 1, exposure: 'codemode' }], tools: [], notices: outcome === 'completed' ? [] : [{ kind: outcome === 'failed' ? 'error' : outcome, code: 'MCP_SYNTHETIC' }], outcome } }); }
+        if (endpoint.endsWith('/mcp')) {
+            const body = req.postDataJSON(), requestOutcome = outcome; actions.push(body);
+            if (runtimeGate) { const gate = runtimeGate; runtimeGate = null; gate.entered = true; await gate.released; }
+            return route.fulfill({ json: { runtimeId: 'runtime', servers: [{ name: 'demo', state: 'connected', toolCount: 1, exposure: 'codemode' }], tools: [], notices: requestOutcome === 'completed' ? [] : [{ kind: requestOutcome === 'failed' ? 'error' : requestOutcome, code: 'MCP_SYNTHETIC' }], outcome: requestOutcome } });
+        }
         if (endpoint.includes('history') || endpoint === '/api/prompts') return route.fulfill({ json: [] });
         return route.fulfill({ json: {} });
     });
@@ -43,13 +47,37 @@ async function run(browser, base, width, locale) {
     await page.locator('.mcp-settings [data-mcp-write]').first().waitFor();
     assert.equal(actions.length, 0, 'opening saved configuration does not connect or request runtime');
     const read = page.locator('.mcp-settings button').filter({ hasText: locale === 'en' ? /^Read runtime snapshot$/ : /^读取运行快照$/ });
-    await read.click(); assert.equal(actions[0].runtimeId, 'runtime');
+    const completedStatus = locale === 'en' ? 'Runtime action completed.' : '运行操作完成。';
+    const outcomeStatuses = locale === 'en' ? {
+        failed: 'Native action did not succeed. Check the current state; no retry.',
+        cancelled: 'Native authorization was cancelled; no automatic retry.',
+        unknown: 'Native status could not be fully confirmed. Explicitly read a snapshot to check.'
+    } : {
+        failed: '原生操作未成功；请核对当前状态，不会重试。',
+        cancelled: '原生授权已取消；未自动重试。',
+        unknown: '原生状态未能完整确认；请明确读取快照核对。'
+    };
+    await read.click();
+    await page.waitForFunction(expected => document.querySelector('.mcp-status')?.textContent === expected, completedStatus);
+    assert.equal(actions[0].runtimeId, 'runtime');
     for (const state of ['failed', 'cancelled', 'unknown']) {
-        outcome = state; await read.click();
+        let releaseRuntime;
+        const gate = { entered: false, released: new Promise(resolve => { releaseRuntime = resolve; }) };
+        runtimeGate = gate; outcome = state;
+        const request = page.waitForRequest(req => new URL(req.url()).pathname === '/api/pi/sessions/fixture/mcp' && req.method() === 'POST');
+        try {
+            await Promise.all([request, read.click()]);
+            assert.equal(gate.entered, true, 'runtime response is held at the public HTTP boundary');
+            assert.equal(await read.isDisabled(), true, 'runtime read stays disabled while its response is pending');
+        } finally { runtimeGate = null; releaseRuntime(); }
+        // A click only starts the request; check the result of this outcome after it is rendered.
+        await page.waitForFunction(expected => document.querySelector('.mcp-status')?.textContent === expected, outcomeStatuses[state]);
+        assert.equal(await read.isEnabled(), true, 'runtime read is available after its response');
         const status = await page.locator('.mcp-status').textContent();
         assert.ok(!status.includes('Runtime action completed') && !status.includes('运行操作完成'), status);
     }
     outcome = 'completed'; await read.click();
+    await page.waitForFunction(expected => document.querySelector('.mcp-status')?.textContent === expected, completedStatus);
     await page.locator('.mcp-settings button').filter({ hasText: locale === 'en' ? /^Return to chat$/ : /^返回聊天$/ }).click();
     await page.locator('.mcp-settings.active').waitFor({ state: 'hidden' });
     socket.send(JSON.stringify({ type: 'gateway_mcp_authorization', authorization: auth }));
