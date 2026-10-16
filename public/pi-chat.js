@@ -3255,7 +3255,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderEmptySession() {
         if (!state.session && (state.transcriptBooting || state.pendingRestore)) {
-            elements.transcript.innerHTML = transcriptLoadingMarkup(elements.connectionText.textContent || translateUi("正在连接 Pi Agent"), 'boot');
+            elements.transcript.innerHTML = transcriptLoadingMarkup(elements.connectionText.textContent || translateUi("正在连接"), 'boot');
             return;
         }
         const extension = state.session?.assistant?.kind === 'extensions';

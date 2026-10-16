@@ -135,9 +135,10 @@ class ManagedLauncher {
         if (this.starting) return this.starting;
         if (this.closed) return Promise.reject(new Error('Launcher is stopping'));
         this.starting = Promise.resolve().then(async () => {
+            if (this.closed) return;
             this.lockAcquisition = acquireInstallationLock(this.root);
             this.guard = await this.lockAcquisition;
-            if (this.closed) throw new Error('Launcher is stopping');
+            if (this.closed) return;
             this.loadState();
             await this.cleanup();
             if (this.closed) throw new Error('Launcher is stopping');
