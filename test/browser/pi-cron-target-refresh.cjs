@@ -48,7 +48,7 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
     </script></body></html>`));
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
-    let browser, context, page;
+    let browser, context, page, primaryError;
     try {
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
         context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'zh-CN' });
@@ -89,11 +89,23 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
         assert.deepEqual(errors, []);
         console.log('Controlled cron target refresh: same-scope selected target survived held response and actual PUT');
     } catch (error) {
+        primaryError = error;
         console.error('Controlled cron observations:', JSON.stringify(observed)); throw error;
     } finally {
         held.resolve();
+        const cleanupErrors = [];
+        const cleanup = async (label, action) => {
+            try { await action(); }
+            catch (error) { cleanupErrors.push(error); console.error(`Controlled cron cleanup (${label}):`, error); }
+        };
         const output = process.env.PIVANE_TEST_SCREENSHOT_DIR || path.join(os.tmpdir(), 'pivane-browser', 'pi-cron-target-refresh');
-        fs.mkdirSync(output, { recursive: true }); fs.writeFileSync(path.join(output, 'target-refresh-observations.json'), JSON.stringify(observed, null, 2) + '\n');
-        await context?.close(); await browser?.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+        await cleanup('observations', () => {
+            fs.mkdirSync(output, { recursive: true }); fs.writeFileSync(path.join(output, 'target-refresh-observations.json'), JSON.stringify(observed, null, 2) + '\n');
+        });
+        await cleanup('context', () => context?.close());
+        await cleanup('browser', () => browser?.close());
+        await cleanup('connections', () => server.closeAllConnections());
+        await cleanup('server', () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
+        if (!primaryError && cleanupErrors.length) throw new AggregateError(cleanupErrors, 'Controlled cron cleanup failed');
     }
 })().catch(error => { console.error(error); process.exitCode = 1; });
