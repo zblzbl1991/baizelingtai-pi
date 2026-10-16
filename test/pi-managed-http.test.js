@@ -63,7 +63,8 @@ test('managed launcher performs authenticated backup and restart with paused sch
         const ticket = await review.json();
         const request = { ticket: ticket.id, confirmed: true, draftsSaved: true, externalWritersStopped: true };
         assert.equal((await api('/execute', 'POST', { ...request, command: 'never run' })).status, 400);
-        const executed = await api('/execute', 'POST', request); assert.equal(executed.status, 202);
+        const executed = await api('/execute', 'POST', request);
+        assert.equal(executed.status, 202, JSON.stringify(await executed.clone().json()));
         assert.equal((await executed.json()).id, ticket.id);
         const done = await until(async () => {
             try { const response = await api('/maintenance'); if (!response.ok) return false; const value = await response.json(); return value.job?.id === ticket.id && !value.busy && value; }

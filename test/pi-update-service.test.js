@@ -32,7 +32,7 @@ test('configured intranet release page survives missing, inapplicable or failed 
     const env = { BAIZELINGTAI_UPDATE_FEED_URL: feedSource, BAIZELINGTAI_UPDATE_RELEASES_URL: releasesUrl };
     for (const mode of ['missing-link', 'inapplicable', 'error', 'manifest-link']) {
         const requests = [];
-        const service = new UpdateService({ env, platform: mode === 'inapplicable' ? 'linux' : 'win32', arch: 'x64',
+        const service = new UpdateService({ env, appVersion: '1.7.0', platform: mode === 'inapplicable' ? 'linux' : 'win32', arch: 'x64',
             fetch: async url => {
                 requests.push(url);
                 if (mode === 'error') throw Error('offline');

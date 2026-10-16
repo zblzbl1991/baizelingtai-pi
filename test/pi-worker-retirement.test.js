@@ -10,8 +10,15 @@ function fixture(t) {
     const worker = { sessionPath: file, isIdle: () => true, retainsBackgroundWork: () => false, canEvict: () => true,
         dispose: () => { calls++; return gate.promise; } };
     supervisor.workers.set(file, worker);
-    t.after(async () => { gate.resolve(); await supervisor.dispose(); fs.rmSync(root, { recursive: true, force: true }); });
-    return { supervisor, worker, file, gate, get calls() { return calls; } };
+    const result = { supervisor, worker, file, gate, cleanupFails: false, get calls() { return calls; } };
+    t.after(async () => {
+        gate.resolve();
+        try {
+            if (result.cleanupFails) await assert.rejects(supervisor.dispose(), /cleanup could not be confirmed/);
+            else await supervisor.dispose();
+        } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    });
+    return result;
 }
 test('retirement stays owned and non-idle until actual completion; repeat stops share the same promise', async t => {
     const f = fixture(t), first = f.supervisor.stopSession(f.file), second = f.supervisor.stopSession(f.file);
@@ -33,6 +40,7 @@ test('idle sweeping tracks process retirement rather than creating an empty-map 
 });
 test('failed disposal retains ownership and blocks replacement, cleanup and early queue removal', async t => {
     const f = fixture(t), stopping = f.supervisor.stopSession(f.file);
+    f.cleanupFails = true;
     f.gate.reject(new Error('synthetic stop failure')); await assert.rejects(stopping, /synthetic stop failure/);
     assert.equal(f.supervisor.retiring.size, 1); assert.equal(f.supervisor.isIdle(), false);
     await assert.rejects(f.supervisor.getWorker({ sessionPath: f.file }), /synthetic stop failure/);
