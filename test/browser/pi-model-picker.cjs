@@ -153,7 +153,22 @@ async function check(browser, base, width, language, theme) {
     assert.ok((await button.textContent()).includes('Special'));
     assert.ok(!(await page.evaluate(() => localStorage.getItem('pivane.models.recent'))).includes('model/15'));
     fail = false;
-    await openPicker(); await page.keyboard.press('Escape');
+    await openPicker();
+    await page.evaluate(() => {
+        window.pickerCloseObservation = { seen: false, trusted: false };
+        document.querySelector('#pi-model-dialog').addEventListener('close', event => {
+            window.pickerCloseObservation.seen = true;
+            window.pickerCloseObservation.trusted = event.isTrusted;
+        }, { once: true });
+    });
+    const pickerClosed = page.waitForFunction(() => window.pickerCloseObservation.seen);
+    void pickerClosed.catch(() => {}); // Input can fail before the observer is awaited.
+    await page.keyboard.press('Escape');
+    // Native close delivery and its accessibility/focus updates can follow keyboard completion.
+    await pickerClosed;
+    assert.equal(await page.evaluate(() => window.pickerCloseObservation.trusted), true, 'Escape delivers a native close event');
+    await page.waitForFunction(mobile => document.querySelector('#pi-model-select').getAttribute('aria-expanded') === 'false'
+        && document.activeElement === document.querySelector(mobile ? '#pi-mobile-context-trigger' : '#pi-model-select'), width <= 680);
     assert.equal(await button.getAttribute('aria-expanded'), 'false');
     assert.equal(await page.locator(width <= 680 ? '#pi-mobile-context-trigger' : '#pi-model-select').evaluate(node => node === document.activeElement), true);
     await openPicker(); running = true; socket.send(JSON.stringify({ type: 'agent_start' }));
