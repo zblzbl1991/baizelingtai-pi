@@ -100,6 +100,8 @@
 
 结果不确定时先刷新核对，不自动重试创建。界面保留编辑草稿和项目默认选择；如果刷新后发现同名记录，需核对保存结果再继续，避免重复创建。
 
+档案保存返回 503 或提示保存结果未知时，不能据此判断原记录未改变；先读取注册表最新内容和修订。人员调配首次创建专用档案的结果不确定时，查询并恢复原初始化操作。旧版 `profiles.lock` 会阻止新协议保存，不会按时间自动清理；升级需先停旧写入进程，在停机备份和维护中核查。具体步骤见[保存冲突与恢复](STAFFING.md#保存冲突与恢复)。
+
 辅助会话创建与档案设置保存共用维护互斥；正在停机或维护时拒绝创建，停机会等待已预占的创建完成。头像私有图片写入与档案注册表修订保存也在同一维护预占和注册表互斥内，冲突不会先发布新图片；已保存头像不会因新上传失败而丢失。
 
 `session.agentProfile` 为 null 或 `{id,name,avatar,enabled,available}`，只描述保存的身份。WebSocket `get_runtime_configuration.agentProfile` 返回 `saved`、`savedProfileRevision`、`loadedProfileId`、`loadedProfileRevision`、`loadedConfirmed`、`matchesSavedProfile`，区分身份相同但SOUL／设置版本已变化的情况。缺少确认时保持未验证。

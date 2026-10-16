@@ -8,8 +8,13 @@ async function selectMessageView(page, mode) {
     await page.locator('#workspace-settings-dialog').waitFor({ state: 'hidden' });
 }
 
-// Media/profiles/extensions moved into the "更多功能" menu on narrow screens.
+// Media keeps its public legacy route; other tabs use actual navigation controls.
 async function openWorkspaceTab(page, tab) {
+    if (tab === 'media') {
+        await page.evaluate(() => { window.location.hash = '#/media'; });
+        await page.locator('#media-tab.active').waitFor({ state: 'visible' });
+        return;
+    }
     if (await page.evaluate(() => innerWidth <= 680)) {
         await page.locator('#workspace-more-toggle').click();
         await page.locator(`#workspace-more-menu [data-more-tab="${tab}"]`).click();

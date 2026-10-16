@@ -47,6 +47,8 @@
     <link rel="stylesheet" href="pi-side-chat.css">
     <link rel="stylesheet" href="media-lab.css">
     <link rel="stylesheet" href="pi-artifacts.css">
+    <link rel="stylesheet" href="pi-staffing.css">
+    <link rel="stylesheet" href="pi-staffing-excel.css">
     <link rel="stylesheet" href="media-connections.css">
     <link rel="stylesheet" href="pi-transcription-settings.css">
     <!-- Optional web font: never block first paint when the font host is slow or unreachable. -->
@@ -86,6 +88,7 @@
                 <div id="workspace-more-menu" class="workspace-more-menu" role="menu" aria-label="更多功能" data-i18n-aria-label="s2651" hidden>
                     <button type="button" role="menuitem" data-more-tab="cron"><i class="fa-regular fa-calendar-check" aria-hidden="true"></i><span data-cron-nav>定时任务</span></button>
                     <button type="button" role="menuitem" data-more-tab="artifacts"><i class="fa-solid fa-box-archive" aria-hidden="true"></i><span data-artifacts-label>成果中心</span></button>
+                    <button type="button" role="menuitem" data-more-tab="staffing" data-staffing-nav hidden><i class="fa-solid fa-people-group" aria-hidden="true"></i><span data-staffing-label></span></button>
                     <button type="button" role="menuitem" data-more-tab="profiles"><i class="fa-solid fa-user-gear" aria-hidden="true"></i><span><!--i18n:s2468-->助手身份</span></button>
                     <button type="button" role="menuitem" data-more-tab="extensions"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i><span><!--i18n:s530-->扩展</span></button>
                 </div>
@@ -532,6 +535,7 @@
 
         <main class="content-area tab-content cron-page" id="cron-tab"></main>
         <main class="content-area tab-content" id="artifacts-tab"></main>
+        <main class="content-area tab-content" id="staffing-tab"></main>
         <main class="content-area tab-content media-lab" id="media-tab">
             <header class="lab-header">
                 <h1><i class="fa-solid fa-flask" aria-hidden="true"></i><!--i18n:s1318--> 多媒体实验室</h1>
@@ -1013,6 +1017,10 @@
     <script src="pi-artifacts-preview.js"></script>
     <script src="pi-artifacts-manage.js"></script>
     <script src="pi-artifacts.js"></script>
+    <script src="pi-staffing.js"></script>
+    <script src="pi-staffing-excel.js"></script>
+    <script src="pi-staffing-cards.js"></script>
+    <script src="pi-staffing-views.js"></script>
     <script src="pi-file-browser.js"></script>
     <script src="pi-file-roots.js"></script>
     <script src="pi-files-panel.js"></script>

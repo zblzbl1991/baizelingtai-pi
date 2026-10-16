@@ -128,10 +128,14 @@ test('application-owned skill package has no upstream alias and respects project
 });
 
 test('bundled subagent runs against a synthetic provider, with native host controls and no old factory execution', { timeout: 120000 }, async t => {
+    const started = performance.now(), trace = [], statusTimes = [];
+    const phase = (name, detail = {}) => { if (trace.length < 80) trace.push({ name, ms: Math.round(performance.now() - started), ...detail }); };
+    t.after(() => t.diagnostic(JSON.stringify({ trace, statusCalls: statusTimes.length, statusMs: statusTimes.reduce((a, b) => a + b, 0), maxStatusMs: Math.max(0, ...statusTimes) })));
     let childRequests = 0;
     const provider = http.createServer(async (req, res) => {
         for await (const _chunk of req) { /* synthetic request only */ }
         childRequests++;
+        phase('child-provider', { requests: childRequests });
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
         res.end(`data: ${JSON.stringify({ id: 'fixture', object: 'chat.completion.chunk', model: 'fixture', choices: [{ index: 0, delta: { role: 'assistant', content: 'BUNDLED_CHILD_OK' }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`);
     });
@@ -192,7 +196,7 @@ test('bundled subagent runs against a synthetic provider, with native host contr
     const store = new PiSessionStore(), supervisor = new PiAgentSupervisor();
     t.after(async () => { await supervisor.dispose(); provider.closeAllConnections(); await new Promise(resolve => provider.close(resolve)); });
     const session = await store.createSession(cwd, 'Bundled fixture');
-    const worker = await supervisor.getWorker({ cwd, sessionPath: session.path, sessionId: session.id });
+    phase('parent-start'); const worker = await supervisor.getWorker({ cwd, sessionPath: session.path, sessionId: session.id }); phase('parent-ready');
     const resources = await worker.getNativeResources();
     assert.equal(resources.tools.filter(item => item.name === 'subagent').length, 1);
     assert.ok(resources.skills.some(item => item.name === 'pi-subagents'));
@@ -209,13 +213,18 @@ test('bundled subagent runs against a synthetic provider, with native host contr
     assert.equal(fs.existsSync(path.join(agentDir, 'helpers')), false, 'opening a chat must not install or start a desktop helper');
     let launch;
     const off = worker.subscribe(event => { if (event.type === 'extension_ui_request' && event.message?.startsWith('FIXTURE_SPAWN:')) launch = JSON.parse(event.message.slice(14)); });
-    await worker.request('prompt', { message: '/fixture-spawn' });
+    phase('spawn-command'); await worker.request('prompt', { message: '/fixture-spawn' }); phase('spawn-command-returned');
     for (let i = 0; i < 300 && !launch; i++) await new Promise(resolve => setTimeout(resolve, 100));
     off(); assert.equal(launch?.success, true, JSON.stringify(launch));
+    phase('spawn-acknowledged');
     assert.notEqual(launch.data?.isError, true, JSON.stringify(launch));
-    let status;
+    let status, previousStates;
     for (let i = 0; i < 60; i++) {
-        status = await worker.subagentRequest({ method: 'status', params: {} });
+        const began = performance.now(); status = await worker.subagentRequest({ method: 'status', params: {} });
+        statusTimes.push(performance.now() - began);
+        const states = status.snapshot?.runs.map(run => ({ state: run.state, children: run.children?.map(child => child.state) })), signature = JSON.stringify(states);
+        if (i === 0 || i === 59 || signature !== previousStates) phase('native-status', { iteration: i, states });
+        previousStates = signature;
         if (status.snapshot?.runs.some(run => ['complete', 'failed', 'cancelled'].includes(run.state))) break;
         await new Promise(resolve => setTimeout(resolve, 500));
     }

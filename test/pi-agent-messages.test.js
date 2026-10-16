@@ -23,7 +23,9 @@ const deadline = async (fn, ms = 30000) => {
 };
 const lastText = message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
 
-test('Unrelated threads message each other, wake a closed recipient, reply, and never duplicate or loop', { timeout: 180000 }, async () => {
+test('Unrelated threads message each other, wake a closed recipient, reply, and never duplicate or loop', { timeout: 180000 }, async t => {
+    const started = performance.now(), trace = [], reads = { count: 0, totalMs: 0, maxMs: 0 };
+    const phase = (name, detail = {}) => { if (trace.length < 80) trace.push({ name, ms: Math.round(performance.now() - started), ...detail }); };
     const calls = []; let callId = 0;
     const provider = http.createServer(async (req, res) => {
         let body = ''; for await (const part of req) body += part;
@@ -35,6 +37,7 @@ test('Unrelated threads message each other, wake a closed recipient, reply, and 
         const tool = args => { chunk({ role: 'assistant', tool_calls: [{ index: 0, id: `call-${++callId}`, type: 'function', function: { name: 'agent_message', arguments: JSON.stringify(args) } }] }); chunk({}, 'tool_calls'); };
         const say = text => { chunk({ role: 'assistant', content: text }); chunk({}, 'stop'); };
         const lastContent = last.role === 'tool' ? String(last.content) : lastText(last);
+        phase('provider', { lastRole: last.role, threads: lastContent.includes('"threads"'), wake: lastContent.includes('New Agent message') });
         if (last.role === 'tool' && lastContent.includes('"threads"')) {
             const threads = JSON.parse(lastContent).threads;
             tool({ action: 'send', to: threads.find(row => row.name === 'Thread B').id, message: 'QUESTION_FIXTURE: which port?', query: '', messageId: '' });
@@ -52,6 +55,15 @@ test('Unrelated threads message each other, wake a closed recipient, reply, and 
     fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, 'models.json'), JSON.stringify({ providers: { fixture: { baseUrl: `http://127.0.0.1:${provider.address().port}/v1`, api: 'openai-completions', apiKey: 'synthetic', models: [{ id: 'model', reasoning: false, input: ['text'], contextWindow: 32000, maxTokens: 1000 }] } } }));
     const access = new WorkspaceAccessService({ envToken: () => 'fixture-web-token' });
     const gateway = createPiAgentGateway({ accessService: access });
+    const subscriptions = [];
+    const observedWorker = worker => {
+        const index = subscriptions.length; phase('worker-ready', { worker: index });
+        subscriptions.push(worker.subscribe(event => {
+            if (['agent_start', 'agent_settled', 'tool_execution_start', 'tool_execution_end', 'gateway_error'].includes(event.type))
+                phase(event.type, { worker: index, tool: event.toolName === 'agent_message' ? 'agent_message' : undefined, isError: Boolean(event.isError) });
+        }));
+    };
+    gateway.supervisor.on('worker', observedWorker);
     const app = require('express')(); app.use(require('express').json()); gateway.mount(app);
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const base = `http://127.0.0.1:${server.address().port}`; process.env.PI_WORKSPACE_INTERNAL_ORIGIN = base;
@@ -61,7 +73,11 @@ test('Unrelated threads message each other, wake a closed recipient, reply, and 
     };
     try {
         const { SessionManager } = await import('@earendil-works/pi-coding-agent');
-        const entries = file => SessionManager.open(file).getEntries();
+        const entries = file => {
+            const began = performance.now();
+            try { return SessionManager.open(file).getEntries(); }
+            finally { const ms = performance.now() - began; reads.count++; reads.totalMs += ms; reads.maxMs = Math.max(reads.maxMs, ms); }
+        };
         const a = await gateway.store.createSession(cwd, 'Thread A');
         const b = await gateway.store.createSession(cwd, 'Thread B');
         const c = await gateway.store.createSession(cwd, 'Thread C');
@@ -70,7 +86,7 @@ test('Unrelated threads message each other, wake a closed recipient, reply, and 
         // synthetic model request small; only SessionManager writes the file.
         const manager = SessionManager.open(a.path);
         for (let i = 0; i < 13; i++) manager.appendCustomEntry('fixture-padding', { text: 'x'.repeat(1024 * 1024) });
-        const aWorker = await gateway.supervisor.getWorker({ cwd, sessionPath: a.path, sessionId: a.id });
+        phase('A-start'); const aWorker = await gateway.supervisor.getWorker({ cwd, sessionPath: a.path, sessionId: a.id }); phase('A-ready');
         const token = aWorker.navigationToken;
         assert.ok((await aWorker.getNativeResources()).tools.some(tool => tool.name === 'agent_message'));
         assert.equal((await api('/agent-messages/threads', {}, 'fixture-web-token')).status, 403, 'web identity is not a source thread');
@@ -85,8 +101,9 @@ test('Unrelated threads message each other, wake a closed recipient, reply, and 
         assert.equal(gateway.supervisor.getActiveWorker(b.path), undefined);
 
         // A user turn in A: list threads, message closed B. B wakes, answers with replyTo, A wakes on the answer.
-        await aWorker.request('prompt', { message: 'SEND_FIXTURE' });
+        phase('prompt-start'); await aWorker.request('prompt', { message: 'SEND_FIXTURE' }); phase('prompt-returned');
         await deadline(() => entries(a.path).some(entry => entry.type === 'custom_message' && entry.customType === MESSAGE_IN));
+        phase('A-native-incoming-observed');
         await deadline(() => entries(a.path).some(entry => entry.type === 'message' && entry.message.role === 'assistant' && lastText(entry.message).includes('A_GOT_ANSWER')));
         await deadline(() => !aWorker.activity.snapshot().busy);
         // A can observe the answer before B has durably appended its outbound
@@ -145,7 +162,16 @@ test('Unrelated threads message each other, wake a closed recipient, reply, and 
         await deadline(() => entries(c.path).some(entry => entry.customType === MESSAGE_IN && entry.content.includes('NOTE_FIXTURE')));
         assert.equal(calls.length, before, 'a delivered note does not start a turn');
         await deadline(async () => (await api('/agent-messages/status', { messageId: note.data.messageId }, token)).data.status === 'delivered');
+        t.diagnostic(JSON.stringify({ trace, reads, providerCalls: calls.length }));
+    } catch (error) {
+        const service = gateway.agentThreads.messages;
+        t.diagnostic(JSON.stringify({ trace, reads, providerCalls: calls.length,
+            queue: [...service.queue.values()].slice(0, 10).map(row => ({ status: row.status, attempts: row.attempts, hasError: Boolean(row.error), woke: row.woke })),
+            starting: service.starting.size, flight: Boolean(service.flight), recovering: Boolean(service.recovering),
+            activity: [...gateway.supervisor.workers.values()].map(worker => ({ phase: worker.activity.snapshot().phase, busy: worker.activity.snapshot().busy })) }));
+        throw error;
     } finally {
+        gateway.supervisor.off('worker', observedWorker); for (const off of subscriptions) off();
         await gateway.dispose(); access.dispose(); await new Promise(resolve => server.close(resolve)); await new Promise(resolve => provider.close(resolve));
         fs.rmSync(root, { recursive: true, force: true });
     }

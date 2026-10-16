@@ -20,7 +20,7 @@ test('source discovery includes nested modules and tests without following user 
     const root = fixture(t);
     for (const file of ['server/session/runtime.js', 'server/session/bridge.ts', 'server/old.js.bak',
         'public/chat/transport.js', 'public/chat/view.css', 'public/images/private.js', 'public/vendor/library.js',
-        'public/legacy-workspace/chat.js', 'public/.private/record.js', 'server/pivane-queue/intentions.js', 'public/pivane-session-moves/record.js', 'server/pivane-uploads/original.js', 'test/session/runtime.test.js', 'test/browser/page.cjs', 'test/helpers/fixture.cjs',
+        'public/legacy-workspace/chat.js', 'public/.private/record.js', 'server/pivane-staffing/ledger.js', 'server/pivane-queue/intentions.js', 'public/pivane-session-moves/record.js', 'server/pivane-uploads/original.js', 'test/session/runtime.test.js', 'test/browser/page.cjs', 'test/helpers/fixture.cjs',
         'pi-packages/gongwen/package.json', 'pi-packages/gongwen/runtime/extension.ts', 'pi-packages/gongwen/.private/credentials.json']) put(root, file);
     assert.deepEqual(sourceFiles(root, 'server'), ['server/session/bridge.ts', 'server/session/runtime.js']);
     assert.deepEqual(sourceFiles(root, 'public'), ['public/chat/transport.js', 'public/chat/view.css']);
@@ -69,6 +69,7 @@ test('release inventory includes its own discovery and checking tools and exclud
     assert.throws(() => require('../scripts/check-docs.cjs').assertPublicPath('project/.pivane-office/work.docx'), /Private/);
     assert.equal(files.includes('.baizelingtai-update-build.json'), false);
     assert.throws(() => require('../scripts/check-docs.cjs').assertPublicPath('.baizelingtai-update-build.json'), /Private or invalid/);
+    assert.throws(() => require('../scripts/check-docs.cjs').assertPublicPath('pivane-staffing/ledger.json'), /Private or invalid/);
     assert.equal(files.includes('native/pi-win32-fd.lib'), false);
 });
 

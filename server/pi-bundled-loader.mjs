@@ -5,15 +5,28 @@ import capabilities from './pi-bundled-capabilities.js';
 import { configureComputerHelpers, setComputerConfigScope } from './pi-bundled-computer-config.js';
 import bundledGuidance from './pi-bundled-guidance.mjs';
 import { nativeExtensionFactories, selectedNativeBuiltins } from './pi-native-mcp.mjs';
+import staffing from './staffing/runtime-scope.js';
+// Use the locked native loader's path grammar before the realpath ownership gate.
+const { resolvePath } = await import(new URL('./utils/paths.js', import.meta.resolve('@earendil-works/pi-coding-agent')).href);
 
 // Build the same native resource inventory used by Settings, then let Pi load
 // only selected paths. Filtering happens before any third-party factory runs.
-export async function managedLoaderOptions({ cwd, agentDir, settings, parsed }) {
+export async function managedLoaderOptions({ cwd, agentDir, settings, parsed, sessionManager }) {
     configureComputerHelpers(agentDir);
     setComputerConfigScope(cwd, agentDir, settings.isProjectTrusted());
     const { resolved, settingsView } = await bundled.resolveManagedResources(sdk, { cwd, agentDir, settings });
-    const paths = type => resolved[type].filter(item => item.enabled).map(item => item.path);
+    const scope = await staffing.runtimeScope({ cwd, agentDir, sessionManager });
+    // Application staffing resources are selected here, never put in the global catalog/guidance.
+    const permitted = file => {
+        if (scope.eligible) return true;
+        const source = file.trim().replace(/^[!+-]/, ''), resolved = resolvePath(source, cwd, { trim: true });
+        if (staffing.ownedResource(resolved, cwd)) return false;
+        const unicode = resolvePath(source, cwd, { trim: true, normalizeUnicodeSpaces: true });
+        return unicode === resolved || !staffing.ownedResource(unicode, cwd);
+    };
+    const paths = type => resolved[type].filter(item => item.enabled && permitted(item.path)).map(item => item.path);
     const explicit = values => (values || []).filter(file => {
+        if (!permitted(file)) return false;
         if (bundled.obsoleteMcpAdapter(file, cwd)) return false;
         const entry = bundled.identify(file, cwd);
         if (!entry) return true;
@@ -27,14 +40,15 @@ export async function managedLoaderOptions({ cwd, agentDir, settings, parsed }) 
     const extensionPath = file => adapters.get(file) || file;
     const builtins = selectedNativeBuiltins(settingsView, parsed);
     const officeExtension = fileURLToPath(new URL('./pi-officecli-extension.ts', import.meta.url));
-    return { settingsView, options: {
+    return { settingsView, staffingScope: scope, options: {
         noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
         extensionFactories: [...await nativeExtensionFactories(parsed), bundledGuidance],
         disabledBuiltinExtensions: parsed.noMcp ? ['mcp'] : undefined,
         noContextFiles: parsed.noContextFiles, systemPrompt: parsed.systemPrompt, appendSystemPrompt: parsed.appendSystemPrompt,
-        additionalExtensionPaths: [...new Set([...builtins, ...explicit(parsed.extensions), ...(parsed.noExtensions ? [] : paths('extensions'))])]
-            .filter(file => file !== officeExtension || builtins.includes('builtin:mcp')).map(extensionPath),
-        additionalSkillPaths: [...explicit(parsed.skills), ...(parsed.noSkills ? [] : paths('skills'))],
+        additionalExtensionPaths: [...new Set([...builtins, ...explicit(parsed.extensions), ...(parsed.noExtensions ? [] : paths('extensions')),
+            ...(scope.eligible ? [fileURLToPath(new URL('./staffing/extension.ts', import.meta.url))] : [])])].filter(file => file !== officeExtension || builtins.includes('builtin:mcp')).map(extensionPath),
+        additionalSkillPaths: [...new Set([...explicit(parsed.skills), ...(parsed.noSkills ? [] : paths('skills')),
+            ...(scope.eligible ? [fileURLToPath(new URL('./staffing/skills/staffing-management', import.meta.url))] : [])])],
         additionalPromptTemplatePaths: [...explicit(parsed.promptTemplates), ...(parsed.noPromptTemplates ? [] : paths('prompts'))],
         additionalThemePaths: [...explicit(parsed.themes), ...(parsed.noThemes ? [] : paths('themes'))],
     } };
@@ -43,13 +57,14 @@ export function reloadableLoader(loader, input, initialOptions) {
     return new Proxy({}, { get(_target, prop) {
         if (prop === 'reload') return async () => {
             await input.settings.reload();
-            const { options } = await managedLoaderOptions(input);
+            const { options, staffingScope } = await managedLoaderOptions(input);
             // Keep the native loader and its reload/cache lifecycle. These are the
             // resource arrays supplied by this adapter to its public constructor.
             for (const key of ['additionalExtensionPaths', 'additionalSkillPaths', 'additionalPromptTemplatePaths', 'additionalThemePaths']) {
                 initialOptions[key].splice(0, initialOptions[key].length, ...options[key]);
             }
             await loader.reload();
+            input.staffingScope = staffingScope;
         };
         const value = loader[prop]; return typeof value === 'function' ? value.bind(loader) : value;
     } });

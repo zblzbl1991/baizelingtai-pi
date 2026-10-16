@@ -54,6 +54,7 @@
 | Pi 原生 MCP、Codemode 和旧适配器迁移 | [原生 MCP](MCP.md) |
 | 内置子 Agent、记忆组件与旧安装兼容 | [内置能力包](BUNDLED_CAPABILITIES.md) |
 | 助手身份与档案记忆 | [助手档案](AGENT_PROFILES.md) · [记忆适配与安装](PROFILE_MEMORY.md) |
+| 可选人员台账、推荐及卡片确认 | [人员调配](STAFFING.md) |
 
 ## 媒体
 

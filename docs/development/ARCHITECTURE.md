@@ -69,6 +69,7 @@ Pi 1.2.0 原生 MCP/Codemode 经 `pi-native-mcp.mjs` 和受管 ResourceLoader �
 - 线程间消息复用 `TaskCatalog` 的项目目录和 worker 私有命令：发送方原生 `pivane-agent-message-out` 是补投记录，接收方 `pivane-agent-message` custom message 是送达回执和唯一展示副本。`AgentMessages` 的内存队列可丢弃，重启后从两者重建；只在接收方空闲互斥区写入，需要时再追加隐藏唤醒消息触发一轮。跳数由发送线程当前轮次的触发来源决定，达到上限或唤醒预算后只留言。关闭的接收方只为唤醒启动唯一受管 worker。
 - 侧聊使用受限内存 SessionManager，冻结主会话背景，历史工具调用转换为引用。工具与逐回复确认由独立侧聊管理，关闭、断线和待确认请求有各自生命周期；共享目录不意味着写入隔离。独立模型选择由 SideConnection 专用协议执行，使用 worker.exclusive 预占空闲操作；预算/图片检查后调用原生模型与思考 RPC，不重建 SessionManager 或写全局偏好。浏览器模型控件属于每段 SideThread，不跨线程共享选择。侧聊生命周期由SideConnection负责12小时settled闲置回收，原生exclusive核对空闲并同步最终可见记录后释放worker；SideThread仅保留本页历史分段DOM，不传给新seed。点击不捕获背景，首次发送才prepare；新段关闭以专用空闲协议返回最终记录，清空/退出释放当前及历史展示。
 - 扩展助手仍是受 Supervisor 管理的原生会话，仅身份标记有效的 worker 获得专用管理凭据。安装与配置复用原生资源服务的锁、修订和 trust。
+- 人员调配由 `StaffingService` 统一拥有身份内人员台账、修订和启停代次、方案及操作回执；具体台账变更由工作台页面确认。台账保存用人业务事实，聊天仍以 Pi SessionManager 和原生 JSONL 为准。专用来源才加载调配 Skill 和工具；原生工具结果使用 v2 方案引用，页面经授权接口取得完整卡片，保留 v1 历史兼容。Excel 导入复用同一确认服务，导出复用成果库独立保存，不直接写活跃 JSONL。职责和预算见[模块导航](MODULES.md)及[人员调配](../STAFFING.md)。
 - 网页、桌面与演示文稿通过统一内置资源目录随应用交付。网页宿主适配限制搜索为原生工具内完成，整页读取另用 `fetch_content`，不注册终端 curator／快捷键或脱离 worker 的后台抓取。桌面适配延迟 helper 准备到实际调用，helper 绑定真实 Agent 目录，项目配置遵守该运行实例的 trust。guizang-ppt 由独立包声明原版技能路径，保留独立 AGPLv3 源码与许可证，不写入身份技能目录或冒充 SkillHub 安装记录。
 - 任务进度由内置 `update_plan` 工具同步写原生 `pivane-task-progress` custom entry，以完整替换形成确定顺序。启动、分支导航和压缩后从完整当前 branch 恢复，Supervisor 只持有有界展示投影，快照沿用 live sequence 边界；不增加 worker 工作类型或外部任务数据库。模型上下文缺少最新工具结果时由 context hook 补入最新计划数据。
 - pi-subagents 适配位于受管会话扩展：worker 在扩展加载时提供其可选的 `@agegr/pi-web/session-liveness/v1` 进程内登记，每 2 秒及回合结束时经私有 notify 报告当前会话的聚合后台状态。Supervisor 把它作为保留状态而非回合忙碌：阻止空闲回收和全局维护，但不延迟任务回执等按回合空闲执行的操作。状态快照 widget 在 Supervisor 侧解析原始行并规范化，不进入通用 widget；控制经私有命令转发到插件的进程内 RPC，方法与参数由 Supervisor 白名单校验，所有权与运行状态仍由插件判断。
@@ -173,6 +174,8 @@ POSIX 私密权限和目录刷盘、Windows 受保护 DACL 和写透替换分别
 普通 node server.js 和 npm start 经独立受管启动器；direct 模式用于明确的独立开发实例。当前设置页检查版本并提供独立 Agent 提示词；内网 Windows 便携版另提供一键更新，复用一次性 application 票据与受管启动器，其他入口保留只读行为。启动器持有安装目录锁，通过私有 IPC 和服务代次处理维护请求，正常停机等待全部登记的 RPC 进程实际退出。SIGINT/SIGTERM 监听在清理结束前保持注册；重复信号不重复清理。
 
 `pi-installation-lock` 统一拥有受管启动、备份恢复与离线会话迁移的安装级互斥。Windows 使用规范安装目录 SHA256 命名的机器级独占管道，不依赖 TCP 端口；其他系统保留原来的确定性 loopback 端口锁。内核持有锁的生命周期，连接到管道不能提交任何控制命令。ManagedLauncher 在 await 前预占启动／关闭状态，关闭等待在途锁分配，并在子服务实际退出后释放锁。旧 Windows TCP 锁与新管道锁属于不同协议，升级必须停旧版并使用匹配版本的运行与维护脚本，不能混用。
+
+同模块的 `acquireStorageOwnership` 为档案注册表和人员台账提供存储互斥，分别以各自规范私密目录划分所有权，不占用应用安装目录的锁。旧 mkdir 锁只用于阻断未知旧协议写入者，不自动清理；原子发布后的异常按未知结果处理。兼容与恢复见[档案存储互斥](AGENT_PROFILES.md#存储互斥与保存恢复)。
 
 Windows 桌面托盘拥有管理窗口和稳定只读等待入口，每轮启动创建新代次的短命 Node runner 与 ManagedLauncher。关闭/最小化窗口只隐藏；停止保留托盘，退出在同样的有序停机后结束托盘。运行锁在所属服务和 worker 实际退出后释放；桌面互斥保持到托盘退出。迟到回调核对实际 runner 对象和代次；没有清理证明时禁止新启动，不按 PID 消失或端口空闲推断成功。
 

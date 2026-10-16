@@ -12,6 +12,7 @@ import { installQueueAdapter } from './pi-queue-adapter.mjs';
 import { installRunStartupAdapter } from './pi-run-startup-adapter.mjs';
 import { initializeNativeThemeValidation } from './pi-theme-validation.mjs';
 import { createAgentSessionWithSelectionPreflight } from './pi-model-selection-preflight.mjs';
+import staffing from './staffing/runtime-scope.js';
 
 let runtime;
 try {
@@ -40,9 +41,9 @@ try {
         if (!['direct', 'custom'].includes(process.env.PIVANE_NETWORK_MODE)) http.applyHttpProxySettings(settings.getGlobalSettings().httpProxy);
         http.configureHttpDispatcher(settings.getHttpIdleTimeoutMs());
         (await import('./workspace-network-transport.js')).default.markSdkNetworkReady();
-        const input = { cwd, agentDir, settings, parsed };
+        const input = { cwd, agentDir, settings, parsed, sessionManager };
         await initializeNativeThemeValidation();
-        const { settingsView, options } = await managedLoaderOptions(input);
+        const { settingsView, options, staffingScope } = await managedLoaderOptions(input);
         const services = await createAgentSessionServices({ cwd, agentDir, settingsManager: settingsView,
             modelRuntimeSignal: AbortSignal.timeout(15000), extensionFlagValues: parsed.unknownFlags, resourceLoaderOptions: options });
         services.resourceLoader = reloadableLoader(services.resourceLoader, input, options);
@@ -61,6 +62,7 @@ try {
             emit: record => writeRawStdout(JSON.stringify(record) + '\n') });
         installRunStartupAdapter(created.session, { token: process.env.PI_WEB_NAVIGATION_TOKEN,
             sessionId: sessionManager.getSessionId(), emit: record => writeRawStdout(JSON.stringify(record) + '\n') });
+        await staffing.installRequestGuard(created.session, input, staffingScope);
         if (model && (parsed.thinking !== undefined || selected.thinkingLevel !== undefined)) created.session.setThinkingLevel(created.session.thinkingLevel);
         for (const diagnostic of diagnostics) process.stderr.write(`${diagnostic.message}\n`);
         return { ...created, services, diagnostics };

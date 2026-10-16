@@ -7,6 +7,7 @@ const io = require('./pi-file-io');
 const { descriptorPathSync } = require('./pi-file-descriptor');
 const { replaceFileSync } = require('./pi-win32-native');
 const privateFiles = require('./pi-private-files');
+const { acquireStorageOwnership } = require('./pi-installation-lock');
 const { readProfileBinding } = require('./pi-profile-state');
 
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
@@ -53,7 +54,10 @@ function readRegistry(file) {
         const raw = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size));
         const state = JSON.parse(raw);
         if (!object(state) || state.version !== 1 || !Array.isArray(state.profiles) || state.profiles.length > 50
-            || !object(state.defaults) || new Set(state.profiles.map(p => p?.id)).size !== state.profiles.length
+            || !object(state.defaults) || state.managedProfiles !== undefined && (!object(state.managedProfiles)
+                || Object.entries(state.managedProfiles).some(([key, id]) => key !== 'pivane-staffing:v1' || !ID.test(id)
+                    || !state.profiles.some(profile => profile.id === id)))
+            || new Set(state.profiles.map(p => p?.id)).size !== state.profiles.length
             || state.profiles.some(p => !object(p) || !ID.test(p.id)
                 || typeof p.name !== 'string' || !p.name.trim() || p.name.length > 80
                 || typeof p.description !== 'string' || p.description.length > 500
@@ -147,34 +151,33 @@ class PiProfileRegistry {
             cwd, defaultProfileId: cwd ? state.defaults[cwd] ?? null : null };
     }
 
-    // Synchronous from revision comparison through replacement. The lock also
-    // rejects another Pivane process using this native identity.
+    // Acquire crash-released OS ownership before comparing the revision. The
+    // comparison through replacement stays synchronous; old lock writers must stop.
     async mutate(expectedRevision, update) {
         if (typeof expectedRevision !== 'string') throw fail('Expected revision is required');
         const { file, root } = await this.paths(true);
-        const lock = path.join(root, 'profiles.lock');
-        let directoryFd;
+        let directoryFd, owner, publicationStarted = false;
         try {
-            directoryFd = io.openReadSync(root);
-            const parent = fs.fstatSync(directoryFd, { bigint: true }), identity = io.identity(directoryFd);
-            const checkParent = () => {
-                try {
-                    const current = fs.lstatSync(root, { bigint: true });
-                    const openedNow = fs.fstatSync(directoryFd, { bigint: true });
-                    if (!parent.isDirectory() || !current.isDirectory() || current.isSymbolicLink()
-                        || stamp(current) !== stamp(openedNow)
-                        || parent.dev !== current.dev || parent.ino !== current.ino || parent.mode !== current.mode
-                        || descriptorPathSync(directoryFd) !== root || fs.realpathSync.native(root) !== root
-                        || !io.sameIdentityAtPath(root, identity)) throw changed();
-                } catch (error) {
-                    if (error.status) throw error;
-                    throw changed();
-                }
-            };
-            checkParent();
-            try { fs.mkdirSync(lock, { mode: 0o700 }); } catch { throw fail('Profiles are being saved', 409); }
             try {
+                directoryFd = io.openReadSync(root);
+                const parent = fs.fstatSync(directoryFd, { bigint: true }), identity = io.identity(directoryFd);
+                const checkParent = () => {
+                    try {
+                        const current = fs.lstatSync(root, { bigint: true });
+                        const openedNow = fs.fstatSync(directoryFd, { bigint: true });
+                        if (!parent.isDirectory() || !current.isDirectory() || current.isSymbolicLink()
+                            || stamp(current) !== stamp(openedNow)
+                            || parent.dev !== current.dev || parent.ino !== current.ino || parent.mode !== current.mode
+                            || descriptorPathSync(directoryFd) !== root || fs.realpathSync.native(root) !== root
+                            || !io.sameIdentityAtPath(root, identity)) throw changed();
+                    } catch (error) {
+                        if (error.status) throw error;
+                        throw changed();
+                    }
+                };
                 checkParent();
+                owner = await acquireStorageOwnership(root, 'profiles.lock');
+                checkParent(); // Revalidate the held parent after asynchronous ownership acquisition.
                 const { state, raw } = readRegistry(file);
                 if (this.revision(raw) !== expectedRevision) throw fail('Profiles changed; reload before saving', 409);
                 const result = update(state);
@@ -185,6 +188,8 @@ class PiProfileRegistry {
                     privateFiles.writePrivateFileSync(tmp, text, true);
                     checkParent();
                     if (readRegistry(file).raw !== raw) throw changed();
+                    // From this point an exception cannot prove that publication did not occur.
+                    publicationStarted = true;
                     replaceFileSync(tmp, file);
                     privateFiles.privateFileMode(file);
                     checkParent();
@@ -193,12 +198,15 @@ class PiProfileRegistry {
                 } finally { try { fs.unlinkSync(tmp); } catch {} }
                 return { ...result, revision: this.revision(text) };
             } finally {
-                // A moved parent may no longer own this pathname. Never remove a lock
-                // from an unverified replacement directory.
-                checkParent();
-                fs.rmdirSync(lock);
+                try { if (owner) await owner.close(); }
+                finally { if (directoryFd !== undefined) fs.closeSync(directoryFd); }
             }
-        } finally { if (directoryFd !== undefined) fs.closeSync(directoryFd); }
+        } catch (error) {
+            if (publicationStarted) throw Object.assign(new Error('Profile save outcome is unknown; reload the registry or query the original initialization request before continuing'), {
+                status: 503, code: 'PROFILE_OUTCOME_UNKNOWN', outcomeUnknown: true, cause: error
+            });
+            throw error;
+        }
     }
 
     save(input) {
@@ -219,6 +227,24 @@ class PiProfileRegistry {
             if (index < 0) state.profiles.push(record); else state.profiles[index] = record;
             return { ok: true, profile: record, requiresReload: true };
         }));
+    }
+
+    // Internal business binding; never infer identity from editable display names.
+    ensureManagedProfile(bindingKey, template) {
+        if (bindingKey !== 'pivane-staffing:v1') throw fail('Unknown managed profile binding');
+        return this.reserve(async () => {
+            const current = await this.state();
+            const existingId = current.state.managedProfiles?.[bindingKey];
+            if (existingId) return { profile: current.state.profiles.find(profile => profile.id === existingId), revision: current.revision };
+            return this.mutate(current.revision, state => {
+                if (state.profiles.length >= 50) throw fail('Profile limit reached');
+                const now = new Date().toISOString();
+                const record = { ...validateProfile(template), id: randomUUID(), createdAt: now, updatedAt: now };
+                state.profiles.push(record);
+                state.managedProfiles = { ...state.managedProfiles, [bindingKey]: record.id };
+                return { profile: record, requiresReload: true };
+            });
+        });
     }
 
     saveAvatar(id, expectedRevision, version, prepareAsset) {

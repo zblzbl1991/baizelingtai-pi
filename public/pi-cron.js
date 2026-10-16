@@ -207,11 +207,13 @@
                 try {
                     const data = await api(`/api/pi/sessions?cwd=${encodeURIComponent(cwd.value)}`);
                     if (v !== sessionsEpoch || !form.isConnected) return;
+                    // Keep the user's latest choice, including one made while this read was pending.
+                    const selectedSession = sessions.value;
                     sessions.replaceChildren(node('option', '', t('请选择线程'))); sessions.firstChild.value = '';
                     for (const s of data.sessions.filter(s => !s.profileAuthoring && (!isProfile || s.agentProfile?.id === profile.value))) {
                         const option = node('option', '', s.name || s.firstMessage || s.id); option.value = s.id; sessions.append(option);
                     }
-                    sessions.value = isProfile ? home?.sessionId || '' : draft.target.sessionId || '';
+                    sessions.value = isProfile ? home?.sessionId || '' : selectedSession || draft.target.sessionId || '';
                 } catch (error) { if (v === sessionsEpoch) targetStatus.textContent = error.message; }
                 if (isProfile && v === sessionsEpoch) {
                     const saveHome = async (b, create) => {

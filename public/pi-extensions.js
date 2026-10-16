@@ -8,6 +8,9 @@
         return el;
     };
     const entries = [
+        { id: 'pivane-staffing', name: 'pivane-staffing', author: '白泽灵台', kind: ['内置 · 按需启用', 'Built-in · Optional'], icon: 'fa-people-group', url: '',
+            title: ['人员调配', 'Personnel staffing'], description: ['建立人员台账，核对当前和未来占用，再开始调配。', 'Build a personnel ledger and review current and future occupancy before staffing.'],
+            requirement: ['首次启用需核对人员与占用。停用保留数据。', 'Review people and occupancy at first setup. Disabling retains data.'], example: ['先启用能力，再导入初始台账。', 'Enable the capability, then import the initial ledger.'] },
         { id: 'guizang-ppt', name: 'guizang-ppt', bundledName: 'pivane-presentations', author: '归藏', kind: ['内置 · 技能工作流', 'Built-in · Skill workflow'], icon: 'fa-file-powerpoint',
             url: '',
             title: ['制作演示文稿', 'Create presentations'],
@@ -70,6 +73,7 @@
         return git ? `github:${git[1].toLowerCase()}` : '';
     }
     function installation(entry) {
+        if (entry.id === 'pivane-staffing') return { state: 'builtin', label: text('内置 · 按需启用', 'Built-in · Optional') };
         if (inventoryState !== 'ready') return { state: inventoryState, label: inventoryState === 'loading' ? text('正在核对…', 'Checking…') : text('状态待核对', 'Status unknown') };
         if (entry.id === 'pi-native-mcp') {
             const builtin = inventory.resources?.find(item => item.path === 'builtin:mcp');
@@ -211,7 +215,7 @@
         mountExplore,
         setAssistantEnabled(value) {
             enabled = Boolean(value);
-            document.querySelectorAll('[data-extension-configure]').forEach(el => { el.disabled = !enabled; });
+            document.querySelectorAll('[data-extension-configure]').forEach(el => { el.disabled = el.closest('#extension-pivane-staffing') ? false : !enabled; });
             const hint = document.getElementById('extensions-assistant-unavailable'); if (hint) hint.hidden = enabled;
         },
         setView(nextView, tab) {
@@ -263,8 +267,9 @@
                 heading.append(node('i', '', { class: `fa-solid ${entry.icon}`, 'aria-hidden': 'true' }), node('h4', text(...entry.title)));
                 const details = node('details'); details.append(node('summary', text('使用前提与示例', 'Requirements & example')), node('p', text(...entry.requirement)), node('p', text(...entry.example)));
                 const actions = node('div', null, { class: 'extensions-card-actions' });
-                const configure = button(text('了解与配置', 'Learn & set up'), () => assistant(entry), { 'data-extension-configure': '', class: 'settings-secondary-button' }); configure.disabled = !enabled;
+                const configure = button(entry.id === 'pivane-staffing' ? text('打开人员调配', 'Open staffing') : text('了解与配置', 'Learn & set up'), () => entry.id === 'pivane-staffing' ? window.PiWorkspaceRoute.navigate('staffing') : assistant(entry), { 'data-extension-configure': '', class: 'settings-secondary-button' }); configure.disabled = entry.id !== 'pivane-staffing' && !enabled;
                 actions.append(node('a', text('查看来源', 'View source'), { ...(entry.url ? { href: entry.url } : {}), 'data-extension-source': entry.id, target: '_blank', rel: 'noopener noreferrer' }), configure);
+                if (entry.id === 'pivane-staffing') actions.querySelector('a')?.remove();
                 const installed = installation(entry);
                 const badge = node('span', installed.label, { class: 'extensions-installation', 'data-installation': installed.state });
                 card.append(heading, badge, node('small', `${entry.name} · ${entry.author}`), node('p', text(...entry.description)), node('span', text(...entry.kind), { class: 'extensions-kind' }), details, actions); grid.append(card);

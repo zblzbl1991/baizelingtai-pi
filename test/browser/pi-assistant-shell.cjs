@@ -83,6 +83,7 @@ async function main() {
         for (const width of [1280, 1440, 1920, 393, 375, 320]) {
             const context = await browser.newContext({ viewport: { width, height: width < 700 ? 852 : 900 }, locale: width === 393 ? 'zh-CN' : 'en-US', isMobile: width < 700, hasTouch: width < 700 });
             const page = await context.newPage(), errors = [], writes = [], sockets = [], rpc = [];
+            await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, route => route.abort());
             let closedSockets = 0;
             let holdProfile = false, releaseProfile;
             page.on('pageerror', error => errors.push(error.message));
