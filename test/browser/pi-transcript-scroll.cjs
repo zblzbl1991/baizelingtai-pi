@@ -276,7 +276,7 @@ async function run(browser, size) {
     await expectBottom();
     await scrollTo(1200);
     before = await metrics();
-    await openWorkspaceTab(page, 'media');
+    await page.evaluate(() => window.PiWorkspaceRoute.navigate('media'));
     await page.waitForTimeout(100);
     messages.push({ role: 'assistant', timestamp: 9000, content: [{ type: 'text', text: 'Completed while another workspace was visible.' }] });
     await settle();

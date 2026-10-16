@@ -201,7 +201,7 @@ async function run(browser, size) {
     assert.equal(await page.locator('[data-tool-id="live-call"]').count(), 1);
     assert.equal(await page.locator('[data-tool-id="live-call"]').evaluate(el => el.open), false);
     assert.ok(Math.abs(await offset(page.locator('.pi-markdown').filter({ hasText: '中途发现 2' }).first()) - paused) <= 2, 'live updates do not move earlier body text');
-    await openWorkspaceTab(page, 'media');
+    await page.evaluate(() => window.PiWorkspaceRoute.navigate('media'));
     await settle();
     await page.locator('[data-tab="chat"]').click();
     await pause();
