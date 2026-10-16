@@ -8,6 +8,7 @@ const controls = () => ({runtimeId:'runtime',revision:1,queue:{steering:[],follo
 async function run(browser, viewport) {
  const context = await browser.newContext({ locale: 'zh-CN',viewport,isMobile:viewport.width<900,hasTouch:viewport.width<900});
  const page = await context.newPage(); let socket, control=controls(), partial='PREFIX ', seq=10, busy=true, configMatch=false, rejectAck=false, holdSearch, startupFailure=false;
+ await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, route => route.abort());
  const requests=[],errors=[]; const runtime=()=>({model,thinkingLevel:'off',isStreaming:busy,isCompacting:false});
  const stats={tokens:{input:10,output:10},contextUsage:{tokens:20,percent:0.1,contextWindow:32000}};
  const messages=[{role:'user',content:'Question',timestamp:1}];

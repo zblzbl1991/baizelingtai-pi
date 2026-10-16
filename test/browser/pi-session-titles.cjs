@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, '../..');
 async function run(browser, base, width, locale, supported = true, modelSupport = true, missingModel = false) {
     const context = await browser.newContext({ viewport: { width, height: width === 320 ? 640 : 950 }, locale, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(); page.setDefaultTimeout(12000);
+    await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, route => route.abort());
     const en = locale === 'en', errors = [], calls = [], writes = [];
     const cwd = '/fixture/title-project';
     const sourceMessage = '帮我看看手机聊天页面为什么横向溢出，检查界面布局和操作反馈。\n'.repeat(8)

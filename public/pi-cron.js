@@ -193,25 +193,34 @@
             const sessions = field(destGrid, '目标线程', 'select', '', { choices: [['', t('请选择线程')]] });
             const targetStatus = node('p', 'cron-muted'), targetActions = node('div', 'cron-actions'); destination.append(targetStatus, targetActions);
             let sessionsEpoch = 0;
+            const destinationKey = () => JSON.stringify([kind.value, profile.value, cwd.value]);
+            let selectedDestination;
+            sessions.addEventListener('change', () => { selectedDestination = { key: destinationKey(), sessionId: sessions.value }; });
             async function destinations() {
                 const v = ++sessionsEpoch, isProfile = kind.value === 'profile', home = snapshot.homes.find(h => h.profileId === profile.value);
+                const key = destinationKey();
                 profile.parentElement.hidden = !isProfile; targetActions.replaceChildren();
                 targetStatus.textContent = isProfile ? home?.status === 'ready' ? `${t('当前主线程')}：${home.name || home.sessionId}` : t('尚未设置主线程。可指定已有线程，或在这个目录创建。') : '';
                 try {
                     const data = await api(`/api/pi/sessions?cwd=${encodeURIComponent(cwd.value)}`);
                     if (v !== sessionsEpoch || !form.isConnected) return;
+                    const selected = selectedDestination?.key === key ? selectedDestination.sessionId : isProfile ? home?.sessionId || '' : draft.target.sessionId || '';
                     sessions.replaceChildren(node('option', '', t('请选择线程'))); sessions.firstChild.value = '';
                     for (const s of data.sessions.filter(s => !s.profileAuthoring && (!isProfile || s.agentProfile?.id === profile.value))) {
                         const option = node('option', '', s.name || s.firstMessage || s.id); option.value = s.id; sessions.append(option);
                     }
-                    sessions.value = isProfile ? home?.sessionId || '' : draft.target.sessionId || '';
+                    sessions.value = selected;
                 } catch (error) { if (v === sessionsEpoch) targetStatus.textContent = error.message; }
                 if (isProfile && v === sessionsEpoch) {
                     const saveHome = async (b, create) => {
                         if (create && !await confirm('创建主线程', '将在所填工作目录创建一个持久线程，并设为此身份的主线程。', '创建')) return;
-                        const result = await mutate(b, () => send(`/api/pi/cron/homes/${profile.value}`, { revision: home?.revision || 0,
+                        const profileId = profile.value, selection = selectedDestination;
+                        const result = await mutate(b, () => send(`/api/pi/cron/homes/${profileId}`, { revision: home?.revision || 0,
                             cwd: cwd.value, sessionId: sessions.value, create, requestId: randomId(), language: globalThis.PiI18n?.locale }, 'PUT'));
-                        snapshot.homes = snapshot.homes.filter(h => h.profileId !== profile.value); snapshot.homes.push({ ...result, profileId: profile.value });
+                        if (!result) return;
+                        snapshot.homes = snapshot.homes.filter(h => h.profileId !== profileId); snapshot.homes.push({ ...result, profileId });
+                        if (v !== sessionsEpoch || !form.isConnected) return;
+                        if (selectedDestination === selection) selectedDestination = { key, sessionId: result.sessionId || '' };
                         await destinations();
                     };
                     targetActions.append(button('设为主线程', 'fa-house', b => saveHome(b, false)), button('创建主线程', 'fa-plus', b => saveHome(b, true)));

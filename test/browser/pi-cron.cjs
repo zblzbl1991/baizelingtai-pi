@@ -20,6 +20,9 @@ async function check(browser, base, width, language, scenario = 'normal') {
         }).observe(document.body, { subtree: true, childList: true }));
     });
     const jobs = [], homes = [], now = Date.now();
+    let createdSession;
+    let holdSessions = false, releaseSessions, sessionsHeld;
+    const heldSessions = new Promise(resolve => { sessionsHeld = resolve; });
     const limits = { maxRunsPerDay: 40, maxTokensPerDay: 400000, maxCostPerDay: null };
     await page.route('**/api/**', route => {
         const req = route.request(), url = new URL(req.url()), body = req.postDataJSON();
@@ -28,13 +31,22 @@ async function check(browser, base, width, language, scenario = 'normal') {
         if (url.pathname === '/api/pi/status') return send({ ok: true, scheduledTasks: true, projectRoots: ['/synthetic'] });
         if (url.pathname === '/api/pi/projects') return new Promise(resolve => setTimeout(() => { send({ projects: [{ cwd, name: 'Assistant', sessionCount: 1 }], roots: ['/synthetic'] }); resolve(); }, scenario === 'slow' ? 1800 : 0));
         if (url.pathname === '/api/pi/profiles') return send({ profiles: [{ id: profileId, name: 'Assistant <img src=x onerror=alert(1)>', enabled: true }] });
-        if (url.pathname === '/api/pi/sessions') return send({ sessions: [{ id: sessionId, cwd, name: 'Main conversation', agentProfile: { id: profileId } }] });
+        if (url.pathname === '/api/pi/sessions') {
+            const data = { sessions: [{ id: sessionId, cwd, name: 'Main conversation', agentProfile: { id: profileId } }, ...(createdSession ? [createdSession] : [])] };
+            if (holdSessions) {
+                holdSessions = false;
+                return new Promise(resolve => { releaseSessions = () => { send(data); resolve(); }; sessionsHeld(); });
+            }
+            return send(data);
+        }
         if (url.pathname === '/api/pi/activity') return send({ runtimes: [], replyNotices: [] });
         if (url.pathname === '/api/pi/cron') return new Promise(resolve => setTimeout(() => { send({ jobs, homes, limits, today: { runs: 0, tokens: 0, cost: 0 } }); resolve(); }, scenario === 'slow' ? 350 : 0));
         if (url.pathname === '/api/pi/cron/preview') return send({ times: Array.from({ length: 5 }, (_, i) => now + (i + 1) * 86400000) });
         if (url.pathname === '/api/pi/cron/jobs') { jobs.push({ ...body, revision: 1, nextAt: now + 86400000 }); return send(jobs.at(-1)); }
         if (url.pathname === `/api/pi/cron/homes/${profileId}`) {
-            const home = { profileId, revision: 1, status: 'ready', cwd: body.cwd, sessionId: body.sessionId, name: 'Main conversation' };
+            if (body.create) createdSession = { id: randomUUID(), cwd: body.cwd, name: 'New main conversation', agentProfile: { id: profileId } };
+            const home = { profileId, revision: homes.length + 1, status: 'ready', cwd: body.cwd,
+                sessionId: body.create ? createdSession.id : body.sessionId, name: body.create ? createdSession.name : 'Main conversation' };
             homes.push(home); return send(home);
         }
         if (url.pathname.endsWith('/runs')) return send({ runs: [] });
@@ -52,6 +64,21 @@ async function check(browser, base, width, language, scenario = 'normal') {
     await page.getByLabel(zh ? '工作目录' : 'Working directory', { exact: false }).fill(cwd);
     await page.getByLabel(zh ? '工作目录' : 'Working directory', { exact: false }).press('Tab');
     await page.getByLabel(zh ? '目标线程' : 'Target thread', { exact: true }).selectOption(sessionId);
+    if (scenario === 'selection-race') {
+        const target = page.getByLabel(zh ? '目标线程' : 'Target thread', { exact: true });
+        holdSessions = true;
+        await page.getByLabel(zh ? '工作目录' : 'Working directory', { exact: false }).dispatchEvent('change');
+        await heldSessions;
+        await target.selectOption(''); await target.selectOption(sessionId);
+        await target.evaluate(node => {
+            window.__cronChoicesRefreshed = false;
+            const observer = new MutationObserver(() => { window.__cronChoicesRefreshed = true; observer.disconnect(); });
+            observer.observe(node, { childList: true });
+        });
+        releaseSessions();
+        await page.waitForFunction(() => window.__cronChoicesRefreshed);
+        assert.equal(await target.inputValue(), sessionId, 'a late directory response retains the user selection when the thread is still available');
+    }
     await page.getByLabel(zh ? '时间' : 'Time', { exact: true }).fill('17:00');
     const futureStart = await page.evaluate(() => { const d = new Date(Date.now() + 86400000); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); });
     await page.getByLabel(zh ? '生效时间' : 'Starts on', { exact: true }).fill(futureStart);
@@ -84,6 +111,20 @@ async function check(browser, base, width, language, scenario = 'normal') {
     assert.equal(homes[0].sessionId, sessionId);
     assert.equal(homes[0].cwd, cwd);
     await page.screenshot({ path: `/tmp/pivane-cron-main-${width}-${language}.png`, fullPage: true });
+    if (scenario === 'selection-race') {
+        await page.getByRole('button', { name: '新建任务', exact: true }).click();
+        await page.getByLabel('目标类型', { exact: true }).selectOption('profile');
+        const target = page.getByLabel('目标线程', { exact: true });
+        await target.selectOption(sessionId);
+        await page.getByRole('button', { name: '创建主线程', exact: true }).click();
+        await page.getByRole('button', { name: '创建', exact: true }).click();
+        await target.locator('option').filter({ hasText: 'New main conversation' }).waitFor({ state: 'attached' });
+        assert.equal(await target.inputValue(), createdSession.id, 'creating a main thread updates the chooser to the returned thread');
+        const rebound = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === '/api/pi/sessions');
+        await page.getByRole('button', { name: '设为主线程', exact: true }).click();
+        await rebound;
+        assert.equal(writes.at(-1).body.sessionId, createdSession.id, 'setting the displayed main thread keeps the newly created thread');
+    }
     assert.deepEqual(errors, []);
     assert.equal(writes.filter(w => w.path === '/api/pi/cron/jobs').length, 1);
     await context.close();
@@ -95,6 +136,7 @@ async function check(browser, base, width, language, scenario = 'normal') {
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
+        await check(browser, `http://127.0.0.1:${server.address().port}`, 1440, 'zh-CN', 'selection-race');
         for (const width of [1440, 393, 320]) for (const language of ['zh-CN', 'en']) await check(browser, `http://127.0.0.1:${server.address().port}`, width, language);
         for (const language of ['zh-CN', 'en']) await check(browser, `http://127.0.0.1:${server.address().port}`, language === 'zh-CN' ? 1440 : 393, language, 'slow');
         console.log('Scheduled tasks: desktop/mobile, two languages, HTTP UUID fallback, asynchronous loading and draft checks passed');

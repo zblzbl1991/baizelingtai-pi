@@ -50,7 +50,18 @@ test('managed launcher performs authenticated backup and restart with paused sch
     console.log('managed fixture: launcher listening');
     const headers = { Authorization: 'Bearer maintenance-fixture-only', Origin: base, 'Content-Type': 'application/json' };
     const api = (route, method = 'GET', body, extra = {}) => fetch(base + '/api/pi/settings/updates' + route, { method, headers: { ...headers, ...extra }, ...(body ? { body: JSON.stringify(body) } : {}) });
-    const initial = await until(async () => { const response = await api('/maintenance'); const data = await response.json(); return data.supported && !data.busy && data; });
+    const initial = await until(async () => {
+        let response;
+        try { response = await api('/maintenance'); }
+        catch (error) {
+            // Readiness is a read-only poll. A connection reset during startup
+            // does not settle readiness; keep its existing deadline.
+            if (['ECONNRESET', 'ECONNREFUSED'].includes(error.cause?.code)) return false;
+            throw error;
+        }
+        assert.equal(response.status, 200);
+        const data = await response.json(); return data.supported && !data.busy && data;
+    });
     console.log('managed fixture: maintenance ready');
     assert.equal((await fetch(base + '/api/pi/settings/updates/maintenance')).status, 401);
     assert.equal((await api('/review', 'POST', { action: 'backup' }, { Origin: 'https://untrusted.invalid' })).status, 403);

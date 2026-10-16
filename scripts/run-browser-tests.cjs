@@ -46,9 +46,10 @@ function runOne(file, env) {
         let output = '';
         const keep = data => { output = (output + data).slice(-64 * 1024); };
         child.stdout.on('data', keep); child.stderr.on('data', keep);
+        child.on('error', error => { output += `\nBrowser test could not start: ${error.code || 'unknown'}`; });
         const kill = () => { try { process.platform === 'win32' ? child.kill('SIGKILL') : process.kill(-child.pid, 'SIGKILL'); } catch { /* already exited */ } };
         const timer = setTimeout(() => { output += `\nTimed out after ${TIMEOUT_MS / 1000}s`; kill(); }, TIMEOUT_MS);
-        child.on('close', code => { clearTimeout(timer); kill(); resolve({ ok: code === 0, seconds: Math.round((Date.now() - started) / 1000), output }); });
+        child.on('close', (code, signal) => { clearTimeout(timer); kill(); resolve({ ok: code === 0, code, signal, seconds: Math.round((Date.now() - started) / 1000), output }); });
     });
 }
 
@@ -57,16 +58,18 @@ async function main(args) {
     if (list) { console.log(files.join('\n')); return 0; }
     try { require.resolve(process.env.PLAYWRIGHT_MODULE || 'playwright'); } catch { throw new Error(`Playwright is not resolvable.\n${usage}`); }
     const server = await staticServer(), base = `http://127.0.0.1:${server.address().port}`;
+    const screenshots = fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-browser-'));
+    console.log(`Browser screenshots: ${screenshots}`);
     const failed = [];
     try {
         for (const file of files) {
             const env = { ...testEnvironment(process.env), PIVANE_TEST_HERMES_BUNDLE: require('../server/pi-bundled-capabilities').memoryBundle() };
-            env.PIVANE_TEST_SCREENSHOT_DIR = path.join(os.tmpdir(), 'pivane-browser', path.basename(file, '.cjs'));
+            env.PIVANE_TEST_SCREENSHOT_DIR = path.join(screenshots, path.basename(file, '.cjs'));
             const source = fs.readFileSync(path.join(root, file), 'utf8');
             for (const [, name] of source.matchAll(/process\.env\.([A-Z0-9_]+_URL)\b/g)) env[name] = base;
             const result = await runOne(file, env);
             console.log(`${result.ok ? 'PASS' : 'FAIL'} ${file} (${result.seconds}s)`);
-            if (!result.ok) { failed.push(file); console.log(result.output.trim().split('\n').slice(-30).join('\n')); }
+            if (!result.ok) { failed.push(file); console.log(`Exit: ${result.code ?? 'unknown'}; signal: ${result.signal || 'none'}`); console.log(result.output.trim().split('\n').slice(-30).join('\n')); }
         }
     } finally { server.close(); }
     console.log(`${files.length - failed.length}/${files.length} browser tests passed${failed.length ? '; failed: ' + failed.join(', ') : ''}`);

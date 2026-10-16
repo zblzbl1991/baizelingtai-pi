@@ -17,6 +17,7 @@ async function run(browser, base, width, locale) {
     const en = locale === 'en';
     const context = await browser.newContext({ viewport: { width, height: 1000 }, locale, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(); page.setDefaultTimeout(12000);
+    await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, route => route.abort());
     const errors = [], writes = [], calls = []; let counter = 1, holdNextRead = false, releaseRead, holdNextCatalog = false, releaseCatalog;
     const cwd = '/fixture/auxiliary-project';
     const model = { id: 'main', provider: 'fixture', name: 'Main model', input: ['text', 'image'], available: true, thinkingLevels: ['off'], contextWindow: 32000 };

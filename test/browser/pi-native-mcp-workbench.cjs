@@ -43,13 +43,29 @@ async function run(browser, base, width, locale) {
     await page.locator('.mcp-settings [data-mcp-write]').first().waitFor();
     assert.equal(actions.length, 0, 'opening saved configuration does not connect or request runtime');
     const read = page.locator('.mcp-settings button').filter({ hasText: locale === 'en' ? /^Read runtime snapshot$/ : /^读取运行快照$/ });
-    await read.click(); assert.equal(actions[0].runtimeId, 'runtime');
+    const readSnapshot = async expected => {
+        const response = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/mcp'));
+        await read.click();
+        assert.equal((await response).status(), 200);
+        await page.waitForFunction(expected => document.querySelector('.mcp-status')?.textContent === expected, expected);
+    };
+    const completed = locale === 'en' ? 'Runtime action completed.' : '运行操作完成。';
+    await readSnapshot(completed); assert.equal(actions[0].runtimeId, 'runtime');
+    const statuses = locale === 'en' ? {
+        failed: 'Native action did not succeed. Check the current state; no retry.',
+        cancelled: 'Native authorization was cancelled; no automatic retry.',
+        unknown: 'Native status could not be fully confirmed. Explicitly read a snapshot to check.'
+    } : {
+        failed: '原生操作未成功；请核对当前状态，不会重试。',
+        cancelled: '原生授权已取消；未自动重试。',
+        unknown: '原生状态未能完整确认；请明确读取快照核对。'
+    };
     for (const state of ['failed', 'cancelled', 'unknown']) {
-        outcome = state; await read.click();
+        outcome = state; await readSnapshot(statuses[state]);
         const status = await page.locator('.mcp-status').textContent();
         assert.ok(!status.includes('Runtime action completed') && !status.includes('运行操作完成'), status);
     }
-    outcome = 'completed'; await read.click();
+    outcome = 'completed'; await readSnapshot(completed);
     await page.locator('.mcp-settings button').filter({ hasText: locale === 'en' ? /^Return to chat$/ : /^返回聊天$/ }).click();
     await page.locator('.mcp-settings.active').waitFor({ state: 'hidden' });
     socket.send(JSON.stringify({ type: 'gateway_mcp_authorization', authorization: auth }));
