@@ -130,10 +130,35 @@ async function main() {
             await context.addInitScript(cwd => { localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem('pi.workspace.language', 'zh-CN'); }, cwd);
             const page = await context.newPage(), errors = [];
             pages.push(page);
+            const requestedSession = new URLSearchParams(route.split('?')[1] || '').get('sessionId');
+            let openedSession;
+            if (requestedSession) page.on('websocket', socket => {
+                const opens = new Set();
+                socket.on('framesent', frame => {
+                    try {
+                        const message = JSON.parse(frame.payload.toString());
+                        if (message.type === 'open_session' && message.sessionId === requestedSession) opens.add(message.id);
+                    } catch { /* Ignore frames outside the JSON RPC protocol. */ }
+                });
+                socket.on('framereceived', frame => {
+                    try {
+                        const message = JSON.parse(frame.payload.toString());
+                        if (message.type === 'response' && message.command === 'open_session' && opens.delete(message.id)) openedSession ??= message;
+                    } catch { /* Ignore frames outside the JSON RPC protocol. */ }
+                });
+            });
             page.on('pageerror', error => errors.push(error.message));
             await page.route('**/*', request => new URL(request.request().url()).origin === base() ? request.continue() : request.abort());
             await page.goto(`${base()}/${route}`, { waitUntil: 'domcontentloaded' });
             await page.waitForFunction(() => window.PiWorkspaceRoute && window.PiAgentProfiles);
+            if (requestedSession) {
+                // Keep the real cold worker in this flow. Session opening has the
+                // product's 180s RPC budget; the original 30s UI check starts after
+                // this socket's matching response, without prewarming or replay.
+                await until('requested profile session open response', () => openedSession, 180000);
+                assert.equal(openedSession.success, true, 'requested profile session must open successfully');
+                assert.equal(openedSession.data?.session?.id, requestedSession, 'open response must belong to the requested session');
+            }
             await page.waitForFunction(() => !document.querySelector('#pi-project-button')?.disabled);
             if (await page.locator('#pi-project-dialog').isVisible()) {
                 await page.locator('#pi-project-input').fill(cwd);
