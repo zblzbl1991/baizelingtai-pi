@@ -99,7 +99,7 @@ async function run(browser, size, mobile) {
     }
     const measurements = [];
     for (const tab of ['chat', 'image', 'video', 'tts']) {
-        if (tab === 'chat') await page.locator('.nav-btn[data-tab="chat"]').click(); else await openWorkspaceTab(page, 'media');
+        if (tab === 'chat') await page.locator('.nav-btn[data-tab="chat"]').click(); else await page.evaluate(() => window.PiWorkspaceRoute.navigate('media'));
         if (tab !== 'chat') await page.locator(`[data-lab-kind="${tab}"]`).click();
         const input = page.locator(tab === 'chat' ? '#pi-input' : '#lab-parameters textarea');
         await input.focus();
