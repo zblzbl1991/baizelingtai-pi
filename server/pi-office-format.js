@@ -1,13 +1,8 @@
 'use strict';
 const { fail } = require('./pi-file-scope');
-const { officeZip, xml } = require('./pi-document-parser');
+const { officeZip, xml, xmlNamespace: namespace, officeMainPart } = require('./pi-document-parser');
 const invalid = () => fail('办公文件损坏、加密或内容与扩展名不符', 415, 'OFFICE_INVALID');
 const children = node => node.children.filter(v => typeof v !== 'string');
-const namespace = (node, inherited = {}) => {
-    const bindings = { ...inherited };
-    for (const [key, value] of Object.entries(node.attrs)) if (key === 'xmlns') bindings[''] = value; else if (key.startsWith('xmlns:')) bindings[key.slice(6)] = value;
-    return { bindings, uri: bindings[node.qualified.includes(':') ? node.qualified.split(':')[0] : ''] };
-};
 function compound(bytes, limits) {
     if (bytes.length < 512 || !bytes.subarray(0, 8).equals(Buffer.from('d0cf11e0a1b11ae1', 'hex')) || bytes.readUInt16LE(28) !== 0xfffe) throw invalid();
     const major = bytes.readUInt16LE(26), shift = bytes.readUInt16LE(30), miniShift = bytes.readUInt16LE(32);
@@ -59,14 +54,8 @@ function validateOfficeFormat(bytes, format, limits) {
     if (limits && bytes.length > limits.maxSourceBytes) throw fail('办公文件超过预览预算', 413, 'OFFICE_LIMIT');
     try {
         if (format.endsWith('x')) {
-            const zip = officeZip(bytes, { ...limits, maxPartBytes: limits?.maxUncompressedBytes }), main = { docx: 'word/document.xml', xlsx: 'xl/workbook.xml', pptx: 'ppt/presentation.xml' }[format];
-            const mime = { docx: 'wordprocessingml.document', xlsx: 'spreadsheetml.sheet', pptx: 'presentationml.presentation' }[format];
-            const types = xml(zip.read('[Content_Types].xml'));
-            const typesNs = namespace(types);
-            if (typesNs.uri !== 'http://schemas.openxmlformats.org/package/2006/content-types'
-                || children(types).some(n => namespace(n, typesNs.bindings).uri !== typesNs.uri)) throw invalid();
-            const declarations = children(types), overrides = declarations.filter(n => n.name === 'Override' && n.attrs.PartName === '/' + main), defaults = declarations.filter(n => n.name === 'Default' && n.attrs.Extension?.toLowerCase() === 'xml');
-            if (types.name !== 'Types' || overrides.length > 1 || defaults.length > 1 || (overrides[0]?.attrs.ContentType ?? defaults[0]?.attrs.ContentType) !== 'application/vnd.openxmlformats-officedocument.' + mime + '.main+xml') throw invalid();
+            const zip = officeZip(bytes, { ...limits, maxPartBytes: limits?.maxUncompressedBytes });
+            officeMainPart(zip, format);
             for (const name of zip.names) {
                 if (name.endsWith('/')) continue;
                 if (/vbaProject|encryption/i.test(name)) throw invalid();
@@ -81,10 +70,6 @@ function validateOfficeFormat(bytes, format, limits) {
                     }
                 }
             }
-            const root = xml(zip.read(main)), mainNs = namespace(root).uri;
-            const rootName = { docx: 'document', xlsx: 'workbook', pptx: 'presentation' }[format];
-            const family = { docx: 'wordprocessingml', xlsx: 'spreadsheetml', pptx: 'presentationml' }[format];
-            if (root.name !== rootName || ![`http://schemas.openxmlformats.org/${family}/2006/main`, `http://purl.oclc.org/ooxml/${family}/main`].includes(mainNs)) throw invalid();
         } else {
             const cfb = compound(bytes, limits);
             if ([...cfb.entries.keys()].some(n => /encrypt|vba|_vba_project/i.test(n))) throw invalid();

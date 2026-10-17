@@ -1,10 +1,11 @@
 // First installation degrades only Office preview. Update/portable candidates
-// must pass the exact same probe before being marked complete or activated.
+// must pass the same platform policy and, where declared, native health probe
+// before being marked complete or activated.
 const path = require('node:path');
 const { preflightOfficePreview } = require('../server/office-preview/preflight');
-async function install({ root = path.resolve(__dirname, '..'), requireAvailable = false } = {}) {
+async function install({ root = path.resolve(__dirname, '..'), requireAvailable = false, target } = {}) {
     require('./build-office-preview.cjs').build(root);
-    const result = await preflightOfficePreview({ root, requireAvailable });
+    const result = await preflightOfficePreview({ root, requireAvailable, target });
     console.log(result.available ? '[pivane] Office preview 0.1.1 integrity and isolated conversion ready.' : '[pivane] Workbench installed; ' + result.message);
     return result;
 }

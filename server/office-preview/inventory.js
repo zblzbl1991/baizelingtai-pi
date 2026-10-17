@@ -53,8 +53,19 @@ function packageFiles(directory) {
     }
     visit(''); return files.sort();
 }
+// Internal platform-policy seam for installers/tests; never accepted from HTTP,
+// environment or CLI options. Only this declaration defines native support.
+function officePreviewPlatform(target = {}) {
+    if (!target || typeof target !== 'object' || Array.isArray(target) || Object.keys(target).some(key => !['platform', 'arch'].includes(key))) throw TypeError('Invalid Office preview platform target');
+    const { platform = process.platform, arch = process.arch } = target;
+    if (typeof platform !== 'string' || typeof arch !== 'string' || !/^[a-z0-9_]+$/.test(platform) || !/^[a-z0-9_]+$/.test(arch)) throw TypeError('Invalid Office preview platform target');
+    const key = platform + '-' + arch, supported = platform === 'win32' && arch === 'x64';
+    return supported ? { supported, platform: key } : { supported, platform: key, available: false, code: 'office_unsupported',
+        message: 'Native Office conversion is unsupported on ' + key + '; the workbench remains available.' };
+}
 function verifyRuntime(base = root) {
-    if (process.platform !== 'win32' || process.arch !== 'x64') throw Error('Office preview currently requires Windows x64');
+    const policy = officePreviewPlatform();
+    if (!policy.supported) throw Object.assign(new Error(policy.message), { code: policy.code });
     const [major, minor] = process.versions.node.split('.').map(Number);
     if (major < 22 || (major === 22 && minor < 19)) throw Error('Office preview requires Node >=22.19.0');
     const reviewed = JSON.parse(readSafe(path.join(base, 'config/office-preview-assets.json'), 4 * 1024 * 1024));
@@ -80,4 +91,4 @@ function distributionFiles() { return ['config/office-preview.json', 'config/off
 function mountAssets(app, base = root) {
     for (const asset of ASSETS) app.get(asset.url, (_req, res) => res.sendFile(path.join(base, asset.file)));
 }
-module.exports = { VERSION, KIT, ENGINE, ASSETS, root, dependencyClosure, packageFiles, verifyRuntime, distributionFiles, mountAssets };
+module.exports = { VERSION, KIT, ENGINE, ASSETS, root, dependencyClosure, packageFiles, officePreviewPlatform, verifyRuntime, distributionFiles, mountAssets };

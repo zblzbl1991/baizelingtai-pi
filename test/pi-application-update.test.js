@@ -58,3 +58,22 @@ test('Office-enabled update candidates cannot complete after a failed native pre
     assert.equal(calls.length,2);
     assert.equal(fs.existsSync(path.join(directory,'PI_INSTALL_COMPLETE.json')),false);
 });
+
+test('application staging can complete undeclared-platform candidates through the shared Office preflight policy', async t => {
+    const { preflightOfficePreview } = require('../server/office-preview/preflight');
+    for (const target of [{platform:'linux',arch:'x64'},{platform:'darwin',arch:'arm64'},{platform:'darwin',arch:'x64'},{platform:'win32',arch:'arm64'}]) {
+        const directory = fixture(t), calls = [];
+        const bytes = archive({'package.json':JSON.stringify({name:'pivane',version:'1.2.3',dependencies:{'@earendil-works/pi-coding-agent':'0.86.0','@deepseek-ai/libreoffice-kit':'0.1.1'}})});
+        await stageApplication({directory,release:{version:'1.2.3',sha256:hash(bytes)},get:async()=>bytes,run:async (args, options)=>{
+            calls.push(args);
+            if (args.includes('ci')) { fs.mkdirSync(path.join(directory,'node_modules/@earendil-works/pi-coding-agent'),{recursive:true}); fs.writeFileSync(path.join(directory,'node_modules/@earendil-works/pi-coding-agent/package.json'),'{"version":"0.86.0"}'); }
+            else if (args[0].endsWith('install-office-preview.cjs')) {
+                assert.ok(args.includes('--require-available'));
+                const status = await preflightOfficePreview({root:directory,requireAvailable:true,target});
+                assert.equal(status.code,'office_unsupported');
+            } else { assert.ok(args[0].endsWith('pi-update-probe.js')); assert.equal(options.env.PI_OFFLINE,'1'); }
+        }});
+        assert.equal(calls.length,3);
+        assert.equal(JSON.parse(fs.readFileSync(path.join(directory,'PI_INSTALL_COMPLETE.json'))).appVersion,'1.2.3');
+    }
+});
