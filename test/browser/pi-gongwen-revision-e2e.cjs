@@ -11,7 +11,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const SETTLE_TIMEOUT = 180000;
 
 async function main() {
-    for (const key of Object.keys(process.env)) if (/^(?:PI_|PIVANE_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|OPENROUTER_|AZURE_OPENAI_|AWS_|BEDROCK_|MISTRAL_|GROQ_|XAI_|DEEPSEEK_)/.test(key)) delete process.env[key];
+    for (const key of Object.keys(process.env)) if (/^(?:PI_|PIVANE_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|OPENROUTER_|AZURE_OPENAI_|AWS_|BEDROCK_|MISTRAL_|GROQ_|XAI_|DEEPSEEK_)/.test(key) && !['PIVANE_BROWSER_TARGET', 'PIVANE_BROWSER_AUDIT_FILE'].includes(key)) delete process.env[key];
     const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-gongwen-e2e-')));
     const agent = path.join(root, 'agent'), cwd = path.join(root, '公文项目');
     fs.mkdirSync(agent); fs.mkdirSync(cwd); fs.mkdirSync(screenshots, { recursive: true });
@@ -152,15 +152,17 @@ async function main() {
             assert.equal(await page.locator('.pi-delivery-card').count(), 2, 'both delivered files listed');
             await page.screenshot({ path: path.join(screenshots, 'gongwen-e2e-desktop.png') });
             const sessionId = new URLSearchParams(page.url().split('?')[1]).get('sessionId');
-            const mobile = await openPage(390, sessionId);
-            try {
-                await mobile.page.locator('#pi-transcript-content .assistant a[href*="#pi-delivery="]').first().waitFor({ timeout: 30000 });
-                const overflow = await mobile.page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
-                assert.ok(overflow.document <= overflow.viewport + 1 && overflow.body <= overflow.viewport + 1, `mobile overflow: ${JSON.stringify(overflow)}`);
-                assert.deepEqual(mobile.errors, []);
-                await mobile.page.screenshot({ path: path.join(screenshots, 'gongwen-e2e-mobile.png') });
-            } finally { await mobile.context.close(); }
-            console.log('gongwen revision e2e: upload → revise_gongwen → delivery links → preview/download passed (desktop + mobile)');
+            if (browserTargetEnabled(390)) {
+                const mobile = await openPage(390, sessionId);
+                try {
+                    await mobile.page.locator('#pi-transcript-content .assistant a[href*="#pi-delivery="]').first().waitFor({ timeout: 30000 });
+                    const overflow = await mobile.page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
+                    assert.ok(overflow.document <= overflow.viewport + 1 && overflow.body <= overflow.viewport + 1, `mobile overflow: ${JSON.stringify(overflow)}`);
+                    assert.deepEqual(mobile.errors, []);
+                    await mobile.page.screenshot({ path: path.join(screenshots, 'gongwen-e2e-mobile.png') });
+                } finally { await mobile.context.close(); }
+            }
+            console.log('gongwen revision e2e: upload → revise_gongwen → delivery links → preview/download passed (selected browser targets)');
         } finally { await desktop.context.close(); }
         console.log(JSON.stringify({ status: 'passed', delivery: facts.delivery?.reference?.id, requests: requests.length, screenshots }));
     } catch (error) {

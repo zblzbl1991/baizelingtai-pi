@@ -7,6 +7,9 @@
     const chips = () => [...row.querySelectorAll(':scope > details.pi-status-chip')];
     const close = (except = null) => { for (const chip of chips()) if (chip !== except && chip.open) chip.open = false; };
     for (const chip of chips()) {
+        // Native exclusivity closes the previous chip as part of the opening
+        // action, before the queued toggle events (and their popover renders).
+        chip.setAttribute('name', 'pi-composer-status');
         chip.addEventListener('toggle', () => { if (chip.open) close(chip); });
     }
     // Dialogs opened from a popover (logs, steering, cost) live outside the row.
