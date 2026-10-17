@@ -4,6 +4,7 @@ const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
 const { execFile, execFileSync } = require('node:child_process');
 const { promisify } = require('node:util');
+const { tarInvocation } = require('./package-tar.cjs');
 const root = path.resolve(__dirname, '..');
 const assets = require('./windows-portable-assets.json');
 const { feedUrl, sourceLink, parseFeed } = require('../server/pi-update-feed');
@@ -173,7 +174,8 @@ async function main() {
     try {
         const app = path.join(temporary, appName), scratch = path.join(temporary, 'build-only');
         fs.mkdirSync(scratch); fs.writeFileSync(path.join(scratch, 'empty.npmrc'), ''); fs.writeFileSync(path.join(scratch, 'empty-global.npmrc'), '');
-        execFileSync(tar, ['-xf', snapshot.archive, '-C', temporary], { windowsHide: true });
+        const snapshotTar = tarInvocation(['-xf', snapshot.archive, '-C', temporary]);
+        execFileSync(snapshotTar.file, snapshotTar.args, { windowsHide: true });
         fs.renameSync(path.join(temporary, 'pivane-trial'), app);
         const unpack = path.join(temporary, 'unpack'); fs.mkdirSync(unpack);
         for (const name of ['node', 'rg', 'fd']) execFileSync(tar, ['-xf', downloads[name], '-C', unpack], { windowsHide: true });
