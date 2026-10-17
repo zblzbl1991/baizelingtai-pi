@@ -159,3 +159,81 @@ test('numbering marker fonts are resolved independently of the heading text font
     const result = await require('../server/gongwen/format-validation').validateFormat(await zip.generateAsync({ type: 'nodebuffer' }), { operation: 'generate' });
     assert.ok(result.checks.some(c => c.id === 'numbering-marker' && c.status === 'fail' && c.actual.font === 'Arial'));
 });
+test('normative revision distinguishes a flush-left addressee from actual body indentation errors', async () => {
+    const zip = await JSZip.loadAsync(await fixture());
+    let document = await zip.file('word/document.xml').async('string');
+    document = document.replace('<w:p><w:r><w:t>各部门按计划参加培训。</w:t></w:r></w:p>', '<w:p><w:pPr><w:ind w:firstLineChars="0" w:firstLine="0"/></w:pPr><w:r><w:t>各部门：</w:t></w:r></w:p><w:p><w:pPr><w:ind w:firstLineChars="0" w:firstLine="0"/></w:pPr><w:r><w:t>请按计划参加培训。</w:t></w:r></w:p>');
+    zip.file('word/document.xml', document);
+    const result = await require('../server/gongwen/format-validation').validateFormat(await zip.generateAsync({ type: 'nodebuffer' }), { operation: 'revise', layoutApplied: true });
+    assert.ok(!result.checks.some(c => c.id === 'body-indent' && c.location.paragraph === 2 && c.status === 'fail'), 'legal addressee is not body');
+    assert.ok(result.checks.some(c => c.id === 'recipient' && c.location.paragraph === 2 && c.status === 'pass'));
+    assert.ok(result.checks.some(c => c.id === 'body-indent' && c.location.paragraph === 3 && c.status === 'fail'), 'real body still requires two-character indentation');
+    zip.file('word/document.xml', document.replace('各部门：', '有关工作安排如下：'));
+    const uncertain = await require('../server/gongwen/format-validation').validateFormat(await zip.generateAsync({ type: 'nodebuffer' }), { operation: 'revise', layoutApplied: true });
+    assert.ok(uncertain.checks.some(c => c.id === 'role-coverage' && c.location.paragraph === 2 && c.status === 'incomplete'));
+});
+test('body grid checks use an enabled line grid in the paragraph own section and inherited snap setting', async () => {
+    const { validateFormat } = require('../server/gongwen/format-validation');
+    const zip = await JSZip.loadAsync(await fixture());
+    const original = await zip.file('word/document.xml').async('string');
+    const finalSection = original.match(/<w:sectPr>[\s\S]*?<\/w:sectPr>/)[0];
+    const disabledSection = finalSection.replace('w:type="linesAndChars"', 'w:type="default"');
+    const twoSections = original.replace('<w:p><w:r><w:t>各部门', `<w:p><w:pPr>${disabledSection}</w:pPr><w:r><w:t>各部门`)
+        .replace(finalSection + '</w:body>', '<w:p><w:r><w:t>第二节正文。</w:t></w:r></w:p>' + finalSection + '</w:body>');
+    zip.file('word/document.xml', twoSections);
+    let result = await validateFormat(await zip.generateAsync({ type: 'nodebuffer' }), { operation: 'generate' });
+    assert.ok(result.checks.some(c => c.id === 'line-grid' && c.location.section === 1 && c.status === 'fail'));
+    assert.ok(result.checks.some(c => c.id === 'body-grid-spacing' && c.location.paragraph === 2 && c.location.section === 1 && c.status === 'fail'));
+    assert.ok(result.checks.some(c => c.id === 'body-grid-spacing' && c.location.paragraph === 3 && c.location.section === 2 && c.status === 'pass'));
+    zip.file('word/document.xml', original.replace('w:type="linesAndChars"', 'w:type="lines"'));
+    result = await validateFormat(await zip.generateAsync({ type: 'nodebuffer' }), { operation: 'generate' });
+    assert.ok(result.checks.some(c => c.id === 'body-grid-spacing' && c.status === 'pass'), 'lines also enables a line grid');
+    const styles = await zip.file('word/styles.xml').async('string');
+    zip.file('word/styles.xml', styles.replace('<w:ind w:firstLineChars="200"/>', '<w:snapToGrid w:val="off"/><w:ind w:firstLineChars="200"/>'));
+    result = await validateFormat(await zip.generateAsync({ type: 'nodebuffer' }), { operation: 'generate' });
+    assert.ok(result.checks.some(c => c.id === 'body-grid-spacing' && c.status === 'fail' && c.actual.snapToGrid === false));
+    zip.file('word/document.xml', original.replace('w:type="linesAndChars"', 'w:type="snapToChars"'));
+    result = await validateFormat(await zip.generateAsync({ type: 'nodebuffer' }), { operation: 'generate' });
+    assert.ok(result.checks.some(c => c.id === 'line-grid' && c.status === 'fail'), 'character-only grid cannot prove line spacing');
+});
+test('page-number checks include final black color and normal emphasis with inherited toggle semantics', async () => {
+    const { validateFormat } = require('../server/gongwen/format-validation');
+    const zip = await JSZip.loadAsync(await fixture());
+    const footer = await zip.file('word/footer1.xml').async('string');
+    let result = await validateFormat(await zip.generateAsync({ type: 'nodebuffer' }), { operation: 'generate' });
+    assert.ok(result.checks.some(c => c.id === 'page-number' && c.status === 'pass' && c.actual.color === '000000' && c.actual.bold === false && c.actual.italic === false));
+    zip.file('word/footer1.xml', footer.replace('<w:rPr>', '<w:rPr><w:color w:val="FF0000"/><w:b/><w:i/>'));
+    result = await validateFormat(await zip.generateAsync({ type: 'nodebuffer' }), { operation: 'generate' });
+    assert.ok(result.checks.some(c => c.id === 'page-number' && c.status === 'fail' && c.actual.color === 'FF0000' && c.actual.bold && c.actual.italic));
+    const styles = await zip.file('word/styles.xml').async('string');
+    zip.file('word/styles.xml', styles.replace('</w:styles>', '<w:style w:type="paragraph" w:styleId="FooterBase"><w:basedOn w:val="Normal"/><w:rPr><w:b/><w:i/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="FooterClear"><w:basedOn w:val="FooterBase"/><w:rPr><w:b/><w:i/></w:rPr></w:style></w:styles>'));
+    zip.file('word/footer1.xml', footer.replace('<w:pPr>', '<w:pPr><w:pStyle w:val="FooterBase"/>'));
+    result = await validateFormat(await zip.generateAsync({ type: 'nodebuffer' }), { operation: 'generate' });
+    assert.ok(result.checks.some(c => c.id === 'page-number' && c.status === 'fail' && c.actual.bold && c.actual.italic));
+    zip.file('word/footer1.xml', footer.replace('<w:pPr>', '<w:pPr><w:pStyle w:val="FooterClear"/>'));
+    result = await validateFormat(await zip.generateAsync({ type: 'nodebuffer' }), { operation: 'generate' });
+    assert.ok(result.checks.some(c => c.id === 'page-number' && c.status === 'pass' && !c.actual.bold && !c.actual.italic));
+});
+test('body, footer and header apply the same paragraph and character style type checks', async () => {
+    const { validateFormat } = require('../server/gongwen/format-validation');
+    for (const story of ['body', 'footer', 'header']) for (const invalidType of ['paragraph', 'character']) {
+        const zip = await JSZip.loadAsync(await fixture({ styles: '<w:style w:type="character" w:styleId="CharacterOnly"><w:rPr><w:b/></w:rPr></w:style>' }));
+        let part = 'word/document.xml', source = await zip.file(part).async('string');
+        if (story === 'footer') { part = 'word/footer1.xml'; source = await zip.file(part).async('string'); }
+        if (story === 'header') {
+            zip.file('word/document.xml', source.replace('<w:sectPr>', '<w:sectPr><w:headerReference w:type="first" r:id="h1"/>'));
+            zip.file('word/_rels/document.xml.rels', (await zip.file('word/_rels/document.xml.rels').async('string')).replace('</Relationships>', '<Relationship Id="h1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>'));
+            part = 'word/header1.xml';
+            source = `<w:hdr xmlns:w="${W}"><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:rFonts w:eastAsia="方正小标宋简体" w:ascii="方正小标宋简体"/><w:sz w:val="44"/><w:color w:val="FF0000"/></w:rPr><w:t>示例单位</w:t></w:r></w:p></w:hdr>`;
+        }
+        if (invalidType === 'paragraph') source = story === 'body'
+            ? source.replace('<w:p><w:r><w:t>各部门', '<w:p><w:pPr><w:pStyle w:val="CharacterOnly"/></w:pPr><w:r><w:t>各部门')
+            : source.replace('<w:pPr>', '<w:pPr><w:pStyle w:val="CharacterOnly"/>');
+        else source = story === 'body'
+            ? source.replace('<w:r><w:t>各部门', '<w:r><w:rPr><w:rStyle w:val="Normal"/></w:rPr><w:t>各部门')
+            : source.replace('<w:rPr>', '<w:rPr><w:rStyle w:val="Normal"/>');
+        zip.file(part, source);
+        const result = await validateFormat(await zip.generateAsync({ type: 'nodebuffer' }), { operation: 'generate', kind: 'letter', redhead: true });
+        assert.ok(result.checks.some(c => c.id === 'format-definition' && c.status === 'fail' && c.location.part === part), story + '/' + invalidType + JSON.stringify(result.checks));
+    }
+});

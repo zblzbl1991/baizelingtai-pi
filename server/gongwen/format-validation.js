@@ -44,7 +44,7 @@ function properties(node) {
     const alignment = val(node, 'jc'); if (alignment) result.alignment = alignment;
     const indent = one(node, 'ind'); if (indent) result.indent = { ...indent.values };
     const spacing = one(node, 'spacing'); if (spacing) result.spacing = { ...spacing.values };
-    const snap = one(node, 'snapToGrid'); if (snap) result.snapToGrid = !['0', 'false', 'off'].includes(snap.values.val);
+    const snap = one(node, 'snapToGrid'); if (snap) result[node.name === 'pPr' ? 'lineSnapToGrid' : 'charSnapToGrid'] = !['0', 'false', 'off'].includes(snap.values.val);
     const numbered = one(node, 'numPr');
     if (numbered) {
         result.numbering = {};
@@ -67,6 +67,12 @@ function styleProperties(target, source) {
 }
 function mergeProperties(target, source) {
     for (const [key, value] of Object.entries(source)) target[key] = ['indent', 'spacing', 'numbering'].includes(key) ? { ...target[key], ...value } : value;
+}
+function gridProblem(grid) {
+    if (!grid) return '缺少行网格';
+    if (!['default', 'lines', 'linesAndChars', 'snapToChars'].includes(grid.type)) return '行网格类型未解析';
+    if (!/^\d+$/.test(grid.linePitch || '')) return '行网格间距未解析';
+    return null;
 }
 async function validateFormat(bytes, context = {}) {
     const normative = context.operation === 'generate' || context.operation === 'revise' && context.layoutApplied === true;
@@ -99,6 +105,30 @@ async function validateFormat(bytes, context = {}) {
             active.add(id); const result = [...chain(val(style, 'basedOn'), active), style]; active.delete(id); return result;
         }
         for (const id of index.keys()) chain(id);
+        function typedChain(id, type, location) {
+            const ancestors = chain(id);
+            if (ancestors.some(style => style.values.type !== type)) throw invalid(type === 'paragraph' ? '段落引用了非段落样式' : '字符引用了非字符样式', { ...location, styleId: id?.slice(0, 160) });
+            return ancestors;
+        }
+        // All stories resolve exactly the same property cascade and style
+        // types. Callers retain the role profile and expected-value checks.
+        function resolveParagraph(node, location) {
+            const ppr = one(node, 'pPr'), styleId = val(ppr, 'pStyle') || defaultStyle;
+            const ancestors = typedChain(styleId, 'paragraph', location);
+            const effective = { bold: false, italic: false, ...defaultRun, ...defaultPara, color: defaultRun.color || '000000' };
+            for (const style of ancestors) {
+                mergeProperties(effective, properties(one(style, 'pPr')));
+                styleProperties(effective, properties(one(style, 'rPr')));
+            }
+            mergeProperties(effective, properties(ppr));
+            return { ppr, styleId, ancestors, effective };
+        }
+        function resolveRun(node, paragraphProperties, location) {
+            const rpr = one(node, 'rPr'), actual = { ...paragraphProperties };
+            for (const style of typedChain(val(rpr, 'rStyle'), 'character', location)) styleProperties(actual, properties(one(style, 'rPr')));
+            mergeProperties(actual, properties(rpr));
+            return actual;
+        }
         const numbered = zip.names.includes('word/numbering.xml') ? wordTree(zip.read('word/numbering.xml')) : null;
         function unique(nodes, attribute) {
             const values = new Map();
@@ -106,24 +136,29 @@ async function validateFormat(bytes, context = {}) {
             return values;
         }
         const numbers = unique(kids(numbered, 'num'), 'numId'), abstracts = unique(kids(numbered, 'abstractNum'), 'abstractNumId');
-        let paragraph = 0, section = 0, mainTitleSeen = false, titleCount = 0; const footerReferences = [], headerReferences = [], gridDefinitions = [];
+        let paragraph = 0, section = 0, mainTitleSeen = false, titleCount = 0, awaitingRecipient = false;
+        const footerReferences = [], headerReferences = [], paragraphSections = new Map(); let pendingParagraphs = [];
         const allBlocks = [...(context.body || []), ...(context.attachments || []).flatMap(a => a.body || [])];
         const captions = new Set(allBlocks.filter(b => b.type === 'table').map(b => b.caption).filter(Boolean));
         const attachmentTitles = new Set((context.attachments || []).flatMap(a => [].concat(a.title)));
         const bodyTexts = new Set(allBlocks.filter(b => b.type === 'paragraph').map(b => b.text));
         function sections(node) {
             if (!node.word || ['sectPrChange', 'pPrChange', 'rPrChange', 'del', 'moveFrom'].includes(node.name)) return;
+            if (node.name === 'p') pendingParagraphs.push(node);
             if (node.name === 'sectPr') {
                 section++; const location = { part: 'word/document.xml', section };
                 const page = one(node, 'pgSz'), margin = one(node, 'pgMar'), grid = one(node, 'docGrid');
+                // sectPr closes the section ending at its containing paragraph;
+                // body's final sectPr closes the remaining paragraphs.
+                for (const p of pendingParagraphs) paragraphSections.set(p, { section, grid: grid?.values });
+                pendingParagraphs = [];
                 record('page-size', location, { width: 11906, height: 16838 }, { width: Number(page?.values.w), height: Number(page?.values.h) }, page ? null : '缺少页面尺寸');
                 const expected = { top: 2098, bottom: 1984, left: 1587, right: 1474 };
                 const actual = Object.fromEntries(Object.keys(expected).map(key => [key, Number(margin?.values[key])]));
                 // Millimetre-to-twip rounding differs by one or two twips.
                 for (const key of Object.keys(expected)) if (Math.abs(actual[key] - expected[key]) <= 2) actual[key] = expected[key];
                 record('page-margins', location, expected, actual, margin ? null : '缺少页边距');
-                record('line-grid', location, { linePitch: 579 }, { linePitch: Number(grid?.values.linePitch) }, grid ? null : '缺少行网格');
-                gridDefinitions.push(grid?.values);
+                record('line-grid', location, { enabled: true, linePitch: 579 }, { type: grid?.values.type, enabled: ['lines', 'linesAndChars'].includes(grid?.values.type), linePitch: Number(grid?.values.linePitch) }, gridProblem(grid?.values));
                 footerReferences.push(...kids(node, 'footerReference').map(ref => ({ id: ref.relationships.id, type: ref.values.type, section })));
                 headerReferences.push(...kids(node, 'headerReference').map(ref => ({ id: ref.relationships.id, type: ref.values.type, section })));
                 return;
@@ -140,17 +175,13 @@ async function validateFormat(bytes, context = {}) {
             if (node.name === 'tr') header = Boolean(one(one(node, 'trPr'), 'tblHeader'));
             if (node.name === 'p') {
                 paragraph++; if (paragraph > 10000) throw Error('段落数量超过核验预算');
-                const ppr = one(node, 'pPr'), styleId = val(ppr, 'pStyle') || defaultStyle;
-                const ancestors = chain(styleId), names = ancestors.map(s => s.values.styleId);
-                if (ancestors.some(style => style.values.type !== 'paragraph')) throw invalid('段落引用了非段落样式', { part: 'word/document.xml', paragraph, styleId: styleId?.slice(0, 160) });
+                const { ppr, styleId, ancestors, effective } = resolveParagraph(node, { part: 'word/document.xml', paragraph });
+                const names = ancestors.map(s => s.values.styleId);
                 const heading = ancestors.map(s => /^heading ([1-4])$/i.exec(val(s, 'name') || '')?.[1]).filter(Boolean).at(-1);
-                let effective = { bold: false, italic: false, ...defaultRun, ...defaultPara, color: defaultRun.color || '000000' };
-                for (const style of ancestors) { mergeProperties(effective, properties(one(style, 'pPr'))); styleProperties(effective, properties(one(style, 'rPr'))); }
-                mergeProperties(effective, properties(ppr));
                 const paraText = kids(node, 'r').flatMap(r => kids(r, 't').flatMap(t => t.children.filter(c => typeof c === 'string'))).join('');
                 const inferredTitle = context.operation === 'revise' && normative && !mainTitleSeen && paragraph <= 8 && !special && effective.alignment === 'center' && paraText.trim() && paraText.length <= 60 && !/[〔【[]\d{4}[〕】\]]|\d\s*号$|\d{4}\s*年\s*\d/.test(paraText);
                 const title = names.includes('Title') || inferredTitle;
-                if (title && !special) { mainTitleSeen = true; titleCount++; }
+                if (title && !special) { mainTitleSeen = true; titleCount++; awaitingRecipient = true; }
                 const frame = one(ppr, 'framePr'), banji = frame?.values.yAlign === 'bottom';
                 let role = title ? 'title' : heading ? `heading${heading}` : 'body';
                 if (context.operation === 'generate' && !title && !heading) {
@@ -161,13 +192,29 @@ async function validateFormat(bytes, context = {}) {
                     else if (!mainTitleSeen && context.redhead) role = 'redhead';
                     else if (special) role = 'table';
                 }
+                if (!title && !special && paraText.trim()) {
+                    const followsTitle = awaitingRecipient; awaitingRecipient = false;
+                    const recipient = context.recipient && String(context.recipient).replace(/[：:]?$/, '：');
+                    const namedRecipient = ancestors.some(style => /^主送机关(?:\s|$)/.test(val(style, 'name') || ''));
+                    const zeroIndent = effective.indent?.firstLineChars === '0' || effective.indent?.firstLineChars === undefined && effective.indent?.firstLine === '0';
+                    if (!bodyTexts.has(paraText) && (namedRecipient || recipient === paraText)) role = 'recipient';
+                    else if (!bodyTexts.has(paraText) && followsTitle && !heading && zeroIndent && paraText.length <= 80 && /^[^。？！\n]+[：:]$/.test(paraText)) {
+                        if (/^各(?:部门|单位|处室|科室|分公司|学院|学校|机构|地区|县|市)(?:[、，].*)?[：:]$/.test(paraText)) role = 'recipient';
+                        else { role = 'uncertain'; record('role-coverage', { part: 'word/document.xml', paragraph, styleId }, {}, {}, '标题后顶格冒号段的主送／正文角色不能可靠确定'); }
+                    }
+                }
                 if (title && !special) record('title-alignment', { part: 'word/document.xml', paragraph, styleId }, { alignment: 'center' }, { alignment: effective.alignment });
+                if (role === 'recipient') record('recipient-indent', { part: 'word/document.xml', paragraph, styleId }, { firstLineChars: '0' },
+                    { firstLineChars: effective.indent?.firstLineChars ?? (effective.indent?.firstLine === '0' ? '0' : undefined) });
                 if (bodyTexts.has(paraText) || !context.body && role === 'body' && effective.alignment === 'both') {
+                    const ownSection = paragraphSections.get(node), grid = ownSection?.grid;
+                    const location = { part: 'word/document.xml', paragraph, styleId, section: ownSection?.section };
                     const actualIndent = effective.indent?.firstLineChars ?? (Number(effective.indent?.firstLine) === 632 ? '200' : undefined);
-                    record('body-indent', { part: 'word/document.xml', paragraph, styleId }, { firstLineChars: '200' }, { firstLineChars: actualIndent }, actualIndent === undefined ? '未解析正文缩进' : null);
-                    if (effective.spacing?.line) record('body-line-spacing', { part: 'word/document.xml', paragraph, styleId }, { line: '579', lineRule: 'exact' }, { line: effective.spacing.line, lineRule: effective.spacing.lineRule });
-                    else record('body-grid-spacing', { part: 'word/document.xml', paragraph, styleId }, { snapToGrid: true, linePitch: '579' },
-                        { snapToGrid: effective.snapToGrid !== false, linePitch: gridDefinitions.every(grid => grid?.linePitch === '579') ? '579' : undefined }, gridDefinitions.length ? null : '段落行距和有效网格均未确定');
+                    record('body-indent', location, { firstLineChars: '200' }, { firstLineChars: actualIndent }, actualIndent === undefined ? '未解析正文缩进' : null);
+                    if (effective.spacing?.line) record('body-line-spacing', location, { line: '579', lineRule: 'exact' }, { line: effective.spacing.line, lineRule: effective.spacing.lineRule });
+                    record('body-grid-spacing', location, { snapToGrid: true, enabled: true, linePitch: 579 },
+                        { snapToGrid: effective.lineSnapToGrid !== false, type: grid?.type, enabled: ['lines', 'linesAndChars'].includes(grid?.type), linePitch: Number(grid?.linePitch) },
+                        ownSection ? gridProblem(grid) : '段落所属节未解析');
                 }
                 if (effective.numbering?.numId && effective.numbering.numId !== '0') {
                     const { numId, ilvl = '0' } = effective.numbering, num = numbers.get(numId), abstract = abstracts.get(val(num, 'abstractNumId'));
@@ -187,12 +234,7 @@ async function validateFormat(bytes, context = {}) {
                     if (current.name === 'r') {
                         run++;
                         if (!kids(current, 't').length) return;
-                        const rpr = one(current, 'rPr'), character = val(rpr, 'rStyle'), actual = { ...effective };
-                        for (const style of chain(character)) {
-                            if (style.values.type !== 'character') throw invalid('字符引用了非字符样式', { part: 'word/document.xml', paragraph, run });
-                            styleProperties(actual, properties(one(style, 'rPr')));
-                        }
-                        mergeProperties(actual, properties(rpr));
+                        const actual = resolveRun(current, effective, { part: 'word/document.xml', paragraph, run });
                         const text = kids(current, 't').flatMap(t => t.children.filter(c => typeof c === 'string')).join('');
                         const expected = { font: title ? '方正小标宋简体' : heading === '1' ? context.kind === 'rules' ? '方正小标宋简体' : '黑体' : heading === '2' && context.kind !== 'rules' ? '楷体' : '仿宋', size: title ? 22 : 16, color: '000000', bold: false, italic: false };
                         let applicable = normative && !special;
@@ -253,16 +295,15 @@ async function validateFormat(bytes, context = {}) {
             function checkFooter(node) {
                 if (!node.word || ['del', 'moveFrom', 'rPrChange', 'pPrChange'].includes(node.name)) return;
                 if (node.name === 'p') {
-                    paragraphIndex++; const ppr = one(node, 'pPr'), base = { ...defaultRun, ...defaultPara, color: defaultRun.color || '000000' };
-                    for (const style of chain(val(ppr, 'pStyle') || defaultStyle)) { styleProperties(base, properties(one(style, 'rPr'))); mergeProperties(base, properties(one(style, 'pPr'))); }
-                    mergeProperties(base, properties(ppr));
+                    paragraphIndex++; const { effective: base } = resolveParagraph(node, { part, section: ref.section, paragraph: paragraphIndex });
                     let run = 0;
                     for (const r of kids(node, 'r')) {
                         run++; if (!kids(r, 't').length && !kids(r, 'instrText').length && !kids(r, 'fldChar').length) continue;
-                        found = true; const actual = { ...base };
-                        const rpr = one(r, 'rPr'); for (const style of chain(val(rpr, 'rStyle'))) styleProperties(actual, properties(one(style, 'rPr'))); Object.assign(actual, properties(rpr));
+                        found = true; const actual = resolveRun(r, base, { part, section: ref.section, paragraph: paragraphIndex, run });
                         const alignment = ref.type === 'even' ? 'left' : 'right';
-                        record('page-number', { part, section: ref.section, paragraph: paragraphIndex, run }, { font: '宋体', asciiFont: '宋体', size: 14, alignment }, { font: actual.font, asciiFont: actual.asciiFont, size: actual.size, alignment: base.alignment }, actual.fontIssue || actual.asciiFontIssue || !actual.font || !Number.isFinite(actual.size) ? '页码字体继承未完成' : null);
+                        record('page-number', { part, section: ref.section, paragraph: paragraphIndex, run }, { font: '宋体', asciiFont: '宋体', size: 14, alignment, color: '000000', bold: false, italic: false },
+                            { font: actual.font, asciiFont: actual.asciiFont, size: actual.size, alignment: base.alignment, color: actual.color, bold: actual.bold, italic: actual.italic },
+                            actual.fontIssue || actual.asciiFontIssue || actual.colorIssue || !actual.font || !Number.isFinite(actual.size) ? '页码字体或颜色继承未完成' : null);
                     }
                     return;
                 }
@@ -279,14 +320,10 @@ async function validateFormat(bytes, context = {}) {
             function checkHeader(node) {
                 if (!node.word || ['del', 'moveFrom', 'rPrChange', 'pPrChange'].includes(node.name)) return;
                 if (node.name === 'p') {
-                    paragraphIndex++; const ppr = one(node, 'pPr'), base = { ...defaultRun, ...defaultPara };
-                    for (const style of chain(val(ppr, 'pStyle') || defaultStyle)) { mergeProperties(base, properties(one(style, 'pPr'))); styleProperties(base, properties(one(style, 'rPr'))); }
-                    mergeProperties(base, properties(ppr)); let run = 0;
+                    paragraphIndex++; const { effective: base } = resolveParagraph(node, { part, section: ref.section, paragraph: paragraphIndex }); let run = 0;
                     for (const r of kids(node, 'r')) {
                         run++; if (!kids(r, 't').length) continue;
-                        const actual = { ...base }, rpr = one(r, 'rPr');
-                        for (const style of chain(val(rpr, 'rStyle'))) styleProperties(actual, properties(one(style, 'rPr')));
-                        mergeProperties(actual, properties(rpr));
+                        const actual = resolveRun(r, base, { part, section: ref.section, paragraph: paragraphIndex, run });
                         const knownLetterhead = context.operation === 'generate' && context.kind === 'letter' && context.redhead;
                         record('header-marker', { part, section: ref.section, paragraph: paragraphIndex, run }, { font: '方正小标宋简体', color: 'FF0000', alignment: 'center' },
                             { font: actual.font, color: actual.color, alignment: base.alignment }, actual.fontIssue || actual.colorIssue ? '页眉主题属性未解析' : null, normative && knownLetterhead);
