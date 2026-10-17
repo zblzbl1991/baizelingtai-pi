@@ -63,11 +63,12 @@ try {
     checkDocumentation(packageDir, manifest.map(file => file.path));
     fs.writeFileSync(path.join(packageDir, 'TRIAL_MANIFEST.json'), JSON.stringify({ version: 1, ...releaseMetadata, generatedAt: new Date().toISOString(), files: manifest }, null, 2) + '\n');
     const ownerOptions = ['darwin', 'win32'].includes(process.platform)
-        ? ['--uid', '0', '--gid', '0', '--uname', 'root', '--gname', 'root']
+        // BSD tar otherwise encodes USTAR names in the local Windows code page.
+        ? ['--uid', '0', '--gid', '0', '--uname', 'root', '--gname', 'root', '--options', 'hdrcharset=UTF-8']
         : ['--sort=name', '--owner=0', '--group=0', '--numeric-owner'];
     const tarExecutable = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/tar.exe')
         : process.platform === 'darwin' ? '/usr/bin/tar' : 'tar';
-    execFileSync(tarExecutable, [...ownerOptions, '-czf', archive, '-C', temporary, packageName], {
+    execFileSync(tarExecutable, [...ownerOptions, '--format=ustar', '-czf', archive, '-C', temporary, packageName], {
         env: { ...process.env, COPYFILE_DISABLE: '1' }, windowsHide: true
     });
     const sha256 = hash(fs.readFileSync(archive));
