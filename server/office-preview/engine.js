@@ -5,7 +5,7 @@ const { randomUUID } = require('node:crypto');
 const { fork, spawn } = require('node:child_process');
 const { privateDir, readSafe } = require('../pi-maintenance-files');
 const { writePrivateFileSync } = require('../pi-private-files');
-const { root: defaultRoot, verifyRuntime } = require('./inventory');
+const { root: defaultRoot, verifyRuntime, officePreviewPlatform } = require('./inventory');
 const fail = (code, message) => Object.assign(new Error(message), { code });
 function probeDocument() {
     const { zipSync, strToU8 } = require('fflate');
@@ -71,6 +71,8 @@ function createOfficePreviewEngine(options = {}) {
             generation = randomUUID(); initialization = undefined;
         }
         if (disposed) return Promise.resolve({ available: false, code: 'office_unavailable', message: 'Office preview has stopped' });
+        const { supported, ...platformStatus } = officePreviewPlatform();
+        if (!supported) return Promise.resolve(platformStatus);
         if (initialization) return initialization;
         initializing = true;
         return initialization = (async () => {
