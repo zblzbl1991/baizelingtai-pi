@@ -25,7 +25,7 @@ const SECRET = 'ghp_' + 'Z'.repeat(36);
 
 async function main() {
     if (!bundle || !fs.existsSync(bundle)) throw new Error('PIVANE_TEST_HERMES_BUNDLE must point to the reviewed read-only bundle');
-    for (const key of Object.keys(process.env)) if (/^(?:PI_|PIVANE_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|OPENROUTER_|AZURE_OPENAI_|AWS_|BEDROCK_|MISTRAL_|GROQ_|XAI_|DEEPSEEK_)/.test(key)) delete process.env[key];
+    for (const key of Object.keys(process.env)) if (/^(?:PI_|PIVANE_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|OPENROUTER_|AZURE_OPENAI_|AWS_|BEDROCK_|MISTRAL_|GROQ_|XAI_|DEEPSEEK_)/.test(key) && !['PIVANE_BROWSER_TARGET', 'PIVANE_BROWSER_AUDIT_FILE'].includes(key)) delete process.env[key];
     const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-memory-e2e-')));
     let provider, access, gateway, server, wss, browser;
     const report = { steps: [], findings: [] };
@@ -437,19 +437,21 @@ async function main() {
         step('legacy adoption', { health: adopted.health.state });
 
         // 11. Mobile management layout with real data.
-        const mobile = await open(393, '#/profiles');
-        await mobile.page.locator(`[data-profile-id="${profileId}"]`).click();
-        await mobile.page.locator('[data-profile-section="skills"]').click();
-        await mobile.page.locator('.pi-profile-kinds button').first().click();
-        await mobile.page.locator('.pi-knowledge-row').first().waitFor();
-        const geometry = await mobile.page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth,
-            small: [...document.querySelectorAll('textarea,input,select')].filter(el => el.offsetParent && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => el.name || el.className) }));
-        assert.ok(geometry.document <= geometry.viewport + 1, JSON.stringify(geometry));
-        assert.deepEqual(geometry.small, []);
-        await mobile.page.screenshot({ path: path.join(screenshots, 'knowledge-393.png'), fullPage: true });
-        assert.deepEqual(mobile.errors, []);
-        await mobile.context.close();
-        step('mobile layout', geometry);
+        if (browserTargetEnabled(393)) {
+            const mobile = await open(393, '#/profiles');
+            await mobile.page.locator(`[data-profile-id="${profileId}"]`).click();
+            await mobile.page.locator('[data-profile-section="skills"]').click();
+            await mobile.page.locator('.pi-profile-kinds button').first().click();
+            await mobile.page.locator('.pi-knowledge-row').first().waitFor();
+            const geometry = await mobile.page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth,
+                small: [...document.querySelectorAll('textarea,input,select')].filter(el => el.offsetParent && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => el.name || el.className) }));
+            assert.ok(geometry.document <= geometry.viewport + 1, JSON.stringify(geometry));
+            assert.deepEqual(geometry.small, []);
+            await mobile.page.screenshot({ path: path.join(screenshots, 'knowledge-393.png'), fullPage: true });
+            assert.deepEqual(mobile.errors, []);
+            await mobile.context.close();
+            step('mobile layout', geometry);
+        }
 
         console.log(JSON.stringify({ status: 'passed', chatCalls: chat.length, learnerCalls: learner.length, ...report }, null, 1));
     } catch (error) {

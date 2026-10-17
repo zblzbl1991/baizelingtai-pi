@@ -1,3 +1,4 @@
+// pivane-browser: helper — instrumentation loaded by the runner, never a scenario.
 const fs = require('node:fs');
 const { target } = require('./targets.cjs');
 if (target() === 'desktop') {

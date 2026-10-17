@@ -26,3 +26,16 @@ test('release acceptance only accepts its marked temporary directory and exact d
     assert.throws(() => rehearsalRoot(os.tmpdir()), /dedicated temporary/);
     assert.throws(() => rehearsalRoot(path.dirname(root)), /dedicated temporary/);
 });
+
+test('release acceptance explicitly selects desktop children and defaults to all platforms', () => {
+    const { options, browserInvocation } = require('./release/browser-options.cjs');
+    const required = ['--archive', 'fixture.tgz', '--sha256', 'a'.repeat(64), '--browser', 'chromium.exe', '--playwright', 'playwright', '--output', 'new-output'];
+    assert.equal(options(required)['--target'], 'all');
+    for (const args of [['--target=desktop'], ['--target', 'desktop']]) assert.equal(options([...required, ...args])['--target'], 'desktop');
+    assert.throws(() => options([...required, '--target=phone']), /target/);
+    assert.throws(() => options([...required, '--target=desktop', '--target=all']), /option needs one value/);
+    const app = path.resolve('candidate'), script = path.join(app, 'test/browser/release-install.cjs');
+    const child = browserInvocation(app, script, ['argument'], 'desktop', { PATH: 'system-path', PIVANE_BROWSER_TARGET: 'all' });
+    assert.equal(child.env.PIVANE_BROWSER_TARGET, 'desktop'); assert.equal(child.env.PATH, 'system-path');
+    assert.deepEqual(child.args, ['--require', path.join(app, 'test/browser/target-guard.cjs'), script, 'argument']);
+});
