@@ -5,7 +5,7 @@
     async function api(url, options = {}) {
         const response = await fetch(url, { ...options, credentials: 'same-origin', cache: 'no-store' });
         let data; try { data = await response.json(); } catch { throw new Error(tr('无法读取成果服务响应', 'Unable to read the artifacts response')); }
-        if (!response.ok) throw new Error(data.error || tr('成果暂时无法读取', 'Artifacts are temporarily unavailable'));
+        if (!response.ok) throw Object.assign(new Error(data.error || tr('成果暂时无法读取', 'Artifacts are temporarily unavailable')), { status: response.status, data });
         return data;
     }
     const VIEWS = () => [['saved', tr('已保存', 'Saved'), 'fa-box-archive'], ['favorite', tr('星标', 'Starred'), 'fa-star'], ['all', tr('待保存', 'Unsaved'), 'fa-inbox'], ['trash', tr('回收站', 'Trash'), 'fa-trash-can'], ['hidden', tr('已隐藏', 'Hidden'), 'fa-eye-slash']];

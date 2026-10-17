@@ -188,7 +188,7 @@
     let pdfLibrary;
     function pdf(body, data, context) {
         const state = context.state.pdf ||= { page: 1, scale: 1, textOpen: false };
-        let disposed = false, loading, documentProxy, renderTask, currentPage, generation = 0, pageNumber = state.page, scale = state.scale, timer, resizeTimer, pendingAnchor;
+        let disposed = false, loading, documentProxy, renderTask, currentPage, textReader, generation = 0, pageNumber = state.page, scale = state.scale, timer, resizeTimer, pendingAnchor;
         let lastWidth = body.clientWidth;
         const captureView = () => ({ x: body.scrollLeft / (canvas.clientWidth || 1), y: body.scrollTop / (canvas.clientHeight || 1) });
         const resize = anchor => {
@@ -218,7 +218,11 @@
         function dispose() {
             if (disposed) return;
             disposed = true; generation++; clearTimeout(timer); clearTimeout(resizeTimer); observer.disconnect(); renderTask?.cancel();
-            if (loading) Promise.resolve(loading.destroy()).catch(() => {});
+            // Finish the active text stream before tearing down its PDF worker.
+            // Destroying the transport during a read can leave a late close for
+            // an already errored ReadableStream controller.
+            const reader = textReader; textReader = null;
+            Promise.resolve(reader?.cancel(new Error('PDF preview closed'))).catch(() => {}).then(() => loading?.destroy()).catch(() => {});
             canvas.width = canvas.height = 0;
         }
         function failure(error) {
@@ -234,8 +238,10 @@
             state.page = pageNumber; state.scale = scale;
             input.value = String(pageNumber); previous.disabled = pageNumber === 1; next.disabled = pageNumber === documentProxy.numPages;
             const oldTask = renderTask; oldTask?.cancel();
+            const oldReader = textReader; textReader = null;
             if (!anchor) { text.textContent = ''; textView.open = false; state.textOpen = false; }
             try {
+                if (oldReader) await oldReader.cancel(new Error('PDF page changed')).catch(() => {});
                 if (oldTask) await oldTask.promise.catch(() => {});
                 if (disposed || ticket !== generation) return;
                 currentPage?.cleanup(); currentPage = null;
@@ -258,6 +264,7 @@
                 status.textContent = tr('第 {0} / {1} 页', 'Page {0} / {1}', pageNumber, documentProxy.numPages);
                 // Stream bounded text; do not retain every page or all text items.
                 const reader = page.streamTextContent().getReader(); let content = '';
+                textReader = reader;
                 try {
                     while (content.length < 100000 && !disposed && ticket === generation) {
                         const result = await reader.read(); if (result.done) break;
@@ -266,7 +273,7 @@
                             if (content.length >= 100000) break;
                         }
                     }
-                } finally { await reader.cancel().catch(() => {}); }
+                } finally { if (textReader === reader) textReader = null; await reader.cancel(new Error('PDF text extraction finished')).catch(() => {}); }
                 if (!disposed && ticket === generation) { clearTimeout(timer); text.textContent = content.slice(0, 100000) || tr('此页没有可提取文字（扫描页不自动 OCR）', 'No extractable text on this page (scans are not automatically OCRed)'); }
             } catch (error) { if (ticket === generation) failure(error); }
         }

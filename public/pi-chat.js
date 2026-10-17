@@ -450,7 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const filesPanel = new window.PiFilesPanel({
         showPane: mode => sideChat.showPane(mode), copy: copyTextToClipboard, notify: toast,
-        api: apiFetch, context: () => ({ cwd: state.cwd, sessionId: state.session?.id || null, key: JSON.stringify([state.cwd, state.session?.id]), generation: state.socketGeneration })
+        api: apiFetch, context: () => ({ cwd: state.cwd, sessionId: state.session?.id || null, connected: state.connected, key: JSON.stringify([state.cwd, state.session?.id]), generation: state.socketGeneration })
     });
     const turnEdits = new window.PiTurnEdits({
         transcript: elements.transcript, showPane: () => filesPanel.showHistory(), copy: copyTextToClipboard, notify: toast,
@@ -2384,6 +2384,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.socket = null;
         }
         state.connected = false;
+        documentAttachments.closePreview();
         nativeContext.sync();
         sideChat.updateParent();
         rejectPending(new Error('Session changed'));
@@ -4197,7 +4198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.attachments.innerHTML = state.attachmentFiles.filter(file => file.kind !== 'quote').map(file => `
             <div class="pi-attachment-chip" data-attachment-id="${file.id}">
                 <button class="pi-attachment-open" type="button" data-preview-attachment title="${translateUi("预览附件")}" aria-label="${translateUi("预览 {0}", escapeHtml(file.name))}">${file.kind === 'image' ? `<img src="${file.preview}" alt="">` : '<span class="pi-file-mark"><i class="fa-solid fa-file-code"></i></span>'}</button>
-                <span title="${escapeHtml(file.name)}"><strong>${escapeHtml(file.name)}</strong><small>${file.size == null ? translateUi("图片") : `${Math.ceil(file.size / 1024)} KB`}</small></span>
+                <span title="${escapeHtml(file.name)}"><strong>${escapeHtml(file.name)}</strong><small>${file.size == null ? translateUi("图片") : `${Math.ceil(file.size / 1024)} KB`}${['doc', 'xls', 'ppt'].includes(file.format) ? ` · ${translateUi("仅预览和下载")}` : ''}</small></span>
                 <button type="button" data-remove-attachment title="${translateUi("移除附件")}" aria-label="${translateUi("移除附件")}"><i class="fa-solid fa-xmark"></i></button>
             </div>
         `).join('');
@@ -4210,7 +4211,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function previewAttachment(file) {
-        if (file.kind === 'document') { void documentAttachments.download(file.reference).catch(error => toast(error.message, 'error')); return; }
+        if (file.kind === 'document') {
+            if (window.PiOfficeFilePreview.supports(file.name)) documentAttachments.preview(file.reference, { isCurrent: () => state.attachmentFiles.includes(file) });
+            else void documentAttachments.download(file.reference).catch(error => toast(error.message, 'error'));
+            return;
+        }
         $('pi-attachment-preview-name').textContent = file.name;
         const body = $('pi-attachment-preview-content');
         const original = $('pi-attachment-original');

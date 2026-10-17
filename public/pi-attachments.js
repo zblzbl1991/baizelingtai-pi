@@ -4,7 +4,7 @@
     const imageTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
     const textExtensions = 'txt,md,markdown,json,jsonl,js,mjs,cjs,ts,tsx,jsx,py,sh,bash,zsh,css,html,htm,xml,yaml,yml,toml,ini,csv,tsv,log,sql,rs,go,c,h,cpp,hpp,java,kt,swift,rb,php,r,lua,vue,svelte,conf,cfg,gitignore,env'.split(',');
     const documents = typeof module !== 'undefined' && module.exports ? require('./pi-document-references') : globalThis.PiDocumentReferences;
-    const accept = [...imageTypes, 'text/*', '.docx', '.xlsx', '.pptx', '.pdf', ...textExtensions.map(ext => `.${ext}`)].join(',');
+    const accept = [...imageTypes, 'text/*', '.doc', '.xls', '.ppt', '.docx', '.xlsx', '.pptx', '.pdf', ...textExtensions.map(ext => `.${ext}`)].join(',');
     let nextId = 0;
     const id = () => `attachment-${++nextId}`;
     const escapeName = name => String(name).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
@@ -31,8 +31,7 @@
         const inferred = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' }[ext];
         if (imageTypes.includes(type) || inferred && (!type || type === 'application/octet-stream')) return { kind: 'image', mimeType: inferred || type };
         if (type.startsWith('image/') || ['heic', 'heif', 'avif', 'svg', 'bmp', 'tif', 'tiff'].includes(ext)) throw new Error(translateUi("图片仅支持 PNG/JPEG/WebP/GIF，请先转换格式"));
-        if (['docx', 'xlsx', 'pptx', 'pdf'].includes(ext)) return { kind: 'document', format: ext };
-        if (['doc', 'xls', 'ppt'].includes(ext)) throw new Error(translateUi("请先将旧版 Office 文件另存为 DOCX、XLSX 或 PPTX 后上传"));
+        if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf'].includes(ext)) return { kind: 'document', format: ext };
         if (['zip', 'gz', 'rar', '7z'].includes(ext)) throw new Error(translateUi("暂不支持压缩包，请选择其中的文件"));
         if (type.startsWith('text/') || ['application/json', 'application/xml', 'application/javascript', 'application/yaml', 'application/x-yaml', 'application/toml'].includes(type)
             || textExtensions.includes(ext) || /^(Dockerfile|Makefile|LICENSE|README)$/i.test(file.name)) return { kind: 'text', mimeType: 'text/plain' };
