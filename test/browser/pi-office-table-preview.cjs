@@ -46,6 +46,21 @@ async function run(browser, viewport) {
     const xls = fs.readFileSync(path.join(__dirname, '../fixtures/office/preview.xls'));
     await page.evaluate(bytes => mount(bytes, 'xls'), xls.toString('base64')); await page.locator('td[data-address=A1]').waitFor(); assert.equal(await page.locator('td[data-address=A1]').innerText(), 'Office preview 中文文档');
     await page.evaluate(bytes => mount(bytes, 'xls'), fixture.xlsBiff5().toString('base64')); await page.locator('td[data-address=A1]').waitFor(); assert.equal(await page.locator('td[data-address=A1]').innerText(), '中文');
+    // OPC Default fallback and Override precedence travel through the production
+    // Worker, not a main-thread parser substituted by this fixture.
+    for (const options of [{}, { mainOverride: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml' }]) {
+        await page.evaluate(bytes => mount(bytes), fixture.zip(fixture.defaultTypesFiles(options)).toString('base64'));
+        await page.locator('td[data-address=A1]').waitFor();
+        assert.match(await page.locator('td[data-address=A1]').innerText(), /中文/);
+        await page.locator('select').selectOption('1');
+        assert.equal(await page.locator('td[data-address=A1]').innerText(), '123.5');
+    }
+    for (const options of [{ mainOverride: 'application/xml' }, { duplicateDefault: true }, { duplicateOverride: true }]) {
+        await page.evaluate(bytes => mount(bytes), fixture.zip(fixture.defaultTypesFiles(options)).toString('base64'));
+        await page.locator('[role=alert]').waitFor();
+        assert.equal(await page.locator('td').count(), 0);
+        assert.equal(await page.evaluate(() => workerCounts.active), 0);
+    }
     // Real workers repeatedly start and terminate; no retained mount or late bytes.
     for (let i = 0; i < 20; i++) { await page.evaluate(bytes => mount(bytes), fixture.workbook().toString('base64')); await page.locator('td[data-address=A1]').waitFor(); }
     const counts = await page.evaluate(async () => {

@@ -405,6 +405,9 @@ async function run(browser, viewport, theme, fullContext = true, retention = ful
         assert.equal(await page.locator('#pi-side-input').inputValue(), 'A 的未发送草稿');
         assert.equal(await page.locator('#pi-side-reference-label').textContent(), sourceReference, 'background stays frozen');
         assert.ok(!(await page.locator('#pi-side-messages').textContent()).includes('B 独立问题'));
+        // Reattaching the retained transcript restores its pending anchor in the
+        // scroll controller's next animation frame; message DOM alone is not ready.
+        await page.waitForFunction(expected => Math.abs(document.querySelector('#pi-side-transcript').scrollTop - expected) <= 4, readingTop);
         assert.ok(Math.abs(await page.locator('#pi-side-transcript').evaluate(node => node.scrollTop) - readingTop) <= 4, 'return restores the side reading position');
         assert.equal(await page.locator('#pi-side-chat').count(), 1, 'only the selected thread DOM is attached');
         await page.locator('#pi-side-messages [data-side-action="copy"]').last().click();

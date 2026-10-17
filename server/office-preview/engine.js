@@ -6,6 +6,7 @@ const { fork, spawn } = require('node:child_process');
 const { privateDir, readSafe } = require('../pi-maintenance-files');
 const { writePrivateFileSync } = require('../pi-private-files');
 const { root: defaultRoot, verifyRuntime, officePreviewPlatform } = require('./inventory');
+const { nativeConversionError } = require('./errors');
 const fail = (code, message) => Object.assign(new Error(message), { code });
 function probeDocument() {
     const { zipSync, strToU8 } = require('fflate');
@@ -50,9 +51,9 @@ function createOfficePreviewEngine(options = {}) {
                 child.on('error', () => { spawnError = true; });
                 child.on('close', code => {
                     clearTimeout(timer); clearTimeout(escalation); signal?.removeEventListener('abort', stop); lifetime.signal.removeEventListener('abort', stop);
-                    if (timedOut) reject(fail('office_timeout', 'Office preview timed out'));
+                    if (timedOut) reject(nativeConversionError('timeout'));
                     else if (cancelled) reject(fail('office_cancelled', 'Office preview cancelled'));
-                    else if (spawnError || code !== 0 || !response?.ok) reject(fail(({ 'output-too-large': 'office_output_limit', 'input-too-large': 'office_source_limit', timeout: 'office_timeout', unavailable: 'office_unavailable' }[response?.code] || 'office_conversion_failed'), 'Office conversion failed'));
+                    else if (spawnError || code !== 0 || !response?.ok) reject(nativeConversionError(response?.code));
                     else resolve(response);
                 });
                 child.send({ kit: installation.kit, inputPath, outputPath, limits });
@@ -60,7 +61,7 @@ function createOfficePreviewEngine(options = {}) {
             });
             if (signal?.aborted || lifetime.signal.aborted) throw fail('office_cancelled', 'Office preview cancelled');
             const output = readSafe(outputPath, limits.maxOutputBytes);
-            if (output.length < 8 || !output.subarray(0, 5).equals(Buffer.from('%PDF-')) || !output.subarray(-1024).includes(Buffer.from('%%EOF'))) throw fail('office_conversion_failed', 'Office output is not a PDF');
+            if (output.length < 8 || !output.subarray(0, 5).equals(Buffer.from('%PDF-')) || !output.subarray(-1024).includes(Buffer.from('%%EOF'))) throw nativeConversionError('invalid-output');
             return { bytes: output, missingFonts: Array.isArray(result.missingFonts) ? result.missingFonts.filter(name => typeof name === 'string').slice(0, 256).map(name => name.slice(0, 256)) : [] };
         } finally { fs.rmSync(directory, { recursive: true, force: true }); }
     }
@@ -90,9 +91,9 @@ function createOfficePreviewEngine(options = {}) {
             const available = await status();
             if (disposed) throw fail('office_unavailable', 'Office preview has stopped');
             if (!available.available) throw fail(available.code, available.message);
-            if (!Buffer.isBuffer(bytes) && !(bytes instanceof Uint8Array)) throw fail('office_invalid_format', 'Office preview requires bytes');
-            if (!['doc', 'docx', 'ppt', 'pptx'].includes(format)) throw fail('office_invalid_format', 'Unsupported Office preview format');
-            if (bytes.length > limits.maxSourceBytes) throw fail('office_source_limit', 'Office preview source is too large');
+            if (!Buffer.isBuffer(bytes) && !(bytes instanceof Uint8Array)) throw nativeConversionError('invalid-document');
+            if (!['doc', 'docx', 'ppt', 'pptx'].includes(format)) throw nativeConversionError('unsupported-format');
+            if (bytes.length > limits.maxSourceBytes) throw nativeConversionError('input-too-large');
             return execute(Buffer.from(bytes), format, signal);
         })();
         active.add(task);

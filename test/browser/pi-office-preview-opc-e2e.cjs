@@ -18,6 +18,12 @@ function variants() {
         }
         const bytes = fixtures.zip(files); values.push({ strict, encoding, name: `opc-${strict}-${encoding}.xlsx`, bytes, sha256: hash(bytes) });
     }
+    for (const [declaration, options] of [['default', {}], ['override', { strict: true, mainOverride: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml' }]]) {
+        const files = fixtures.defaultTypesFiles(options);
+        files['xl/sheets/two.xml'] = files['xl/sheets/two.xml'].replace('</sheetData>', '<row r="2"><c r="A2" t="inlineStr"><is><t>（无已保存结果）</t></is></c></row></sheetData>');
+        const bytes = fixtures.zip(files);
+        values.push({ strict: !!options.strict, encoding: 'utf-8', declaration, name: 'opc-types-' + declaration + '.xlsx', bytes, sha256: hash(bytes) });
+    }
     return values;
 }
 async function ready(page, host) {
@@ -57,14 +63,14 @@ async function main() {
                     const host = source === 'project' ? '#pi-file-body' : '.pi-document-preview-body'; await ready(page, host);
                     const event = page.waitForEvent('download'); event.catch(() => {}); await (source === 'project' ? page.locator('#pi-file-download') : page.locator('.pi-document-preview header button').first()).click();
                     assert.equal(hash(fs.readFileSync(await (await event).path())), input.sha256);
-                    matrix.push({ width, source, strict: input.strict, encoding: input.encoding, mainPart: 'xl/book.xml', sha256: input.sha256 });
+                    matrix.push({ width, source, strict: input.strict, encoding: input.encoding, declaration: input.declaration || 'override', mainPart: 'xl/book.xml', sha256: input.sha256 });
                     if (source !== 'project') { await page.keyboard.press('Escape'); await page.locator('.pi-document-preview').waitFor({ state: 'detached' }); await page.locator('[data-remove-attachment]').click(); }
                     assert.equal(await page.locator('#pi-input').inputValue(), 'OPC retained draft');
                 }
                 assert.deepEqual(errors, []); await page.screenshot({ path: path.join(output, `opc-${width}.png`) });
             } finally { await context.close(); }
         }
-        assert.equal(matrix.length, 24); assert.equal(fixture.providerRequests.length, 0); console.log('24 actual custom-main/encoding/project/draft-upload browser combinations passed');
+        assert.equal(matrix.length, 32); assert.equal(fixture.providerRequests.length, 0); console.log('32 actual custom-main/content-types/encoding/project/draft-upload browser combinations passed');
     } finally { fs.writeFileSync(path.join(output, 'opc-matrix.json'), JSON.stringify({ matrix, providerRequests: fixture.providerRequests }, null, 2)); await browser?.close(); await fixture.close(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

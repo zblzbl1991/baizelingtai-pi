@@ -33,8 +33,23 @@ function parseXlsx(bytes, limits) {
     const model = { sheets: [], warnings: [], date1904: false }, warned = new Set();
     const warn = text => { if (!warned.has(text)) { b.add(text); model.warnings.push(text); warned.add(text); } };
     warn('近似只读预览；图表、图片、批注、条件格式及其他未支持内容可能省略。公式仅显示文件中已保存的缓存，可能过期，不重新计算。');
-    const types = new Map();
-    xml('[Content_Types].xml', ['http://schemas.openxmlformats.org/package/2006/content-types'], { root(t) { if (t.local !== 'Types') fail('OPC 内容类型无效'); }, open(n, a) { if (n === 'Override') { if (!a.PartName?.startsWith('/')) fail('无效的 OPC 内容类型路径'); const p = partPath(a.PartName.slice(1)); if (types.has(p)) fail('重复内容类型'); types.set(p, a.ContentType); } } });
+    const types = new Map(), defaults = new Map();
+    xml('[Content_Types].xml', ['http://schemas.openxmlformats.org/package/2006/content-types'], {
+        root(t) { if (t.local !== 'Types') fail('OPC 内容类型无效'); },
+        open(n, a) {
+            if (n === 'Types') return;
+            if (!a.ContentType || /vbaProject|macroEnabled/i.test(a.ContentType)) fail('OPC 内容类型无效');
+            if (n === 'Default') {
+                if (!/^[A-Za-z0-9]+$/.test(a.Extension || '') || defaults.has(a.Extension.toLowerCase())) fail('重复或无效的默认内容类型');
+                defaults.set(a.Extension.toLowerCase(), a.ContentType);
+            } else if (n === 'Override') {
+                if (!a.PartName?.startsWith('/')) fail('无效的 OPC 内容类型路径');
+                const p = partPath(a.PartName.slice(1));
+                if ('/' + p !== a.PartName || types.has(p)) fail('重复或无效的内容类型');
+                types.set(p, a.ContentType);
+            } else fail('OPC 内容类型声明无效');
+        }
+    });
     function relationships(owner) {
         const p = owner ? `${owner.slice(0, owner.lastIndexOf('/') + 1)}_rels/${owner.slice(owner.lastIndexOf('/') + 1)}.rels` : '_rels/.rels';
         const rels = new Map();
@@ -52,7 +67,7 @@ function parseXlsx(bytes, limits) {
     const roots = [...relationships('').values()].filter(r => isType(r.type, 'officeDocument'));
     if (roots.length !== 1 || roots[0].external) fail('OPC 工作簿关系缺失或无效');
     const book = roots[0].target;
-    if (types.get(book) !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml') fail('不是受支持的 XLSX 工作簿');
+    if ((types.get(book) ?? defaults.get(book.slice(book.lastIndexOf('.') + 1).toLowerCase())) !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml') fail('不是受支持的 XLSX 工作簿');
     const rels = relationships(book), sheets = [], ids = new Set();
     xml(book, MAIN, { root(t) { if (t.local !== 'workbook') fail('工作簿 XML 无效'); }, open(n, a, tag) {
         if (n === 'workbookPr') model.date1904 = ['1', 'true'].includes(a.date1904);
