@@ -17,6 +17,23 @@ function files(options = {}) {
         'xl/sheets/three.xml': wrap('worksheet', '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>hidden</t></is></c></row></sheetData>')
     };
 }
+// OPC permits a part type to come from its extension's Default declaration.
+function defaultTypesFiles({ strict = false, mainOverride, duplicateDefault = false, duplicateOverride = false } = {}) {
+    const result = files({ strict });
+    const type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.';
+    const main = type + 'sheet.main+xml';
+    const entries = [
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+        '<Default Extension="xml" ContentType="' + main + '"/>',
+        ...['one', 'two', 'three'].map(name => '<Override PartName="/xl/sheets/' + name + '.xml" ContentType="' + type + 'worksheet+xml"/>'),
+        '<Override PartName="/xl/style.xml" ContentType="' + type + 'styles+xml"/>'
+    ];
+    if (mainOverride) entries.push('<Override PartName="/xl/book.xml" ContentType="' + mainOverride + '"/>');
+    if (duplicateDefault) entries.push('<Default Extension="XML" ContentType="' + main + '"/>');
+    if (duplicateOverride) entries.push('<Override PartName="/xl/style.xml" ContentType="' + type + 'styles+xml"/>');
+    result['[Content_Types].xml'] = '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' + entries.join('') + '</Types>';
+    return result;
+}
 // Small BIFF5/CFB document authored from MS-CFB and BIFF record layouts.
 // GBK bytes D6 D0 CE C4 independently spell 中文 (codepage 936).
 function xlsBiff5({ rows = 2, columns = 2, rich = false } = {}) {
@@ -51,4 +68,4 @@ function xlsBiff5({ rows = 2, columns = 2, rich = false } = {}) {
     entry(0, 'Root Entry', 5, 0xfffffffe, 0); dir.writeUInt32LE(1, 76); entry(1, 'Book', 2, 2, stream.length);
     return Buffer.concat([header, fat, dir, stream]);
 }
-module.exports = { files, workbook: options => zip(files(options)), zip, xlsBiff5 };
+module.exports = { files, defaultTypesFiles, workbook: options => zip(files(options)), zip, xlsBiff5 };

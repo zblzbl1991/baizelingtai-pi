@@ -36,7 +36,7 @@ async function main() {
         try {
             assert.equal((await constrained.status()).available, true);
             const large = await Packer.toBuffer(new Document({sections:[{children:Array.from({length:1500},(_,i)=>new Paragraph('Native bounded output page content '+i))}]}));
-            await assert.rejects(constrained.convert(large, 'docx'), {code:'office_output_limit'});
+            await assert.rejects(constrained.convert(large, 'docx'), {code:'OFFICE_LIMIT',status:413});
             report.outputBudget = true;
         } finally { await constrained.dispose(); }
         assert.deepEqual(fs.readdirSync(root), []);

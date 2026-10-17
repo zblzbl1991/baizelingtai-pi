@@ -103,3 +103,18 @@ test('modern Word reads and Excel/PPT inspection follow a relocated main part wi
         assert.equal(result.format, format); assert.ok(format === 'xlsx' ? result.sheets.length > 0 : result.total > 0);
     }
 });
+
+test('OPC Default main content type accepted by the source remains readable by the workbook parser', () => {
+    const bytes = fixture.zip(fixture.defaultTypesFiles());
+    assert.deepEqual(validateOfficeFormat(bytes,'xlsx'),{format:'xlsx'});
+    const book = parseWorkbook(bytes,'xlsx');
+    assert.deepEqual(book.sheets.map(sheet=>sheet.name),['销售','第二页','隐藏']);
+    assert.equal(book.sheets[1].cells[0].value,123.5);
+});
+
+test('OPC part overrides take precedence and duplicate type declarations are rejected', () => {
+    const main = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml';
+    assert.equal(parseWorkbook(fixture.zip(fixture.defaultTypesFiles({mainOverride:main})),'xlsx').sheets[1].cells[0].value,123.5);
+    assert.throws(()=>parseWorkbook(fixture.zip(fixture.defaultTypesFiles({mainOverride:'application/xml'})),'xlsx'),{code:'OFFICE_WORKBOOK_INVALID'});
+    for(const options of [{duplicateDefault:true},{duplicateOverride:true}]) assert.throws(()=>parseWorkbook(fixture.zip(fixture.defaultTypesFiles(options)),'xlsx'),{code:'OFFICE_WORKBOOK_INVALID'});
+});
