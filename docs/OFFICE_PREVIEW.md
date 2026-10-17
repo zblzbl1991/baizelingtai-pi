@@ -29,9 +29,11 @@ DOC／XLS／PPT 可上传、预览和下载；`read_document` 和 Office 工作�
 
 Word／PPT 转换的首批目标为 Windows x64，使用固定的 LibreOffice kit 与同版本原生引擎；版本、依赖来源和完整发行闭包见[依赖约定](development/DEPENDENCIES.md#office-预览依赖)。需要 Node 22.19.0 或更高版本，普通安装仍推荐 Node 22.x。转换不要求安装 Microsoft Office，也不会自动改用系统 LibreOffice 或另一种引擎。
 
-统一安装入口 `node scripts/install.cjs` 构建本地表格资源，并执行引擎完整性校验与隔离文档转换健康探针。缺失／损坏的预览组件使首次安装报告 Office 预览降级，工作台仍可启动；这不代表其他安装失败可以忽略。Windows 更新候选和便携构建要求转换探针成功后才可完成或激活，失败保留原运行版。没有通过探针的候选不能称为安装成功。
+统一安装入口 `node scripts/install.cjs` 构建本地表格资源。在已声明支持的 Windows x64 上，它还执行引擎完整性校验与隔离文档转换健康探针。缺失／损坏的预览组件使首次安装报告 Office 预览降级，工作台仍可启动；这不代表其他安装失败可以忽略。Windows x64 更新候选和便携构建要求转换探针成功后才可完成或激活，失败保留原运行版；组件缺失、完整性失败和健康故障均不放宽。
 
-原生引擎需要 Microsoft Visual C++ v14 x64 运行库。缺少或加载失败时，按 [Microsoft 官方说明](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)安装或修复，再在独立候选中重新执行 `node scripts/install-office-preview.cjs --require-available`。完整性失败应先核对锁定安装和来源，使用统一安装入口修复，不手动替换引擎 DLL；运行时不会自行下载安装组件或执行系统提权安装。
+其他系统或架构尚未声明原生 Word／PPT 转换支持。共享平台策略会报告 `office_unsupported` 和实际平台，不解析 Windows 引擎、不执行其健康探针，也不要求 Windows 运行库；不会仅因这一可选能力未支持而阻断其他工作台安装／更新。表格浏览器资源仍会准备，预览仍需来源与浏览器检查。这是明确降级策略，不是 Linux、macOS 或 ARM 原生转换已通过实机验收的声明。公开 HTTP 状态和失败码仍按 [API](API.md#office-文件预览)投影。
+
+Windows x64 原生引擎需要 Microsoft Visual C++ v14 x64 运行库。仅在该平台缺少或加载失败时，按 [Microsoft 官方说明](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)安装或修复，再在独立候选中重新执行 `node scripts/install-office-preview.cjs --require-available`。完整性失败应先核对锁定安装和来源，使用统一安装入口修复，不手动替换引擎 DLL；运行时不会自行下载安装组件或执行系统提权安装。
 
 转换使用后端系统可用字体，缺失时尽可能显示字体提示。安装所需字体后，显式点击“刷新预览”以重新检测并切换引擎／字体代际；普通再次打开可能复用已验证缓存。刷新繁忙时等待当前任务实际结束再重试。字体提示不是全部字形或排版的完整证明，最终版面仍需目标办公软件实机核验。
 

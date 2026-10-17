@@ -72,6 +72,8 @@ locator 字段沿用各来源接口的含义与检查。`expectedRevision` 可�
 
 `GET /api/pi/status` 增加 `officePreview:{available,code?,message?,version?,platform?}`，Word／PPT 可用性来自完整性及实际转换健康探针；不可用不阻止工作台启动。独立 `officeWorkbook` 表示工作簿来源所需原生描述符组件可用，不证明浏览器已经解析任意文件；活动接口增加 `officePreviewBusy`。旧 `filePreviews`、`documentUploads` 和原件下载能力保持独立。
 
+原生转换当前仅声明 Windows x64。未声明平台的底层引擎／安装预检诊断为 `office_unsupported`，含 `platform:"<platform>-<arch>"`，不解析 Windows 引擎或要求 VC++ 运行库，且不因这一可选能力阻断工作台候选安装。公开 `/status.officePreview` 仍投影 `available:false,code:"OFFICE_UNAVAILABLE"` 并保留平台，预览 POST 仍返回 503 `OFFICE_UNAVAILABLE`；不新增 HTTP 平台覆盖参数。已声明平台的严格候选预检必须通过完整性与实际转换探针，组件缺失或损坏不降成未支持平台。
+
 ## Office 工作副本与 MCP
 
 内置 `pivane-officecli` 扩展在启用 Pi 原生 MCP 的持久受管 RPC 会话注册 `prepare_office_document {id,requestId}`。id 为当前分支已发送 DOCX/XLSX/PPTX 附件标识，原件最大 16 MiB；requestId 沿用 1–160 字符请求标识格式。不接受原件路径。工具 details.pivaneOffice 为 `{version:1,id,sessionId,requestId,source,path,revision,size,reused}`；source 是原附件元数据，path 是项目工作副本实际路径，revision/size 是本次读取时副本的状态，不是之后所有编辑的预期版本。

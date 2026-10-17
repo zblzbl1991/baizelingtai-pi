@@ -45,6 +45,8 @@ XLSX 使用本项目的有界 OPC／XML 读取器；`fflate` 用于展开，`sax
 
 `server/office-preview/inventory.js` 与 `config/office-preview-assets.json` 是引擎及静态资源闭包的共同入口，核对锁定包、完整常规文件集合、逐文件 SHA256、原生 manifest 与平台信息，包含程序、源码、许可证、NOTICE 和传递依赖。安装、健康探针、受管候选预检、打包和源码快照复用同一清单，不能只复制 DLL 或另建一套扫描规则。更新依赖时同时审查清单和真实解析，不能只更新版本字符串。
 
+同一 inventory 的 `officePreviewPlatform()` 是原生支持声明的唯一位置，完整性校验、运行时状态和候选预检共同使用。当前只声明 win32/x64：该平台保持严格探针；未声明平台返回带平台的 `office_unsupported` 降级诊断，跳过 Windows 引擎解析与探针，不阻断其他工作台安装／更新。安装脚本继续准备工作簿静态资源，不提供 CLI／环境／HTTP 的平台覆盖入口。该策略的模拟平台测试不能代替目标操作系统实机验收。
+
 `scripts/build-office-preview.cjs` 生成本地 `workbook-worker.js`、主线程模型验证 bundle 与第三方声明；静态访问只开放 inventory 的明确 URL。生成文件纳入统一发行集合，源码解析／Worker／样式和测试由既有递归发现覆盖。预算只在 `config/office-preview.json` 维护，解析前后都执行检查；安全 DOM、不执行公式／外部目标和有界页窗口属于应用适配责任。
 
 真实转换在过滤环境、受保护私有输入目录中运行，按原生已打开描述符验证输入／输出身份与预算；宏执行关闭，Word／PPT 外部关系拒绝。进程取消等待实际退出，不把 JS 超时当成原生进程终止。此隔离不是完整的操作系统网络或 RSS 沙箱，不能宣称对同一系统用户提供 OS 权限隔离。
