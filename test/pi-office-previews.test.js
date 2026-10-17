@@ -103,3 +103,20 @@ test('shutdown remains busy through engine disposal and does not admit new reade
     assert.equal(wasBusy, true); assert.equal(f.service.busy, false);
     await assert.rejects(f.service.preview({ source: { type: 'project' } }), { code: 'OFFICE_UNAVAILABLE' });
 });
+test('shutdown forwards cancellation to an initial engine health probe before joining it', async () => {
+    const f = fixture(); let entered, complete, disposalForwarded = false;
+    const ready = new Promise(r => entered = r), health = new Promise(r => complete = r);
+    f.engine.status = async () => { entered(); return health; };
+    f.engine.dispose = async () => { disposalForwarded = true; complete({ available: false }); };
+    const probing = f.service.status(); await ready; const stopping = f.service.dispose();
+    const forwardedBeforeJoin = disposalForwarded; complete({ available: false });
+    await Promise.all([probing, stopping]); assert.equal(forwardedBeforeJoin, true);
+});
+test('failed engine shutdown propagates the failure and retains busy shutdown state', async () => {
+    const f = fixture(), failure = new Error('synthetic native cleanup failure');
+    f.engine.dispose = async () => { throw failure; };
+    await assert.rejects(f.service.dispose(), failure);
+    assert.equal(f.service.busy, true);
+    assert.notEqual(f.service.disposed, true);
+    await assert.rejects(f.service.preview({ source: { type: 'project' } }), { code: 'OFFICE_UNAVAILABLE' });
+});
