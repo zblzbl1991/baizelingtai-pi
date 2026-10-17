@@ -63,12 +63,65 @@ async function authorLegacy(soffice, source, output, profile, temporary) {
     const result = await collect(child); const file = path.join(output, path.basename(source, '.docx') + '.doc'); assert.ok(fs.existsSync(file), 'independent legacy export exists');
     return { file, output: result.slice(0, 1000) };
 }
+async function macroGate({ root, project, service, nativeCalls, soffice, unicodeCanary = false }) {
+    const { createAutoOpenDoc } = require('../office-macro-fixtures.cjs');
+    const canaryRoot = unicodeCanary ? path.join(root, '中文测试') : root; if (unicodeCanary) fs.mkdirSync(canaryRoot);
+    const markerPath = path.join(canaryRoot, 'autoopen-marker.txt'), sourcePath = path.join(project, 'autoopen.doc');
+    const fixture = createAutoOpenDoc(fs.readFileSync(path.join(__dirname, '../fixtures/office/rich.doc')), { markerPath, canaryRoot, CFB: require('xlsx').CFB });
+    fs.writeFileSync(sourcePath, fixture.bytes);
+    const source = { type: 'project', cwd: project, path: 'autoopen.doc' }, initialCalls = nativeCalls();
+    await assert.rejects(service.preview({ source }), { code: 'OFFICE_INVALID' });
+    assert.equal(nativeCalls(), initialCalls); assert.equal(fs.existsSync(markerPath), false);
+    const program = path.dirname(soffice), pythonCore = fs.readdirSync(program).filter(name => /^python-core-[0-9.]+$/.test(name));
+    assert.equal(pythonCore.length, 1, 'independent authoring installation supplies one Python/UNO runtime');
+    const temporary = path.join(root, 'macro-temp'); fs.mkdirSync(temporary);
+    const env = { ...privateEnvironment(process.env), TEMP: temporary, TMP: temporary, PYTHONHOME: path.join(program, pythonCore[0]), PYTHONPATH: program };
+    const version = await collect(spawn(soffice, ['--version'], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }));
+    const pipe = 'pivane_macro_' + randomUUID().replaceAll('-', ''), python = path.join(root, 'open-macro-control.py');
+    // A real document-open event is the control. Do not invoke a macro or send
+    // a synthetic OnLoad notification: either would test a different boundary.
+    fs.writeFileSync(python, `import pathlib,time,json,sys,uno\nfrom com.sun.star.beans import PropertyValue\nsource=pathlib.Path(sys.argv[1]);marker=pathlib.Path(sys.argv[2]);pipe=sys.argv[3]\ndef props(**kw):\n out=[]\n for name,value in kw.items():\n  p=PropertyValue();p.Name=name;p.Value=uno.Any('short',value) if name=='MacroExecutionMode' else value;out.append(p)\n return tuple(out)\nlocal=uno.getComponentContext();resolver=local.ServiceManager.createInstanceWithContext('com.sun.star.bridge.UnoUrlResolver',local)\nfor attempt in range(250):\n try:ctx=resolver.resolve('uno:pipe,name='+pipe+';urp;StarOffice.ComponentContext');break\n except Exception:time.sleep(.2)\nelse:raise RuntimeError('private UNO unavailable')\ndesktop=ctx.ServiceManager.createInstanceWithContext('com.sun.star.frame.Desktop',ctx)\nresults=[]\ntry:\n for mode in [0,4]:\n  if marker.exists():marker.unlink()\n  doc=desktop.loadComponentFromURL(uno.systemPathToFileUrl(str(source)),'_blank',0,props(Hidden=False,MacroExecutionMode=mode))\n  time.sleep(.5)\n  assert all(word in doc.Text.String for word in ['WORD-PAGE-ONE','WORD-PAGE-TWO','WORD-PAGE-THREE'])\n  assert marker.exists()==(mode==4)\n  if mode==4:assert marker.read_text().strip()=='PIVANE-SYNTHETIC-VBA-AUTOOPEN'\n  results.append({'mode':mode,'hidden':False,'autoOpenMarker':marker.exists()});doc.close(True)\n print(json.dumps(results),flush=True)\nfinally:desktop.terminate()\n`);
+    const lo = spawn(soffice, ['-env:UserInstallation=' + pathToFileURL(path.join(root, 'macro-profile')).href, '--headless', '--nologo', '--nodefault', '--norestore', '--accept=pipe,name=' + pipe + ';urp;StarOffice.ServiceManager'], { env, cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const loDone = collect(lo).then(output => ({ output }), error => ({ error }));
+    const control = spawn(path.join(program, 'python.exe'), [python, sourcePath, markerPath, pipe], { env, cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const timer = setTimeout(() => { control.kill(); lo.kill(); }, 75000);
+    let controls;
+    try {
+        const result = await collect(control).then(output => ({ output }), error => ({ error }));
+        const stopped = await loDone;
+        if (result.error) throw result.error; if (stopped.error) throw stopped.error;
+        controls = JSON.parse(result.output);
+    } finally { clearTimeout(timer); }
+    assert.deepEqual(controls, [{ mode: 0, hidden: false, autoOpenMarker: false }, { mode: 4, hidden: false, autoOpenMarker: true }]);
+    assert.equal(hash(fs.readFileSync(sourcePath)), hash(fixture.bytes));
+    fs.unlinkSync(markerPath);
+    await assert.rejects(service.preview({ source }), { code: 'OFFICE_INVALID' });
+    assert.equal(nativeCalls(), initialCalls); assert.equal(fs.existsSync(markerPath), false);
+    return { sourceSha256: hash(fixture.bytes), sourceBytes: fixture.bytes.length, markerPath, version, controls, authoringProcessesClosed: true, sameInputAfterControl: true, publicSourceCode: 'OFFICE_INVALID', nativeCalls: 0, markerAfterPublicSource: false, macroScope: 'only creates the caller-owned synthetic marker', loopback: 'not used by this local-marker-only macro' };
+}
+async function macroOnly(options) {
+    assert.ok(options.authoringSoffice, '--macro-only requires --authoring-soffice');
+    const { privateDir } = require('../../server/pi-maintenance-files');
+    const root = privateDir(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-office-macro-native-'))), project = privateDir(path.join(root, 'project'));
+    Object.assign(process.env, { PI_CODING_AGENT_DIR: path.join(root, 'agent'), PI_PROJECT_ROOTS: project, PI_OFFLINE: '1' });
+    const { OfficePreviewService } = require('../../server/pi-office-previews'), { OfficePreviewSources } = require('../../server/pi-office-preview-sources');
+    const { PiFileService } = require('../../server/pi-file-service'), { PiSessionStore } = require('../../server/pi-session-store');
+    const { createOfficePreviewEngine } = require('../../server/office-preview/engine');
+    const engine = createOfficePreviewEngine({ tempRoot: privateDir(path.join(root, 'operations')) }); let nativeCalls = 0;
+    const convert = engine.convert; engine.convert = (...args) => { nativeCalls++; return convert(...args); };
+    const service = new OfficePreviewService({ sources: new OfficePreviewSources({ files: new PiFileService(new PiSessionStore()) }), engine });
+    const report = { platform: process.platform, node: process.version };
+    try { report.macro = await macroGate({ root, project, service, nativeCalls: () => nativeCalls, soffice: options.authoringSoffice, unicodeCanary: options.unicodeCanary }); }
+    finally { await service.dispose(); if (options.report) fs.writeFileSync(options.report, JSON.stringify(report, null, 2) + '\n'); fs.rmSync(root, { recursive: true, force: true }); }
+    console.log(JSON.stringify(report, null, 2)); return report;
+}
 async function pdfText(bytes) {
     const pdfjs = await import(pathToFileURL(require.resolve('pdfjs-dist/legacy/build/pdf.mjs')).href), task = pdfjs.getDocument({ data: Uint8Array.from(bytes), useSystemFonts: true });
     try { const document = await task.promise; let text = ''; for (let p = 1; p <= document.numPages; p++) text += (await (await document.getPage(p)).getTextContent()).items.map(i => i.str).join(' '); return { pages: document.numPages, text }; }
     finally { await task.destroy(); }
 }
 async function main(options = {}) {
+    if (options.macroOnly) return macroOnly(options);
     const { privateDir } = require('../../server/pi-maintenance-files');
     const root = privateDir(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-office-security-'))), project = privateDir(path.join(root, 'project')), operations = privateDir(path.join(root, 'operations'));
     Object.assign(process.env, { PI_CODING_AGENT_DIR: privateDir(path.join(root, 'agent')), PI_PROJECT_ROOTS: project, PI_OFFLINE: '1' });
@@ -89,6 +142,7 @@ async function main(options = {}) {
         timer = setInterval(()=>{try{report.scratchSamples.push({time:Date.now(),phase:phase.value,rss:process.memoryUsage().rss,...treeBytes(operations)});}catch(error){report.errors.push({message:'Scratch sampler: '+error.message});clearInterval(timer);}},25);
         engine = createOfficePreviewEngine({tempRoot:operations}); let nativeCalls=0; const convert=engine.convert; engine.convert=(...args)=>{nativeCalls++;return convert(...args);};
         const sources = new OfficePreviewSources({files:new PiFileService(new PiSessionStore())}); service = new OfficePreviewService({sources,engine});
+        if(options.authoringSoffice) { phase.value='actual-autoopen-macro';report.actualMacro=await macroGate({root,project,service,nativeCalls:()=>nativeCalls,soffice:options.authoringSoffice,unicodeCanary:options.unicodeCanary});report.limitations=report.limitations.filter(value=>!value.startsWith('Runnable macro'));report.limitations.push('Actual DOC AutoOpen plus independent open-event control verified; no PPT auto-open or OS sandbox claim.'); }
         phase.value='cold-health'; let started=Date.now(); assert.equal((await service.status()).available,true); report.coldHealthMs=Date.now()-started;
         const preview=async(name,bytes,format='docx',extra={})=>{fs.writeFileSync(path.join(project,name),bytes);const started=Date.now(),response=await service.preview({source:{type:'project',cwd:project,path:name},...extra});const rendered=Buffer.from(response.preview.base64,'base64');report.conversions.push({phase:phase.value,name,format,sourceSha256:hash(bytes),sourceBytes:bytes.length,outputSha256:hash(rendered),outputBytes:rendered.length,milliseconds:Date.now()-started,warnings:response.warnings});assert.equal(response.source.revision,hash(bytes));return rendered;};
         const original=fs.readFileSync(path.join(__dirname,'../fixtures/office/rich.docx'));
@@ -103,7 +157,7 @@ async function main(options = {}) {
         report.fieldCanaries={httpTargets:2,localOutsideProjectTargets:2,httpReads:0,pdfContainsFreshLocalMarker:false,pdfContainsFrozenCache:true};
         const externalFiles={...files};externalFiles['word/_rels/document.xml.rels']=externalFiles['word/_rels/document.xml.rels'].toString().replace('</Relationships>',`<Relationship Id="external-canary" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" TargetMode="External" Target="${endpoint}/external-image"/></Relationships>`);
         phase.value='reject-external-modern';const before=nativeCalls;await assert.rejects(preview('external.docx',zip(externalFiles)),{code:'OFFICE_INVALID'});assert.equal(nativeCalls,before);
-        phase.value='reject-macro-modern';const macro={...files,'word/vbaProject.bin':Buffer.from('ADMISSION_ONLY_NOT_RUNNABLE_VBA')};await assert.rejects(preview('macro.docx',zip(macro)),{code:'OFFICE_INVALID'});assert.equal(nativeCalls,before);report.macroAdmission={ooxml:true,runnableMacroExecution:'unverified'};
+        phase.value='reject-macro-modern';const macro={...files,'word/vbaProject.bin':Buffer.from('ADMISSION_ONLY_NOT_RUNNABLE_VBA')};await assert.rejects(preview('macro.docx',zip(macro)),{code:'OFFICE_INVALID'});assert.equal(nativeCalls,before);report.macroAdmission={ooxml:true,runnableMacroExecution:report.actualMacro?'DOC independent AutoOpen verified; OOXML admission-only':'unverified'};
         if(options.authoringSoffice){
             phase.value='authoring-legacy';const authoring=privateDir(path.join(root,'authoring')),authoringTemp=privateDir(path.join(root,'authoring-temp'));const legacy=await authorLegacy(options.authoringSoffice,path.join(project,'fields.docx'),authoring,path.join(root,'authoring-profile'),authoringTemp),bytes=fs.readFileSync(legacy.file);
             phase.value='native-fields-doc';output=await preview('fields.doc',bytes,'doc');observed=await pdfText(output);assert.equal(report.canary.filter(h=>h.phase===phase.value).length,0);assert.ok(!observed.text.includes('PIVANE_HTTP_'+token)&&!observed.text.includes(textCanary));
@@ -133,6 +187,6 @@ async function main(options = {}) {
     }
     assert.equal(report.errors.length,0,'native security observations must satisfy each explicit assertion');return report;
 }
-function argumentsFor(argv){const options={};for(let i=0;i<argv.length;i++){if(argv[i]==='--report')options.report=path.resolve(argv[++i]);else if(argv[i]==='--authoring-soffice')options.authoringSoffice=path.resolve(argv[++i]);else if(argv[i]!=='--isolated')throw new Error('Unknown native security option');}return options;}
+function argumentsFor(argv){const options={};for(let i=0;i<argv.length;i++){if(argv[i]==='--report')options.report=path.resolve(argv[++i]);else if(argv[i]==='--authoring-soffice')options.authoringSoffice=path.resolve(argv[++i]);else if(argv[i]==='--macro-only')options.macroOnly=true;else if(argv[i]==='--unicode-canary')options.unicodeCanary=true;else if(argv[i]!=='--isolated')throw new Error('Unknown native security option');}return options;}
 if(require.main===module){if(!process.argv.includes('--isolated')){const result=spawnSync(process.execPath,[__filename,'--isolated',...process.argv.slice(2)],{env:privateEnvironment(process.env),stdio:'inherit',windowsHide:true});process.exitCode=result.status??1;}else main(argumentsFor(process.argv.slice(2))).catch(error=>{console.error(error.stack);process.exitCode=1;});}
 module.exports={main};
