@@ -7,6 +7,7 @@ const { officeZip, xml, parseDocument } = require('../pi-document-parser');
 const { inspectTables } = require('./revision-tables');
 const { inspect } = require('./checks');
 const { finish } = require('./report');
+const { formatSnapshot, formatChanges } = require('./format-changes');
 const { MAX_SOURCE } = require('./limits');
 const { fail } = require('../pi-file-scope');
 const { parseParagraph, applyEdits, unitalic, elementAt } = require('../../vendor/gongwen-kit/lib/fix/runs');
@@ -60,7 +61,7 @@ function protectedStyles(styles) {
     }
     return protectedIds;
 }
-function normalize(document, styles, headingIds, rev) {
+function normalize(document, styles, headingIds, rev, { layout = false } = {}) {
     const protectedRanges = ranges(document, ['w:tbl', 'w:txbxContent']);
     const numberedStyles = new Set([...styles.matchAll(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g)]
         .filter(m => /<w:numPr>/.test(m[2])).map(m => m[1]));
@@ -83,7 +84,7 @@ function normalize(document, styles, headingIds, rev) {
             corrections.push(record);
         }
         let output = result.xml || p;
-        if (!para.tokens.some(token => token.kind === 'opaque')) {
+        if (layout && !para.tokens.some(token => token.kind === 'opaque')) {
             const italic = unitalic(output, rev); output = italic.xml;
             if (italic.n) corrections.push({ where: `原稿段落 ${paragraph}`, rules: ['斜体改正体'], before: '斜体', after: '正体' });
         }
@@ -110,6 +111,17 @@ async function revise(raw, bytes, directory, checkpoint = () => {}, implementati
     if (request.action === 'revise' && zip.file(/(?:^|\/)origin\.sigs$|^_xmlsignatures\//i).length) throw fail('带数字签名的公文仅支持检查，不能自动修改；原件保留', 415, 'GONGWEN_SIGNED');
     let document = original, styles = await read(zip, 'word/styles.xml'), rels = await read(zip, 'word/_rels/document.xml.rels'),
         types = await read(zip, '[Content_Types].xml'), settings = await read(zip, 'word/settings.xml');
+    const formatParts = async () => {
+        const parts = { 'word/document.xml': document, 'word/styles.xml': styles, 'word/settings.xml': settings };
+        if (rels) for (const relation of xml(Buffer.from(rels)).children.filter(child => typeof child === 'object')) {
+            if (!/\/footer$/.test(relation.attrs.Type || '') || relation.attrs.TargetMode === 'External') continue;
+            const part = path.posix.normalize(path.posix.join('word', relation.attrs.Target || ''));
+            if (part.startsWith('word/') && !part.includes('..') && zip.file(part)) parts[part] = await read(zip, part);
+        }
+        return parts;
+    };
+    const originalFormat = request.action === 'revise' && request.layout ? formatSnapshot(await formatParts()) : null;
+    let changedFormat = { formatChanges: [], formatChangesTotal: 0, formatChangesTruncated: false };
     const previousRevisions = revisionFragments(document + styles);
     const author = `白泽灵台公文修订-${randomUUID()}`, date = new Date().toISOString(), notes = [], corrections = [];
     let next = 1, headingIds = {}, skipped = 0, layoutApplied = false;
@@ -140,7 +152,8 @@ async function revise(raw, bytes, directory, checkpoint = () => {}, implementati
             ({ document, rels, types, settings } = await require('./revision-layout').layoutPackage(zip, document, { rels, types, settings }, notes)); layoutApplied = true;
         } else if (request.layout) notes.push(styles && settings ? '原稿含主题色，保留版式以保护无法可靠识别的版头' : '原稿缺少样式或排版设置部件，保留原有版式');
         if (!Object.keys(headingIds).length) for (const match of styles.matchAll(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>[\s\S]*?<w:name w:val="heading ([1-4])"/gi)) headingIds[match[1]] = +match[2];
-        const result = normalize(document, styles, headingIds, { nextId: () => next++, author, date });
+        if (layoutApplied) changedFormat = formatChanges(originalFormat, formatSnapshot(await formatParts()));
+        const result = normalize(document, styles, headingIds, { nextId: () => next++, author, date }, { layout: layoutApplied });
         document = result.document; corrections.push(...result.corrections); skipped = result.skipped;
         if (layoutApplied) ({ rels, types } = await require('./revision-fonts').titleAlternative(zip, rels, types));
         if (JSON.stringify(visibleParagraphs(rejectAll(document, author))) !== JSON.stringify(visibleParagraphs(original))) throw Error('拒绝本轮修订后与原文不一致，未交付修改稿');
@@ -195,6 +208,7 @@ async function revise(raw, bytes, directory, checkpoint = () => {}, implementati
     checks.faults.push(...finalChecks.faults); checks.stages = finalChecks.stages;
     const report = finish(input, checks, corrections, request.action === 'revise' ? 1 : 0);
     Object.assign(report, { operation: request.action, editing: 'complete', originalSnapshot: request.action === 'inspect', checkView: 'proposed', revisionAuthor: author,
+        ...changedFormat,
         layoutApplied, layoutNotes: notes, fontScope: layoutApplied ? 'normative' : 'reference-only', comments: { placed: comments.placed, unplaced: comments.unplaced }, reviewPending: corrections.length > 0, previousRevisions: previousRevisions.length });
     if (report.reviewPending && report.status === 'checked') { report.status = 'needs-review'; report.label = '待核对草稿'; }
     report.coverage = ['检查按建议修订后的可见文本执行；Word 审阅中仍须逐条接受或拒绝本轮修订',
