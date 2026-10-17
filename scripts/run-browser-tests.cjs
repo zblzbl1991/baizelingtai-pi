@@ -23,7 +23,7 @@ function selectBrowserTests(root, args) {
     }
     const runnable = sourceFiles(root, 'browser').filter(file => {
         const source = fs.readFileSync(path.join(root, file), 'utf8');
-        return /chromium\.launch/.test(source) && !/pivane-browser:\s*manual/.test(source);
+        return /chromium\.launch/.test(source) && !/pivane-browser:\s*(?:manual|helper)\b/.test(source);
     });
     for (const selector of selectors) if (!runnable.includes(selector)) throw new Error(`Not a runnable browser test: ${selector}\n${usage}`);
     return { files: selectors.length ? runnable.filter(file => selectors.includes(file)) : runnable, list, ...(target !== 'all' ? {target} : {}) };

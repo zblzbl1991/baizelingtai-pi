@@ -91,3 +91,10 @@ test('desktop target selection filters scenarios before any mobile browser conte
     assert.deepEqual(selectBrowserTargets(cases, 'all'), cases);
     assert.throws(() => selectBrowserTargets(cases, 'phone'), /target/);
 });
+
+test('browser scenario discovery excludes instrumentation helpers while retaining real scenarios', () => {
+    const selected = selectBrowserTests(root, []).files;
+    assert.ok(selected.includes('test/browser/pi-office-file-preview.cjs'));
+    assert.ok(!selected.includes('test/browser/target-guard.cjs'));
+    assert.throws(() => selectBrowserTests(root, ['test/browser/target-guard.cjs']), /Not a runnable browser test/);
+});

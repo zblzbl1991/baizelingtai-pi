@@ -315,6 +315,7 @@
         }
         function renderDetail(parent = root) {
             const item = original(), box = node('section', undefined, 'pi-knowledge-detail');
+            box.setAttribute('aria-busy', String(!detail));
             const heading = node('div', undefined, 'pi-knowledge-head');
             heading.append(node('h5', item.name || t(label[item.category] || label[kind])), button(t('收起详情'), async () => {
                 if (!await discard()) return;

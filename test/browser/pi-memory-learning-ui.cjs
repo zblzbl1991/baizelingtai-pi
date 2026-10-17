@@ -617,7 +617,8 @@ async function runWave2(browser, base, width, locale) {
     await page.locator('.pi-profile-kinds button').first().click();
     const projectRow = page.locator('.pi-knowledge-row').filter({ hasText: 'Project entry' });
     await projectRow.click();
-    await page.waitForFunction(() => (document.querySelector('.pi-knowledge-detail')?.textContent || '').includes('r'.repeat(64)));
+    await page.locator('.pi-knowledge-detail[aria-busy="false"]').waitFor();
+    assert.ok((await page.locator('.pi-knowledge-detail').innerText()).includes('r'.repeat(64)));
     const detail = page.locator('.pi-knowledge-detail');
     assert.equal(await detail.locator('button').filter({ hasText: say('编辑', 'Edit') }).count(), 1, 'project entry is editable with a session id');
     assert.equal(await detail.locator('button').filter({ hasText: say('删除', 'Delete') }).count(), 1, 'project entry can be deleted with a session id');
@@ -651,7 +652,8 @@ async function runWave2(browser, base, width, locale) {
     await page.evaluate(() => { window.manager.close(); window.manager.open('profile-one'); });
     await page.locator('.pi-profile-kinds button').first().click();
     await projectRow.click();
-    await page.waitForFunction(() => (document.querySelector('.pi-knowledge-detail')?.textContent || '').includes('r'.repeat(64)));
+    await page.locator('.pi-knowledge-detail[aria-busy="false"]').waitFor();
+    assert.ok((await page.locator('.pi-knowledge-detail').innerText()).includes('r'.repeat(64)));
     assert.equal(await detail.locator('button').filter({ hasText: say('编辑', 'Edit') }).count(), 0, 'without a session id project entries stay read-only');
     assert.equal(await detail.locator('button').filter({ hasText: say('删除', 'Delete') }).count(), 0, 'without a session id project entries cannot be deleted');
     // U2.4: skill hints offer a session reload that is disabled while the chat is busy.
