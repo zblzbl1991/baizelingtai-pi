@@ -46,6 +46,37 @@
             // Allow the browser to acquire the object before releasing it.
             setTimeout(() => URL.revokeObjectURL(url), 10000);
         }
+        closePreview() {
+            this.previewCleanup?.(); this.previewCleanup = null;
+            if (this.previewDialog?.open) this.previewDialog.close();
+        }
+        preview(reference, options = {}) {
+            let target;
+            try { target = this.target(); } catch (error) { this.toast(error.message, 'error'); return; }
+            this.closePreview();
+            const dialog = document.createElement('dialog'); dialog.className = 'pi-document-preview'; dialog.setAttribute('aria-label', reference.name);
+            const header = document.createElement('header'), title = document.createElement('strong'); title.textContent = reference.name;
+            const body = document.createElement('div'); body.className = 'pi-document-preview-body';
+            const action = (label, run) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.addEventListener('click', run); return b; };
+            const source = { type: 'upload', cwd: target.context.cwd, sessionId: target.context.session.id, id: reference.id }, state = {};
+            let cleanup;
+            const isCurrent = () => dialog.open && this.context().connected && target.key === this.key() && options.isCurrent?.() !== false;
+            const mount = refresh => {
+                cleanup?.(); body.replaceChildren();
+                cleanup = globalThis.PiOfficeFilePreview.render(body, { source, name: reference.name, revision: reference.revision }, {
+                    api: (...args) => this.api(...args), state, refresh, isCurrent,
+                    retry: () => mount(true), isFullscreen: () => true, onStale: () => dialog.close()
+                });
+                this.previewCleanup = cleanup;
+            };
+            const original = action(t('下载原件'), () => { void this.download(reference).catch(error => this.toast(error.message, 'error')); });
+            const refresh = action(t('刷新预览'), () => mount(true));
+            const close = action(t('关闭预览'), () => dialog.close());
+            header.append(title, original, refresh, close); dialog.append(header, body);
+            const origin = document.activeElement;
+            dialog.addEventListener('close', () => { cleanup?.(); dialog.remove(); if (this.previewDialog === dialog) { this.previewDialog = null; this.previewCleanup = null; if (origin?.isConnected) origin.focus({ preventScroll: true }); } });
+            document.body.append(dialog); this.previewDialog = dialog; dialog.showModal(); mount(false); close.focus({ preventScroll: true });
+        }
         card(reference) {
             const card = document.createElement('div'); card.className = 'pi-document-card';
             const icon = document.createElement('i'); icon.className = 'fa-solid fa-file-lines'; icon.setAttribute('aria-hidden', 'true');
@@ -53,6 +84,10 @@
             name.textContent = reference.name; name.title = reference.name;
             info.textContent = `${reference.format.toUpperCase()} · ${Math.ceil(reference.size / 1024)} KiB`;
             caption.append(name, info);
+            if (['doc', 'xls', 'ppt'].includes(reference.format)) {
+                const limitation = document.createElement('small'); limitation.className = 'pi-document-legacy-note';
+                limitation.textContent = t('仅支持预览和下载；Agent 不能读取或编辑旧版 Office 格式，请另存为 DOCX、XLSX 或 PPTX 后交给 Agent 处理。'); caption.append(limitation);
+            }
             const download = document.createElement('button'); download.type = 'button'; download.className = 'icon-btn subtle';
             download.title = t('下载原件'); download.setAttribute('aria-label', t('下载 {0}', reference.name));
             download.innerHTML = '<i class="fa-solid fa-download" aria-hidden="true"></i>';
@@ -61,7 +96,13 @@
                 try { await this.download(reference); } catch (error) { this.toast(error.message, 'error'); }
                 finally { finish?.(); download.disabled = false; }
             });
-            card.append(icon, caption, download); return card;
+            card.append(icon, caption, download);
+            if (globalThis.PiOfficeFilePreview?.supports(reference.name)) {
+                const preview = document.createElement('button'); preview.type = 'button'; preview.className = 'icon-btn subtle';
+                preview.title = t('预览文档'); preview.setAttribute('aria-label', t('预览文档')); preview.textContent = t('预览');
+                preview.addEventListener('click', () => this.preview(reference, { isCurrent: () => card.isConnected && (!card.closest('dialog') || card.closest('dialog').open) })); card.append(preview);
+            }
+            return card;
         }
         render(container, text) {
             const parts = refs.split(text || '');

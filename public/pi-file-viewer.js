@@ -114,7 +114,7 @@
             $('pi-file-diff-tab').addEventListener('click', () => this.show('diff'));
             $('pi-file-full-tab').addEventListener('click', () => this.show('full'));
             $('pi-file-source').addEventListener('change', () => { this.cancel(); this.source = $('pi-file-source').value; this.load(); });
-            $('pi-file-refresh').addEventListener('click', () => { this.current = null; this.load(); });
+            $('pi-file-refresh').addEventListener('click', () => { this.officeRefresh = true; this.current = null; this.load(); });
             $('pi-file-preview').addEventListener('click', () => { this.preview = !this.preview; this.renderContent(); });
             $('pi-file-wrap').addEventListener('click', () => { this.wrap = !this.wrap; this.renderContent(); });
             $('pi-file-copy').addEventListener('click', async () => {
@@ -178,10 +178,25 @@
         }
         blob(bytes, mime) { const url = URL.createObjectURL(new Blob([bytes], { type: mime })); this.objectUrls.push(url); return url; }
         bytes() { return this.data?.encoding === 'base64' ? Uint8Array.from(atob(this.data.base64), c => c.charCodeAt(0)) : new TextEncoder().encode(this.data?.content || ''); }
-        download() {
+        async download() {
             if (!this.data) return;
-            const url = URL.createObjectURL(new Blob([this.bytes()], { type: 'application/octet-stream' }));
-            const link = document.createElement('a'); link.href = url; link.download = this.data.name || this.file.path.split(/[\\/]/).at(-1) || 'download';
+            if (this.isOffice()) {
+                const context = this.host.context(), seq = this.sequence;
+                try {
+                    const query = this.file.deliveryId ? new URLSearchParams({ cwd: context.cwd, sessionId: context.sessionId || '', id: this.file.deliveryId, index: this.file.index }) : new URLSearchParams({ cwd: this.file.root || context.cwd, path: this.file.path });
+                    const data = await this.host.api(`/api/pi/${this.file.deliveryId ? 'deliverables' : 'files/preview'}?${query}`);
+                    if (seq !== this.sequence || context.key !== this.host.context().key || context.generation !== this.host.context().generation) return;
+                    if (data.encoding !== 'base64' || typeof data.base64 !== 'string' || data.base64.length > 24 * 1024 * 1024 || data.base64.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data.base64)) throw new Error(translateUi('文件响应无效或超过大小限制'));
+                    this.downloadBytes(Uint8Array.from(atob(data.base64), c => c.charCodeAt(0)), data.name);
+                } catch (error) { this.host.notify(error.message, 'error'); }
+                return;
+            }
+            this.downloadBytes(this.bytes(), this.data.name);
+        }
+        isOffice() { return this.source === 'current' && this.data?.encoding === 'base64' && window.PiOfficeFilePreview?.supports(this.data.name || this.file?.path); }
+        downloadBytes(bytes, name) {
+            const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+            const link = document.createElement('a'); link.href = url; link.download = name || this.file.path.split(/[\\/]/).at(-1) || 'download';
             document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
         }
         clear() {
@@ -252,7 +267,7 @@
             $('pi-file-preview').hidden = !['markdown', 'html', 'table', 'svg'].includes(kind);
             this.downloadButton.hidden = !this.previewsEnabled && !this.file?.deliveryId;
             this.downloadButton.disabled = !this.data;
-            this.fullscreenButton.hidden = this.fullscreen.open || kind === 'audio' || kind === 'binary';
+            this.fullscreenButton.hidden = this.fullscreen.open || kind === 'audio' || kind === 'binary' && !this.isOffice();
             this.fullscreenButton.disabled = !this.data || this.loading;
             this.imageSizeButton.hidden = !['image', 'svg'].includes(kind) || kind === 'svg' && !this.preview; this.imageSizeButton.textContent = this.actualSize ? translateUi('适应窗口') : translateUi('原尺寸');
             this.runButton.hidden = kind !== 'html' || !this.preview;
@@ -322,6 +337,17 @@
             const body = $('pi-file-body'), oldTop = body.scrollTop;
             this.releaseUrls(); body.replaceChildren(); this.controls();
             if (!this.data) return;
+            if (this.isOffice()) {
+                if (!this.isVisible()) { this.previewSuspended = true; return; }
+                const context = this.host.context(), seq = this.sequence, refresh = this.officeRefresh; this.officeRefresh = false;
+                const source = this.file.deliveryId ? { type: 'delivery', cwd: context.cwd, sessionId: context.sessionId || '', id: this.file.deliveryId, index: this.file.index } : { type: 'project', cwd: this.file.root || context.cwd, path: this.file.path };
+                this.previewCleanup = window.PiOfficeFilePreview.render(body, { source, name: this.data.name || this.file.path, revision: this.data.revision }, {
+                    api: (...args) => this.host.api(...args), state: this.previewState, refresh,
+                    isCurrent: () => seq === this.sequence && context.key === this.host.context().key && context.generation === this.host.context().generation && this.host.context().connected !== false,
+                    retry: () => { this.officeRefresh = true; this.current = null; this.load(); },
+                    openFullscreen: () => this.openFullscreen(), isFullscreen: () => this.fullscreen.open
+                }); return;
+            }
             if (['image', 'pdf', 'audio'].includes(this.data.kind) || this.preview && ['table', 'svg'].includes(this.data.kind)) {
                 if (!this.isVisible()) { this.previewSuspended = true; return; }
                 this.previewCleanup = window.PiFilePreviews.render(body, this.data, {
