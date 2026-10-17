@@ -1,6 +1,7 @@
 /* Read-only Excel preview. Source bytes and original downloads remain with the caller. */
 (() => {
     'use strict';
+    const t = (text, ...values) => globalThis.PiI18n?.t ? globalThis.PiI18n.t(text, ...values) : text.replace(/\{(\d+)\}/g, (_, i) => values[i] ?? `{${i}}`);
     const node = (tag, text, className) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (className) n.className = className; return n; };
     const button = (text, action) => { const n = node('button', text); n.type = 'button'; n.addEventListener('click', action); return n; };
     function column(index) { let name = ''; for (index++; index; index = Math.floor((index - 1) / 26)) name = String.fromCharCode(65 + (index - 1) % 26) + name; return name; }
@@ -16,7 +17,7 @@
         for (const edge of ['Top', 'Right', 'Bottom', 'Left']) if (style['border' + edge]) css['border' + edge] = `1px solid ${style['border' + edge]}`;
     }
     function render(body, data, context = {}) {
-        const root = node('section', undefined, 'pi-office-table-preview'), status = node('p', '正在解析工作簿…'); status.setAttribute('role', 'status'); root.append(status); body.append(root);
+        const root = node('section', undefined, 'pi-office-table-preview'), status = node('p', t('正在解析工作簿…')); status.setAttribute('role', 'status'); root.append(status); body.append(root);
         let disposed = false, worker, timer, model, selected = null, generation = 0;
         let state = { sheet: 0, rowPage: 0, columnPage: 0, scrollTop: 0, scrollLeft: 0, ...(context.state?.officeTable || {}) };
         selected = typeof state.selected === 'string' ? state.selected : null;
@@ -26,21 +27,21 @@
         cleanup.resize = view => { if (view && typeof view === 'object') { state = { ...state, ...view }; selected = typeof state.selected === 'string' ? state.selected : null; } if (model && !disposed) draw(); };
         if (context.signal?.aborted) { cleanup(); return cleanup; }
         context.signal?.addEventListener('abort', cleanup, { once: true });
-        const error = message => { if (disposed) return; cleanupWorker(); status.textContent = `${message} 可下载原件并用办公软件打开。`; status.setAttribute('role', 'alert'); };
+        const error = message => { if (disposed) return; cleanupWorker(); status.textContent = t('{0} 可下载原件并用办公软件打开。', message); status.setAttribute('role', 'alert'); };
         const save = () => { if (context.state) context.state.officeTable = { ...state }; };
         let toolbar, warnings, selection, viewport, selector, rowLabel, colLabel, previous, next, left, right;
         function mounted() {
-            status.remove(); toolbar = node('div', undefined, 'pi-office-table-toolbar'); selector = node('select'); selector.setAttribute('aria-label', '工作表');
+            status.remove(); toolbar = node('div', undefined, 'pi-office-table-toolbar'); selector = node('select'); selector.setAttribute('aria-label', t('工作表'));
             model.sheets.forEach((sheet, i) => { if (sheet.hidden === 'visible') { const option = node('option', sheet.name); option.value = String(i); selector.append(option); } });
             selector.addEventListener('change', () => { state.sheet = Number(selector.value); state.rowPage = state.columnPage = 0; selected = state.selected = null; draw(); });
             rowLabel = node('span'); colLabel = node('span');
-            previous = button('上一页', () => { state.rowPage--; draw(); }); next = button('下一页', () => { state.rowPage++; draw(); });
-            left = button('前列', () => { state.columnPage--; draw(); }); right = button('后列', () => { state.columnPage++; draw(); });
+            previous = button(t('上一页'), () => { state.rowPage--; draw(); }); next = button(t('下一页'), () => { state.rowPage++; draw(); });
+            left = button(t('前列'), () => { state.columnPage--; draw(); }); right = button(t('后列'), () => { state.columnPage++; draw(); });
             toolbar.append(selector, previous, rowLabel, next, left, colLabel, right);
             warnings = node('div', undefined, 'pi-office-table-warnings');
-            for (const warning of model.warnings) warnings.append(node('p', warning));
-            const count = model.sheets.filter(s => s.hidden !== 'visible').length; if (count) warnings.append(node('p', `已省略 ${count} 张隐藏工作表。`));
-            selection = node('div', '选择单元格查看原式与已保存值', 'pi-office-table-selection'); selection.setAttribute('aria-live', 'polite');
+            for (const warning of model.warnings) warnings.append(node('p', t(warning)));
+            const count = model.sheets.filter(s => s.hidden !== 'visible').length; if (count) warnings.append(node('p', t('已省略 {0} 张隐藏工作表。', count)));
+            selection = node('div', t('选择单元格查看原式与已保存值'), 'pi-office-table-selection'); selection.setAttribute('aria-live', 'polite');
             viewport = node('div', undefined, 'pi-office-table-scroll'); viewport.tabIndex = 0;
             viewport.addEventListener('scroll', () => { state.scrollTop = viewport.scrollTop; state.scrollLeft = viewport.scrollLeft; save(); });
             root.append(toolbar, warnings, selection, viewport); draw();
@@ -51,7 +52,7 @@
             const rowsPerPage = Math.min(50, limits.pageRows), columnsPerPage = Math.min(100, limits.pageColumns, Math.floor((5000 - rowsPerPage - 1) / (rowsPerPage + 1)));
             if (!Number.isSafeInteger(state.sheet) || model.sheets[state.sheet]?.hidden !== 'visible') state.sheet = model.sheets.findIndex(s => s.hidden === 'visible');
             const sheet = model.sheets[state.sheet]; selector.value = String(state.sheet);
-            if (!selected) selection.textContent = '选择单元格查看原式与已保存值';
+            if (!selected) selection.textContent = t('选择单元格查看原式与已保存值');
             state.rowPage = Math.max(0, Math.min(Math.floor((sheet.rows - 1) / rowsPerPage), Number.isSafeInteger(state.rowPage) ? state.rowPage : 0));
             state.columnPage = Math.max(0, Math.min(Math.floor((sheet.columns - 1) / columnsPerPage), Number.isSafeInteger(state.columnPage) ? state.columnPage : 0));
             const rs = state.rowPage * rowsPerPage, re = Math.min(sheet.rows, rs + rowsPerPage), cs = state.columnPage * columnsPerPage, ce = Math.min(sheet.columns, cs + columnsPerPage);
@@ -79,14 +80,14 @@
                     applyStyle(td, cell?.style);
                     if (merge) {
                         td.rowSpan = windowMerge.rowSpan; td.colSpan = windowMerge.colSpan;
-                        if (merge.r < rs || merge.c < cs || merge.r + merge.rows > re || merge.c + merge.columns > ce) { td.append(node('span', ' ↔ 合并延续', 'pi-office-table-continued')); td.title = '合并区域跨越当前行页或列窗口'; }
+                        if (merge.r < rs || merge.c < cs || merge.r + merge.rows > re || merge.c + merge.columns > ce) { td.append(node('span', t(' ↔ 合并延续'), 'pi-office-table-continued')); td.title = t('合并区域跨越当前行页或列窗口'); }
                     }
                     const choose = () => {
                         selected = td.dataset.address;
                         state.selected = selected;
-                        const saved = cell && Object.hasOwn(cell, 'value') ? JSON.stringify(cell.value) : '无已保存结果';
-                        const formula = cell?.formula || (cell?.formulaSource ? `共享主原式：${cell.formulaSource}（从属原式未展开）` : '无');
-                        selection.textContent = `${selected} · 原式：${formula}${cell?.formulaRange ? ` · 范围：${cell.formulaRange}` : ''} · 已保存值：${saved}`;
+                        const saved = cell && Object.hasOwn(cell, 'value') ? JSON.stringify(cell.value) : t('无已保存结果');
+                        const formula = cell?.formula || (cell?.formulaSource ? t('共享主原式：{0}（从属原式未展开）', cell.formulaSource) : t('无'));
+                        selection.textContent = t('{0} · 原式：{1}{2} · 已保存值：{3}', selected, formula, cell?.formulaRange ? t(' · 范围：{0}', cell.formulaRange) : '', saved);
                         for (const old of table.querySelectorAll('[aria-selected]')) old.removeAttribute('aria-selected'); td.setAttribute('aria-selected', 'true');
                         save();
                     };
@@ -97,26 +98,26 @@
                 tbody.append(tr);
             }
             viewport.replaceChildren(table); viewport.scrollTop = Math.max(0, Number(state.scrollTop) || 0); viewport.scrollLeft = Math.max(0, Number(state.scrollLeft) || 0);
-            rowLabel.textContent = `${rs + 1}–${re} / ${sheet.rows} 行`; colLabel.textContent = `${column(cs)}–${column(ce - 1)} / ${sheet.columns} 列`;
+            rowLabel.textContent = t('{0}–{1} / {2} 行', rs + 1, re, sheet.rows); colLabel.textContent = t('{0}–{1} / {2} 列', column(cs), column(ce - 1), sheet.columns);
             previous.disabled = rs === 0; next.disabled = re >= sheet.rows; left.disabled = cs === 0; right.disabled = ce >= sheet.columns;
             save();
         }
         const ticket = ++generation;
         Promise.resolve().then(() => context.bytes()).then(bytes => {
             if (disposed || ticket !== generation) return;
-            const api = globalThis.PiOfficeWorkbookModel; if (!api) throw new Error('表格预览组件不可用');
-            const limits = api.limitsFor(); if (!(bytes instanceof Uint8Array) || !bytes.byteLength || bytes.byteLength > limits.maxInputBytes) throw new Error('Excel 原件超过预览预算');
+            const api = globalThis.PiOfficeWorkbookModel; if (!api) throw new Error(t('表格预览组件不可用'));
+            const limits = api.limitsFor(); if (!(bytes instanceof Uint8Array) || !bytes.byteLength || bytes.byteLength > limits.maxInputBytes) throw new Error(t('Excel 原件超过预览预算'));
             worker = new Worker('/vendor/office-preview/workbook-worker.js');
             worker.onmessage = event => {
                 if (disposed || ticket !== generation || event.data?.id !== ticket) return;
                 cleanupWorker();
-                try { if (!event.data.ok) throw new Error(event.data.error?.message || '工作簿无法预览'); model = api.validateWorkbook(event.data.workbook); mounted(); } catch (failure) { error(failure.message); }
+                try { if (!event.data.ok) throw Object.assign(new Error(event.data.error?.message || t('工作簿无法预览')), { code: event.data.error?.code }); model = api.validateWorkbook(event.data.workbook); mounted(); } catch (failure) { error(globalThis.PiI18n?.locale?.startsWith('en') ? t(failure.code === 'OFFICE_WORKBOOK_LIMIT' ? 'Excel 原件超过预览预算' : '工作簿无法预览') : failure.message); }
             };
-            worker.onerror = event => { event.preventDefault(); error('工作簿解析失败'); };
-            worker.onmessageerror = () => error('工作簿解析结果无效');
-            timer = setTimeout(() => error('工作簿解析超时'), limits.timeoutMs);
+            worker.onerror = event => { event.preventDefault(); error(t('工作簿解析失败')); };
+            worker.onmessageerror = () => error(t('工作簿解析结果无效'));
+            timer = setTimeout(() => error(t('工作簿解析超时')), limits.timeoutMs);
             const copy = new Uint8Array(bytes); worker.postMessage({ id: ticket, format: data.format, bytes: copy }, [copy.buffer]);
-        }).catch(failure => error(failure.message));
+        }).catch(failure => error(globalThis.PiI18n?.locale?.startsWith('en') ? t('工作簿无法预览') : failure.message));
         return cleanup;
     }
     globalThis.PiOfficeTablePreview = { render };

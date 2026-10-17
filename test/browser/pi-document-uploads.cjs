@@ -33,6 +33,11 @@ async function run(browser, base, width, locale) {
             return json(result);
         }
         if (endpoint === '/api/pi/uploads/status') return json(saved.get(url.searchParams.get('sessionId') + url.searchParams.get('requestId')));
+        if (endpoint === '/api/pi/office/preview') {
+            const { source } = req.postDataJSON(), found = uploads.find(item => item.reference.id === source.id);
+            assert.equal(source.type, 'upload'); assert.equal(source.sessionId, active); assert.ok(found);
+            return json({ source: found.reference, preview: { kind: 'workbook', encoding: 'base64', base64: found.bytes.toString('base64'), size: found.bytes.length }, warnings: [] });
+        }
         if (endpoint === '/api/pi/uploads') {
             const found = uploads.find(item => item.reference.id === url.searchParams.get('id')); assert.ok(found); assert.equal(url.searchParams.get('sessionId'), active);
             return route.fulfill({ body: found.bytes, contentType: 'application/octet-stream' });
@@ -92,6 +97,16 @@ async function run(browser, base, width, locale) {
     await switchTo('b'); await input.fill('new thread draft'); hold = false; await select([{ ...samples[1], name: 'new.xlsx' }]); await count(1); await held();
     await page.waitForTimeout(80); assert.match(await chips.textContent(), /new.xlsx/); assert.ok(!(await chips.textContent()).includes('slow.docx')); assert.equal(await input.inputValue(), 'new thread draft'); await clear();
     await switchTo('a'); assert.equal(await input.inputValue(), 'retain old draft'); await count(0);
+    // Legacy Office stays an opaque raw attachment; draft preview uses the actual
+    // workbook Worker and closing it preserves the composer and original bytes.
+    const legacy = fs.readFileSync(path.join(root, 'test/fixtures/office/preview.xls'));
+    await select([{ name: 'legacy.xls', buffer: legacy, mimeType: 'application/octet-stream' }]); await count(1);
+    assert.match(await chips.innerText(), locale === 'en' ? /Preview and download only/ : /仅预览和下载/);
+    await page.locator('[data-preview-attachment]').first().click(); await page.locator('.pi-document-preview td[data-address=A1]').waitFor();
+    const legacyDownloadEvent = page.waitForEvent('download'); await page.locator('.pi-document-preview header button').first().click();
+    const legacyDownload = await legacyDownloadEvent; assert.deepEqual(fs.readFileSync(await legacyDownload.path()), legacy);
+    await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('.pi-document-preview[open]'));
+    assert.equal(await input.inputValue(), 'retain old draft'); await count(1); await clear();
     // Scheduled-message editor uses the same raw upload and reference payload.
     await page.locator('#pi-composer-add-button').click(); await page.locator('#pi-schedule-button').click();
     await page.locator('#pi-workflow-files').setInputFiles({ name: 'scheduled.pptx', mimeType: 'application/octet-stream', buffer: samples[2].buffer });

@@ -91,6 +91,7 @@
     "docs/tts-providers/minimax.md",
     "docs/tts-providers/qwen3-gpu.md",
     "native/README.md",
+    "test/fixtures/office/README.md",
     "pi-packages/media-workbench/skills/media-workbench/SKILL.md",
     "pi-packages/document-review/skills/document-consistency-review/SKILL.md",
     "pi-packages/gongwen/skills/gongwen/SKILL.md"
