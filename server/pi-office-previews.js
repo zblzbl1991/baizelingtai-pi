@@ -144,11 +144,16 @@ class OfficePreviewService {
         this.closed = true;
         for (const reader of this.readers) reader.cancelled = true;
         for (const task of this.tasks.values()) task.controller.abort(error('OFFICE_ABORTED', 499, '预览服务正在关闭'));
+        // Initial health work belongs to the engine too. Forward cancellation
+        // before joining readers/status; joining first would wait out its timeout.
+        const stoppingEngine = Promise.resolve(this.engine.dispose()).then(() => ({ ok: true }), reason => ({ ok: false, reason }));
         this.disposing = (async () => {
             await Promise.allSettled([...this.readers].map(r => r.done));
             await Promise.allSettled([...this.tasks.values()].map(t => t.done));
             await Promise.allSettled([...this.statusJobs].map(job => job.done));
-            await this.engine.dispose(); this.cache.clear(); this.cacheBytes = 0; this.disposed = true;
+            const stopped = await stoppingEngine;
+            if (!stopped.ok) throw stopped.reason;
+            this.cache.clear(); this.cacheBytes = 0; this.disposed = true;
         })(); return this.disposing;
     }
 }
