@@ -47,7 +47,9 @@ test('large format audits disclose exact totals and bounded excerpts without dro
         const output = await pool.run(request(true), undefined, { bytes });
         assert.equal(output.report.editing, 'complete', JSON.stringify(output.report));
         assert.equal(output.report.formatChangesTruncated, true);
-        assert.equal(output.report.formatChanges.length, 200);
+        assert.ok(output.report.formatChanges.length > 0 && output.report.formatChanges.length <= 200);
+        assert.equal(output.formatAudit.changes.length, 200, 'producer excerpt remains in the separately persisted audit');
+        assert.equal(output.formatAudit.truncated, true);
         assert.ok(output.report.formatChangesTotal > 420, 'all changed properties are counted after excerpt budget is reached');
         assert.ok(output.report.formatChanges.some(item => item.beforeTruncated));
         for (const item of output.report.formatChanges) for (const value of Object.values(item)) if (typeof value === 'string') assert.ok(value.length <= 240);

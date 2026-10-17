@@ -4,7 +4,7 @@ const { fileScope, fail } = require('../pi-file-scope');
 const { prepare, validate } = require('./input');
 const { GongwenProcess } = require('./process');
 const outputs = require('./outputs');
-const { markdown } = require('./report');
+const { markdown, boundReport } = require('./report');
 const { MAX_SOURCE } = require('./limits');
 const { validateRevision } = require('./revision-input');
 class GongwenService {
@@ -56,13 +56,14 @@ class GongwenService {
                     || saved.files.some(file => !['公文.docx', '修订公文.docx', '受检原稿.docx', '检查报告.md'].includes(file.name) || !/^[a-f0-9]{64}$/.test(file.revision))
                     || new Set(saved.files.map(file => file.name)).size !== saved.files.length || !saved.files.some(file => file.name === '检查报告.md')
                     || saved.source?.name !== '草稿源.json'
-                    || !Array.isArray(saved.supplements) || saved.supplements.length !== 2
-                    || new Set(saved.supplements.map(file => file.name)).size !== 2) throw fail('公文保存记录无效', 409, 'GONGWEN_CHANGED');
+                    || !Array.isArray(saved.supplements) || ![2, 3].includes(saved.supplements.length)
+                    || new Set(saved.supplements.map(file => file.name)).size !== saved.supplements.length
+                    || !['原始草稿源.json', '规范修正.json'].every(name => saved.supplements.some(file => file.name === name))) throw fail('公文保存记录无效', 409, 'GONGWEN_CHANGED');
                 const source = await outputs.read(folder, '草稿源.json', scope.check, MAX_SOURCE);
                 if (source.absolutePath !== saved.source.path || source.revision !== saved.source.revision || source.size !== saved.source.size) throw fail('原公文草稿源已改变；未重新生成', 409, 'GONGWEN_CHANGED');
                 current();
                 for (const file of saved.supplements) {
-                    if (!['原始草稿源.json', '规范修正.json'].includes(file.name)) throw fail('公文记录无效', 409, 'GONGWEN_CHANGED');
+                    if (!['原始草稿源.json', '规范修正.json', '格式调整.json'].includes(file.name)) throw fail('公文记录无效', 409, 'GONGWEN_CHANGED');
                     const content = await outputs.read(folder, file.name, scope.check, MAX_SOURCE);
                     if (content.absolutePath !== file.path || content.size !== file.size || content.revision !== file.revision) throw fail('公文审阅记录已改变', 409, 'GONGWEN_CHANGED');
                     current();
@@ -86,13 +87,20 @@ class GongwenService {
             if (sourceBytes.length > MAX_SOURCE || changeBytes.length > MAX_SOURCE) throw fail('草稿源或修正记录超过 1 MiB', 413, 'GONGWEN_LIMIT');
             const source = outputs.writeNew(folder, '草稿源.json', sourceBytes, scope.check);
             const audit = outputs.writeNew(folder, '规范修正.json', changeBytes, scope.check);
+            const supplements = [originalSource, audit];
+            if (result.formatAudit?.changes?.length) {
+                const formatBytes = Buffer.from(JSON.stringify(result.formatAudit, null, 2));
+                if (formatBytes.length > MAX_SOURCE) throw fail('格式调整记录超过 1 MiB', 413, 'GONGWEN_LIMIT');
+                supplements.push(outputs.writeNew(folder, '格式调整.json', formatBytes, scope.check));
+            }
+            result.report = boundReport(result.report);
             const files = [];
             if (result.bytes) files.push(outputs.writeNew(folder, originalDocument ? result.report.originalSnapshot ? '受检原稿.docx' : '修订公文.docx' : '公文.docx', result.bytes, scope.check));
             const revision = result.bytes ? outputs.digest(result.bytes) : id;
             const reportBytes = Buffer.from(markdown(result.report, revision));
             if (reportBytes.length > 256 * 1024) throw fail('公文检查报告超过输出预算', 413, 'GONGWEN_LIMIT');
             files.push(outputs.writeNew(folder, '检查报告.md', reportBytes, scope.check));
-            const receipt = { version: 1, id, requestHash, report: result.report, source, supplements: [originalSource, audit], files };
+            const receipt = { version: 1, id, requestHash, report: result.report, source, supplements, files };
             outputs.writeNew(folder, 'receipt.json', Buffer.from(JSON.stringify(receipt)), scope.check);
             signal?.throwIfAborted(); current(); return receipt;
         } finally { for (const proof of proofs.reverse()) proof.close(); }

@@ -52,4 +52,7 @@ function correct(input) {
     for (const key of ['date', 'docNo', 'printDate', 'note']) if (copy[key]) copy[key] = edit(copy[key], {}, key);
     return { input: copy, changes };
 }
-module.exports = { inspect, correct };
+async function inspectFormat(bytes, context) {
+    return require('./format-validation').validateFormat(bytes, context);
+}
+module.exports = { inspect, correct, inspectFormat };

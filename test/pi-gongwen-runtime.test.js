@@ -50,7 +50,10 @@ test('native tool generates versioned files, publishes authorized snapshots, dow
         const tool = entries.find(entry => entry.message?.role === 'toolResult' && entry.message.toolName === 'generate_gongwen')?.message;
         assert.ok(tool && !tool.isError, JSON.stringify(tool));
         const generated = tool.details.pivaneGongwen;
-        assert.equal(generated.status, 'checked'); assert.equal(generated.delivery.files.length, 2);
+        assert.equal(generated.machineChecks, 'passed');
+        assert.equal(generated.format.properties.status, 'passed');
+        assert.equal(generated.status, generated.format.fontAvailability.status === 'available' ? 'checked' : 'needs-review');
+        assert.equal(generated.delivery.files.length, 2);
         const ref = generated.delivery.reference;
         const verifiedSession = await gateway.store.getSession(cwd, session.id);
         assert.deepEqual({ id: worker.sessionId, cwd: worker.cwd, disposed: Boolean(worker.disposed), restarting: Boolean(worker.restarting) },
@@ -72,6 +75,7 @@ test('native tool generates versioned files, publishes authorized snapshots, dow
         assert.equal((await worker.request('get_entries')).entries.filter(entry => entry.customType === 'pivane-deliverable').length, 1);
         const repeated = (await worker.request('get_entries')).entries.filter(entry => entry.message?.toolName === 'generate_gongwen').at(-1).message;
         assert.equal(repeated.details.pivaneGongwen.reused, true);
+        assert.deepEqual(repeated.details.pivaneGongwen.format, generated.format);
         input.requestId = 'runtime-v2'; input.date = '2026年10月16日'; pending = true; await run();
         assert.equal((await worker.request('get_entries')).entries.filter(entry => entry.customType === 'pivane-deliverable').length, 2);
         const originalFile = path.join(root, 'handwritten.docx'); await require('../vendor/gongwen-kit/tests/messy-docx').build(originalFile);
@@ -83,6 +87,8 @@ test('native tool generates versioned files, publishes authorized snapshots, dow
         const revisionMessage = (await worker.request('get_entries')).entries.find(entry => entry.message?.toolName === 'revise_gongwen')?.message;
         assert.ok(revisionMessage && !revisionMessage.isError, JSON.stringify(revisionMessage));
         const revised = revisionMessage.details.pivaneGongwen; assert.equal(revised.editing, 'complete', JSON.stringify(revised));
+        assert.ok(revised.format?.checks.length); assert.ok(revised.formatChanges.length); assert.ok(revised.formatChangesTotal >= revised.formatChanges.length);
+        assert.ok(revised.formatAudit?.endsWith('格式调整.json'));
         assert.equal(revised.status, 'needs-review'); assert.equal(revised.layoutApplied, true); assert.ok(revised.comments.placed > 0);
         const fetchRevision = async (index, sid = session.id) => fetch(`${origin}/api/pi/deliverables?${new URLSearchParams({ cwd, sessionId: sid, id: revised.delivery.reference.id, index: String(index) })}`, { headers: { Authorization: `Bearer ${token}` } });
         const revisionDownload = await fetchRevision(0); assert.equal(revisionDownload.status, 200);
@@ -103,6 +109,8 @@ test('native tool generates versioned files, publishes authorized snapshots, dow
         pending = true; await run('Return the existing revision');
         const last = (await worker.request('get_entries')).entries.filter(entry => entry.message?.toolName === 'revise_gongwen').at(-1).message;
         assert.equal(last.details.pivaneGongwen.reused, true);
+        assert.deepEqual(last.details.pivaneGongwen.formatChanges, revised.formatChanges);
+        assert.deepEqual(last.details.pivaneGongwen.format, revised.format);
         assert.equal((await worker.request('get_entries')).entries.filter(entry => entry.customType === 'pivane-deliverable').length, 3);
         await gateway.supervisor.stopSession(session.path);
         const restored = await fetchFile(session.id, 0); assert.equal(restored.status, 200);
