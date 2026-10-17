@@ -40,6 +40,13 @@ if (require.main === module) {
         try {
             const checkpoint = value => new Promise((resolve, reject) => process.send({ phase: 'document', ...value }, error => error ? reject(error) : resolve()));
             const result = message.operation === 'revise' ? await reviseUploaded(message.input, message.bytes, checkpoint) : await generate(message.input, checkpoint);
+            if (result.bytes) {
+                const format = await require('./checks').inspectFormat(result.bytes, { ...result.input, operation: message.operation === 'revise' ? result.report.operation : 'generate',
+                    layoutApplied: result.report.layoutApplied, fontAvailability: message.fontAvailability });
+                require('./report').includeFormat(result.report, format);
+            }
+            if (result.report.formatChanges) result.formatAudit = { changes: result.report.formatChanges, total: result.report.formatChangesTotal, truncated: result.report.formatChangesTruncated };
+            result.report = require('./report').boundReport(result.report);
             if (Buffer.byteLength(JSON.stringify(result.report)) > 256 * 1024) throw Error('检查报告超过输出预算');
             process.send({ phase: 'complete', ...result }, error => { if (error) process.exitCode = 1; process.disconnect(); });
         } catch (error) {

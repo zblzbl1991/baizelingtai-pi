@@ -39,6 +39,7 @@ export default function registerGongwen(pi: ExtensionAPI) {
                     missing: saved.report.missing, errors: saved.report.errors, hints: saved.report.hints,
                     styles: saved.report.styles, faults: saved.report.faults, rounds: saved.report.rounds,
                     truncated: Boolean(saved.report.truncated), totals: saved.report.totals,
+                    format: saved.report.format,
                     source: saved.source.path, reused: Boolean(saved.reused), delivery };
                 return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { pivaneGongwen: result } };
             }
@@ -70,6 +71,7 @@ export default function registerGongwen(pi: ExtensionAPI) {
                 check(); signal?.throwIfAborted();
                 if (!references(context.sessionManager.getBranch()).some((ref: any) => ref.id === delivery.reference.id)) pi.appendEntry(ENTRY, delivery.reference);
                 const result = { ...saved.report, version: saved.id, original: source.reference, audit: saved.supplements.find((file: any) => file.name === '规范修正.json')?.path,
+                    formatAudit: saved.supplements.find((file: any) => file.name === '格式调整.json')?.path,
                     reused: Boolean(saved.reused), delivery };
                 return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { pivaneGongwen: result } };
             }
