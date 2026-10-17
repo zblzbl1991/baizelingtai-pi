@@ -79,3 +79,36 @@ test('normative revision reports locatable actual format changes separately and 
         assert.ok(!changes.some(item => item.where.includes('sectPrChange')), 'historical properties are not presented as current adjustments');
     } finally { await pool.dispose(); }
 });
+
+test('normative revision corrects a blue default body style while preserve-layout keeps the same original style bytes', async () => {
+    const zip = await require('jszip').loadAsync(await fixture(''));
+    const styles = (await zip.file('word/styles.xml').async('string')).replace('<w:qFormat/><w:pPr><w:widowControl', '<w:qFormat/><w:rPr><w:color w:val="2E74B5"/><w:i/></w:rPr><w:pPr><w:widowControl');
+    zip.file('word/styles.xml', styles);
+    const bytes = await zip.generateAsync({ type: 'nodebuffer' }), pool = new GongwenProcess();
+    try {
+        const preserved = await pool.run(request(false), undefined, { bytes });
+        assert.equal(read(preserved.bytes, 'word/styles.xml'), styles);
+        const revised = await pool.run(request(true), undefined, { bytes });
+        assert.equal(revised.report.editing, 'complete', JSON.stringify(revised.report));
+        const bodyStyle = read(revised.bytes, 'word/styles.xml').match(/<w:style\b[^>]*w:styleId="a"[^>]*>[\s\S]*?<\/w:style>/)[0];
+        assert.match(bodyStyle, /<w:color w:val="000000"\/>/);
+        assert.doesNotMatch(bodyStyle, /<w:i\/>/);
+        assert.ok(revised.report.formatChanges.some(item => item.property === 'w:color' && item.before.includes('2E74B5') && item.after.includes('000000')));
+    } finally { await pool.dispose(); }
+});
+
+test('recognized Title style is normalized to centered black 22pt small-title font without replacing custom styles', async () => {
+    const zip = await require('jszip').loadAsync(await fixture('<w:p><w:pPr><w:pStyle w:val="Title"/><w:jc w:val="center"/></w:pPr><w:r><w:t>示例公文标题</w:t></w:r></w:p>'));
+    const title = '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="a"/><w:pPr><w:jc w:val="left"/></w:pPr><w:rPr><w:color w:val="2E74B5"/><w:sz w:val="56"/></w:rPr></w:style>';
+    zip.file('word/styles.xml', (await zip.file('word/styles.xml').async('string')).replace('</w:styles>', title + '</w:styles>'));
+    const pool = new GongwenProcess();
+    try {
+        const output = await pool.run(request(true), undefined, { bytes: await zip.generateAsync({ type: 'nodebuffer' }) });
+        assert.equal(output.report.editing, 'complete', JSON.stringify(output.report));
+        const style = read(output.bytes, 'word/styles.xml').match(/<w:style\b[^>]*w:styleId="Title"[^>]*>[\s\S]*?<\/w:style>/)[0];
+        assert.match(style, /<w:rFonts [^>]*w:eastAsia="方正小标宋简体"/);
+        assert.match(style, /<w:sz w:val="44"\/>/);
+        assert.match(style, /<w:color w:val="000000"\/>/);
+        assert.match(style, /<w:jc w:val="center"\/>/);
+    } finally { await pool.dispose(); }
+});

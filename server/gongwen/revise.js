@@ -13,6 +13,7 @@ const { fail } = require('../pi-file-scope');
 const { parseParagraph, applyEdits, unitalic, elementAt } = require('../../vendor/gongwen-kit/lib/fix/runs');
 const { editsFor } = require('../../vendor/gongwen-kit/lib/fix/text-rules');
 const { fixStyles, fixDocument, redStyleIds } = require('../../vendor/gongwen-kit/lib/fix/layout');
+const { children, editRPr, editPPr } = require('../../vendor/gongwen-kit/lib/fix/ooxml');
 const { addComments, paragraphsOf } = require('../../vendor/gongwen-kit/lib/fix/comments');
 const { rejectAll } = require('../../vendor/gongwen-kit/lib/fix/revisions');
 const PARAGRAPH = /<w:p(?:\s[^>]*)?>(?:(?!<w:p[\s>])[\s\S])*?<\/w:p>/g;
@@ -60,6 +61,28 @@ function protectedStyles(styles) {
         if (!protectedIds.has(child)) { protectedIds.add(child); queue.push(child); }
     }
     return protectedIds;
+}
+function normativeStyleTypography(styles, headingIds, protectedIds) {
+    return styles.replace(/<w:style\b[^>]*w:type="paragraph"[^>]*>[\s\S]*?<\/w:style>/g, style => {
+        const id = /\bw:styleId="([^"]+)"/.exec(style)?.[1];
+        const title = id === 'Title' || /<w:name\b[^>]*w:val="(?:title|公文标题)"/i.test(style);
+        if (protectedIds.has(id) || !/\bw:default="1"/.test(style) && !headingIds[id] && !title) return style;
+        const open = /^<w:style\b[^>]*>/.exec(style)[0], content = children(style.slice(open.length, -'</w:style>'.length));
+        const rpr = content.find(child => child.name === 'w:rPr');
+        const inner = rpr ? rpr.xml.replace(/^<w:rPr(?:\s[^>]*)?\s*\/>$/, '').replace(/^<w:rPr(?:\s[^>]*)?>|<\/w:rPr>$/g, '') : '';
+        const set = { 'w:color': '<w:color w:val="000000"/>' };
+        if (title) Object.assign(set, { 'w:rFonts': '<w:rFonts w:ascii="方正小标宋简体" w:hAnsi="方正小标宋简体" w:eastAsia="方正小标宋简体"/>',
+            'w:sz': '<w:sz w:val="44"/>', 'w:szCs': '<w:szCs w:val="44"/>' });
+        const replacement = `<w:rPr>${editRPr(inner, { set, remove: ['w:b', 'w:bCs', 'w:i', 'w:iCs'] })}</w:rPr>`;
+        if (rpr) rpr.xml = replacement; else content.push({ name: 'w:rPr', xml: replacement });
+        if (title) {
+            const ppr = content.find(child => child.name === 'w:pPr');
+            const prior = ppr ? ppr.xml.replace(/^<w:pPr\s*\/>$/, '').replace(/^<w:pPr>|<\/w:pPr>$/g, '') : '';
+            const value = `<w:pPr>${editPPr(prior, { set: { 'w:jc': '<w:jc w:val="center"/>', 'w:ind': '<w:ind w:firstLine="0" w:firstLineChars="0"/>' } })}</w:pPr>`;
+            if (ppr) ppr.xml = value; else content.splice(content.findIndex(child => child.name === 'w:rPr'), 0, { name: 'w:pPr', xml: value });
+        }
+        return open + content.map(child => child.xml).join('') + '</w:style>';
+    });
 }
 function normalize(document, styles, headingIds, rev, { layout = false } = {}) {
     const protectedRanges = ranges(document, ['w:tbl', 'w:txbxContent']);
@@ -145,6 +168,7 @@ async function revise(raw, bytes, directory, checkpoint = () => {}, implementati
                 .filter(match => protectedIds.has(match[1])).map(match => [match[1], match[0]]));
             const result = fixStyles(priorStyles.document, notes); styles = priorStyles.restore(result.xml); headingIds = result.headingIds;
             styles = styles.replace(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>[\s\S]*?<\/w:style>/g, (value, id) => preservedStyles.get(id) || value);
+            styles = normativeStyleTypography(styles, headingIds, protectedIds);
             const priorSections = protectProperties(document, ['w:sectPrChange']); document = priorSections.document;
             document = fixDocument(document, { headingIds, titleFont: '方正小标宋简体', redStyles: protectedStyles(styles) }, notes);
             document = priorSections.restore(document);
