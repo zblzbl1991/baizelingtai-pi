@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { openInspector } = require('./pi-mobile-view-helper.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -6,6 +7,7 @@ const model = {provider:'fixture',id:'fixture',name:'Fixture',input:['text','ima
 const cwd='/tmp/native-completion-browser', session={id:'fixture',cwd,name:'Fixture',messageCount:1};
 const controls = () => ({runtimeId:'runtime',revision:1,queue:{steering:[],followUp:[]},recoveries:[],drafts:[],stopping:false,extension:{title:'',statuses:[],widgets:[]}});
 async function run(browser, viewport) {
+    if (!browserTargetEnabled(viewport)) return;
  const context = await browser.newContext({ locale: 'zh-CN',viewport,isMobile:viewport.width<900,hasTouch:viewport.width<900});
  const page = await context.newPage(); let socket, control=controls(), partial='PREFIX ', seq=10, busy=true, configMatch=false, rejectAck=false, holdSearch, startupFailure=false;
  const requests=[],errors=[]; const runtime=()=>({model,thinkingLevel:'off',isStreaming:busy,isCompacting:false});
@@ -96,4 +98,4 @@ async function run(browser, viewport) {
  assert.deepEqual(errors,[]);assert.equal(requests.filter(r=>r.method&&r.method!=='GET').length,0);
  await context.close(); console.log(`PASS ${viewport.width}: live snapshot/event fence, tool recovery, draft acknowledgement failure, body search/preview, config/restart, no model requests/errors/overflow`);
 }
-(async()=>{const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH || '/usr/bin/chromium',headless:true,args:['--no-sandbox']});try{for(const viewport of [{width:1440,height:1000},{width:393,height:852},{width:320,height:740}])await run(browser,viewport);}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+(async()=>{const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH || '/usr/bin/chromium',headless:true,args:['--no-sandbox']});try{for(const viewport of selectBrowserTargets([{width:1440,height:1000},{width:393,height:852},{width:320,height:740}]))await run(browser,viewport);}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

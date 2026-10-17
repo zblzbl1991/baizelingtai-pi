@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { selectMessageView, openInspector } = require('./pi-mobile-view-helper.cjs');
 const http = require('node:http');
@@ -25,6 +26,7 @@ function usage(query) { return { from: query.get('from'), to: query.get('to'), t
     coverage: { scannedFiles: 1, skippedFiles: 0, duplicates: 0, invalidDates: 0 }, partial: false, daily: [{ ...total, date: '2026-09-11' }],
     providers: [{ ...total, provider: 'fixture' }], models: [{ ...total, provider: 'fixture', model: '模型' }], projects: [{ ...total, cwd }], sessions: [{ ...total, ...session }] }; }
 async function run(browser, base, width, language) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 1000 }, locale: language, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(); page.setDefaultTimeout(12000);
     const errors = [], calls = [], writes = [];
@@ -202,6 +204,6 @@ async function run(browser, base, width, language) {
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
-    try { for (const language of ['en-US', 'zh-CN']) for (const width of [320, 393, 768, 1440]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, language); }
+    try { for (const language of ['en-US', 'zh-CN']) for (const width of selectBrowserTargets([320, 393, 768, 1440])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, language); }
     finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

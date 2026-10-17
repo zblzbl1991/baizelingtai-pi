@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const path = require('node:path');
@@ -6,6 +7,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const cwd = '/tmp/extension-assistant-fixture';
 const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['text', 'image'], contextWindow: 32000 };
 async function run(browser, base, width, locale, noProject = false) {
+    if (!browserTargetEnabled(width)) return;
     const ctx = await browser.newContext({ locale, viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
     const page = await ctx.newPage(), errors = [], sent = [], writes = [], mutations = [];
     let memoryAdapterInstalled = false, pptSkill = null, pptNeedsReview = false, bundledCapabilities = false, bundledDesktopEnabled = true;
@@ -357,7 +359,7 @@ async function run(browser, base, width, locale, noProject = false) {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
         const base = `http://127.0.0.1:${server.address().port}`;
-        for (const [width, locale, empty] of [[1440, 'zh-CN', false], [393, 'zh-CN', false], [320, 'en', false], [393, 'en', true]]) {
+        for (const [width, locale, empty] of selectBrowserTargets([[1440, 'zh-CN', false], [393, 'zh-CN', false], [320, 'en', false], [393, 'en', true]])) {
             await run(browser, base, width, locale, empty); console.log(`PASS extension assistant ${width} ${locale} empty=${empty}`);
         }
     } finally { await browser.close(); await new Promise(r => server.close(r)); }

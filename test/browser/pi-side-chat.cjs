@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { openInspector } = require('./pi-mobile-view-helper.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -10,6 +11,7 @@ const sourceTime = Date.parse('2026-09-07T10:00:00Z');
 const firstReply = '此前已经比较了 A/B 两个方案，目前继续验证方案 A。';
 
 async function run(browser, viewport, theme, fullContext = true, retention = fullContext) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width <= 900, hasTouch: viewport.width <= 900 });
     const page = await context.newPage(); page.setDefaultNavigationTimeout(60000);
     const errors = [], writes = [], mainPrompts = [], sidePrompts = [], preparations = [], sockets = [];
@@ -174,12 +176,14 @@ async function run(browser, viewport, theme, fullContext = true, retention = ful
         assert.equal(await inspectorWidth(), savedWidth, 'details and side chat share the chosen width');
         await openInspector(page, 'side');
         await page.locator('#pi-side-input').fill('分栏布局草稿');
+        if (browserTargetEnabled(393)) {
         await page.setViewportSize({ width: 393, height: 852 });
         await page.waitForTimeout(100);
         assert.equal(await divider.isVisible(), false, 'mobile retains a drawer');
         await page.setViewportSize(viewport);
         await page.waitForFunction(width => Math.abs(document.querySelector('#pi-inspector').getBoundingClientRect().width - width) < 1, savedWidth);
         assert.equal(await inspectorWidth(), savedWidth, 'desktop width returns after a mobile viewport');
+        }
         assert.equal(await page.locator('#pi-side-input').inputValue(), '分栏布局草稿');
         await page.locator('#pi-side-input').fill('');
         await divider.focus(); await page.keyboard.press('End');
@@ -474,7 +478,7 @@ async function run(browser, viewport, theme, fullContext = true, retention = ful
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const [viewport, theme] of [[{ width: 1440, height: 1000 }, 'daylight'], [{ width: 393, height: 852 }, 'mint'], [{ width: 412, height: 915 }, 'dark'], [{ width: 1024, height: 768 }, 'daylight'], [{ width: 320, height: 740 }, 'daylight'], [{ width: 852, height: 430 }, 'dark']]) if (!process.env.PI_SIDE_VIEWPORT || process.env.PI_SIDE_VIEWPORT === String(viewport.width)) await run(browser, viewport, theme);
+        for (const [viewport, theme] of selectBrowserTargets([[{ width: 1440, height: 1000 }, 'daylight'], [{ width: 393, height: 852 }, 'mint'], [{ width: 412, height: 915 }, 'dark'], [{ width: 1024, height: 768 }, 'daylight'], [{ width: 320, height: 740 }, 'daylight'], [{ width: 852, height: 430 }, 'dark']])) if (!process.env.PI_SIDE_VIEWPORT || process.env.PI_SIDE_VIEWPORT === String(viewport.width)) await run(browser, viewport, theme);
         if (!process.env.PI_SIDE_VIEWPORT || process.env.PI_SIDE_VIEWPORT === 'legacy') await run(browser, { width: 393, height: 852 }, 'daylight', false);
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

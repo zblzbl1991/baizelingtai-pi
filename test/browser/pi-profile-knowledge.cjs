@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const express = require('express');
 const path = require('node:path');
@@ -19,6 +20,7 @@ window.manager=PiProfileKnowledge.create({apiFetch:api,root:document.getElementB
 window.chat=PiChatKnowledge.create({fetch:api,root:document.getElementById('pi-chat-knowledge'),scope:()=>window.current});
 window.manager.open('profile-one');window.chat.update();</script></body></html>`));
 async function run(browser, base, width, locale, dark) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 800 }, locale, colorScheme: dark ? 'dark' : 'light' });
     const page = await context.newPage(), errors = [], calls = [];
     const state = { revision: hash('a'), status: 'ready', receipts: [], item: structuredClone(skill), learningRevision: 0,
@@ -228,7 +230,7 @@ async function run(browser, base, width, locale, dark) {
 }
 (async () => {
     const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
-    const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true });
-    try { for (const width of [320,393,1440]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, width === 393 ? 'zh-CN' : 'en-US', width === 393); }
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
+    try { for (const width of selectBrowserTargets([320,393,1440])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, width === 393 ? 'zh-CN' : 'en-US', width === 393); }
     finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

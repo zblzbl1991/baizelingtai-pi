@@ -1,8 +1,10 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { openInspector } = require('./pi-mobile-view-helper.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const base = process.env.PI_SIDE_TEST_URL || 'http://127.0.0.1:3126';
 async function run(browser, width, language, height = 900) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height }, locale: language, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [], answers = [], prompts = [];
     const cwd = '/fixture/side-tools', model = { provider: 'fixture', id: 'fixture', name: 'Fixture', contextWindow: 32000 }, session = { id: 'main', cwd, name: 'Main', messageCount: 0 };
@@ -126,7 +128,7 @@ async function run(browser, width, language, height = 900) {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
         for (const language of ['zh-CN', 'en-US']) {
-            for (const width of [1440, 393, 320]) if (!process.env.PI_SIDE_APPROVAL_VIEWPORT || process.env.PI_SIDE_APPROVAL_VIEWPORT === String(width)) await run(browser, width, language);
+            for (const width of selectBrowserTargets([1440, 393, 320])) if (!process.env.PI_SIDE_APPROVAL_VIEWPORT || process.env.PI_SIDE_APPROVAL_VIEWPORT === String(width)) await run(browser, width, language);
             if (!process.env.PI_SIDE_APPROVAL_VIEWPORT || process.env.PI_SIDE_APPROVAL_VIEWPORT === '852') await run(browser, 852, language, 430);
         }
     }

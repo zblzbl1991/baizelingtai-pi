@@ -93,6 +93,9 @@ async function stagePi({ root, directory, version, env = process.env, signal, ru
         const actual = JSON.parse(readSafe(path.join(directory, 'node_modules', name, 'package.json'))).version;
         if (actual !== version || lock.packages?.['node_modules/' + name]?.version !== version || lock.packages?.['']?.dependencies?.[name] !== version) throw new Error('Installed Pi version does not match the selected version');
     }
+    if (manifest.dependencies?.['@deepseek-ai/libreoffice-kit']) {
+        await run([path.join(directory, 'scripts/install-office-preview.cjs'), '--require-available'], { cwd: directory, env: installEnv, signal, onOutput, secretEnv: env });
+    }
     progress('verifying');
     // Every runtime test runs with a newly allocated identity and no provider credentials.
     const probe = privateDir(path.join(directory, 'probe-data'));

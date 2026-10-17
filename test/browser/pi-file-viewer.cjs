@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { openInspector } = require('./pi-mobile-view-helper.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -19,6 +20,7 @@ const tool = (name, id, file, content, error = false) => [
     { role: 'toolResult', toolCallId: id, toolName: name, content: [{ type: 'text', text: error ? 'Failed' : 'Success' }], isError: error, details: name === 'edit' ? { patch } : {}, timestamp: timestamp++ }
 ];
 async function run(browser, viewport) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width <= 900, hasTouch: viewport.width <= 900 });
     const page = await context.newPage(), errors = [], writes = [], reads = [], remoteImages = [], commands = [];
     let socket, active = session.id, busy = false, legacy = false, diskReport = '# 磁盘版本 1\n\n[详细说明](details.md)\n', pending = null, hold = false;
@@ -246,6 +248,6 @@ async function checkWidth(page) {
 }
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'], headless: true });
-    try { for (const viewport of [{ width: 1440, height: 1000 }, { width: 1024, height: 768 }, { width: 393, height: 852 }, { width: 320, height: 740 }]) await run(browser, viewport); }
+    try { for (const viewport of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 1024, height: 768 }, { width: 393, height: 852 }, { width: 320, height: 740 }])) await run(browser, viewport); }
     finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

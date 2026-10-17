@@ -82,6 +82,7 @@ function enforceShrinkwrapFixes(base = root, fixes = SHRINKWRAP_FIXES) {
 }
 async function install() {
     await require('./install-officecli.cjs').install();
+    await require('./install-office-preview.cjs').install();
     const removed = enforceShrinkwrapFixes();
     if (removed.length) console.log('[baizelingtai] Replaced legacy nested ' + removed.join(', ') + ' with reviewed fixed release.');
     vendorFiles(root);

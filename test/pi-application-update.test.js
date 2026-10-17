@@ -46,3 +46,15 @@ test('release download rejects off-origin redirects before requesting them', asy
     await assert.rejects(download('https://github.com/zblzbl1991/baizelingtai-pi/releases/download/v1.2.3/a', { env: {}, request: async () => { calls++; return { status: 302, headers: { get: () => 'https://evil.example/payload' } }; } }), /Untrusted/);
     assert.equal(calls, 1);
 });
+
+test('Office-enabled update candidates cannot complete after a failed native preview preflight', async t => {
+    const directory = fixture(t), calls = [];
+    const bytes = archive({'package.json':JSON.stringify({name:'pivane',version:'1.2.3',dependencies:{'@earendil-works/pi-coding-agent':'0.86.0','@deepseek-ai/libreoffice-kit':'0.1.1'}})});
+    await assert.rejects(stageApplication({directory,release:{version:'1.2.3',sha256:hash(bytes)},get:async()=>bytes,run:async args=>{
+        calls.push(args);
+        if (args.includes('ci')) { fs.mkdirSync(path.join(directory,'node_modules/@earendil-works/pi-coding-agent'),{recursive:true}); fs.writeFileSync(path.join(directory,'node_modules/@earendil-works/pi-coding-agent/package.json'),'{"version":"0.86.0"}'); }
+        else { assert.ok(args[0].endsWith('install-office-preview.cjs')); assert.ok(args.includes('--require-available')); throw Error('Native Office preview unavailable'); }
+    }}),/Native Office preview unavailable/);
+    assert.equal(calls.length,2);
+    assert.equal(fs.existsSync(path.join(directory,'PI_INSTALL_COMPLETE.json')),false);
+});

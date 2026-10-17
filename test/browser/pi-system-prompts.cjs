@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const path = require('node:path');
@@ -8,6 +9,7 @@ const { openInspector } = require('./pi-mobile-view-helper.cjs');
 const cwd = '/fixture/prompt-project', session = { id: 'prompt-fixture', cwd, name: 'Prompt fixture', messageCount: 2 };
 const model = { id: 'fixture', provider: 'fixture', name: 'Fixture', input: ['text'], contextWindow: 32000, available: true };
 async function run(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 950 }, locale, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(); page.setDefaultTimeout(12000);
     const errors = [], writes = [], calls = [];
@@ -251,7 +253,7 @@ async function run(browser, base, width, locale) {
     await context.close();
 }
 async function noProject(browser, base) {
-    const context = await browser.newContext({ viewport: { width: 393, height: 850 }, locale: 'zh-CN' });
+    const context = await browser.newContext({ viewport: { width: process.env.PIVANE_BROWSER_TARGET === 'desktop' ? 1440 : 393, height: 850 }, locale: 'zh-CN' });
     const page = await context.newPage(), errors = [], calls = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.route('**/api/**', route => {
@@ -293,7 +295,7 @@ async function noProject(browser, base) {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
         const base = `http://127.0.0.1:${server.address().port}`;
-        for (const locale of ['zh-CN', 'en']) for (const width of [1440, 393, 320]) await run(browser, base, width, locale);
+        for (const locale of ['zh-CN', 'en']) for (const width of selectBrowserTargets([1440, 393, 320])) await run(browser, base, width, locale);
         await noProject(browser, base);
     }
     finally { await browser.close(); server.closeAllConnections(); await new Promise(r => server.close(r)); }

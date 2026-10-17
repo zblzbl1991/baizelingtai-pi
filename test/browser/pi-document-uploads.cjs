@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), { once } = require('node:events');
 const { createHash } = require('node:crypto');
@@ -11,6 +12,7 @@ const sessions = ['a', 'b'].map(id => ({ id, cwd, name: id, messageCount: 0 }));
 const samples = ['docx', 'xlsx', 'pptx', 'pdf'].map((format, i) => ({ name: ['合同 & "样本".docx', '销售.xlsx', '演示.pptx', '报告.pdf'][i], format,
     buffer: format === 'pdf' ? pdfBytes() : zip(({ docx: docxFiles, xlsx: xlsxFiles, pptx: pptxFiles })[format]()), mimeType: 'application/octet-stream' }));
 async function run(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ locale, viewport: { width, height: width < 900 ? 852 : 1000 }, isMobile: width < 900, hasTouch: width < 900, acceptDownloads: true });
     const page = await context.newPage(), errors = [], uploads = [], prompts = [], saved = new Map();
     let active = 'a', reject = false, held, hold = false, loseResponse = false; const messages = { a: [], b: [] };
@@ -108,6 +110,6 @@ async function run(browser, base, width, locale) {
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const locale of ['zh-CN', 'en']) for (const width of [1440, 393]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
+    try { for (const locale of ['zh-CN', 'en']) for (const width of selectBrowserTargets([1440, 393])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
     finally { await browser.close(); server.closeAllConnections(); await new Promise(r => server.close(r)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

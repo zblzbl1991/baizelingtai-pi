@@ -1,4 +1,5 @@
 // pivane-browser: manual — needs an isolated live server with PI_ONBOARDING_TEST_URL and PI_ONBOARDING_PROJECT.
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert=require('node:assert/strict');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const base=process.env.PI_ONBOARDING_TEST_URL;
@@ -11,7 +12,7 @@ assert.match(project||'',/^\/tmp\/pi-onboarding-[^/]+\/project$/);
  const marker=await get('/api/pi/files/content?'+new URLSearchParams({cwd:project,path:'marker.txt'}));assert.equal(marker.content,'pi-onboarding-fixture\n');
  const models=await get('/api/pi/settings/models');assert.ok(models.providers.every(p=>!p.configured));
  const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true});const results=[];
- try{for(const width of [1440,393,320]){
+ try{for(const width of selectBrowserTargets([1440,393,320])){
   const context=await browser.newContext({ locale: 'zh-CN',viewport:{width,height:1000}});const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route(/https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com)\//,r=>r.abort());
   await page.goto(base,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>!document.querySelector('#pi-project-button').disabled);

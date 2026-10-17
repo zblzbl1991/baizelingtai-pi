@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict'), http = require('node:http'), path = require('node:path');
 const { once } = require('node:events');
 const express = require('express');
@@ -6,6 +7,7 @@ const root = path.resolve(__dirname, '../..'), cwd = '/synthetic/speed';
 const models = ['ordinary', 'fast-only', 'accelerated'].map(id => ({ provider: 'fixture', id, name: id, input: ['text'], contextWindow: 128000, maxTokens: 16384, thinkingLevels: ['off', 'high'], speedSupported: true }));
 const modes = { fast: { serviceTier: 'priority', costMultiplier: 2.5 }, ultrafast: { serviceTier: 'ultrafast', costMultiplier: 6 } };
 async function run(browser, base, width, language, theme) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 900 }, locale: language, isMobile: width <= 680, hasTouch: width <= 680 });
     const page = await context.newPage(), errors = [], calls = [], writes = [];
     let chosen = models[0], level = 'auto', revision = 0, socket, held, hold = false, fail = false, running = false;
@@ -132,6 +134,6 @@ async function run(browser, base, width, language, theme) {
     const app = express(); for (const [name, folder] of [['marked', 'marked/lib'], ['dompurify', 'dompurify/dist'], ['highlight', '@highlightjs/cdn-assets']]) app.use('/vendor/' + name, express.static(path.join(root, 'node_modules', folder)));
     app.use(express.static(path.join(root, 'public'))); const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const [width, language, theme] of [[1440, 'zh-CN', 'daylight'], [768, 'en', 'daylight'], [393, 'zh-CN', 'dark'], [320, 'en', 'mint']]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, language, theme); }
+    try { for (const [width, language, theme] of selectBrowserTargets([[1440, 'zh-CN', 'daylight'], [768, 'en', 'daylight'], [393, 'zh-CN', 'dark'], [320, 'en', 'mint']])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, language, theme); }
     finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
