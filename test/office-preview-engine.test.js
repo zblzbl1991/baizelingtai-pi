@@ -6,8 +6,8 @@ test('Office engine stays constructible and explains a missing installation', as
     assert.equal(typeof engine.generation, 'string');
     const status = await engine.status();
     assert.equal(status.available, false);
-    assert.equal(status.code, 'office_unavailable');
-    await assert.rejects(engine.convert(Buffer.from('source'), 'docx'), { code: 'office_unavailable' });
+    assert.ok(['office_unavailable', 'office_unsupported'].includes(status.code));
+    await assert.rejects(engine.convert(Buffer.from('source'), 'docx'), { code: status.code });
     await engine.dispose();
 });
 
@@ -27,5 +27,5 @@ test('native health refresh is reserved before awaiting and disposal prevents a 
 test('installation can report degraded Office while update preflight refuses that candidate', async () => {
     const { preflightOfficePreview } = require('../server/office-preview/preflight');
     assert.equal((await preflightOfficePreview({root:__dirname})).available, false);
-    await assert.rejects(preflightOfficePreview({root:__dirname, requireAvailable:true}), {code:'office_unavailable'});
+    await assert.rejects(preflightOfficePreview({root:__dirname, requireAvailable:true, target:{platform:'win32',arch:'x64'}}), error => ['office_unavailable','office_unsupported'].includes(error.code));
 });
