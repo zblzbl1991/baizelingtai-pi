@@ -68,10 +68,10 @@ test('private source transfer is branch-authorized, retains read occupancy and r
     const session = await store.createSession(cwd, 'Source race'), upload = await service.upload({ cwd, sessionId: session.id, requestId: 'source-race', name: '原件.docx' }, bytes);
     let attached = true, entered, release;
     const ready = new Promise(resolve => entered = resolve), gate = new Promise(resolve => release = resolve);
-    const worker = { cwd, sessionId: session.id, disposed: false, restarting: false,
+    const worker = { cwd: session.cwd, sessionId: session.id, disposed: false, restarting: false,
         request: async () => ({ entries: attached ? [{ id: 'source-user', type: 'message', message: { role: 'user', content: upload.marker } }] : [], leafId: attached ? 'source-user' : null }) };
     const race = new DocumentUploads({ store, supervisor: { removing: new Set(), moving: new Set(), getActiveWorker: () => worker } });
-    const readBytes = race.bytes.bind(race); race.bytes = async object => { const result = await readBytes(object); entered(); await gate; return result; };
+    const readBytes = race.bytes.bind(race); race.bytes = async (...args) => { const result = await readBytes(...args); entered(); await gate; return result; };
     try {
         const pending = race.read(worker, { id: upload.reference.id, action: 'source' });
         await ready; assert.equal(worker.documentReads, 1); attached = false; release();
@@ -99,10 +99,16 @@ test('worker document reads retain lifecycle occupancy through asynchronous pars
     const session = await store.createSession(cwd, 'Read race'), input = { cwd, sessionId: session.id, requestId: 'race', name: 'race.docx' }, uploaded = await service.upload(input, bytes);
     let attached = true, entered, release;
     const ready = new Promise(r => entered = r), gate = new Promise(r => release = r);
-    const worker = { cwd, sessionId: session.id, disposed: false, restarting: false, request: async () => ({ entries: attached ? [{ id: 'u1', type: 'message', message: { role: 'user', content: uploaded.marker } }] : [], leafId: attached ? 'u1' : null }) };
+    const worker = { cwd: session.cwd, sessionId: session.id, disposed: false, restarting: false, request: async () => ({ entries: attached ? [{ id: 'u1', type: 'message', message: { role: 'user', content: uploaded.marker } }] : [], leafId: attached ? 'u1' : null }) };
     const supervisor = { removing: new Set(), moving: new Set(), getActiveWorker: () => worker }, pool = { jobs: new Set(), run: async () => { entered(); await gate; return { total: 3 }; }, dispose: async () => {} };
     const race = new DocumentUploads({ store, supervisor, pool });
     const reading = race.read(worker, { id: uploaded.reference.id }); await ready; assert.equal(worker.documentReads, 1); attached = false; release();
     await assert.rejects(reading, { code: 'DOCUMENT_CONTEXT' }); assert.equal(worker.documentReads, 0); await race.dispose();
     const releaseSlot = service.reserve(), stopping = service.dispose(); assert.equal(service.closed, true); assert.throws(() => service.reserve(), /维护/); releaseSlot(); await stopping;
+});
+test('legacy attachment references remain branch metadata and do not promise read_document parsing', async () => {
+    const ref = { id: 'a'.repeat(64), revision: 'b'.repeat(64), name: 'legacy.doc', format: 'doc', size: 1024 };
+    assert.equal(refs.valid(ref), true);
+    assert.deepEqual(refs.split(refs.marker(ref))[0].reference, ref);
+    assert.equal(require('../server/pi-document-uploads').uploadInput({ cwd, sessionId: 'fixture', requestId: 'legacy', name: 'legacy.doc' }).format, 'doc');
 });
