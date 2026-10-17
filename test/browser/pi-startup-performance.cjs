@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Synthetic held global discovery: validate saved project before opening; do not wait for unrelated lists.
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -16,6 +17,7 @@ const waitFor = async predicate => {
 };
 
 async function run(browser, base, width, scenario) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage();
     const errors = [], requests = [], rpc = [];
@@ -149,7 +151,7 @@ async function run(browser, base, width, scenario) {
     let browser;
     try {
         browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium' });
-        for (const width of [1440, 393]) for (const scenario of ['ready', 'hidden', 'visibility-race', 'failed-resolve', 'switch', 'stale-list'])
+        for (const width of selectBrowserTargets([1440, 393])) for (const scenario of ['ready', 'hidden', 'visibility-race', 'failed-resolve', 'switch', 'stale-list'])
             await run(browser, `http://127.0.0.1:${server.address().port}/`, width, scenario);
     } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

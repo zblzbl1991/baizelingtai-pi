@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { connectionSchema } = require('../../server/media-connection-planner');
@@ -5,6 +6,7 @@ const { renderTemplate } = require('../../server/media-http-protocol');
 const baseUrl = process.env.PI_CONNECTIONS_TEST_URL || 'http://127.0.0.1:3104';
 const schema = connectionSchema(), copy = value => JSON.parse(JSON.stringify(value));
 async function run(browser, viewport, theme) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width < 900, hasTouch: viewport.width < 900 });
     const page = await context.newPage(); page.setDefaultTimeout(12000);
     const errors = [], writes = [], stored = new Map(); let providers = [], transcriptionModels = [], revision = 0, counter = 0, holdPlan, resolveStarted, rejectWrite = false, unsupported = false, wrongKindDraft = false;
@@ -323,7 +325,7 @@ async function run(browser, viewport, theme) {
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try {
-        for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }]) {
+        for (const viewport of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }])) {
             if (process.env.PI_CONNECTIONS_TEST_WIDTH && viewport.width !== Number(process.env.PI_CONNECTIONS_TEST_WIDTH)) continue;
             for (const theme of ['daylight','dark','mint']) await run(browser, viewport, theme);
         }

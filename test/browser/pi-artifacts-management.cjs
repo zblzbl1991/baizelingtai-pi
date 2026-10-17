@@ -1,9 +1,11 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const express = require('express'), { once } = require('node:events'), { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = path.resolve(__dirname, '../..'), key = n => n.toString(16).padStart(64, '0'), cwd = '/projects/library-fixture';
 const source = { key: key(1), source: 'delivery', title: 'Delivered bundle', project: { key: 'project', name: 'Demo' }, origin: { sessionId: 'source-session' }, createdAt: '2026-10-08T01:00:00.000Z', saved: true,
  types: ['document', 'web'], files: [{ key: key(1), name: 'report.md', kind: 'document', size: 9 }, { key: key(2), name: 'site.html', kind: 'web', size: 20 }] };
 async function run(browser, base, width, locale, theme) {
+    if (!browserTargetEnabled(width)) return;
  const context = await browser.newContext({ viewport: { width, height: width < 900 ? 852 : 1000 }, locale, hasTouch: width < 900 });
  const page = await context.newPage(), errors = [], writes = [], reconciliations = [], previews = [];
  let saved = [], collections = [], sourceDeleted = false, revision = 0, loseReply = false, failFavorite = false, nextLibraryId = 101;
@@ -232,6 +234,6 @@ async function widths(page) {
  const app = express(); for (const [name, folder] of [['marked', 'marked/lib'], ['dompurify', 'dompurify/dist'], ['highlight', '@highlightjs/cdn-assets']]) app.use(`/vendor/${name}`, express.static(path.join(root, 'node_modules', folder)));
  app.use(express.static(path.join(root, 'public'))); const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--no-proxy-server', '--host-resolver-rules=MAP pivane-http.test 127.0.0.1'] });
- try { for (const [width, locale, theme] of [[1440, 'zh-CN', 'daylight'], [1024, 'en', 'dark'], [393, 'zh-CN', 'dark'], [320, 'en', 'daylight']]) await run(browser, `http://${width === 1024 ? '127.0.0.1' : 'pivane-http.test'}:${server.address().port}`, width, locale, theme); }
+ try { for (const [width, locale, theme] of selectBrowserTargets([[1440, 'zh-CN', 'daylight'], [1024, 'en', 'dark'], [393, 'zh-CN', 'dark'], [320, 'en', 'daylight']])) await run(browser, `http://${width === 1024 ? '127.0.0.1' : 'pivane-http.test'}:${server.address().port}`, width, locale, theme); }
  finally { await browser.close(); server.closeAllConnections(); await new Promise(r => server.close(r)); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

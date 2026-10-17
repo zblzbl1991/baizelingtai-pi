@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // U1 learning-interface rehearsal (chat "remembered" hints, learning health + one-click enable,
 // legacy auto-learning banner, memory usage bars). Backend contract fields are mocked through
 // route interception; absent fields must fall back to the old display without page errors.
@@ -71,6 +72,7 @@ window.profiles.setEnabled(true, true); window.profiles.open();
 </script></body></html>`));
 
 async function runFixture(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 900 }, locale });
     const page = await context.newPage(), errors = [], dialogs = [], state = {
         usage: { memory: { chars: 5000, limit: 16000 }, user: { chars: 7000, limit: 8000 } },
@@ -289,6 +291,7 @@ async function runFixture(browser, base, width, locale) {
 }
 
 async function runProfiles(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     // Identity list: health dots come from each profile's learning snapshot; absent health keeps the plain row.
     const context = await browser.newContext({ viewport: { width, height: 800 }, locale });
     const page = await context.newPage(), errors = [];
@@ -339,6 +342,7 @@ async function runProfiles(browser, base, width, locale) {
 }
 
 async function runChat(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     // Real chat shell: verifies the pi-chat.js wiring (context anchors and transcript placement).
     const context = await browser.newContext({ viewport: { width, height: 820 }, locale, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [], writes = [], reloads = [];
@@ -436,6 +440,7 @@ async function runChat(browser, base, width, locale) {
 // session id, skill reload and draft-skill counts). Contract fields do not exist on the
 // backend yet: route interception mocks them and absent fields must keep the old display.
 async function runWave2(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 900 }, locale });
     const page = await context.newPage(), errors = [], dialogs = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -688,11 +693,11 @@ async function runWave2(browser, base, width, locale) {
 (async () => {
     const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
     const base = `http://127.0.0.1:${server.address().port}`;
-    const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true });
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try {
-        for (const [width, locale] of [[393, 'zh-CN'], [1440, 'en-US']]) await runFixture(browser, base, width, locale);
-        for (const [width, locale] of [[393, 'zh-CN'], [1440, 'en-US']]) await runProfiles(browser, base, width, locale);
-        for (const [width, locale] of [[393, 'zh-CN'], [1440, 'en-US']]) await runChat(browser, base, width, locale);
-        for (const [width, locale] of [[393, 'zh-CN'], [1440, 'en-US']]) await runWave2(browser, base, width, locale);
+        for (const [width, locale] of selectBrowserTargets([[393, 'zh-CN'], [1440, 'en-US']])) await runFixture(browser, base, width, locale);
+        for (const [width, locale] of selectBrowserTargets([[393, 'zh-CN'], [1440, 'en-US']])) await runProfiles(browser, base, width, locale);
+        for (const [width, locale] of selectBrowserTargets([[393, 'zh-CN'], [1440, 'en-US']])) await runChat(browser, base, width, locale);
+        for (const [width, locale] of selectBrowserTargets([[393, 'zh-CN'], [1440, 'en-US']])) await runWave2(browser, base, width, locale);
     } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

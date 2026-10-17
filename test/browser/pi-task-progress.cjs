@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { selectMessageView } = require('./pi-mobile-view-helper.cjs');
 const http = require('node:http');
@@ -14,6 +15,7 @@ const makePlan = (id, completed = false) => ({ version: 1, id, plan: [
     { step: 'Verify desktop and mobile', status: completed ? 'completed' : 'pending' }
 ], explanation: '<script>throw new Error("unsafe")</script> Progress reported by Agent.' });
 async function check(browser, base, width, language) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 900 }, locale: language });
     const page = await context.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -158,7 +160,7 @@ async function check(browser, base, width, language) {
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const width of [1440, 393, 320]) for (const language of ['zh-CN', 'en']) await check(browser, `http://127.0.0.1:${server.address().port}`, width, language);
+        for (const width of selectBrowserTargets([1440, 393, 320])) for (const language of ['zh-CN', 'en']) await check(browser, `http://127.0.0.1:${server.address().port}`, width, language);
         console.log('Task progress: six desktop/mobile/language scenarios passed');
     } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

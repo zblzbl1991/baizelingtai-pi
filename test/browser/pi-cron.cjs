@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const path = require('node:path');
@@ -8,6 +9,7 @@ const { randomUUID } = require('node:crypto');
 const cwd = '/synthetic/assistant';
 const profileId = randomUUID(), sessionId = randomUUID();
 async function check(browser, base, width, language, scenario = 'normal') {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 900 }, locale: language, isMobile: width < 680, hasTouch: width < 680 });
     const page = await context.newPage(), errors = [], writes = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -95,7 +97,7 @@ async function check(browser, base, width, language, scenario = 'normal') {
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const width of [1440, 393, 320]) for (const language of ['zh-CN', 'en']) await check(browser, `http://127.0.0.1:${server.address().port}`, width, language);
+        for (const width of selectBrowserTargets([1440, 393, 320])) for (const language of ['zh-CN', 'en']) await check(browser, `http://127.0.0.1:${server.address().port}`, width, language);
         for (const language of ['zh-CN', 'en']) await check(browser, `http://127.0.0.1:${server.address().port}`, language === 'zh-CN' ? 1440 : 393, language, 'slow');
         console.log('Scheduled tasks: desktop/mobile, two languages, HTTP UUID fallback, asynchronous loading and draft checks passed');
     } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

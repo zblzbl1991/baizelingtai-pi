@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -24,7 +25,7 @@ const token = 'isolated-network-browser-token';
         const created = await fetch(base + '/api/pi/sessions', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Origin: base }, body: JSON.stringify({ cwd: project, name: 'Network UI fixture' }) });
         assert.equal(created.status, 201);
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-        for (const locale of ['zh-CN', 'en-US']) for (const width of [1440, 393, 320]) {
+        for (const locale of ['zh-CN', 'en-US']) for (const width of selectBrowserTargets([1440, 393, 320])) {
             const context = await browser.newContext({ locale, viewport: { width, height: 950 } }); const page = await context.newPage(); const errors = [];
             page.on('pageerror', error => errors.push(error.message)); page.on('dialog', dialog => dialog.accept());
             await page.route('https://**/*', route => route.abort());

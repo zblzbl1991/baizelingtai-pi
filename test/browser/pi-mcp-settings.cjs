@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const fs = require('node:fs');
@@ -13,7 +14,7 @@ const server = http.createServer((req, res) => {
     await new Promise(r => server.listen(0, '127.0.0.1', r));
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const width of [1440, 393, 320]) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) {
             const page = await browser.newPage({ viewport: { width, height: 900 } }), errors = [];
             let cancelDiscard = false;
             page.on('pageerror', e => errors.push(e.message)); page.on('dialog', d => cancelDiscard && d.message().startsWith('Refresh clears') ? d.dismiss() : d.accept());

@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { selectMessageView } = require('./pi-mobile-view-helper.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -13,6 +14,7 @@ const summary = ['上下文摘要：保留路径和原始换行。', '<read-file
     '</read-files>', '', `https://example.invalid/artifacts/${'longUnbrokenIdentifier'.repeat(35)}`, '<modified-files>', '/srv/example/public/workspace.css', '</modified-files>'].join('\n');
 const code = `const id = "${'unbroken_code_'.repeat(70)}";`;
 async function run(browser, viewport) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width < 900, hasTouch: viewport.width < 900 });
     const page = await context.newPage(); const errors = [], writes = [];
     let socket, currentSummary = summary;
@@ -95,6 +97,6 @@ async function run(browser, viewport) {
 }
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
-    try { for (const viewport of [{ width: 393, height: 852 }, { width: 412, height: 915 }, { width: 1440, height: 1000 }]) await run(browser, viewport); }
+    try { for (const viewport of selectBrowserTargets([{ width: 393, height: 852 }, { width: 412, height: 915 }, { width: 1440, height: 1000 }])) await run(browser, viewport); }
     finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

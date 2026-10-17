@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const path = require('node:path');
@@ -9,6 +10,7 @@ const source = { id: 'source', cwd, name: 'Source A' }, child = { id: 'child', c
 const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['text'], contextWindow: 32000 };
 const text = 'Task <img src=x onerror=alert(1)> ' + 'long-task-name-'.repeat(25);
 async function check(browser, base, width, language) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 900 }, locale: language, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [], writes = [], opened = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -100,7 +102,7 @@ async function check(browser, base, width, language) {
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const width of [1440, 393, 320]) for (const language of ['zh-CN', 'en']) await check(browser, `http://127.0.0.1:${server.address().port}`, width, language);
+        for (const width of selectBrowserTargets([1440, 393, 320])) for (const language of ['zh-CN', 'en']) await check(browser, `http://127.0.0.1:${server.address().port}`, width, language);
         console.log('Agent thread cards: six desktop/mobile/language checks passed');
     } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

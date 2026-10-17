@@ -38,6 +38,8 @@ test('browser runner selects launching scripts and leaves helpers and manual liv
     fs.writeFileSync(path.join(browser, 'live.cjs'), '// pivane-browser: manual \u2014 live server\nchromium.launch()');
     fs.writeFileSync(path.join(browser, 'helper.cjs'), 'module.exports = {};');
     assert.deepEqual(selectBrowserTests(directory, []), { files: ['test/browser/a.cjs'], list: false });
+    assert.deepEqual(selectBrowserTests(directory, ['--target=desktop']), {files:['test/browser/a.cjs'],list:false,target:'desktop'});
+    assert.throws(() => selectBrowserTests(directory, ['--target=phone']), /target/);
     assert.deepEqual(selectBrowserTests(directory, ['--list', './test/browser/a.cjs']), { files: ['test/browser/a.cjs'], list: true });
     for (const args of [['test/browser/live.cjs'], ['test/browser/helper.cjs'], ['test/browser/missing.cjs'], ['--headed']]) assert.throws(() => selectBrowserTests(directory, args));
 });
@@ -80,4 +82,12 @@ test('timing reporter keeps TAP failures and Node exit status, including multili
     assert.match(result.stdout, /# Timing diagnostics/);
     assert.match(result.stdout, /# Slowest cases/);
     assert.match(result.stdout, /failing\\nlabel/);
+});
+
+test('desktop target selection filters scenarios before any mobile browser context is created', () => {
+    const { selectBrowserTargets } = require('../test/browser/targets.cjs');
+    const cases = [1440, 393, { width: 1024, height: 768 }, { width: 900, height: 700 }, ['mobile', {width:390}], ['desktop', {width:1440}], [320, 'en'], [1440, 'en']];
+    assert.deepEqual(selectBrowserTargets(cases, 'desktop'), [1440, {width:1024,height:768}, ['desktop',{width:1440}], [1440,'en']]);
+    assert.deepEqual(selectBrowserTargets(cases, 'all'), cases);
+    assert.throws(() => selectBrowserTargets(cases, 'phone'), /target/);
 });

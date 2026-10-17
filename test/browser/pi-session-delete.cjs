@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const base = process.env.PI_DELETE_TEST_URL;
@@ -7,7 +8,7 @@ const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['te
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try {
-        for (const width of [1440, 393, 320]) for (const trashed of [true, false, undefined]) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) for (const trashed of [true, false, undefined]) {
             const context = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: 900 } });
             const page = await context.newPage(), errors = [], opens = [];
             let deleted = false, releaseDelete, failDelete = false, deleteCount = 0;

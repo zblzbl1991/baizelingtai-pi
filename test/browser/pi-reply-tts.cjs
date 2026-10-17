@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const base = process.env.PI_REPLY_TTS_TEST_URL || 'http://127.0.0.1:3001';
@@ -15,6 +16,7 @@ const wav = Buffer.alloc(44 + 48000 * 10);
 wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16);
 wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(24000, 24); wav.writeUInt32LE(48000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(wav.length - 44, 40);
 async function run(browser, viewport, theme) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width <= 900, hasTouch: viewport.width <= 900 });
     const page = await context.newPage(), errors = [], writes = [], commands = [];
     let defaults = { modelId: speech.id, textParameter: 'input', parameters: { voice: 'b', speed: 1.2, instruction: '自然', options: { seed: 42 } } };
@@ -148,6 +150,6 @@ async function run(browser, viewport, theme) {
 }
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
-    try { for (const [viewport, theme] of [[{ width: 1440, height: 1000 }, 'daylight'], [{ width: 393, height: 852 }, 'dark'], [{ width: 320, height: 740 }, 'mint']]) await run(browser, viewport, theme); }
+    try { for (const [viewport, theme] of selectBrowserTargets([[{ width: 1440, height: 1000 }, 'daylight'], [{ width: 393, height: 852 }, 'dark'], [{ width: 320, height: 740 }, 'mint']])) await run(browser, viewport, theme); }
     finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

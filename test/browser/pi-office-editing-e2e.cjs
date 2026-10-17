@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Browser full chain: upload DOCX → managed work copy → native OfficeCLI MCP edit →
 // deliver_files → viewer download. Real gateway, managed worker, stdio OfficeCLI process
 // and deliverable snapshots; only the model is a local synthetic provider.
@@ -102,6 +103,7 @@ async function main() {
         process.env.PI_WORKSPACE_INTERNAL_ORIGIN = origin;
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true });
         const openPage = async (width, sessionId) => {
+    if (!browserTargetEnabled(width)) return;
             const context = await browser.newContext({ viewport: { width, height: width < 680 ? 844 : 1000 }, locale: 'zh-CN', reducedMotion: 'reduce', acceptDownloads: true });
             await context.addInitScript(({ cwd, sessionId }) => {
                 localStorage.setItem('pi.web.cwd', cwd);

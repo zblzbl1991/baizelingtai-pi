@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { openInspector } = require('./pi-mobile-view-helper.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -15,6 +16,7 @@ const folders = {
 };
 const markdown = '# 更自然地阅读项目\n\n从目录中找到文件，让对话和项目内容相互连接。\n\n## 清晰的文件导航\n\n按需展开目录，直接查看当前文件。\n\n| 能力 | 使用方式 |\n| --- | --- |\n| 项目文件 | 浏览目录和查找路径 |\n| 本轮文件 | 查看成功编辑与写入 |\n\n' + '### 阅读与记录\n\n保持正文的呼吸感，宽屏并排阅读，手机随时继续。\n\n'.repeat(15);
 async function run(browser, base, width, language) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ locale: language, viewport: { width, height: width <= 900 ? 852 : 1000 } });
     const page = await context.newPage(), errors = [], requests = [], writes = [], commands = [];
     let holdSearch = false, pendingSearch, legacy = false;
@@ -129,6 +131,6 @@ async function run(browser, base, width, language) {
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'], headless: true });
-    try { for (const width of [1440, 1024, 393, 320]) for (const language of ['zh-CN', 'en']) await run(browser, `http://127.0.0.1:${server.address().port}`, width, language); }
+    try { for (const width of selectBrowserTargets([1440, 1024, 393, 320])) for (const language of ['zh-CN', 'en']) await run(browser, `http://127.0.0.1:${server.address().port}`, width, language); }
     finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

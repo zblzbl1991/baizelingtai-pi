@@ -1,4 +1,5 @@
 // pivane-browser: manual — needs an isolated live server with access control and a /tmp/pi-access-* project root.
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const base = process.env.PI_ACCESS_TEST_URL;
@@ -9,7 +10,7 @@ const token = 'Test12345!';
     assert.ok(status.projectRoots.every(p => p.startsWith('/tmp/pi-access-')), 'must use isolated project roots');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const width of [1440, 393, 320]) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) {
             const context = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: width === 1440 ? 1000 : 852 } });
             await context.addInitScript(cwd => localStorage.setItem('pi.web.cwd', cwd), status.projectRoots[0]);
             const page = await context.newPage(); const errors = [];

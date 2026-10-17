@@ -144,9 +144,11 @@ test('staged install pins the entire Pi family, uses no model credentials and ve
                 assert.ok(!args.includes('better-sqlite3')); assert.ok(args.includes('esbuild'));
             } else if (args[0].endsWith('install-bundled-capabilities.cjs')) {
                 assert.equal(options.cwd, dir);
+            } else if (args[0].endsWith('install-office-preview.cjs')) {
+                assert.ok(args.includes('--require-available'));
             } else { assert.ok(options.env.PI_UPDATE_PROBE.startsWith(dir)); assert.equal(options.env.PI_OFFLINE, '1'); }
         } });
-    assert.equal(result, dir); assert.equal(calls.length, 4); assert.ok(fs.existsSync(path.join(dir, 'PI_INSTALL_COMPLETE.json')));
+    assert.equal(result, dir); assert.equal(calls.length, 5); assert.ok(fs.existsSync(path.join(dir, 'PI_INSTALL_COMPLETE.json')));
     await assert.rejects(stagePi({ root, directory: path.join(root, 'bad'), version: 'latest' }), /exact/);
     let installCalled = false;
     await assert.rejects(stagePi({ root, directory: path.join(root, 'bound'), version: '0.99.2',
