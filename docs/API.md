@@ -41,6 +41,8 @@ Windows 托盘与 `scripts/start-desktop.cjs` 使用继承的 stdin/stdout LF �
 
 locator 字段沿用各来源接口的含义与检查。`expectedRevision` 可选，为来源原件的 64 位小写 SHA256；不匹配返回 `OFFICE_SOURCE_CHANGED`。`refresh` 可选布尔值；true 为显式刷新，Word／PPT 重新检查引擎和字体并更新代际／缓存，刷新与活动预览互斥，繁忙时拒绝。不会自动重放失败转换。
 
+现代 Office 的格式准入从唯一有效的包根 `officeDocument` 关系定位主部件，核对内容类型、根元素及 Strict／Transitional 命名空间；不按传统路径猜测。XML 支持 UTF-8／UTF-16LE／UTF-16BE，物理编码与声明必须一致；重复／越界／外部主关系、类型歧义、未知命名空间、非法字符、DTD／实体和宏格式均拒绝。此准入不扩大 Agent 正文读取的既有工作表路径约束，也不证明目标转换引擎能完整呈现任意有效文件。
+
 成功返回：
 
 ```json

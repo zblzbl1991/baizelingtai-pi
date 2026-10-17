@@ -43,6 +43,8 @@
 
 XLSX 使用本项目的有界 OPC／XML 读取器；`fflate` 用于展开，`sax` 用于带命名空间的流式 XML。XLS 容器／BIFF 预检查之后使用 SheetJS CE，数值格式也使用其 SSF。SheetJS 固定到官方 CDN 的 0.20.3 tarball，锁文件记录来源与 integrity；不改依赖源码，也不依赖参考项目的补丁。具体依赖精确值和 kit 的 fflate override 以 package.json／lock 为准，不引入 React、FortuneSheet 或 ExcelJS。
 
+服务器的 `pi-document-parser.officeMainPart/xmlNamespace` 由现代附件校验与 `pi-office-format` 共同使用，按包根关系及有效内容类型定位主部件；共享 XML 读取严格处理 UTF-8／UTF-16LE／UTF-16BE、声明与非法字符。浏览器解析仍独立执行自身容器／模型预算，不能依赖服务器已检查就省略主线程验证。Agent 正文读取的既有工作表布局限制与网页预览兼容范围分别维护，不用放宽路径检查来消除格式集成失败。
+
 `server/office-preview/inventory.js` 与 `config/office-preview-assets.json` 是引擎及静态资源闭包的共同入口，核对锁定包、完整常规文件集合、逐文件 SHA256、原生 manifest 与平台信息，包含程序、源码、许可证、NOTICE 和传递依赖。安装、健康探针、受管候选预检、打包和源码快照复用同一清单，不能只复制 DLL 或另建一套扫描规则。更新依赖时同时审查清单和真实解析，不能只更新版本字符串。
 
 同一 inventory 的 `officePreviewPlatform()` 是原生支持声明的唯一位置，完整性校验、运行时状态和候选预检共同使用。当前只声明 win32/x64：该平台保持严格探针；未声明平台返回带平台的 `office_unsupported` 降级诊断，跳过 Windows 引擎解析与探针，不阻断其他工作台安装／更新。安装脚本继续准备工作簿静态资源，不提供 CLI／环境／HTTP 的平台覆盖入口。该策略的模拟平台测试不能代替目标操作系统实机验收。

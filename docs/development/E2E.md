@@ -46,6 +46,7 @@ npm run test:browser -- test/browser/pi-assistant-workspace-integration.cjs test
 | 入口 | 真实范围与限制 |
 |---|---|
 | [来源矩阵](../../test/pi-office-preview-sources.test.js)、[服务生命周期](../../test/pi-office-previews.test.js)、[HTTP](../../test/pi-office-preview-routes.test.js)、[格式](../../test/pi-office-format.test.js) | 原生 SessionManager／分支、文件／交付／成果库／附件职责服务及授权、身份变化、原件哈希、HTTP 安全与取消；可控引擎替身验证失败／共享边界，不代替原生转换 |
+| [OPC／编码集成](../../test/pi-office-opc.test.js) | 真实项目文件与上传来源把 Strict／Transitional、UTF-8／UTF-16LE／UTF-16BE XLSX 原字节传至有界解析器，核对重定位主部件、中文值、SHA256 和非法关系／编码拒绝；不是实际浏览器 Worker 或 Word／PPT 原生转换验收 |
 | [引擎专项](../../test/office-preview-engine.test.js)、[原生引擎探针](../../test/release/office-preview-engine.cjs) | 单元用例的注入故障与独立原生运行须分别看；后者执行完整性／实际转换、私有权限、取消清理、代际刷新及输出预算，要求目标平台组件，不证明 Word／WPS 最终版面 |
 | [平台预检](../../test/office-preview-platform.test.js)、[应用候选](../../test/pi-application-update.test.js) | 验证共享支持声明、未声明平台降级和已声明平台严格拒绝不健康候选；注入目标／进程适配的测试不冒充 Linux／macOS／ARM 原生安装，实际 Windows 健康探针以用例为准 |
 | [工作簿解析](../../test/office-workbook.test.js)、[材料说明](../../test/fixtures/office/README.md) | 实际 XLSX 容器、XML／OPC、XLS／BIFF、保存缓存、日期／样式／异常与预算；材料来源和兼容性结论按具体断言核对，不用解析成功证明所有布局还原 |
