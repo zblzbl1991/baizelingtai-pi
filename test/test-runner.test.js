@@ -50,6 +50,22 @@ test('selection still rejects linked source directories', t => {
     assert.throws(() => selectTests(directory, ['test/a.test.js']), /symlink/);
 });
 
+test('native Office browser metadata uses the shared platform policy without calling unsupported cases passes', t => {
+    const directory = fixture(t), browser = path.join(directory, 'test/browser'); fs.mkdirSync(browser);
+    fs.writeFileSync(path.join(browser, 'excel.cjs'), 'chromium.launch()');
+    fs.writeFileSync(path.join(browser, 'native.cjs'), '// pivane-browser: office-native\nchromium.launch()');
+    const native = 'test/browser/native.cjs', excel = 'test/browser/excel.cjs';
+    assert.deepEqual(selectBrowserTests(directory, [], { platform: 'win32', arch: 'x64' }), { files: [excel, native], list: false });
+    for (const target of [{ platform: 'linux', arch: 'x64' }, { platform: 'darwin', arch: 'arm64' }, { platform: 'win32', arch: 'arm64' }]) {
+        const selected = selectBrowserTests(directory, ['--target=desktop'], target);
+        assert.deepEqual(selected.files, [excel]); assert.equal(selected.target, 'desktop'); assert.equal(selected.skipped.length, 1);
+        assert.equal(selected.skipped[0].file, native); assert.match(selected.skipped[0].reason, /requires Windows x64/); assert.match(selected.skipped[0].reason, new RegExp(target.platform + '-' + target.arch));
+        const explicit = selectBrowserTests(directory, [native, '--list'], target); assert.deepEqual(explicit.files, []); assert.equal(explicit.list, true); assert.deepEqual(explicit.skipped, selected.skipped);
+        assert.equal(selectBrowserTests(directory, ['--target=all'], target).target, undefined, 'The default mobile/all selection is unchanged');
+    }
+    assert.throws(() => selectBrowserTests(directory, ['--office-platform=win32-x64']), /Unknown option/, 'Platform applicability is never a CLI override');
+});
+
 test('targeted and full execution share credential filtering without mutating caller environment', () => {
     const input = { PATH: 'fixture', PI_CODING_AGENT_DIR: 'synthetic-agent', OPENAI_API_KEY: 'synthetic-secret', AWS_PROFILE: 'synthetic-profile',
         PIVANE_PORT: '9999', PIVANE_TEST_HERMES_BUNDLE: 'synthetic-bundle', PIVANE_TEST_PI_JITI: 'synthetic-loader', MINIMAX_API_KEY: 'synthetic-key' };

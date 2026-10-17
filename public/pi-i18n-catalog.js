@@ -9745,6 +9745,7 @@
         [" ↔ 合并延续", " ↔ Merge continues"],
         ["合并区域跨越当前行页或列窗口", "Merged region extends beyond this row page or column window"],
         ["无已保存结果", "No saved result"],
+        ["（无已保存结果）", "(No saved result)"],
         ["表格预览组件不可用", "Workbook preview component unavailable"],
         ["Excel 原件超过预览预算", "Excel file exceeds the preview budget"],
         ["工作簿无法预览", "Workbook cannot be previewed"],

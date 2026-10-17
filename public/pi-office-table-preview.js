@@ -75,7 +75,11 @@
                     if (merge) {
                         if (r !== windowMerge.firstRow || c !== windowMerge.firstColumn) continue;
                     }
-                    const cell = cells.get(`${merge ? merge.r : r}:${merge ? merge.c : c}`), td = node('td', cell?.text || ''); td.tabIndex = 0; td.dataset.address = `${column(c)}${r + 1}`;
+                    const cell = cells.get(`${merge ? merge.r : r}:${merge ? merge.c : c}`);
+                    // Missing caches are reader feedback. A real text value with
+                    // the same characters remains the document's literal content.
+                    const text = cell && !Object.hasOwn(cell, 'value') ? t('（无已保存结果）') : cell?.text || '';
+                    const td = node('td', text); td.tabIndex = 0; td.dataset.address = `${column(c)}${r + 1}`;
                     const width = colInfo.get(c)?.size; if (width) td.style.width = `${Math.min(width * 7 + 5, 600)}px`;
                     applyStyle(td, cell?.style);
                     if (merge) {
