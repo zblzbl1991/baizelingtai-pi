@@ -14,7 +14,7 @@ guizang-ppt 的独立源码、模板、脚本和许可证完整保留在 `vendor
 
 ## 公文生成
 
-公文能力由独立 `pivane-gongwen` 包注册 `gongwen` 技能与 `generate_gongwen`、`revise_gongwen` 原生工具，默认可用，支持分别启停与重载。固定 MIT 上游 gongwen-kit 的原始目录及逐文件清单，运行依赖由根 lockfile 锁定；在无凭据独立进程生成、检查和另存带修订／批注的已有公文，原件与旧版本保留，文件与报告通过原生交付快照访问。字体不捆绑，实际版面核验与规则检查分开。用法、草稿状态与边界见[公文生成](GONGWEN.md)。
+公文能力由独立 `pivane-gongwen` 包注册 `gongwen` 技能与 `generate_gongwen`、`revise_gongwen` 原生工具，默认可用，支持分别启停与重载。固定 MIT 上游 gongwen-kit 的原始目录及逐文件清单，运行依赖由根 lockfile 锁定；在无凭据独立进程生成、检查和另存带修订／批注的已有公文，原件与旧版本保留，文件与报告通过原生交付快照访问。电子属性、字体可用性与实际版面分别报告，日常检查不依赖 Word/WPS，字体不捆绑或自动替换。用法、草稿状态与边界见[公文生成](GONGWEN.md)。
 
 ## OfficeCLI 编辑
 
