@@ -23,6 +23,8 @@ package.json的应用版本、Pi依赖版本和快照时间戳是不同概念。
 
 根目录 README（英文）与 README.zh-CN.md 面向首次访问者，介绍功能、平台和快速开始，通过 Release 徽章和链接指向最新版本；不要在其中写入具体版本号、测试数量、验收平台版本或包 SHA256，这些只放在版本说明、平台验证范围和 Release 附件中。首页截图和动图保存在仓库的 `docs/assets/readme/`，README 用 GitHub 绝对地址引用，不进入发行包；界面有明显变化时，用独立身份和合成数据重新截取中英文两套。
 
+Office 预览的 [inventory](../../server/office-preview/inventory.js)和审查清单必须随准确包核对，涵盖引擎全目录、源码、manifest、NOTICE／许可证、传递依赖及生成的 Worker／模型资源；不能把开发目录可转换当作包内引擎完整。已声明支持的 Windows x64 候选执行严格隔离转换预检，组件缺失或损坏时不得标记完成／激活；首装的工作台可用但 Office 降级是另一种结果。未声明平台经同一策略明确降级，不因缺少 Windows 引擎阻断工作台更新，也不宣称原生转换可用。完整原生及浏览器入口见 [Office 预览验证](E2E.md#office-预览验证入口)，最终办公软件版面和实际新增字体效果单独记录。
+
 Git忽略不删除已经跟踪的内容或历史。新仓库初始化时检查暂存清单；如果别处已有仓库，先检查git ls-files和历史是否包含私有文件，不能据ignore宣称历史已经清理。
 
 ## 可复跑的隔离验收
@@ -33,11 +35,13 @@ Git忽略不删除已经跟踪的内容或历史。新仓库初始化时检查�
 node test/release/acceptance.cjs --archive /path/pivane-VERSION.tar.gz --sha256 SHA256_VALUE --browser /path/to/chrome --playwright /path/to/playwright --output /path/to/new-report-directory
 ```
 
+`acceptance.cjs` 支持 `--target=desktop` 或 `--target desktop`，省略时固定为 `all`，不从外部身份环境推断选择。`result.json` 与最终控制台结果的 `browserTarget` 记录实际选择；浏览器子进程使用同一场景选择器并预加载候选包内的视口 guard。用户明确只验桌面时传 desktop，并在包验收结论保留该范围，不将其计作手机已验；默认 all 继续保留桌面和手机场景。无效或重复 target 在创建验收身份前拒绝。
+
 Windows用自己的node.exe和带引号的Windows路径传递相同参数。脚本可选的--previous-archive和--previous-sha256用于真正的旧包升级验收；公开发布已有前一正式版时必须传入已核对的旧包，不能用省略参数的同包重开替代。确无前版的首次发布记录不适用原因；没有旧包时结果只表示同包重开与恢复，不称跨版本升级。不要将来自未知来源的压缩包交给此脚本。
 
 脚本新建系统临时目录，使用随机run ID、哨兵、独立Agent/媒体/项目/预约路径和最小环境，从归档解包后执行统一安装入口（旧归档回退 `npm ci`）；npm配置也独立。固定loopback8089只用于合成Provider，占用时失败，不结束已有进程；Web使用独立随机loopback端口。仅该标记临时目录允许测试脚本运行，普通安装不调用此入口。当前测试守卫不再按历史 `pi-workspace` 目录名豁免哨兵检查；复跑验收应使用上述入口新建隔离目录，旧发行归档内容保持不变。
 
-脚本验收包含npm test、check、check:docs、audit、目标系统打包、桌面/手机安装与刷新、真实Pi RPC/Shell/历史/侧聊/导入导出，以及停机更新、原路径逐文件恢复、正数用量、搜索和媒体解码。16×16一秒黑色视频为随包合成fixture，不调用媒体生成服务。服务器通过测试父进程的私有IPC触发原SIGINT关闭逻辑，没有新增HTTP退出接口。RC各阶段必须退出码0；旧包的已知signal-exit问题只在结束全部worker后单独记录，不计作RC正常停机或放宽新包断言。
+脚本验收包含npm test、check、check:docs、audit、目标系统打包、按所选 target 的安装与刷新、真实Pi RPC/Shell/历史/侧聊/导入导出，以及停机更新、原路径逐文件恢复、正数用量、搜索和媒体解码。16×16一秒黑色视频为随包合成fixture，不调用媒体生成服务。服务器通过测试父进程的私有IPC触发原SIGINT关闭逻辑，没有新增HTTP退出接口。RC各阶段必须退出码0；旧包的已知signal-exit问题只在结束全部worker后单独记录，不计作RC正常停机或放宽新包断言。
 
 `acceptance.cjs` **不运行完整 `npm run test:browser`**。在同一最终归档的另一个隔离解包/锁定安装目录中显式跑全量自动浏览器、相关手动专项，绑定归档 SHA256、环境和前后文件哈希；不能用 acceptance 成功或语法检查冒充浏览器全量。每个宣称支持的平台都要有上述完整检查证据；缺项明确阻塞发布，不沿用旧平台报告。
 

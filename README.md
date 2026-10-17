@@ -51,7 +51,7 @@ The agent plans the task, reads and edits files, runs the tests and reports back
 
 - Threads are organized by project and run directly in folders on the server.
 - Replies stream in with thinking, tool calls and the files changed in each turn. The default compact view folds each finished turn into a one-line "time · tool calls" summary.
-- You can attach images and files by paste or drag-and-drop, reference project files with `@`, or quote a text selection into your next message. DOCX, XLSX, PPTX and PDF uploads keep their originals, and the agent reads selected ranges on demand.
+- You can attach images and files by paste or drag-and-drop, reference project files with `@`, or quote a text selection into your next message. Office and PDF uploads keep their originals; the agent reads modern formats on demand. DOC/DOCX/XLS/XLSX/PPT/PPTX offer [approximate previews](docs/OFFICE_PREVIEW.md); save legacy files in modern formats before asking the agent to read or edit them.
 - While a task runs, you can steer it or queue a follow-up. You can also stop, retry or compact the context.
 - `!command` runs a shell command on the server, and `!!command` keeps its output out of the model context.
 - The model picker has search, favorites that sync across devices, per-model thinking levels and a context usage meter.

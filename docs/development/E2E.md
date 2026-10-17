@@ -25,6 +25,9 @@
 | 创建项目文件夹 | [pi-project-directories.cjs](../../test/browser/pi-project-directories.cjs) | 桌面／手机、真实目录 API 和文件系统；相邻会话行为有替身，不经过模型执行 |
 | 上传 Office 原件 → 工作副本 → 原生 MCP 编辑 → 交付下载 | [pi-office-editing-e2e.cjs](../../test/browser/pi-office-editing-e2e.cjs) | 浏览器、真实网关、受管 worker、stdio OfficeCLI 进程与交付快照；合成 Provider 编排 `prepare_office_document` → Codemode MCP → `deliver_files`；断言原件字节不变、修订标记与下载字节 |
 | 上传公文原稿 → 规范修订 → 报告预览与授权下载 | [pi-gongwen-revision-e2e.cjs](../../test/browser/pi-gongwen-revision-e2e.cjs) | 浏览器、真实网关、受管 worker 与 gongwen 子进程；合成 Provider 调用 `revise_gongwen`；断言修订 DOCX 字节、报告预览、原件不变与交付面板条目 |
+| 六格式 × 四来源 Office 阅读、原件保存／下载和关闭 | [pi-office-preview-e2e.cjs](../../test/browser/pi-office-preview-e2e.cjs) | 两种桌面宽度的实际页面、网关、SessionManager／来源服务、原生 kit、PDF.js 和工作簿 Worker；公开 UI 保存交付原件、核对哈希及重复关闭资源。依赖 Windows x64 原生引擎 |
+| 工作簿 Strict／Transitional 与 UTF-8／UTF-16 原件 → 网格 | [pi-office-preview-opc-e2e.cjs](../../test/browser/pi-office-preview-opc-e2e.cjs) | 项目文件及公开草稿上传、非传统主部件、实际 Worker／安全 DOM、中英文缓存提示和原文；纯 Excel，不标记为需要原生 Word／PPT 引擎 |
+| Office 草稿隔离、切线程、重连与字体刷新 | [pi-office-preview-state-e2e.cjs](../../test/browser/pi-office-preview-state-e2e.cjs) | 实际上传／阅读、WebSocket 断开再连接和同一受管 worker、工具行、缺字体及显式刷新；依赖 Windows x64 原生引擎，未安装新字体或操作 Word／WPS |
 
 运行前完成[开发环境准备](../../CONTRIBUTING.md#开发环境)。Playwright 与浏览器由验证环境提供；将下列示例路径替换为已核对的绝对路径。Bash、rg、原生组件及平台权限按所选用例准备，见[浏览器与重型专项](WORKFLOW.md#浏览器与重型专项)。
 
@@ -36,6 +39,31 @@ npm run test:browser -- test/browser/pi-assistant-workspace-integration.cjs test
 ```
 
 统一运行器会过滤供应商凭据、提供静态资源并设置审查过的记忆 bundle 路径。浏览器选择器接受精确脚本名。`pivane-browser: manual` 标记的脚本另走下节入口。
+
+统一 `--target=desktop|all` 默认 all。仅验桌面时，例如 `npm run test:browser -- --target=desktop test/browser/pi-office-file-preview.cjs`；选择器、真实视口 guard 和结果范围见[开发流程](WORKFLOW.md#浏览器与重型专项)。不将桌面选择的成功计作手机验收。
+
+Office 真实链路使用 [隔离服务 helper](../../test/office-preview-real-server.cjs)与[浏览器 helper](../../test/browser/pi-office-real-helper.cjs)，预置原生会话和收据后再打开唯一受管 worker，不替换 HTTP／WebSocket／引擎响应。该一次性 fixture 关闭登录要求，鉴权／外来 Origin 拒绝由相应 HTTP 专项另验；不声称模型生成文档链路，预览断言不应调用 Provider。`pivane-browser: office-native` 元数据仅用于上述主矩阵和状态脚本，运行器复用唯一平台声明：未支持平台默认或显式选择均输出 `SKIP / not applicable / requires Windows x64`，跳过项不计入通过数；纯 Excel OPC 场景保持适用。平台选择策略测试不代表其他操作系统的实际浏览器或原生转换验收。
+
+## Office 预览验证入口
+
+六种格式和四种来源的行为契约见 [Office 预览](../OFFICE_PREVIEW.md)和 [API](../API.md#office-文件预览)。下表只定位可复跑边界，不代表某次执行已通过：
+
+| 入口 | 真实范围与限制 |
+|---|---|
+| [来源矩阵](../../test/pi-office-preview-sources.test.js)、[服务生命周期](../../test/pi-office-previews.test.js)、[HTTP](../../test/pi-office-preview-routes.test.js)、[格式](../../test/pi-office-format.test.js) | 原生 SessionManager／分支、文件／交付／成果库／附件职责服务及授权、身份变化、原件哈希、HTTP 安全与取消；可控引擎替身验证失败／共享边界，不代替原生转换 |
+| [OPC／编码集成](../../test/pi-office-opc.test.js) | 真实项目文件与上传来源把 Strict／Transitional、UTF-8／UTF-16LE／UTF-16BE XLSX 原字节传至有界解析器，核对重定位主部件、中文值、SHA256 和非法关系／编码拒绝；不是实际浏览器 Worker 或 Word／PPT 原生转换验收 |
+| [引擎专项](../../test/office-preview-engine.test.js)、[原生引擎探针](../../test/release/office-preview-engine.cjs) | 单元用例的注入故障与独立原生运行须分别看；后者执行完整性／实际转换、私有权限、取消清理、代际刷新及输出预算，要求目标平台组件，不证明 Word／WPS 最终版面 |
+| [平台预检](../../test/office-preview-platform.test.js)、[应用候选](../../test/pi-application-update.test.js) | 验证共享支持声明、未声明平台降级和已声明平台严格拒绝不健康候选；注入目标／进程适配的测试不冒充 Linux／macOS／ARM 原生安装，实际 Windows 健康探针以用例为准 |
+| [预算专项](../../test/pi-office-preview-limits.test.js)、[原生安全／资源专项](../../test/release/office-preview-security.cjs) | 前者以服务公开 seam 和可控来源／引擎验证准入边界；后者通过真实项目来源、服务与 Windows 原生 kit，观察字段／外链 canary、缓存／字体刷新、私有 DACL、真实取消和进程／临时目录清理，以及采样资源下界。可选独立 authoring 还提供真实 DOC AutoOpen 正／负控制，继而证明同一输入在产品来源准入处被拒绝、未进入转换；不外推其他 VBA／PPT 自动执行机制 |
+| [宏材料生成](../../test/office-macro-fixtures.cjs)、[公共来源宏拒绝](../../test/pi-office-macro.test.js) | 有界纯内存生成 DOC 材料，生成器本身不写文件；其中无害宏运行时只向调用方私有 canary 目录写固定标记，支持 ASCII／中文父路径。轻量服务用例以引擎计数替身验证准入，实际自动打开控制仍走显式原生专项 |
+| [工作簿解析](../../test/office-workbook.test.js)、[材料说明](../../test/fixtures/office/README.md) | 实际 XLSX 容器、XML／OPC、XLS／BIFF、保存缓存、日期／样式／异常与预算；材料来源和兼容性结论按具体断言核对，不用解析成功证明所有布局还原 |
+| [Office 阅读桥](../../test/browser/pi-office-file-preview.cjs)、[只读表格](../../test/browser/pi-office-table-preview.cjs)、[桥接回归](../../test/pi-office-file-preview.test.js) | 实际 PDF／Worker／DOM 组件与模拟 HTTP；覆盖四入口、原件动作、代次／迟到清理和阅读状态，不能称真实网关＋转换引擎端到端 |
+
+Node 专项经 `npm test -- <文件>`，自动浏览器经统一 `npm run test:browser -- --target=desktop <脚本>`；原生引擎探针按脚本参数单独运行。准确包需要再证明其依赖、生成资源、完整许可证闭包及候选拒绝激活／恢复；实际安装字体后的效果、Word／WPS 排版、其他操作系统和手机分别列出通过或待验，不从上述源码专项推断。
+
+`office-preview-security.cjs` 是显式重型原生专项，不随普通全量 Node 自动执行。按脚本要求准备 Windows x64 和已核验原生依赖后，可运行 `node test/release/office-preview-security.cjs --report /path/to/new-report.json`；它过滤供应商／身份环境并创建自己的合成身份、项目和 canary。需要实际 DOC 字段样本时追加 `--authoring-soffice /path/to/independent/soffice.com`，指向已核对的独立完整 LibreOffice authoring 程序，以私有 profile 导出 Word97；该选项不安装系统程序，也不把 authoring 进程当作待测 kit。未提供时不声称覆盖该独立导出链路。报告中的 RSS／句柄／临时目录峰值是采样下界；PDF 没有本地标记不等于文件打开审计，canary 结果不等于操作系统网络／文件沙箱。
+
+只复跑 DOC AutoOpen 准入闭环时，使用 `node test/release/office-preview-security.cjs --macro-only --authoring-soffice /path/to/independent/soffice.com --report /path/to/new-macro-report.json`；追加 `--unicode-canary` 使用中文父目录。独立 authoring 安装还须具有脚本检查的 Python／UNO runtime。该场景真实打开同一无害 DOC，先以禁用宏模式确认无标记，再以允许模式确认自动生成准确标记，未手动调用宏；关闭独立进程、清除标记后，通过真实产品来源断言 `OFFICE_INVALID`、转换调用数为零、无新标记。它验证特定 DOC 样例的公共准入阻断，不证明所有 Office 宏、PowerPoint 自动事件或转换器本身在接收任意宏时的运行安全。
 
 ## 按功能选择跨层检查
 
