@@ -49,10 +49,13 @@ npm run test:browser -- test/browser/pi-assistant-workspace-integration.cjs test
 | [OPC／编码集成](../../test/pi-office-opc.test.js) | 真实项目文件与上传来源把 Strict／Transitional、UTF-8／UTF-16LE／UTF-16BE XLSX 原字节传至有界解析器，核对重定位主部件、中文值、SHA256 和非法关系／编码拒绝；不是实际浏览器 Worker 或 Word／PPT 原生转换验收 |
 | [引擎专项](../../test/office-preview-engine.test.js)、[原生引擎探针](../../test/release/office-preview-engine.cjs) | 单元用例的注入故障与独立原生运行须分别看；后者执行完整性／实际转换、私有权限、取消清理、代际刷新及输出预算，要求目标平台组件，不证明 Word／WPS 最终版面 |
 | [平台预检](../../test/office-preview-platform.test.js)、[应用候选](../../test/pi-application-update.test.js) | 验证共享支持声明、未声明平台降级和已声明平台严格拒绝不健康候选；注入目标／进程适配的测试不冒充 Linux／macOS／ARM 原生安装，实际 Windows 健康探针以用例为准 |
+| [预算专项](../../test/pi-office-preview-limits.test.js)、[原生安全／资源专项](../../test/release/office-preview-security.cjs) | 前者以服务公开 seam 和可控来源／引擎验证准入边界；后者通过真实项目来源、服务与 Windows 原生 kit，观察字段／外链 canary、缓存／字体刷新、私有 DACL、真实取消和进程／临时目录清理，以及采样资源下界。宏准入拒绝不等同于可运行自动宏及正控制验证，不能据此宣称宏执行安全已验 |
 | [工作簿解析](../../test/office-workbook.test.js)、[材料说明](../../test/fixtures/office/README.md) | 实际 XLSX 容器、XML／OPC、XLS／BIFF、保存缓存、日期／样式／异常与预算；材料来源和兼容性结论按具体断言核对，不用解析成功证明所有布局还原 |
 | [Office 阅读桥](../../test/browser/pi-office-file-preview.cjs)、[只读表格](../../test/browser/pi-office-table-preview.cjs)、[桥接回归](../../test/pi-office-file-preview.test.js) | 实际 PDF／Worker／DOM 组件与模拟 HTTP；覆盖四入口、原件动作、代次／迟到清理和阅读状态，不能称真实网关＋转换引擎端到端 |
 
 Node 专项经 `npm test -- <文件>`，自动浏览器经统一 `npm run test:browser -- --target=desktop <脚本>`；原生引擎探针按脚本参数单独运行。准确包需要再证明其依赖、生成资源、完整许可证闭包及候选拒绝激活／恢复；实际安装字体后的效果、Word／WPS 排版、其他操作系统和手机分别列出通过或待验，不从上述源码专项推断。
+
+`office-preview-security.cjs` 是显式重型原生专项，不随普通全量 Node 自动执行。按脚本要求准备 Windows x64 和已核验原生依赖后，可运行 `node test/release/office-preview-security.cjs --report /path/to/new-report.json`；它过滤供应商／身份环境并创建自己的合成身份、项目和 canary。需要实际 DOC 字段样本时追加 `--authoring-soffice /path/to/independent/soffice.com`，指向已核对的独立完整 LibreOffice authoring 程序，以私有 profile 导出 Word97；该选项不安装系统程序，也不把 authoring 进程当作待测 kit。未提供时不声称覆盖该独立导出链路。报告中的 RSS／句柄／临时目录峰值是采样下界；PDF 没有本地标记不等于文件打开审计，canary 结果不等于操作系统网络／文件沙箱。
 
 ## 按功能选择跨层检查
 
