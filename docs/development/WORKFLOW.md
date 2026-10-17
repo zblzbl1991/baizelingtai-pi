@@ -79,6 +79,7 @@ PLAYWRIGHT_MODULE=/path/to/playwright npm run test:browser
 
 - 运行器串行执行会启动 Chromium 的脚本，沿用 `npm test` 的凭据过滤；脚本读取的 `*_URL` 统一指向一个只提供 `public/` 与 vendor 静态资源的 loopback 服务，API/WS 仍由脚本自己 mock。单个脚本超时 5 分钟，失败时输出末尾日志并以非零退出。`CHROMIUM_PATH` 可指定浏览器。
 - `--target=all|desktop` 默认 `all`，保留各脚本原有桌面和手机场景。用户明确选择仅验桌面时用 `--target=desktop`，共享选择器在运行场景前过滤；运行期 guard 同时检查真实 context／page 创建和 resize，拒绝移动标志或宽度不大于 900 的视口，并拒绝零 context 的假通过，输出实际宽度审计。记录 target，桌面结果不能声称手机已验。这个显式选择不取消仓库其他任务的通用手机回归要求。
+- `pivane-browser: office-native` 只标记依赖原生 Office 转换的场景，运行器用 [inventory 的平台声明](../../server/office-preview/inventory.js)判断适用性；未支持平台输出 SKIP 及原因，不计为 PASS，显式选择也不绕过。纯 Excel OPC 场景不需要该标记。`pivane-browser: helper` 为被预加载或复用的辅助代码，不作为可选择场景。
 - 开发和局部本机部署跑受影响脚本及必要集成；共享 UI、累计集成批次和公开发布跑全量，具体按 [验证矩阵](#验证矩阵)。`--list` 可核对精确脚本清单；运行器不会自动推导影响范围或判断结果能否复用。
 - 先用一个相关脚本核对 vendor 挂载、浏览器版本与非秘密环境（尤其 `LANG`/`LC_ALL`、时区、下载名），再批跑。环境修正后按影响补验，不复制整个生产环境，也不把环境差异导致的失败直接忽略。
 - 首行带 `pivane-browser: manual` 的脚本需要真实隔离服务或发行归档，运行器不执行：按脚本说明显式传入目标 URL，服务分开 Agent、媒体、项目、预约队列等路径且不继承真实供应商认证。**不得指向维护中的实例或依赖默认端口。** 发行安装、升级与恢复按 [发行流程](RELEASING.md) 使用准确归档；Pi 受管联网更新需显式 opt-in 的专用隔离环境。
