@@ -58,6 +58,7 @@ async function render(input, directory) {
     // serif alternative instead of letting WPS choose a similarly named script
     // font. This is font metadata, not embedding or a claim of font compliance.
     const zip = await require('jszip').loadAsync(fs.readFileSync(file));
+    await require('./format-package').normalizeGeneratedPackage(zip, G.externalStyles());
     const fontTable = await zip.file('word/fontTable.xml').async('string');
     const titleFont = core.TITLE_FONT.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     if (!/<w:fonts\b[^>]*\/>/.test(fontTable)) throw Error('公文字体表结构不兼容');
