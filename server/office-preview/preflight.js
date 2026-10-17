@@ -1,5 +1,8 @@
+const { officePreviewPlatform } = require('./inventory');
 const { createOfficePreviewEngine } = require('./engine');
-async function preflightOfficePreview({ root, requireAvailable = false } = {}) {
+async function preflightOfficePreview({ root, requireAvailable = false, target } = {}) {
+    const { supported, ...platformStatus } = officePreviewPlatform(target);
+    if (!supported) return platformStatus;
     const engine = createOfficePreviewEngine({ root });
     try {
         const status = await engine.status();

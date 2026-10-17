@@ -8,8 +8,16 @@ async function selectMessageView(page, mode) {
     await page.locator('#workspace-settings-dialog').waitFor({ state: 'hidden' });
 }
 
-// Media/profiles/extensions moved into the "更多功能" menu on narrow screens.
+// The media lab retains its public bookmark route after leaving the main nav.
+// Hash-only navigation keeps the current transcript and draft mounted.
 async function openWorkspaceTab(page, tab) {
+    if (tab === 'media') {
+        const url = new URL(page.url());
+        url.hash = '/media';
+        await page.goto(url.href);
+        await page.locator('#media-tab.active').waitFor({ state: 'visible' });
+        return;
+    }
     if (await page.evaluate(() => innerWidth <= 680)) {
         await page.locator('#workspace-more-toggle').click();
         await page.locator(`#workspace-more-menu [data-more-tab="${tab}"]`).click();
