@@ -6,14 +6,17 @@ const bad = message => fail(message, 415, 'DOCUMENT_FORMAT');
 
 // Office packages are read in memory. No extraction to disk, external targets,
 // executable parts or archive-provided paths are ever opened.
-function officeZip(bytes) {
+function officeZip(bytes, limits = {}) {
+    const maxEntries = limits.maxArchiveEntries ?? 4096, maxExpanded = limits.maxUncompressedBytes ?? MAX_EXPANDED;
+    const maxPart = limits.maxPartBytes ?? MAX_PART;
     const endMin = Math.max(0, bytes.length - 65557);
     let end = -1;
     for (let i = bytes.length - 22; i >= endMin; i--) if (bytes.readUInt32LE(i) === 0x06054b50 && i + 22 + bytes.readUInt16LE(i + 20) === bytes.length) { end = i; break; }
     if (end < 0) throw bad('Office 文件损坏，无法读取压缩目录');
     const count = bytes.readUInt16LE(end + 10), size = bytes.readUInt32LE(end + 12), start = bytes.readUInt32LE(end + 16);
     if (bytes.readUInt16LE(end + 4) || bytes.readUInt16LE(end + 6) || count !== bytes.readUInt16LE(end + 8)
-        || count > 4096 || !count || start + size !== end) throw bad('不支持多卷、ZIP64 或过多条目的 Office 文件');
+        || !count || start + size !== end) throw bad('不支持多卷或 ZIP64 Office 文件');
+    if (count > maxEntries) throw fail('Office 压缩条目超过读取预算', 413, 'DOCUMENT_LIMIT');
     const entries = new Map(); let offset = start, expanded = 0;
     for (let i = 0; i < count; i++) {
         if (offset + 46 > end || bytes.readUInt32LE(offset) !== 0x02014b50) throw bad('Office 压缩目录无效');
@@ -25,7 +28,7 @@ function officeZip(bytes) {
         try { name = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(offset + 46, offset + 46 + n)); } catch { throw bad('Office 内部文件名编码无效'); }
         if (/^[\/]|[\\\x00-\x1f\x7f]/.test(name) || name.split('/').some(part => part === '..' || part === '.') || entries.has(name)) throw bad('Office 包含无效或重复路径');
         expanded += length;
-        if (expanded > MAX_EXPANDED || length === 0xffffffff || compressed === 0xffffffff || local === 0xffffffff) throw fail('Office 解压后超过 64 MiB 读取预算', 413, 'DOCUMENT_LIMIT');
+        if (expanded > maxExpanded || length === 0xffffffff || compressed === 0xffffffff || local === 0xffffffff) throw fail(`Office 解压后超过 ${maxExpanded / 1024 / 1024} MiB 读取预算`, 413, 'DOCUMENT_LIMIT');
         if (local + 30 > start || bytes.readUInt32LE(local) !== 0x04034b50 || bytes.readUInt16LE(local + 6) !== flags || bytes.readUInt16LE(local + 8) !== method) throw bad('Office 压缩条目无效');
         const localNameLength = bytes.readUInt16LE(local + 26), localExtra = bytes.readUInt16LE(local + 28), data = local + 30 + localNameLength + localExtra;
         if (data + compressed > start || !bytes.subarray(local + 30, local + 30 + localNameLength).equals(bytes.subarray(offset + 46, offset + 46 + n))) throw bad('Office 压缩条目位置无效');
@@ -37,10 +40,10 @@ function officeZip(bytes) {
         read(name) {
             const entry = entries.get(name);
             if (!entry) throw bad(`Office 缺少必要内容：${name}`);
-            if (entry.length > MAX_PART) throw fail('Office 单个 XML 部分超过 8 MiB 读取预算', 413, 'DOCUMENT_LIMIT');
+            if (entry.length > maxPart) throw fail('Office 单个部分超过读取预算', 413, 'DOCUMENT_LIMIT');
             const compressed = bytes.subarray(entry.data, entry.data + entry.compressed);
             let result;
-            try { result = entry.method === 0 ? compressed : zlib.inflateRawSync(compressed, { maxOutputLength: MAX_PART }); }
+            try { result = entry.method === 0 ? compressed : zlib.inflateRawSync(compressed, { maxOutputLength: maxPart }); }
             catch { throw bad('Office 压缩内容损坏或超过读取预算'); }
             if (result.length !== entry.length || crc32(result) !== entry.crc) throw bad('Office 内容校验失败');
             return result;
