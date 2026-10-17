@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const base = process.env.PI_USAGE_TEST_URL || 'http://127.0.0.1:3123';
@@ -14,9 +15,9 @@ function fixture(query) {
         sessions: Array.from({ length: 25 }, (_, i) => ({ ...total, name: `会话 ${i}`, cwd: '/fixture/project', id: String(i) })) };
 }
 (async () => {
-    const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true });
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try {
-        for (const width of [1440, 393, 320]) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) {
             const context = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: width === 1440 ? 1000 : 852 }, isMobile: width < 900, hasTouch: width < 900 });
             const page = await context.newPage(), errors = [], writes = [], calls = [];
             let mode = 'normal', supported = true, release = null;

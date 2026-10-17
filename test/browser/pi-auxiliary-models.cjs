@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { selectMessageView } = require('./pi-mobile-view-helper.cjs');
 const path = require('node:path');
@@ -14,6 +15,7 @@ const MEMORY_PURPOSES = [
 const PURPOSES = [...AUXILIARY_PURPOSES, ...MEMORY_PURPOSES.filter(item => !AUXILIARY_PURPOSES.some(purpose => purpose.id === item.id))];
 const root = path.resolve(__dirname, '../..');
 async function run(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     const en = locale === 'en';
     const context = await browser.newContext({ viewport: { width, height: 1000 }, locale, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(); page.setDefaultTimeout(12000);
@@ -195,6 +197,6 @@ async function run(browser, base, width, locale) {
     app.use(express.static(path.join(root, 'public')));
     const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const locale of ['zh-CN', 'en']) for (const width of [1440, 768, 393, 320]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
+    try { for (const locale of ['zh-CN', 'en']) for (const width of selectBrowserTargets([1440, 768, 393, 320])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
     finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

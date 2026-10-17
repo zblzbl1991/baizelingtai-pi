@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const path = require('node:path');
@@ -7,6 +8,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const cwd = '/synthetic/result-project', parent = { cwd, id: 'parent', name: 'Source' }, child = { cwd, id: 'child', name: 'Child' };
 const model = { provider: 'fixture', id: 'fixture', input: ['text'], contextWindow: 32000 };
 async function check(browser, base, width, language) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 900 }, locale: language });
     const page = await context.newPage(), errors = [], writes = [];
     page.on('pageerror', e => errors.push(e.message));
@@ -131,6 +133,7 @@ async function check(browser, base, width, language) {
 }
 // Results whose card is not in the loaded transcript expand in place; "mark all" reads each unread result once.
 async function checkList(browser, base, width, language) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 800 }, locale: language });
     const page = await context.newPage(), errors = [], reads = [];
     page.on('pageerror', e => errors.push(e.message));
@@ -207,9 +210,9 @@ async function checkList(browser, base, width, language) {
     for (const [url, folder] of [['marked', 'marked/lib'], ['dompurify', 'dompurify/dist'], ['highlight', '@highlightjs/cdn-assets']]) app.use(`/vendor/${url}`, express.static(path.join(root, 'node_modules', folder)));
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
-    const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const width of [1440, 393, 320]) for (const language of ['zh-CN', 'en']) await check(browser, `http://127.0.0.1:${server.address().port}`, width, language);
-        for (const width of [1440, 393, 320]) for (const language of ['zh-CN', 'en']) await checkList(browser, `http://127.0.0.1:${server.address().port}`, width, language);
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    try { for (const width of selectBrowserTargets([1440, 393, 320])) for (const language of ['zh-CN', 'en']) await check(browser, `http://127.0.0.1:${server.address().port}`, width, language);
+        for (const width of selectBrowserTargets([1440, 393, 320])) for (const language of ['zh-CN', 'en']) await checkList(browser, `http://127.0.0.1:${server.address().port}`, width, language);
         console.log('Task result inbox: six desktop/mobile/language scenarios and six list scenarios passed');
     } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

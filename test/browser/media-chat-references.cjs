@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http');
 const { once } = require('node:events');
@@ -36,7 +37,7 @@ function render(){document.querySelector('#chat').replaceChildren(cards.render(m
     let browser;
     try {
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-        for (const width of [1440, 393, 320]) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) {
             const ref = lab.references.put('data:image/png;base64,' + png).ref;
             plan = await lab.plan({ modelId: model.id, summary: '修改照片背景', parameters: { prompt: '保留主体，把背景改成蓝色', image: ref } });
             const context = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width < 500 });

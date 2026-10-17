@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const express = require('express');
@@ -5,6 +6,7 @@ const { once } = require('node:events');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = path.resolve(__dirname, '../..');
 async function run(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: width === 320 ? 680 : 1000 }, locale, isMobile: width < 900 });
     const page = await context.newPage(); page.setDefaultTimeout(45000); page.setDefaultNavigationTimeout(45000);
     const errors = [], writes = []; let bundled = false, status = 'missing', installed = '0.69.0', revision = 1, conflict = false, failRead = false, holdRead = false, releaseRead;
@@ -149,6 +151,6 @@ async function run(browser, base, width, locale) {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     const locales = process.env.PI_UI_TEST_LOCALES ? process.env.PI_UI_TEST_LOCALES.split(',') : ['zh-CN', 'en'];
     const widths = process.env.PI_UI_TEST_WIDTHS ? process.env.PI_UI_TEST_WIDTHS.split(',').map(Number) : [1440, 393, 320];
-    try { for (const locale of locales) for (const width of widths) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
+    try { for (const locale of locales) for (const width of selectBrowserTargets(widths)) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
     finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

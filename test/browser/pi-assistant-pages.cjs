@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -28,7 +29,7 @@ async function main() {
     let browser;
     try {
         browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium' });
-        for (const width of [1440, 393, 320]) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) {
             const context = await browser.newContext({ viewport: { width, height: 900 } });
             const page = await context.newPage(), errors = [];
             page.on('pageerror', error => errors.push(error.message));

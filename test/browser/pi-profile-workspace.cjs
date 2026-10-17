@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Full workspace UI with synthetic profile data; no identity, model or live service access.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -23,7 +24,7 @@ async function main() {
     await new Promise(resolve => server.once('listening', resolve));
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try {
-        for (const [width, locale, theme] of [[1440, 'zh-CN', 'light'], [1920, 'en', 'dark'], [900, 'en', 'light'], [393, 'zh-CN', 'light'], [320, 'en', 'dark']]) {
+        for (const [width, locale, theme] of selectBrowserTargets([[1440, 'zh-CN', 'light'], [1920, 'en', 'dark'], [900, 'en', 'light'], [393, 'zh-CN', 'light'], [320, 'en', 'dark']])) {
             const context = await browser.newContext({ viewport: { width, height: 900 }, locale, isMobile: width < 681, hasTouch: width < 681 });
             const page = await context.newPage(), errors = [], nativeDialogs = [], writes = [];
             const rows = structuredClone(profiles);

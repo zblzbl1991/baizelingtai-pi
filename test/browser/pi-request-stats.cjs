@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict'), http = require('node:http'), path = require('node:path');
 const { once } = require('node:events');
 const express = require('express');
@@ -7,6 +8,7 @@ const model = { provider: 'fixture', id: 'fixture', input: ['text', 'image'] };
 const stats = { version: 1, outputTokens: 400, requestMs: 4000, requests: 2, excludedRequests: 0 };
 const reply = (timestamp, data = stats) => ({ role: 'assistant', timestamp, model: 'fixture', stopReason: 'stop', content: [{ type: 'text', text: 'Synthetic answer' }], ...(data ? { pivaneRequestStats: data } : {}) });
 async function run(browser, base, width, language) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ locale: language, viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [], calls = [];
     let messages = [{ role: 'user', timestamp: 1, content: 'Old question' }, reply(2, null),
@@ -101,6 +103,6 @@ async function run(browser, base, width, language) {
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const [width, language] of [[1440, 'zh-CN'], [393, 'zh-CN'], [320, 'en']]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, language); }
+    try { for (const [width, language] of selectBrowserTargets([[1440, 'zh-CN'], [393, 'zh-CN'], [320, 'en']])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, language); }
     finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

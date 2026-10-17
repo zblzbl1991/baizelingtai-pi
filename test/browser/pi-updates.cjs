@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { selectMessageView } = require('./pi-mobile-view-helper.cjs');
 const express = require('express');
@@ -14,6 +15,7 @@ const empty = () => ({ appVersion: '1.0.0-rc.2', piVersion: '0.85.0', bundledPiV
     pivane: { status: 'unchecked', releasesUrl: 'https://github.com/zblzbl1991/baizelingtai-pi/releases' },
     pi: { status: 'unchecked', releasesUrl: 'https://www.npmjs.com/package/@earendil-works/pi-coding-agent' } });
 async function run(browser, base, width, language) {
+    if (!browserTargetEnabled(width)) return;
     const english = language === 'en-US';
     const context = await browser.newContext({ viewport: { width, height: 1000 }, locale: language, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(); page.setDefaultTimeout(10000);
@@ -182,6 +184,6 @@ async function run(browser, base, width, language) {
     app.use(express.static(path.join(root, 'public')));
     const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
-    try { for (const language of ['zh-CN', 'en-US']) for (const width of [320, 393, 1024, 1440]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, language); }
+    try { for (const language of ['zh-CN', 'en-US']) for (const width of selectBrowserTargets([320, 393, 1024, 1440])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, language); }
     finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

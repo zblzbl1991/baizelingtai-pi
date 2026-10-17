@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Real Pivane gateway + Pi worker, isolated identity; no model requests.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -47,7 +48,7 @@ const appRoot = path.resolve(__dirname, '../..');
     const wss = gateway.attachWebSocket(server);
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try {
-        for (const width of [1440, 393, 320]) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) {
             const context = await browser.newContext({ viewport: { width, height: 1000 }, locale: 'zh-CN', isMobile: width < 900, hasTouch: width < 900 });
             await context.addInitScript(({ root, id }) => { localStorage.setItem('pi.web.cwd', root); localStorage.setItem('pi.web.session:' + root, id); }, { root, id: session.id });
             const page = await context.newPage(), errors = [];

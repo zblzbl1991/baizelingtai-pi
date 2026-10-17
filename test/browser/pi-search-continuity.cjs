@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // In-memory search lifecycle; no live API, sessions or model requests.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -6,7 +7,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const width of [1440, 393, 320]) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) {
             const page = await browser.newPage({ viewport: { width, height: 740 } }), errors = [];
             page.on('pageerror', e => errors.push(e.message));
             await page.setContent(`<style>dialog{width:min(600px,85vw)}.pi-native-body{max-height:400px;overflow:auto}.pi-session-search-results button{display:block;min-height:90px;width:100%}input{font-size:16px}</style><input id="pi-session-search" value="seed"><button id="pi-search-conversations">Search</button>`);

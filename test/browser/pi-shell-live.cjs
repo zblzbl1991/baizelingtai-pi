@@ -1,4 +1,5 @@
 // pivane-browser: manual — needs an isolated live server with userShell and the /tmp/pi-web-shell-preview/project root.
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const base = process.env.PI_SHELL_LIVE_URL || 'http://127.0.0.1:3131';
@@ -10,11 +11,11 @@ const cwd = '/tmp/pi-web-shell-preview/project';
     assert.equal(status.userShell, true); assert.deepEqual(status.projectRoots, [cwd]);
     const response = await fetch(base + '/api/pi/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cwd, name: 'Isolated shell smoke' }) });
     assert.equal(response.status, 201); const session = await response.json();
-    const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     const errors = [], sent = [];
     try {
         const pages = [];
-        for (const width of [1440, 393]) {
+        for (const width of selectBrowserTargets([1440, 393])) {
             const context = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
             await context.addInitScript(({ cwd, id }) => { localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem(`pi.web.session:${cwd}`, id); }, { cwd, id: session.id });
             const page = await context.newPage(); pages.push(page);

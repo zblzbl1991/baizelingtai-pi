@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Run against this checkout, or set PIVANE_TEST_SOURCE_ROOT to a frozen assembled checkout.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -51,6 +52,7 @@ async function main() {
         await page.screenshot({ path: file, fullPage: true }); captures.push(file);
     };
     const open = async (width, locale, theme, route = '#/chat') => {
+    if (!browserTargetEnabled(width)) return;
         const context = await browser.newContext({ viewport: { width, height: width < 900 ? 852 : 920 }, locale,
             isMobile: width < 900, hasTouch: width < 900 });
         await context.addInitScript(({ cwd, locale, theme }) => {
@@ -324,7 +326,7 @@ async function main() {
         assert.deepEqual(desktop.errors, []);
         await desktop.context.close();
 
-        for (const [width, locale, theme] of [[1280, 'zh-CN', 'mint'], [393, 'zh-CN', 'dark'], [320, 'en', 'mint']]) {
+        for (const [width, locale, theme] of selectBrowserTargets([[1280, 'zh-CN', 'mint'], [393, 'zh-CN', 'dark'], [320, 'en', 'mint']])) {
             const view = await open(width, locale, theme, `#/assistant?profileId=${profileId}&projectId=${groups[0].id}&sessionId=${groupSessions[0].id}`);
             try {
                 await view.page.locator('#pi-assistant-profile').waitFor();

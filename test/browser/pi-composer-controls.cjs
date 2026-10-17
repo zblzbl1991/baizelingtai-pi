@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const express = require('express');
@@ -8,6 +9,7 @@ const sessions = ['a', 'b', 'c'].map(id => ({ id, cwd, name: `会话 ${id}`, mes
 const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['text', 'image'], contextWindow: 32000 };
 const controls = id => ({ runtimeId: id, revision: 1, stopping: false, queue: { steering: [], followUp: [] }, recoveries: [], extension: { title: '', statuses: [], widgets: [] } });
 async function run(browser, viewport, legacy = false) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width < 900, hasTouch: viewport.width < 900, permissions: ['microphone'] });
     const page = await context.newPage();
     const errors = [], writes = [], commands = [], sockets = [];
@@ -261,7 +263,7 @@ async function run(browser, viewport, legacy = false) {
     base = `http://127.0.0.1:${server.address().port}`;
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'], headless: true });
     try {
-        for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }]) await run(browser, viewport);
+        for (const viewport of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }])) await run(browser, viewport);
         await run(browser, { width: 393, height: 852 }, true);
     } finally { await browser.close(); server.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

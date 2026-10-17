@@ -1,3 +1,4 @@
+const desktopOnly = process.env.PIVANE_BROWSER_TARGET === 'desktop';
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os');
 const express = require('express');
@@ -24,7 +25,7 @@ const key = model => JSON.stringify([model.provider, model.id]);
     const errors = [];
     try {
         const mac = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'en' });
-        const phone = await browser.newContext({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true, locale: 'en' });
+        const phone = await browser.newContext({ viewport: { width: desktopOnly ? 1440 : 393, height: 852 }, isMobile: !desktopOnly, hasTouch: !desktopOnly, locale: 'en' });
         await mac.addInitScript(key => {
             Object.defineProperty(crypto, 'randomUUID', { value: undefined, configurable: true });
             if (!localStorage.getItem('fixture-seeded')) { localStorage.setItem('fixture-seeded', '1'); localStorage.setItem('pivane.models.favorites', JSON.stringify([key])); }
@@ -40,13 +41,13 @@ const key = model => JSON.stringify([model.provider, model.id]);
         assert.equal(await mobile.evaluate(() => localStorage.getItem('pivane.models.favorites')), null, 'independent browser storage');
         await desktop.locator('#picker').click();
         assert.equal(await desktop.locator('.pi-model-search').evaluate(node => node === document.activeElement), true);
-        await mobile.locator('#picker').tap();
-        assert.equal(await mobile.locator('.pi-model-close').evaluate(node => node === document.activeElement), true, 'touch open does not focus an input');
+        await mobile.locator('#picker')[desktopOnly ? 'click' : 'tap']();
+        assert.equal(await mobile.locator(desktopOnly ? '.pi-model-search' : '.pi-model-close').evaluate(node => node === document.activeElement), true, 'touch open does not focus an input');
         assert.equal(await mobile.locator('.pi-model-group').first().locator('.pi-model-copy strong').textContent(), 'Beta');
-        await mobile.locator('.pi-model-search').tap();
+        await mobile.locator('.pi-model-search')[desktopOnly ? 'click' : 'tap']();
         assert.equal(await mobile.locator('.pi-model-search').evaluate(node => node === document.activeElement), true, 'explicit search still focuses');
         await mobile.locator('.pi-model-search').fill('beta');
-        await mobile.locator('.pi-model-star').tap();
+        await mobile.locator('.pi-model-star')[desktopOnly ? 'click' : 'tap']();
         await mobile.waitForFunction(() => !picker.favoriteBusy && picker.favorites.length === 0).catch(async error => {
             console.error('favorites diagnostic', preferences.getModelFavorites(), await mobile.evaluate(() => ({ ready: picker.favoriteReady, busy: picker.favoriteBusy, favorites: picker.favorites, message: picker.syncMessage, focus: document.activeElement?.className })));
             throw error;
@@ -87,7 +88,7 @@ const key = model => JSON.stringify([model.provider, model.id]);
         // Independent edits preserve both providers, even when names match.
         await desktop.locator('#picker').click(); await desktop.locator('.pi-model-search').fill('other');
         await mobile.locator('.pi-model-search').fill('fixture alpha');
-        await Promise.all([desktop.locator('.pi-model-star').click(), mobile.locator('.pi-model-star').tap()]);
+        await Promise.all([desktop.locator('.pi-model-star').click(), mobile.locator('.pi-model-star')[desktopOnly ? 'click' : 'tap']()]);
         await Promise.all([desktop.waitForFunction(() => !picker.favoriteBusy), mobile.waitForFunction(() => !picker.favoriteBusy)]);
         assert.equal(preferences.getModelFavorites().favorites.length, 2);
         await mobile.evaluate(() => picker.refreshFavorites()); assert.equal(await mobile.evaluate(() => picker.favorites.length), 2);
@@ -114,26 +115,26 @@ const key = model => JSON.stringify([model.provider, model.id]);
             if (route.request().method() === 'POST') { rejected++; return route.fulfill({ status: 503, json: { error: 'Fixture unavailable' } }); }
             return route.continue();
         });
-        await mobile.locator('.pi-model-star').tap();
+        await mobile.locator('.pi-model-star')[desktopOnly ? 'click' : 'tap']();
         await mobile.waitForFunction(() => !picker.favoriteBusy);
         assert.ok((await mobile.locator('.pi-model-status').textContent()).includes('not confirmed'));
         await mobile.evaluate(() => picker.refreshFavorites());
         assert.equal(rejected, 1); assert.equal(preferences.getModelFavorites().favorites.length, 2);
         await mobile.unroute('**/api/pi/settings/model-favorites');
         // Old backend: retain local copy and show a sync failure, without deleting it.
-        const offline = await browser.newContext({ viewport: { width: 320, height: 740 }, isMobile: true, hasTouch: true });
+        const offline = await browser.newContext({ viewport: { width: desktopOnly ? 1440 : 320, height: 740 }, isMobile: !desktopOnly, hasTouch: !desktopOnly });
         await offline.addInitScript(key => localStorage.setItem('pivane.models.favorites', JSON.stringify([key])), key(models[1]));
         const old = await offline.newPage();
         await old.route('**/api/pi/settings/model-favorites', route => route.fulfill({ status: 404, body: 'missing' }));
-        await old.goto(base); await old.locator('#picker').tap();
+        await old.goto(base); await old.locator('#picker')[desktopOnly ? 'click' : 'tap']();
         await old.waitForFunction(() => picker.syncMessage.length > 0);
         assert.equal(await old.locator('.pi-model-star').first().isDisabled(), true);
         assert.equal(await old.evaluate(() => localStorage.getItem('pivane.models.favoritesMigrated')), null);
-        assert.equal(await old.locator('.pi-model-close').evaluate(node => node === document.activeElement), true);
+        assert.equal(await old.locator(desktopOnly ? '.pi-model-search' : '.pi-model-close').evaluate(node => node === document.activeElement), true);
         assert.ok(await old.locator('#pi-model-dialog').evaluate(node => node.scrollWidth <= node.clientWidth + 1));
         await offline.close();
         assert.deepEqual(errors, []);
-        console.log('PASS: non-secure HTTP UUID fallback, independent Mac/phone contexts, legacy marker reconciliation, old coordinator fallback, removal protection, concurrent edits, rejected writes, old backend, desktop/touch focus and 320px width');
+        console.log('PASS: non-secure HTTP UUID fallback, independent browser contexts, legacy marker reconciliation, old coordinator fallback, removal protection, concurrent edits, rejected writes, old backend, selected-target focus and bounded width');
         await mac.close(); await phone.close();
     } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); fs.rmSync(temp, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

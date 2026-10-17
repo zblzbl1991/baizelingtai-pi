@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // End-to-end rehearsal of the profile "remember -> correct -> use" loop against the real
 // assembled gateway, a real isolated Hermes bundle, real Pi RPC workers and a local synthetic
 // provider. Uses a throwaway identity; never touches a real agent directory or provider.
@@ -125,6 +126,7 @@ async function main() {
         };
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
         const open = async (width, route) => {
+    if (!browserTargetEnabled(width)) return;
             const context = await browser.newContext({ viewport: { width, height: width < 900 ? 852 : 920 }, locale: 'zh-CN',
                 isMobile: width < 900, hasTouch: width < 900 });
             await context.addInitScript(cwd => { localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem('pi.workspace.language', 'zh-CN'); }, cwd);

@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { openInspector: openWorkbenchInspector } = require('./pi-mobile-view-helper.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -11,6 +12,7 @@ const initialMessages = () => [{ role: 'user', content: 'Fixture requirement', t
 const statsFor = tokens => ({ contextUsage: { tokens, percent: tokens === null ? null : tokens / 1280, contextWindow: 128000 }, tokens: { input: 200, output: 10 }, totalMessages: 2 });
 
 async function run(browser, viewport) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width < 900, hasTouch: viewport.width < 900 });
     const page = await context.newPage();
     const errors = [], writes = [], commands = [];
@@ -213,8 +215,8 @@ async function run(browser, viewport) {
 }
 
 (async () => {
-    const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', args: ['--no-sandbox'], headless: true });
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'], headless: true });
     try {
-        for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 412, height: 915 }]) await run(browser, viewport);
+        for (const viewport of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 412, height: 915 }])) await run(browser, viewport);
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

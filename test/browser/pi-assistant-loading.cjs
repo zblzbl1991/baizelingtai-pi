@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Assistant loading must not wait for global discovery or unrelated histories.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -18,7 +19,7 @@ const sessions = groups.map((group, i) => row(`thread-${i}`, cwd, profiles[0], g
     let browser;
     try {
         browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium' });
-        for (const width of [1440, 393]) {
+        for (const width of selectBrowserTargets([1440, 393])) {
             const context = await browser.newContext({ viewport: { width, height: 900 } });
             const page = await context.newPage(), errors = [], requests = [];
             let releaseProjects, releaseUnrelated, unrelatedStarted = false;

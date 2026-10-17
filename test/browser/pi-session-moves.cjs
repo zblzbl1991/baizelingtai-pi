@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const path = require('node:path');
@@ -8,6 +9,7 @@ const cwd = '/synthetic/source', target = '/synthetic/目标-' + 'long-project-p
 const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['text', 'image'], contextWindow: 32000 };
 const original = { id: 'original-thread', cwd, name: '保留完整历史的线程', messageCount: 2, modified: '2026-10-01T00:00:00Z' };
 async function run(browser, base, width, language, emptyTargets = false) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ locale: language, viewport: { width, height: width < 900 ? 852 : 1000 }, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [], posts = [], opens = [];
     let moved = false, oldBackend = false, blocked = false, failMove = false, release, hold = false, activeSocket;
@@ -146,7 +148,7 @@ async function run(browser, base, width, language, emptyTargets = false) {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--no-proxy-server', '--host-resolver-rules=MAP pivane-http.test 127.0.0.1'] });
     try {
         const base = 'http://pivane-http.test:' + server.address().port;
-        for (const width of [1440, 393, 320]) for (const language of ['zh-CN', 'en']) await run(browser, base, width, language);
+        for (const width of selectBrowserTargets([1440, 393, 320])) for (const language of ['zh-CN', 'en']) await run(browser, base, width, language);
         await run(browser, base, 1440, 'en', true); await run(browser, base, 393, 'zh-CN', true);
     }
     finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }

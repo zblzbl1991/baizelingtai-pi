@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { selectMessageView, openInspector } = require('./pi-mobile-view-helper.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -15,6 +16,7 @@ const messages = [
 ];
 const empty = runtimeId => ({ runtimeId, revision: 1, queue: { steering: [], followUp: [] }, recoveries: [], stopping: false, extension: { title: '', statuses: [], widgets: [] } });
 async function run(browser, viewport) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width < 900, hasTouch: viewport.width < 900, permissions: ['clipboard-read', 'clipboard-write'] });
     const page = await context.newPage();
     const errors = [], commands = [], writes = [];
@@ -180,6 +182,6 @@ async function run(browser, viewport) {
 }
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'], headless: true });
-    try { for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }]) await run(browser, viewport); }
+    try { for (const viewport of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }])) await run(browser, viewport); }
     finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

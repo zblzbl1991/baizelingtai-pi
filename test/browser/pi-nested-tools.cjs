@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const fs = require('node:fs');
@@ -15,7 +16,7 @@ const root = path.resolve(__dirname, '../..');
     let browser;
     try {
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-        for (const width of [1440, 393, 320]) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) {
             const page = await browser.newPage({ viewport: { width, height: 900 } }); const errors = [];
             page.on('pageerror', e => errors.push(e.message));
             await page.goto(`http://127.0.0.1:${server.address().port}`);

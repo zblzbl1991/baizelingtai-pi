@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), http = require('node:http');
 const express = require('express'), { once } = require('node:events');
@@ -21,6 +22,7 @@ const documents = [
     { name: 'broken.pdf', ...representation({ bytes: Buffer.from('%PDF-1.7\ninvalid') }, 'broken.pdf') }
 ];
 async function run(browser, base, width, locale = 'zh-CN') {
+    if (!browserTargetEnabled(width)) return;
     const t = (zh, en) => locale === 'en' ? en : zh;
     const context = await browser.newContext({ viewport: { width, height: width < 900 ? 852 : 1000 }, locale, deviceScaleFactor: 2, hasTouch: width < 900, acceptDownloads: true });
     const page = await context.newPage(), errors = [], network = [], writes = [], reads = [];
@@ -152,7 +154,7 @@ async function run(browser, base, width, locale = 'zh-CN') {
     assert.equal(await sidebarCanvas.evaluate(n => n === document.querySelector('.pi-file-pdf-paper canvas')), true, 'same live PDF canvas');
     assert.equal(workerCount.created, pdfWorkers, 'no second PDF worker');
     assert.equal(reads.length, pdfReads, 'no second PDF read');
-    await page.setViewportSize({ width: width < 900 ? 1024 : 393, height: 768 });
+    await page.setViewportSize({ width: process.env.PIVANE_BROWSER_TARGET === 'desktop' ? 1024 : (width < 900 ? 1024 : 393), height: 768 });
     await assertFullscreen(page);
     assert.equal(await page.getByRole('spinbutton', { name: t('页码', 'Page number') }).inputValue(), '2');
     await page.setViewportSize({ width, height: width < 900 ? 852 : 1000 });
@@ -266,6 +268,6 @@ async function until(predicate) { for (let i = 0; i < 100; i++) { if (predicate(
     app.use(express.static(path.join(process.env.PI_PREVIEW_ASSET_ROOT || root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const locale of ['zh-CN', 'en']) for (const width of [1440, 1024, 393, 320]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
+    try { for (const locale of ['zh-CN', 'en']) for (const width of selectBrowserTargets([1440, 1024, 393, 320])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
     finally { await browser.close(); server.closeAllConnections(); await new Promise(r => server.close(r)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -195,6 +195,7 @@ async function main() {
             if (!execFileSync(file, args, { env, encoding: 'utf8', windowsHide: true }).trim().startsWith(expected)) throw Error('Runtime version mismatch: ' + file);
         }
         execFileSync(node, [path.join(app, 'scripts/install.cjs'), '--omit=dev'], { cwd: app, env, stdio: 'inherit', windowsHide: true });
+        execFileSync(node, [path.join(app, 'scripts/install-office-preview.cjs'), '--require-available'], { cwd: app, env, stdio: 'inherit', windowsHide: true });
         // Retain installed dependency and tool licenses in full; do not prune packages.
         fs.writeFileSync(path.join(app, 'baizelingtai-portable.json'), JSON.stringify({ version: 1, platform: 'win32', arch: 'x64',
             ...(updates.feed ? { updateFeedUrl: updates.feed } : {}) }, null, 2) + '\n');
