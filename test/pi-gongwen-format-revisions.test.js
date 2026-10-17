@@ -112,3 +112,15 @@ test('recognized Title style is normalized to centered black 22pt small-title fo
         assert.match(style, /<w:jc w:val="center"\/>/);
     } finally { await pool.dispose(); }
 });
+
+test('normative revision orders added punctuation settings before an existing updateFields declaration', async () => {
+    const zip = await require('jszip').loadAsync(await fixture(''));
+    zip.file('word/settings.xml', (await zip.file('word/settings.xml').async('string')).replace('<w:compat>', '<w:updateFields w:val="true"/><w:compat>'));
+    const pool = new GongwenProcess();
+    try {
+        const output = await pool.run(request(true), undefined, { bytes: await zip.generateAsync({ type: 'nodebuffer' }) });
+        assert.equal(output.report.editing, 'complete', JSON.stringify(output.report));
+        const settings = read(output.bytes, 'word/settings.xml');
+        assert.ok(settings.indexOf('<w:characterSpacingControl') < settings.indexOf('<w:updateFields'));
+    } finally { await pool.dispose(); }
+});
