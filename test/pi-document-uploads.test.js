@@ -90,7 +90,7 @@ test('browser payload carries only validated metadata and enforces document and 
     const payload = attachments.payload('Summarize', [document]); assert.equal(payload.images.length, 0); assert.match(payload.message, /pivane_document/); assert.ok(!payload.message.includes('合同'));
     assert.throws(() => attachments.validateDraft('', Array(6).fill(document)), /5 个/);
     await assert.rejects(attachments.read({ name: 'large.xlsx', size: MAX_BYTES + 1, type: '' }, { upload: () => { throw new Error('must not upload'); } }), /20 MiB/);
-    assert.throws(() => attachments.classify({ name: 'old.xls', type: '' }), /另存/);
+    assert.deepEqual(attachments.classify({ name: 'old.xls', type: '' }), { kind: 'document', format: 'xls' });
     assert.deepEqual(refs.references([{ type: 'message', message: { role: 'assistant', content: refs.marker(reference) } }]), []);
     assert.equal(refs.split(refs.marker({ ...reference, name: '"<&样本.docx' }))[0].reference.name, '"<&样本.docx');
 });
