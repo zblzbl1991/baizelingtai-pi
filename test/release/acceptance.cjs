@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const { createHash, randomUUID } = require('node:crypto');
 const { spawn, spawnSync, fork } = require('node:child_process');
 const { options: acceptanceOptions, browserInvocation } = require('./browser-options.cjs');
+const { tarInvocation } = require('../../scripts/package-tar.cjs');
 const args = acceptanceOptions(process.argv.slice(2));
 assert.equal(process.versions.node.split('.')[0], '22', 'release baseline requires an independent Node 22');
 const output = path.resolve(args['--output']);
@@ -35,8 +36,8 @@ function extract(archive, expected, destination) {
     assert.match(expected, /^[a-f0-9]{64}$/);
     assert.equal(digest(fs.readFileSync(archive)), expected, 'archive SHA256 mismatch');
     fs.mkdirSync(destination);
-    const tar = process.platform === 'darwin' ? '/usr/bin/tar' : 'tar';
-    const unpack = spawnSync(tar, ['-xzf', path.resolve(archive), '-C', destination, '--strip-components=1'], { env, encoding: 'utf8' });
+    const tar = tarInvocation(['-xzf', path.resolve(archive), '-C', destination, '--strip-components=1']);
+    const unpack = spawnSync(tar.file, tar.args, { env, encoding: 'utf8', windowsHide: true });
     assert.equal(unpack.status, 0, unpack.stderr);
     const data = JSON.parse(fs.readFileSync(path.join(destination, 'TRIAL_MANIFEST.json'), 'utf8'));
     assert.equal(data.version, 1);

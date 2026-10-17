@@ -5,9 +5,10 @@ const { execFileSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { distributionFiles } = require('../scripts/source-files.cjs');
 const { unpack } = require('../server/pi-application-installer');
+const { tarInvocation } = require('../scripts/package-tar.cjs');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 
-test('the actual release producer roundtrips its complete public inventory and Chinese filenames through strict application unpacking', {timeout:120000}, t => {
+test('the actual release producer roundtrips its public inventory and Chinese filenames through native tar and strict application unpacking', {timeout:120000}, t => {
     const root = fs.realpathSync.native(path.resolve(__dirname,'..'));
     const temporary = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(),'pivane-package-roundtrip-')));
     t.after(() => {
@@ -29,6 +30,16 @@ test('the actual release producer roundtrips its complete public inventory and C
     });
     const produced = JSON.parse(output), bytes = fs.readFileSync(produced.archive);
     assert.equal(produced.sha256,hash(bytes));
+    // Exercise both release acceptance's stripped layout and portable packaging's
+    // unstripped snapshot extraction with the shared native reader policy.
+    for (const stripped of [true,false]) {
+        const native = path.join(temporary,stripped?'native-stripped':'native'); fs.mkdirSync(native);
+        const command = tarInvocation([stripped?'-xzf':'-xf',produced.archive,'-C',native,...(stripped?['--strip-components=1']:[])]);
+        execFileSync(command.file,command.args,{windowsHide:true});
+        const extracted = stripped ? native : path.join(native,'pivane-'+require('../package.json').version);
+        assert.deepEqual(JSON.parse(fs.readFileSync(path.join(extracted,'TRIAL_MANIFEST.json'))).files.map(file=>file.path),[...files].sort());
+        for (const file of files) assert.equal(hash(fs.readFileSync(path.join(extracted,file))),expected.get(file),file);
+    }
     const manifest = unpack(bytes,require('../package.json').version,destination);
     assert.equal(manifest.files.length,files.length);
     assert.deepEqual(manifest.files.map(file=>file.path),[...files].sort());

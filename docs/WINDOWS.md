@@ -23,7 +23,7 @@ $base = Join-Path $env:USERPROFILE 'Pivane'
 if (Test-Path -LiteralPath $base) { throw '此目录已存在，请按更新流程操作或选择新的base' }
 $app = Join-Path $base 'releases\1.6.0'
 @($app, "$base\data\media", "$base\projects\demo", "$base\backups") | ForEach-Object { New-Item -ItemType Directory -Path $_ -Force | Out-Null }
-tar.exe -xzf $archive -C $app --strip-components=1
+& (Join-Path $env:SystemRoot 'System32\tar.exe') --options hdrcharset=UTF-8 -xzf $archive -C $app --strip-components=1
 if ($LASTEXITCODE -ne 0) { throw '解包失败' }
 Set-Location -LiteralPath $app
 node.exe --version

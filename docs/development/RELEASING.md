@@ -15,7 +15,7 @@ package.json的应用版本、Pi依赖版本和快照时间戳是不同概念。
 ## 候选包
 
 1. 从明确的源码提交准备候选，核对 Git 跟踪清单与未提交改动，冻结公开文档，列清上述完整门槛的执行位置并在发布前全部完成。源码阶段先做受影响专项和必要集成、尽早发现问题；剩余全量检查可安排在冻结包内，避免相同环境下源码与包内机械执行两轮。记录源码提交、实际运行版本和候选之间的差异。
-2. 运行npm run pack:release（开发快照仍用pack:trial）。相同版本包存在时拒绝覆盖；冻结包变化须重新验收，已公开版本不能悄悄替换。`scripts/source-files.cjs` 的发行集合与 docs/public-files.json 决定内容；LICENSE、第三方声明和原生manifest随包；AGENTS.local.md、docs/local、身份、媒体和备份禁止纳入。构建前强制核对档案记忆 bundle 存在且与审查哈希一致，保证跳过安装脚本的旧版网页更新器仍能使用新包。构建后核对manifest/hash，不能仅检查.gitignore。归档显式使用 UTF-8 USTAR，避免 Windows tar 为中文路径生成 PAX 扩展头或本地代码页名称而被严格更新解包器拒绝；不要以放宽解包器的文件类型、路径或完整性检查代替格式兼容验证。
+2. 运行npm run pack:release（开发快照仍用pack:trial）。相同版本包存在时拒绝覆盖；冻结包变化须重新验收，已公开版本不能悄悄替换。`scripts/source-files.cjs` 的发行集合与 docs/public-files.json 决定内容；LICENSE、第三方声明和原生manifest随包；AGENTS.local.md、docs/local、身份、媒体和备份禁止纳入。构建前强制核对档案记忆 bundle 存在且与审查哈希一致，保证跳过安装脚本的旧版网页更新器仍能使用新包。构建后核对manifest/hash，不能仅检查.gitignore。归档显式使用 UTF-8 USTAR；[tar 调用策略](../../scripts/package-tar.cjs)统一生产器、准确包验收与便携打包的原生 tar 选择及字符集，Windows 固定调用 System32 tar 并显式按 UTF-8 读写，避免 PAX 扩展头或本地代码页乱码；不要以放宽解包器的文件类型、路径或完整性检查代替格式兼容验证。
 3. 从该包在独立目录执行 `node scripts/install.cjs`（旧归档没有此脚本时使用 `npm ci`），不继承维护者的node_modules、Provider环境或Pi身份；完成宣称支持平台的浏览器、安装、更新和恢复回归。开发专项、源码预检和冻结归档验收是不同层；最终结果必须证明准确包内运行。
 4. 更新公开平台范围与CHANGELOG，将测试结果绑定到准确的包SHA256。后续改动先按影响获得开发反馈；重新生成的正式候选仍须完整准确包验收。
 5. 准备下载包、SHA256、版本说明、安装/恢复步骤与已知限制。发布仓库/渠道和外部上传作为独立明确操作。

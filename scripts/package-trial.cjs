@@ -5,6 +5,7 @@ const { createHash } = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const { checkDocumentation } = require('./check-docs.cjs');
 const { distributionFiles } = require('./source-files.cjs');
+const { tarInvocation } = require('./package-tar.cjs');
 
 const root = path.resolve(__dirname, '..');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -63,12 +64,10 @@ try {
     checkDocumentation(packageDir, manifest.map(file => file.path));
     fs.writeFileSync(path.join(packageDir, 'TRIAL_MANIFEST.json'), JSON.stringify({ version: 1, ...releaseMetadata, generatedAt: new Date().toISOString(), files: manifest }, null, 2) + '\n');
     const ownerOptions = ['darwin', 'win32'].includes(process.platform)
-        // BSD tar otherwise encodes USTAR names in the local Windows code page.
-        ? ['--uid', '0', '--gid', '0', '--uname', 'root', '--gname', 'root', '--options', 'hdrcharset=UTF-8']
+        ? ['--uid', '0', '--gid', '0', '--uname', 'root', '--gname', 'root']
         : ['--sort=name', '--owner=0', '--group=0', '--numeric-owner'];
-    const tarExecutable = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/tar.exe')
-        : process.platform === 'darwin' ? '/usr/bin/tar' : 'tar';
-    execFileSync(tarExecutable, [...ownerOptions, '--format=ustar', '-czf', archive, '-C', temporary, packageName], {
+    const tar = tarInvocation([...ownerOptions, '--format=ustar', '-czf', archive, '-C', temporary, packageName]);
+    execFileSync(tar.file, tar.args, {
         env: { ...process.env, COPYFILE_DISABLE: '1' }, windowsHide: true
     });
     const sha256 = hash(fs.readFileSync(archive));
