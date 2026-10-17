@@ -24,6 +24,7 @@
     "docs/OFFICE_DOCUMENTS.md",
     "pi-packages/officecli/skills/office-documents/SKILL.md",
     "docs/GONGWEN.md",
+    "docs/adr/0001-gongwen-format-validation.md",
     "docs/FILE_VIEWER.md",
     "docs/FLUX2_DEV.md",
     "docs/HISTORY.md",

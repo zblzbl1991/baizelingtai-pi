@@ -22,6 +22,7 @@
 | guizang-ppt 与内网 SkillHub 来源、CLI 和接口依据 | [SkillHub 接入核查](research/skillhub-guizang-ppt.md) |
 | pi-web-keeper 的 Windows PWA 入口与集成取舍 | [桌面入口集成评估](research/pi-web-keeper.md) |
 | gongwen-kit 公文生成、机检与修订的接入建议 | [gongwen-kit 接入评估](research/gongwen-kit.md) |
+| 公文格式核验、草稿交付与目标软件的已确认设计边界 | [公文格式核验决策](../adr/0001-gongwen-format-validation.md) |
 
 用户可见行为以功能文档为准；实现细节以本目录为准；两者都不记录某台机器的部署状态。
 
