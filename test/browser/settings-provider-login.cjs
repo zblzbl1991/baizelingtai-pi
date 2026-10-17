@@ -1,8 +1,10 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const baseUrl = process.env.PI_SETTINGS_TEST_URL || 'http://127.0.0.1:3110';
 const levels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 async function run(browser, viewport, theme) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width < 900, hasTouch: viewport.width < 900 });
     const page = await context.newPage(); const errors = [], writes = [];
     const catalog = { providerLogin: true, modelThinking: true, revision: 'fixture-revision', thinkingMapKeys: levels,
@@ -189,6 +191,6 @@ async function run(browser, viewport, theme) {
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try {
-        for (const [viewport, theme] of [[{ width: 1440, height: 1000 }, 'light'], [{ width: 393, height: 852 }, 'mint'], [{ width: 320, height: 740 }, 'dark']]) await run(browser, viewport, theme);
+        for (const [viewport, theme] of selectBrowserTargets([[{ width: 1440, height: 1000 }, 'light'], [{ width: 393, height: 852 }, 'mint'], [{ width: 320, height: 740 }, 'dark']])) await run(browser, viewport, theme);
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

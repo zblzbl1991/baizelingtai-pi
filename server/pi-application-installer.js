@@ -87,6 +87,9 @@ async function stageApplication({ directory, release, env = process.env, signal,
     await run([npmCli(env), 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: directory, env: installEnv, signal, onOutput, secretEnv: env });
     await require('./pi-update-installer').prepareBundled({ directory, env: { ...installEnv, PI_NPM_CLI: npmCli(env) }, signal, run, onOutput, secretEnv: env });
     if (JSON.parse(readSafe(path.join(directory, 'node_modules/@earendil-works/pi-coding-agent/package.json'))).version !== pi) throw Error('Installed Pi mismatch');
+    if (pkg.dependencies?.['@deepseek-ai/libreoffice-kit']) {
+        await run([path.join(directory, 'scripts/install-office-preview.cjs'), '--require-available'], { cwd: directory, env: installEnv, signal, onOutput, secretEnv: env });
+    }
     progress('verifying');
     const probe = privateDir(path.join(directory, 'probe-data'));
     const probeEnv = Object.fromEntries(Object.entries(installEnv).filter(([key]) => !/proxy|^npm_/i.test(key)));

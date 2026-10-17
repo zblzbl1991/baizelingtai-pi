@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Synthetic loopback JSON parsing and shell UI only; no real identity/model calls.
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -37,7 +38,7 @@ const evidence = process.env.PI_CATEGORY_EVIDENCE || '/tmp/pivane-category-manag
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     fs.mkdirSync(evidence, { recursive: true });
     try {
-        for (const width of [1440, 393, 320]) for (const language of ['zh-CN', 'en']) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) for (const language of ['zh-CN', 'en']) {
             reset();
             const context = await browser.newContext({ viewport: { width, height: 900 }, locale: language, isMobile: width < 900, hasTouch: width < 900 });
             const page = await context.newPage(), errors = [];

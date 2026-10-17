@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { nativeSchema } = require('../../server/pi-native-service');
@@ -11,6 +12,7 @@ async function widthCheck(page) {
     assert.ok(sizes.every(s => s.s <= s.w + 1), JSON.stringify(sizes));
 }
 async function settingsRun(browser, width) {
+    if (!browserTargetEnabled(width)) return;
     const ctx = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
     const page = await ctx.newPage(), errors = [], writes = [];
     let revision = 'v1', conflict = false, slowScope, releaseScope, failReadAfterWrite = false, failResourceRead = false, failNativeAfterWrite = false, failNativeRead = false;
@@ -218,6 +220,7 @@ let legacy = false;
     assert.deepEqual(errors, []); console.log('PASS native settings ' + width); await ctx.close();
 }
 async function contextRun(browser, width) {
+    if (!browserTargetEnabled(width)) return;
     const ctx = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
     const page = await ctx.newPage(), errors = [], commands = [];
     const model = { provider: 'fixture', id: 'model', name: 'Fixture', input: ['text'], contextWindow: 32000 };
@@ -280,4 +283,4 @@ async function contextRun(browser, width) {
     assert.equal(await page.locator('#pi-loaded-resources').getAttribute('open'), null);
     assert.deepEqual(errors, []); console.log('PASS native context ' + width); await ctx.close();
 }
-(async () => { schema = nativeSchema(await import('@earendil-works/pi-coding-agent'), cwd); const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true }); try { for (const width of (process.env.PI_NATIVE_WIDTHS || '1440,393,320').split(',').map(Number)) { await settingsRun(browser, width); await contextRun(browser, width); } } finally { await browser.close(); } })().catch(e => { console.error(e); process.exitCode = 1; });
+(async () => { schema = nativeSchema(await import('@earendil-works/pi-coding-agent'), cwd); const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true }); try { for (const width of selectBrowserTargets((process.env.PI_NATIVE_WIDTHS || '1440,393,320').split(',').map(Number))) { await settingsRun(browser, width); await contextRun(browser, width); } } finally { await browser.close(); } })().catch(e => { console.error(e); process.exitCode = 1; });

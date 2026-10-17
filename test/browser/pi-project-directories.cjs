@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Isolated real directory API + synthetic chat: never sends messages to a real worker.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -16,6 +17,7 @@ const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['te
 const session = { id: 'fixture', cwd: project, name: 'Fixture', messageCount: 0 };
 
 async function run(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: width < 680 ? 844 : 1000 }, locale, reducedMotion: 'reduce' });
     const page = await context.newPage(), errors = [], writes = [];
     let held, releaseHeld;
@@ -143,7 +145,7 @@ async function run(browser, base, width, locale) {
     const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true });
     try {
-        for (const [width, locale] of [[1440, 'en-US'], [390, 'zh-CN']]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale);
+        for (const [width, locale] of selectBrowserTargets([[1440, 'en-US'], [390, 'zh-CN']])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale);
         assert.equal(gateway.supervisor.workers.size, 0);
         console.log('directory creation: desktop/phone, real API, errors, draft and stale responses passed');
     } finally {

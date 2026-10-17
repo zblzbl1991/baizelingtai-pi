@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -6,6 +7,7 @@ const cwd = '/srv/transfer-fixture', target = '/srv/目标项目-' + 'long-path-
 const model = { provider: 'fixture', id: 'fixture', input: ['text', 'image'], name: 'Fixture' };
 const original = { id: 'original-thread', cwd, name: '原线程', firstMessage: 'original', messageCount: 2, modified: new Date().toISOString() };
 async function run(browser, viewport) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width < 900, hasTouch: viewport.width < 900, acceptDownloads: true });
     const page = await context.newPage(), errors = [], writes = [], opens = [];
     let imported = [], failExport = false, failImport = false, holdImport = false, releaseImport, oldBackend = false, ephemeralMode = false, streaming = false;
@@ -174,7 +176,7 @@ async function run(browser, viewport) {
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }]) await run(browser, viewport);
+        for (const viewport of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }])) await run(browser, viewport);
         if (fs.existsSync('/tmp/pi-transfer-native-fixture.html')) {
             const page = await browser.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
             await page.route('http**://**', route => route.abort());

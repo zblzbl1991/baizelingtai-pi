@@ -1,0 +1,4 @@
+{
+  "conversion": {"maxConcurrent":1,"maxQueued":8,"maxReaders":16,"maxSourceBytes":67108864,"maxOutputBytes":33554432,"queueTimeoutMs":30000,"timeoutMs":60000,"maxCachedEntries":8,"maxCachedBytes":67108864,"maxArchiveEntries":4096,"maxUncompressedBytes":67108864},
+  "spreadsheet": {"maxInputBytes":16777216,"maxArchiveEntries":4096,"maxExpandedBytes":67108864,"maxPartBytes":8388608,"maxDepth":128,"maxXmlEvents":500000,"maxSheets":32,"maxRows":100000,"maxColumns":512,"maxCells":250000,"maxTextLength":32768,"maxModelBytes":8388608,"maxMerges":10000,"maxStyles":4096,"timeoutMs":15000,"pageRows":50,"pageColumns":100}
+}

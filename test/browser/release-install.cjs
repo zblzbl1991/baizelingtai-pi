@@ -1,4 +1,5 @@
 // pivane-browser: manual — driven by test/release/acceptance.cjs against an installed release archive.
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Real HTTP/WebSocket onboarding against an isolated release rehearsal only.
 // Run with PI_RELEASE_TEST_URL, PI_RELEASE_PHASE=install|verify and PLAYWRIGHT_MODULE.
 const assert = require('node:assert/strict');
@@ -29,7 +30,7 @@ async function get(url) { const response = await fetch(base + url); assert.equal
     const browser = await chromium.launch({executablePath:process.env.CHROMIUM_PATH || '/usr/bin/chromium',headless:true});
     const results = [];
     try {
-        for (const width of [1440,393]) {
+        for (const width of selectBrowserTargets([1440,393])) {
             const context = await browser.newContext({ locale: 'zh-CN',viewport:{width,height:1000},isMobile:width<900,hasTouch:width<900});
             const page = await context.newPage(); page.setDefaultTimeout(30000);
             const errors=[]; page.on('pageerror',e=>errors.push(e.message));

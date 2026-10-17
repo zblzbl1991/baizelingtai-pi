@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const express = require('express'), { once } = require('node:events');
@@ -19,6 +20,7 @@ const group = (id, title, indices, types, linked = true) => ({ key: key(id), tit
     origin: linked ? { sessionId: 'delivery' } : null, saved: linked, createdAt, types, files: indices.map(i => ({ key: key(i + 1), name: names[i], kind: types[0], size: raw[i].length })) });
 const items = [group(1, 'Research report', [0, 1, 4, 5], ['document', 'web']), group(3, 'Generated image', [2], ['image'], false), group(4, 'Narration', [3], ['audio'], false), group(7, 'Motion study', [6], ['video'], false)];
 async function run(browser, base, width, locale, theme) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: width < 900 ? 852 : 1000 }, locale, hasTouch: width < 900, acceptDownloads: true });
     const page = await context.newPage(), errors = [], network = [], writes = [], previews = [];
     let listError = false, partial = false, hold = false, delayed, revoke = false;
@@ -148,6 +150,6 @@ async function until(fn) { for (let i = 0; i < 100; i++) { if (fn()) return; awa
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const [width, locale, theme] of [[1440, 'zh-CN', 'daylight'], [1024, 'en', 'dark'], [393, 'zh-CN', 'dark'], [320, 'en', 'daylight']]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale, theme); }
+    try { for (const [width, locale, theme] of selectBrowserTargets([[1440, 'zh-CN', 'daylight'], [1024, 'en', 'dark'], [393, 'zh-CN', 'dark'], [320, 'en', 'daylight']])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale, theme); }
     finally { await browser.close(); server.closeAllConnections(); await new Promise(r => server.close(r)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

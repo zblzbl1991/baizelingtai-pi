@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const http = require('node:http');
@@ -10,6 +11,7 @@ const sessions = [[cwdA,'active'],[cwdA,'a2'],[cwdA,'a3'],[cwdB,'b1'],[cwdB,'b2'
 const model = {provider:'fixture',id:'fixture',name:'Fixture',input:['text']};
 const english = {'归档线程':'Archive thread','恢复线程':'Restore thread','归档项目':'Archive project','恢复项目':'Restore project','历史与记录':'History and records','会话树':'Session tree','搜索历史与书签':'Search history and bookmarks','导出记录':'Export records'};
 async function run(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
  const t = s => locale === 'zh-CN' ? s : english[s];
  const context = await browser.newContext({locale,viewport:{width,height:900},isMobile:width<900,hasTouch:width<900});
  let archives={revision:0,projects:[],sessions:[]}, stale=null, reject=false, enabled=true;
@@ -148,6 +150,6 @@ async function run(browser, base, width, locale) {
  const app=express();for(const [name,dir] of [['marked','marked/lib'],['dompurify','dompurify/dist'],['highlight','@highlightjs/cdn-assets']])app.use('/vendor/'+name,express.static(path.join(root,'node_modules',dir)));
  app.use(express.static(path.join(root,'public')));const server=http.createServer(app);server.listen(0,'127.0.0.1');await once(server,'listening');
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
- try {for(const locale of (process.env.PI_ARCHIVE_TEST_LOCALES?.split(',') || ['zh-CN','en-US']))for(const width of (process.env.PI_ARCHIVE_TEST_WIDTHS?.split(',').map(Number) || [1440,393,320]))await run(browser,`http://127.0.0.1:${server.address().port}`,width,locale)}
+ try {for(const locale of (process.env.PI_ARCHIVE_TEST_LOCALES?.split(',') || ['zh-CN','en-US']))for(const width of (selectBrowserTargets(process.env.PI_ARCHIVE_TEST_WIDTHS?.split(',').map(Number) || [1440,393,320])))await run(browser,`http://127.0.0.1:${server.address().port}`,width,locale)}
  finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r))}
 })().catch(e=>{console.error(e);process.exitCode=1});
