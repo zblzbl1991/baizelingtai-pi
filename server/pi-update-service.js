@@ -5,9 +5,9 @@ const path = require('node:path');
 const { configuredFeed, parseFeed, sourceLink } = require('./pi-update-feed');
 const { version: installedPi } = require('../node_modules/@earendil-works/pi-coding-agent/package.json');
 
-const RELEASES = 'https://api.github.com/repos/YogurtJ/pivane/releases?per_page=100';
+const RELEASES = 'https://api.github.com/repos/zblzbl1991/baizelingtai-pi/releases?per_page=100';
 const PI_LATEST = 'https://registry.npmjs.org/@earendil-works%2fpi-coding-agent/latest';
-const RELEASE_PAGE = 'https://github.com/YogurtJ/pivane/releases';
+const RELEASE_PAGE = 'https://github.com/zblzbl1991/baizelingtai-pi/releases';
 const PI_PAGE = 'https://www.npmjs.com/package/@earendil-works/pi-coding-agent';
 const TTL = 5 * 60 * 1000;
 
