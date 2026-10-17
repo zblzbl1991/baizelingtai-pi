@@ -22,7 +22,7 @@ function archive(extra = {}) {
     return tar([...Object.entries(files), ['TRIAL_MANIFEST.json', JSON.stringify(manifest)]].map(([name, bytes]) => ['pivane-1.2.3/' + name, bytes]));
 }
 test('application archive rejects traversal, links, duplicates, missing manifest and private files', t => {
-    for (const entries of [[['pivane-1.2.3/../escape', 'bad']], [['pivane-1.2.3/link', '', '2']], [['pivane-1.2.3/a', 'a'], ['pivane-1.2.3/a', 'b']]]) assert.throws(() => unpack(tar(entries), '1.2.3', fixture(t)));
+    for (const entries of [[['pivane-1.2.3/../escape', 'bad']], [['pivane-1.2.3/link', '', '2']], [['pivane-1.2.3/PaxHeader/白泽灵台.exe', 'path=白泽灵台.exe', 'x']], [['pivane-1.2.3/a', 'a'], ['pivane-1.2.3/a', 'b']]]) assert.throws(() => unpack(tar(entries), '1.2.3', fixture(t)));
     assert.throws(() => unpack(archive({ '.env': 'synthetic' }), '1.2.3', fixture(t)), /private/);
     const dir = fixture(t); assert.equal(unpack(archive(), '1.2.3', dir).files.length, 2);
     assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'))).version, '1.2.3');
