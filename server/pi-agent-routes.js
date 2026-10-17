@@ -141,7 +141,7 @@ function createPiAgentGateway(options = {}) {
     });
 
     router.use(access.middleware());
-    const maintenanceIdle = () => !artifacts.busy && !fileRoots.jobs.size && !projectDirectories.jobs.size && !documents.active && !profiles.busy && !agentThreads.jobs.size && !agentThreads.catalogIndex.busy && !agentThreads.returns.busy && !agentThreads.messages.busy && !settingsService.mutating && !settingsService.loginService.busy && !nativeService.busy && !mcpSettingsService.busy && !sessionTransfer.running && !sessionMoves.running
+    const maintenanceIdle = () => !officePreviews.busy && !artifacts.busy && !fileRoots.jobs.size && !projectDirectories.jobs.size && !documents.active && !profiles.busy && !agentThreads.jobs.size && !agentThreads.catalogIndex.busy && !agentThreads.returns.busy && !agentThreads.messages.busy && !settingsService.mutating && !settingsService.loginService.busy && !nativeService.busy && !mcpSettingsService.busy && !sessionTransfer.running && !sessionMoves.running
             && !titles.jobs.size && !titles.savingModel && !auxiliaryModels.busy && !transcription.active && !learning?.busy && !cron.busy && !deferred.running && !sideChat.connections.size && !sideChat.tickets.size
             && ![...sideChat.parents.values()].some(parent => parent.preparing) && supervisor.isIdle()
             && !options.mediaLabService?.inFlight && !options.mediaLabService?.chatRequests?.preparing && !options.mediaLabService?.chatRequests?.waiting?.length && !options.mediaLabService?.providerService?.busy && !options.mediaLabService?.providerService?.active;
@@ -157,12 +157,14 @@ function createPiAgentGateway(options = {}) {
         try { deferred.pauseAll(); }
         catch (error) { maintenance.locked = false; throw error; }
     }
-    require('./pi-file-routes').mountFilePreviews(router, { files, store, supervisor });
+    const deliveries = require('./pi-file-routes').mountFilePreviews(router, { files, store, supervisor });
     require('./pi-file-roots').mountFileRoots(router, fileRoots);
     require('./pi-project-directories').mountProjectDirectories(router, projectDirectories);
     const artifacts = require('./pi-artifacts-routes').mountArtifacts(router, { store, supervisor, preferences, mediaRoot: options.artifactMediaRoot,
         isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running) || Boolean(sessionTransfer.running) });
     require('./pi-document-uploads').mountDocumentUploads(router, documents);
+    const officePreviews = require('./pi-office-preview-routes').mountOfficePreviews(router, { files, deliveries, artifacts, documents,
+        engine: options.officePreviewEngine, isSuspended: () => maintenance.locked || Boolean(store.sessionMoves?.running) || Boolean(sessionTransfer.running) });
     notifications.mount(router);
     require('./pi-extension-assistant').mountExtensionAssistant(router, { store, supervisor, resourceService, settingsService, access });
     const assistantEnvironment = supervisor.workerEnvironment;
@@ -223,6 +225,10 @@ function createPiAgentGateway(options = {}) {
 
     router.get('/status', async (req, res) => {
         const memoryConfiguration = await profileMemory.snapshot();
+        const officeStatus = await officePreviews.status().catch(() => ({ available: false }));
+        const officePreview = { available: Boolean(officeStatus.available),
+            ...(!officeStatus.available ? { code: 'OFFICE_UNAVAILABLE', message: '办公文件预览组件不可用，请检查安装或重新检测' } : {}),
+            ...(officeStatus.version ? { version: officeStatus.version } : {}), ...(officeStatus.platform ? { platform: officeStatus.platform } : {}) };
         res.json({
             ok: true,
             version: PI_VERSION,
@@ -271,6 +277,8 @@ function createPiAgentGateway(options = {}) {
             composerTools: true,
             transcription: true,
             documentUploads: descriptorBackendAvailable(),
+            officePreview,
+            officeWorkbook: descriptorBackendAvailable(),
             documentUploadLimits: { fileBytes: 20 * 1024 * 1024, files: 5 },
             modelCatalog: true,
             fileViewer: descriptorBackendAvailable(),
@@ -454,7 +462,7 @@ function createPiAgentGateway(options = {}) {
 
     router.get('/activity', (req, res) => {
         res.set('Cache-Control', 'no-store');
-        res.json({ projectDirectoryOperations: projectDirectories.jobs.size, cronBusy: cron.busy, agentThreadLaunches: agentThreads.jobs.size, agentTaskIndexing: agentThreads.catalogIndex.busy, agentTaskReturns: agentThreads.returns.busy, agentMessages: agentThreads.messages.busy, learningBusy: learning.busy, learningRuns: learning.active.size, archives: archives(), titleRevision: titles.revisionId, titleGenerations: titles.jobs.size, transcriptionActive: transcription.active, documentOperations: documents.active, artifactOperations: artifacts.jobs.size, runtimes: supervisor.getActivity(), profilesBusy: profiles.busy, nativeSettingsBusy: nativeService.busy || settingsService.mutating || Boolean(titles.savingModel) || auxiliaryModels.busy, sessionTransfers: sessionTransfer.running, sessionMoves: sessionMoves.running, pinnedProjects: pinnedProjects(), hiddenProjects: hiddenProjects(), replyNotices: replyNotices(), deferred: deferred.summary() });
+        res.json({ projectDirectoryOperations: projectDirectories.jobs.size, cronBusy: cron.busy, agentThreadLaunches: agentThreads.jobs.size, agentTaskIndexing: agentThreads.catalogIndex.busy, agentTaskReturns: agentThreads.returns.busy, agentMessages: agentThreads.messages.busy, learningBusy: learning.busy, learningRuns: learning.active.size, archives: archives(), titleRevision: titles.revisionId, titleGenerations: titles.jobs.size, transcriptionActive: transcription.active, documentOperations: documents.active, officePreviewBusy: officePreviews.busy, artifactOperations: artifacts.jobs.size, runtimes: supervisor.getActivity(), profilesBusy: profiles.busy, nativeSettingsBusy: nativeService.busy || settingsService.mutating || Boolean(titles.savingModel) || auxiliaryModels.busy, sessionTransfers: sessionTransfer.running, sessionMoves: sessionMoves.running, pinnedProjects: pinnedProjects(), hiddenProjects: hiddenProjects(), replyNotices: replyNotices(), deferred: deferred.summary() });
     });
 
     router.patch('/projects/pin', (req, res) => {
@@ -600,7 +608,7 @@ function createPiAgentGateway(options = {}) {
     const sessionTransfer = require('./pi-session-transfer').mountSessionTransfer(router, { store, supervisor, preferences });
     const sessionMoves = require('./pi-session-moves').mountSessionMoves(router, { store, supervisor, preferences, usage, deferred, cron, sideChat,
         isSuspended: () => maintenance.locked,
-        busy: () => Boolean(artifacts.busy || documents.active || agentThreads.jobs.size || agentThreads.messages.busy || agentThreads.returns.busy
+        busy: () => Boolean(officePreviews.busy || artifacts.busy || documents.active || agentThreads.jobs.size || agentThreads.messages.busy || agentThreads.returns.busy
             || titles.jobs.size || cron.busy || deferred.running || profiles.busy || sessionTransfer.running
             || [...sideChat.parents.values()].some(parent => parent.preparing)) });
 
@@ -1052,6 +1060,7 @@ function createPiAgentGateway(options = {}) {
     }
 
     return { mount, attachWebSocket, prepareDesktopRestart, dispose: async () => {
+        const stoppingOfficePreviews = officePreviews.dispose();
         const stoppingProjectDirectories = projectDirectories.dispose();
         const stoppingFileRoots = fileRoots.dispose();
         const stoppingArtifacts = artifacts.dispose();
@@ -1067,6 +1076,7 @@ function createPiAgentGateway(options = {}) {
         const stoppingMoves = sessionMoves.dispose();
         const stoppingThreads = agentThreads.dispose();
         const stoppingSide = sideChat.dispose();
+        await stoppingOfficePreviews; // Own source reads and native conversion cleanup before worker teardown.
         await stoppingArtifacts; // Finish native source reads before shutting down their workers.
         await stoppingSide; // Keep side workers alive until their in-memory usage is saved.
         await supervisor.dispose();
@@ -1077,7 +1087,7 @@ function createPiAgentGateway(options = {}) {
         await stoppingThreads;
         await Promise.all([stoppingProjectDirectories, stoppingFileRoots, stoppingDeferred, stoppingTitles, stoppingAuxiliaryModels, stoppingMoves, stoppingTranscription, stoppingDocuments]);
         await cron.dispose();
-    }, store, supervisor, cron, deferred, sideChat, titles, auxiliaryModels, learning, knowledgeService, agentThreads, sessionMoves, transcription, documents, artifacts };
+    }, store, supervisor, cron, deferred, sideChat, titles, auxiliaryModels, learning, knowledgeService, agentThreads, sessionMoves, transcription, documents, artifacts, officePreviews };
 }
 
 module.exports = { createPiAgentGateway };

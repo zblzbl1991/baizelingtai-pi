@@ -4,6 +4,8 @@ const io = require('./pi-file-io');
 const { descriptorPath } = require('./pi-file-descriptor');
 const { fail } = require('./pi-file-scope');
 const fields = ['dev', 'ino', 'mode', 'size', 'mtimeNs', 'ctimeNs'];
+// Process-local proof; symbols never become part of raw HTTP JSON metadata.
+const VERIFIED_IDENTITY = Symbol('verified file identity');
 
 // The caller owns scope policy. Both ordinary project reads and immutable
 // deliverables retain the same kernel-path, identity and complete-read proof.
@@ -38,7 +40,8 @@ async function readVerifiedFile(requested, { check, maxBytes }) {
         }
         const bytes = buffer.subarray(0, total);
         return { bytes, absolutePath: resolved, size: total, modifiedAt: new Date(Number(after.mtimeMs)).toISOString(),
+            [VERIFIED_IDENTITY]: JSON.stringify([resolved, identity, ...fields.map(key => String(after[key]))]),
             readAt: new Date().toISOString(), revision: createHash('sha256').update(bytes).digest('hex') };
     } finally { await handle?.close(); }
 }
-module.exports = { readVerifiedFile };
+module.exports = { readVerifiedFile, VERIFIED_IDENTITY };
