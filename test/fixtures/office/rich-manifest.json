@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "generator": "test/office-preview-fixtures.cjs",
+  "generatorVersion": 1,
+  "generatorSha256": "c00b8759989aa5a036ca3d14138c5365ac09eeb819beb589f9a0d8ed90153904",
+  "license": "ISC (project LICENSE); all new text, drawing, and checker PNG independently authored for Pivane",
+  "authoring": {
+    "docx": "docx 9.7.1; ZIP timestamps and core dates normalized",
+    "pptx": "independent OPC/DrawingML serialization with Node zlib",
+    "xlsx": "independent OPC/SpreadsheetML serialization with Node zlib",
+    "legacyAndGolden": "LibreOffice 26.8.1.1 bf6ef2662401c7d6dce671ab4deb26ee0af3a7c1; read-only MSI/CAB extraction, private profile",
+    "msiSha256": "c6298b10cfa1748bcbedad94c62ce771e240e5021bfd6d7a967cd571b04b5312",
+    "msiBytes": 374870016,
+    "msiSignature": "Valid, The Document Foundation",
+    "source": "https://download.documentfoundation.org/libreoffice/stable/26.8.1/win/x86_64/LibreOffice_26.8.1_Win_x86-64.msi"
+  },
+  "expected": {
+    "docx": {
+      "pages": [
+        "WORD-PAGE-ONE",
+        "WORD-PAGE-TWO",
+        "WORD-PAGE-THREE"
+      ]
+    },
+    "pptx": {
+      "pages": [
+        "SLIDE-ONE",
+        "SLIDE-TWO",
+        "SLIDE-THREE"
+      ]
+    },
+    "xlsx": {
+      "cells": [
+        {
+          "r": 1,
+          "c": 0,
+          "value": 45292,
+          "format": "yyyy-mm-dd"
+        },
+        {
+          "r": 1,
+          "c": 1,
+          "value": 1234.5,
+          "format": "\"¥\"#,##0.00"
+        },
+        {
+          "r": 1,
+          "c": 2,
+          "value": 0.125,
+          "format": "0.00%"
+        }
+      ]
+    },
+    "xls": {
+      "sheets": [
+        "销售",
+        "第二页",
+        "隐藏",
+        "内部"
+      ],
+      "cells": [
+        {
+          "r": 1,
+          "c": 0,
+          "value": 45292,
+          "text": "2024-01-01"
+        },
+        {
+          "r": 1,
+          "c": 1,
+          "value": 1234.5,
+          "text": "¥1,234.50"
+        },
+        {
+          "r": 1,
+          "c": 2,
+          "value": 0.125,
+          "text": "12.50%"
+        },
+        {
+          "r": 2,
+          "c": 0,
+          "value": 0,
+          "formula": "1-1"
+        },
+        {
+          "r": 2,
+          "c": 1,
+          "value": false,
+          "formula": "1=2"
+        },
+        {
+          "r": 2,
+          "c": 2,
+          "value": "",
+          "formula": "IF(1=1,\"\",\"x\")"
+        },
+        {
+          "r": 3,
+          "c": 1,
+          "value": 99,
+          "formula": "1+1"
+        }
+      ],
+      "note": "NOW cache reflects authoring time; shared formulas are independently expanded by LibreOffice. CP936 Chinese is separately covered by office-workbook-fixtures.cjs BIFF5."
+    }
+  },
+  "files": {
+    "rich.docx": {
+      "bytes": 10797,
+      "sha256": "92c51f2b623e506e897e1a15284597970840c8724e56c1fae45372649b723bd3"
+    },
+    "rich.doc": {
+      "bytes": 13824,
+      "sha256": "44787461c52717e716ca4c1a9b5769877bb37138c2b20c8ba1a51f85ef0698bd"
+    },
+    "rich.pptx": {
+      "bytes": 3986,
+      "sha256": "8184e981555c4ebf2fc484fdf1acc4cd4ba8450534ae97e8981585fb19f8c0f5"
+    },
+    "rich.ppt": {
+      "bytes": 466432,
+      "sha256": "8fd3e0188634cfd94e36f198c104ac9fc75534f225873f425702b1e9acaf0b87"
+    },
+    "rich.xlsx": {
+      "bytes": 3661,
+      "sha256": "0fd7264bf688b1225ddda1c7c2133c9abca6bd501697051c34abe326f7067d3a"
+    },
+    "rich.xls": {
+      "bytes": 8192,
+      "sha256": "6e1c856709ed0d0462239b0a6c147ddcf11872c56f2f4cd3cdcdbbb0b4733b7d"
+    },
+    "rich-1904.xlsx": {
+      "bytes": 3660,
+      "sha256": "5fa24a766a1c151ac34e3073311b4f4ac34c63474fa3bfb12c4673b19a110465"
+    },
+    "missing-font.docx": {
+      "bytes": 10815,
+      "sha256": "70e68da34191f37b5bdc91d3356c62b4bdf9a7a32162b2071927465efc43c0ff"
+    },
+    "golden-rich-docx.pdf": {
+      "bytes": 65680,
+      "sha256": "4bb2246e40d6f2f8140eb3565caade45cd2151e295131f69fd5e1af145cf4faa",
+      "pages": 3
+    },
+    "golden-rich-doc.pdf": {
+      "bytes": 65823,
+      "sha256": "f14e87e2a6f8d00bc8c8534d831783bbea33705ab0c833856f71e477de18b54a",
+      "pages": 3
+    },
+    "golden-rich-pptx.pdf": {
+      "bytes": 49539,
+      "sha256": "9bafe5689b12bbf9adc4146aaa12733eb76675205d2c8319ee5bbd9e4cb6a86a",
+      "pages": 3
+    },
+    "golden-rich-ppt.pdf": {
+      "bytes": 49876,
+      "sha256": "12182f6fe408ed418fac4cd089df994b623c73b70b62575be7abb326b4e10b16",
+      "pages": 3
+    }
+  }
+}
