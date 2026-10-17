@@ -73,10 +73,12 @@ Node 用例的清理必须先等待网关、worker 和 SQLite 连接关闭，再
 ```bash
 PLAYWRIGHT_MODULE=/path/to/playwright npm run test:browser -- --list
 PLAYWRIGHT_MODULE=/path/to/playwright npm run test:browser -- test/browser/pi-workbench.cjs
+PLAYWRIGHT_MODULE=/path/to/playwright npm run test:browser -- --target=desktop test/browser/pi-office-file-preview.cjs
 PLAYWRIGHT_MODULE=/path/to/playwright npm run test:browser
 ```
 
 - 运行器串行执行会启动 Chromium 的脚本，沿用 `npm test` 的凭据过滤；脚本读取的 `*_URL` 统一指向一个只提供 `public/` 与 vendor 静态资源的 loopback 服务，API/WS 仍由脚本自己 mock。单个脚本超时 5 分钟，失败时输出末尾日志并以非零退出。`CHROMIUM_PATH` 可指定浏览器。
+- `--target=all|desktop` 默认 `all`，保留各脚本原有桌面和手机场景。用户明确选择仅验桌面时用 `--target=desktop`，共享选择器在运行场景前过滤；运行期 guard 同时检查真实 context／page 创建和 resize，拒绝移动标志或宽度不大于 900 的视口，并拒绝零 context 的假通过，输出实际宽度审计。记录 target，桌面结果不能声称手机已验。这个显式选择不取消仓库其他任务的通用手机回归要求。
 - 开发和局部本机部署跑受影响脚本及必要集成；共享 UI、累计集成批次和公开发布跑全量，具体按 [验证矩阵](#验证矩阵)。`--list` 可核对精确脚本清单；运行器不会自动推导影响范围或判断结果能否复用。
 - 先用一个相关脚本核对 vendor 挂载、浏览器版本与非秘密环境（尤其 `LANG`/`LC_ALL`、时区、下载名），再批跑。环境修正后按影响补验，不复制整个生产环境，也不把环境差异导致的失败直接忽略。
 - 首行带 `pivane-browser: manual` 的脚本需要真实隔离服务或发行归档，运行器不执行：按脚本说明显式传入目标 URL，服务分开 Agent、媒体、项目、预约队列等路径且不继承真实供应商认证。**不得指向维护中的实例或依赖默认端口。** 发行安装、升级与恢复按 [发行流程](RELEASING.md) 使用准确归档；Pi 受管联网更新需显式 opt-in 的专用隔离环境。
@@ -90,6 +92,7 @@ PLAYWRIGHT_MODULE=/path/to/playwright npm run test:browser
 - `run-tests.cjs` 从统一发现的 `.test.js` 集合选择并串行执行，避免依赖平台 shell 展开；可选的 `test-timing-reporter.cjs` 只报告 Node 事件，不改变执行顺序或失败语义。`run-browser-tests.cjs` 使用同一发现规则选择浏览器脚本。
 - `package-trial.cjs` 和受管 Pi 更新的源码快照使用相同的 `distributionFiles()`，保留各自的字节、描述符、预算和哈希检查。
 - 新增独立资产或文件类型时更新明确清单；新增文档更新 `docs/public-files.json`。改变源码目录还要核对 require/import、HTML 脚本入口、静态访问清单和浏览器 fixture。
+- Office 引擎及生成 Worker／模型／声明由 [Office inventory](../../server/office-preview/inventory.js)提供统一资源清单，安装与受管更新、静态访问及发行复用；公开 fixture 的来源／许可证和哈希按[材料说明](../../test/fixtures/office/README.md)维护。预览解析和转换预算以配置为准，文档不另复制常量。
 
 ## 文档责任
 

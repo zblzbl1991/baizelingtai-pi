@@ -22,6 +22,9 @@ flowchart TD
 
 ## 职责和依赖方向
 
+- Office 阅读与编辑有独立生命周期。`pi-office-preview-sources` 复用文件、交付、成果库和附件服务的授权及原生完整身份，`pi-office-previews` 唯一拥有请求预留、读者、共享转换、代际缓存与最终来源复核；命中缓存也不跳过授权。`office-preview/engine` 只接收已核验字节，在受保护私有目录启动过滤环境的转换子进程，并等待实际退出／清理。网关只装配一次服务，读取、健康探针、转换和 dispose 计入维护及异步停机，不创建 Pi worker 或第二份会话事实。
+- 浏览器 `pi-office-file-preview` 将原件和阅读字节分开；PDF 复用既有阅读器，XLSX／XLS 进入一次性 Worker，由受限模型与安全 DOM 网格展示，主线程再次验证模型。关闭或来源／线程／连接代次变化取消旧读者；全屏移动同一组件。下载和成果保存继续从原来源取得字节。配置、依赖／生成资源清单和契约见 [Office 预览](../OFFICE_PREVIEW.md)、[依赖约定](DEPENDENCIES.md#office-预览依赖)与[模块导航](MODULES.md)。
+
 - Office 编辑由 `pi-officecli-extension` 注册 Pi 原生 MCP 服务器及工作副本工具；`officecli/documents` 复用项目范围、目录身份、私有文件与原字节传输，原生分支记录副本索引。`mcp-host` 校验固定程序、过滤其环境并转发 stdio，不实现另一个 MCP 客户端；Pi 拥有连接及会话生命周期。文档语义由当前 Agent 与 Skill 决定，批准来自聊天，原件保持不可变。程序清单、安装及发行共用 `officecli/inventory`，详见 [Office 文档](../OFFICE_DOCUMENTS.md)。
 
 - `server.js` 装配访问验证、网关、媒体适配与静态资源，再监听 HTTP。旧媒体执行器仍在此入口，修改这些旧适配器时逐项迁移职责，不向入口添加新的业务存储。

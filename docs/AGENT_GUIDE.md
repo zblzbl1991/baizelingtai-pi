@@ -28,6 +28,7 @@
 - 使用用户取得的候选包和校验值，按[安装指南](INSTALL_RECOVERY.md)解包并运行 `node scripts/install.cjs`（旧归档无此脚本时使用 `npm ci`）；不要把本机工作目录整体复制给用户。
 - Node22.x及平台前提见[Linux通用步骤](INSTALL_RECOVERY.md)、[macOS](MACOS.md)、[Windows](WINDOWS.md)。原生组件必须保留源码/二进制/manifest，不删除校验绕过错误。
 - 先读取`/api/access/status`判断访问验证，已认证后读取`/api/pi/status`和必要的activity。401/403、未知字段或连接失败都不表示实例空闲。
+- Office 网页预览与 Agent 读取／编辑能力分开核对。`officePreview.available` 来自 Word／PPT 引擎探针，`officeWorkbook` 为独立工作簿来源能力；不可用时按 [Office 预览修复](OFFICE_PREVIEW.md#windows-引擎字体与修复)排查，不能通过替换原件或重新发送真实任务验证。旧 DOC／XLS／PPT 仅上传、预览和下载，Agent 处理须先另存现代格式。预览读取、健康探针和转换计入维护忙碌。
 - 模型和参数从实例实际目录/schema获取，不硬编码个人Provider或静默换模型。Key通过网页原生认证或用户授权的公开认证接口保存，不手写auth.json。
 - 普通健康检查不发送模型消息。模型测试和媒体生成可能收费，需要用户对相应操作的授权；不重放失败/结果不确定的请求。
 

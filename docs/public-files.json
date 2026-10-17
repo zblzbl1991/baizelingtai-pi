@@ -22,6 +22,7 @@
     "docs/DESKTOP_LAUNCHER.md",
     "docs/DOCUMENT_REVIEW.md",
     "docs/OFFICE_DOCUMENTS.md",
+    "docs/OFFICE_PREVIEW.md",
     "pi-packages/officecli/skills/office-documents/SKILL.md",
     "docs/GONGWEN.md",
     "docs/adr/0001-gongwen-format-validation.md",

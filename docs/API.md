@@ -26,6 +26,52 @@ Windows 托盘与 `scripts/start-desktop.cjs` 使用继承的 stdin/stdout LF �
 
 工具结果的可选 `details.pi5ToolProvenance` 包含 `{version:1,toolName,toolCallId,source?:{source,path,scope,origin},skill?:{name,path}}`，由受管 worker 的调用前元数据生成，随原生 toolResult 和原有 WS 工具结果传递。缺失即未知，不通过设置清单补填；前端核对名称与调用 ID，仅作来源显示。扩展助手包确认取消时提供 `details.pi5PackageOperation.status='cancelled'`。不新增 REST 或改动原始正文、错误和用量，详见[执行来源](NATIVE_SETTINGS.md#执行记录中的技能与扩展来源)。
 
+## Office 文件预览
+
+`POST /api/pi/office/preview` 是受认证的只读计算入口，复用 `/api/pi` 的访问身份与 Origin 检查，不启动 Pi worker、不调用模型、不编辑或保存原件。响应设置 no-store、nosniff、隔离 CSP 和 same-origin 资源策略。用法与兼容范围见 [Office 文件预览](OFFICE_PREVIEW.md)。
+
+请求为 `{source,expectedRevision?,refresh?}`，拒绝未知字段。`source` 按类型使用下列完整字段，不接受任意转换输入路径、URL 或客户端 base64：
+
+| type | source 字段 | 授权来源 |
+|---|---|---|
+| `project` | `{type:"project",cwd,path}` | 现有文件服务的项目范围、系统权限与原生描述符核验；无需会话 worker |
+| `delivery` | `{type:"delivery",cwd,sessionId,id,index}` | 当前原生完整分支的交付引用与固定快照 |
+| `artifact` | `{type:"artifact",key}` | 已保存成果库的可访问条目，或成果中心仍有效的交付来源 key；前者核对库状态，后者仍核对原交付资格，回收站条目拒绝 |
+| `upload` | `{type:"upload",cwd,sessionId,id}` | 当前原生分支的已发送附件，或原上传线程的未发送草稿资格 |
+
+locator 字段沿用各来源接口的含义与检查。`expectedRevision` 可选，为来源原件的 64 位小写 SHA256；不匹配返回 `OFFICE_SOURCE_CHANGED`。`refresh` 可选布尔值；true 为显式刷新，Word／PPT 重新检查引擎和字体并更新代际／缓存，刷新与活动预览互斥，繁忙时拒绝。不会自动重放失败转换。
+
+成功返回：
+
+```json
+{
+  "source": {"type":"project","name":"report.docx","format":"docx","size":1234,"revision":"source-sha256"},
+  "preview": {"kind":"pdf","mime":"application/pdf","encoding":"base64","base64":"...","size":5678,"revision":"preview-revision"},
+  "warnings": ["近似预览，字体与分页可能不同"]
+}
+```
+
+`source` 只投影类型、名称、格式、原件大小和原件修订，不返回私有存储路径或授权证明。DOC／DOCX／PPT／PPTX 返回 `kind:"pdf"`、`mime:"application/pdf"` 的派生 PDF；XLS／XLSX 返回 `kind:"workbook"`、`mime:"application/octet-stream"` 的原工作簿字节，供有界浏览器 Worker 解析，响应不是 JSON 网格模型。`preview.size` 为解码后字节数；`preview.revision` 绑定引擎／解析代际和预览字节，不是来源 SHA256，不能用作原件写入或下载修订。`warnings` 是安全文字提示，包含近似、保存缓存与可能缺失字体的信息。
+
+缓存命中仍重新授权并读取来源，响应前再次核对来源资格、原生文件完整身份、修订及引擎代际；同字节替换也不能绕过身份复核。相同内容／格式／代际的 PDF 转换可共享，各读者独立取消；最后读者离开才取消转换。超时／断连后的任务直到实际退出并清理临时文件才释放额度，活动读取、探针和转换计入维护及统一停机。预算唯一配置见 [config/office-preview.json](../config/office-preview.json)，各来源原有下载限额不因此扩大。原件下载与成果保存仍通过原接口重新授权，字节语义不变。
+
+错误 JSON 仅含 `{error,code}`，不投影底层路径、引擎 stderr 或文档正文：
+
+| HTTP | code | 含义 |
+|---|---|---|
+| 403 | `OFFICE_SCOPE` | 来源或访问范围拒绝 |
+| 404 | `OFFICE_MISSING` | 来源不存在或链接失效 |
+| 409 | `OFFICE_SOURCE_CHANGED` | 原件、来源资格或预期修订变化 |
+| 413 | `OFFICE_LIMIT` | 来源、输出或预览预算超限 |
+| 415 | `OFFICE_INVALID` | 参数、损坏／加密容器或内部格式不符 |
+| 429 | `OFFICE_BUSY` | 读者、保留字节、排队额度或刷新互斥占用 |
+| 503 | `OFFICE_UNAVAILABLE` | 组件不可用、关闭或维护中 |
+| 504 | `OFFICE_TIMEOUT` | 排队或转换超时 |
+
+网关认证／Origin 拒绝仍沿用原接口错误。浏览器工作簿解析失败在阅读组件中呈现，不会追改已完成的 HTTP 响应。
+
+`GET /api/pi/status` 增加 `officePreview:{available,code?,message?,version?,platform?}`，Word／PPT 可用性来自完整性及实际转换健康探针；不可用不阻止工作台启动。独立 `officeWorkbook` 表示工作簿来源所需原生描述符组件可用，不证明浏览器已经解析任意文件；活动接口增加 `officePreviewBusy`。旧 `filePreviews`、`documentUploads` 和原件下载能力保持独立。
+
 ## Office 工作副本与 MCP
 
 内置 `pivane-officecli` 扩展在启用 Pi 原生 MCP 的持久受管 RPC 会话注册 `prepare_office_document {id,requestId}`。id 为当前分支已发送 DOCX/XLSX/PPTX 附件标识，原件最大 16 MiB；requestId 沿用 1–160 字符请求标识格式。不接受原件路径。工具 details.pivaneOffice 为 `{version:1,id,sessionId,requestId,source,path,revision,size,reused}`；source 是原附件元数据，path 是项目工作副本实际路径，revision/size 是本次读取时副本的状态，不是之后所有编辑的预期版本。
@@ -49,6 +95,8 @@ Windows 托盘与 `scripts/start-desktop.cjs` 使用继承的 stdin/stdout LF �
 受管 worker 可通过既有私有 `POST /uploads/read {id,action:"source"}` 取得 `{reference,encoding:"base64",base64}`，供公文与 Office 工作副本工具内部传输原字节。此动作仅接受 id/action，须为当前分支已发送的 DOCX、XLSX 或 PPTX 且不超过 16 MiB，PDF 拒绝；公文工具仍只接受 DOCX。工作台访问身份不能代替绑定 worker。原字节不进入模型工具输出；授权、描述符核验、变更复查、document-read 生命周期及 documentOperations 沿用附件链路。其他读取动作和 `read_document` 参数不变。
 
 状态 `GET /api/pi/status` 返回 `documentUploads` 和 `documentUploadLimits:{fileBytes:20971520,files:5}`；原生描述符组件不可用时能力为 false，接口拒绝。格式、存储与解析预算见[办公附件](COMPOSER_TOOLS.md#上传办公文档与-pdf)。
+
+DOC／XLS／PPT 扩展为原件上传、预览和下载格式，容器与内部类型均校验；`read_document` 及私有编辑 source 动作返回 `DOCUMENT_FORMAT` 拒绝旧格式，不向模型宣称新增读取／编辑能力。未发送附件的预览仍绑定原上传线程，见 [Office 预览 API](#office-文件预览)。
 
 - `POST /api/pi/uploads?cwd&sessionId&requestId&name`：持久线程原件上传，Content-Type 必须为 application/octet-stream，非空原始字节最多 20 MiB。requestId 为 1–160 字符的字母/数字/点/短横线/下划线/冒号，首字符为字母或数字；name 为不含路径分隔符或控制字符的 1–240 字符文件名。返回 `{reference:{id,revision,name,format,size},marker,reused?}`，id/revision 是 64 位小写 hex。先预占两项操作额度再读取 HTTP body，不自动解压请求 body。重复同一规范 cwd/sessionId/requestId 只返回相同原件，参数或字节不同返回 DOCUMENT_CONFLICT，不覆盖。
 - `GET /api/pi/uploads/status?cwd&sessionId&requestId`：仅查询同一上传标识的已保存原件，返回 reference/marker。404 只表示尚未找到已发布原件，不表示在途上传已取消，不能据此自动重传。

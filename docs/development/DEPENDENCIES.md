@@ -37,6 +37,20 @@
 
 原生沙箱继续拥有输出限制、worker 关闭、取消、调用及 store；官方 executor 继续拥有目录／嵌套权限、用量、截断与私有文件。适配从主／子 Codemode 工厂的 policy 入口安装，不扩大能力。验证包括原 60 秒真实 100001 条压力场景、文本语义逐字节对照、完整输出文件、成功／失败 store、usage／不重放及取消。新 Pi 版本须重新审查 seam，不能仅改版本白名单。
 
+## Office 预览依赖
+
+当前 Windows x64 转换适配固定 `@deepseek-ai/libreoffice-kit` 与 `@deepseek-ai/libreoffice-kit-win32-x64` **0.1.1**，Node 最低要求 22.19.0；不会缺少原生组件就静默改用 WASM 或系统 PATH 中的程序。平台适用范围与运行库／字体指引见 [Office 预览](../OFFICE_PREVIEW.md#windows-引擎字体与修复)。
+
+XLSX 使用本项目的有界 OPC／XML 读取器；`fflate` 用于展开，`sax` 用于带命名空间的流式 XML。XLS 容器／BIFF 预检查之后使用 SheetJS CE，数值格式也使用其 SSF。SheetJS 固定到官方 CDN 的 0.20.3 tarball，锁文件记录来源与 integrity；不改依赖源码，也不依赖参考项目的补丁。具体依赖精确值和 kit 的 fflate override 以 package.json／lock 为准，不引入 React、FortuneSheet 或 ExcelJS。
+
+`server/office-preview/inventory.js` 与 `config/office-preview-assets.json` 是引擎及静态资源闭包的共同入口，核对锁定包、完整常规文件集合、逐文件 SHA256、原生 manifest 与平台信息，包含程序、源码、许可证、NOTICE 和传递依赖。安装、健康探针、受管候选预检、打包和源码快照复用同一清单，不能只复制 DLL 或另建一套扫描规则。更新依赖时同时审查清单和真实解析，不能只更新版本字符串。
+
+`scripts/build-office-preview.cjs` 生成本地 `workbook-worker.js`、主线程模型验证 bundle 与第三方声明；静态访问只开放 inventory 的明确 URL。生成文件纳入统一发行集合，源码解析／Worker／样式和测试由既有递归发现覆盖。预算只在 `config/office-preview.json` 维护，解析前后都执行检查；安全 DOM、不执行公式／外部目标和有界页窗口属于应用适配责任。
+
+真实转换在过滤环境、受保护私有输入目录中运行，按原生已打开描述符验证输入／输出身份与预算；宏执行关闭，Word／PPT 外部关系拒绝。进程取消等待实际退出，不把 JS 超时当成原生进程终止。此隔离不是完整的操作系统网络或 RSS 沙箱，不能宣称对同一系统用户提供 OS 权限隔离。
+
+安装和故障验证入口见 [E2E 导航](E2E.md#office-预览验证入口)。源码、准确归档、运行实例和目标办公软件／字体结果分别留证，首批 Windows 桌面验证不能外推其他平台或 Word／WPS 版式。
+
 ## 验证与交付
 
 1. 在隔离身份和目录中安装目标精确版本，保留依赖、锁文件、原生组件和恢复材料。

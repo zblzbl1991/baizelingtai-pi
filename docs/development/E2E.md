@@ -37,6 +37,21 @@ npm run test:browser -- test/browser/pi-assistant-workspace-integration.cjs test
 
 统一运行器会过滤供应商凭据、提供静态资源并设置审查过的记忆 bundle 路径。浏览器选择器接受精确脚本名。`pivane-browser: manual` 标记的脚本另走下节入口。
 
+统一 `--target=desktop|all` 默认 all。仅验桌面时，例如 `npm run test:browser -- --target=desktop test/browser/pi-office-file-preview.cjs`；选择器、真实视口 guard 和结果范围见[开发流程](WORKFLOW.md#浏览器与重型专项)。不将桌面选择的成功计作手机验收。
+
+## Office 预览验证入口
+
+六种格式和四种来源的行为契约见 [Office 预览](../OFFICE_PREVIEW.md)和 [API](../API.md#office-文件预览)。下表只定位可复跑边界，不代表某次执行已通过：
+
+| 入口 | 真实范围与限制 |
+|---|---|
+| [来源矩阵](../../test/pi-office-preview-sources.test.js)、[服务生命周期](../../test/pi-office-previews.test.js)、[HTTP](../../test/pi-office-preview-routes.test.js)、[格式](../../test/pi-office-format.test.js) | 原生 SessionManager／分支、文件／交付／成果库／附件职责服务及授权、身份变化、原件哈希、HTTP 安全与取消；可控引擎替身验证失败／共享边界，不代替原生转换 |
+| [引擎专项](../../test/office-preview-engine.test.js)、[原生引擎探针](../../test/release/office-preview-engine.cjs) | 单元用例的注入故障与独立原生运行须分别看；后者执行完整性／实际转换、私有权限、取消清理、代际刷新及输出预算，要求目标平台组件，不证明 Word／WPS 最终版面 |
+| [工作簿解析](../../test/office-workbook.test.js)、[材料说明](../../test/fixtures/office/README.md) | 实际 XLSX 容器、XML／OPC、XLS／BIFF、保存缓存、日期／样式／异常与预算；材料来源和兼容性结论按具体断言核对，不用解析成功证明所有布局还原 |
+| [Office 阅读桥](../../test/browser/pi-office-file-preview.cjs)、[只读表格](../../test/browser/pi-office-table-preview.cjs)、[桥接回归](../../test/pi-office-file-preview.test.js) | 实际 PDF／Worker／DOM 组件与模拟 HTTP；覆盖四入口、原件动作、代次／迟到清理和阅读状态，不能称真实网关＋转换引擎端到端 |
+
+Node 专项经 `npm test -- <文件>`，自动浏览器经统一 `npm run test:browser -- --target=desktop <脚本>`；原生引擎探针按脚本参数单独运行。准确包需要再证明其依赖、生成资源、完整许可证闭包及候选拒绝激活／恢复；实际安装字体后的效果、Word／WPS 排版、其他操作系统和手机分别列出通过或待验，不从上述源码专项推断。
+
 ## 按功能选择跨层检查
 
 下表为代表性入口；完整实现和相邻测试按[模块导航](MODULES.md)继续查。Node 用例通过 `npm test -- <文件...>` 运行，浏览器脚本通过 `npm run test:browser -- <文件...>` 运行。
