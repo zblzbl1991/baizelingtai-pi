@@ -74,7 +74,7 @@ function unpack(bytes, version, directory) {
 async function stageApplication({ directory, release, env = process.env, signal, run = runNode, get = download, progress = () => {}, onOutput = () => {} }) {
     if (!validRelease(release)) throw Error('Invalid application release identity');
     progress('downloading');
-    const url = `https://github.com/YogurtJ/pivane/releases/download/v${release.version}/pivane-${release.version}.tar.gz`;
+    const url = `https://github.com/zblzbl1991/baizelingtai-pi/releases/download/v${release.version}/pivane-${release.version}.tar.gz`;
     const bytes = await get(url, { env, signal });
     if (bytes.length > MAX_ARCHIVE || hash(bytes) !== release.sha256) throw Error('Application archive SHA256 mismatch');
     const manifest = unpack(bytes, release.version, directory);

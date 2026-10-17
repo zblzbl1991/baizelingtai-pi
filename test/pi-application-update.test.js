@@ -15,7 +15,7 @@ function tar(entries) {
     }
     return gzipSync(Buffer.concat([...blocks, Buffer.alloc(1024)]));
 }
-function fixture(t) { const root = fs.mkdtempSync(path.join(os.tmpdir(), 'application-update-')); t.after(() => fs.rmSync(root, { recursive: true, force: true })); return path.join(root, 'release'); }
+function fixture(t) { const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'application-update-'))); t.after(() => fs.rmSync(root, { recursive: true, force: true })); return path.join(root, 'release'); }
 function archive(extra = {}) {
     const files = { 'package.json': JSON.stringify({ name: 'pivane', version: '1.2.3', dependencies: { '@earendil-works/pi-coding-agent': '0.86.0' } }), 'package-lock.json': JSON.stringify({ version: '1.2.3', packages: { '': { version: '1.2.3' } } }), ...extra };
     const manifest = { product: 'Pivane', appVersion: '1.2.3', piVersion: '0.86.0', files: Object.entries(files).map(([name, value]) => ({ path: name, bytes: Buffer.byteLength(value), sha256: hash(Buffer.from(value)) })) };
@@ -31,7 +31,10 @@ test('application installer fails before npm on checksum mismatch and isolates i
     const bytes = archive(), release = { version: '1.2.3', sha256: hash(bytes) };
     await assert.rejects(stageApplication({ directory: fixture(t), release: { ...release, sha256: '0'.repeat(64) }, get: async () => bytes, run: () => assert.fail('must not install') }), /SHA256/);
     const dir = fixture(t), calls = [];
-    await stageApplication({ directory: dir, release, get: async () => bytes, env: { PATH: process.env.PATH, HOME: os.homedir(), OPENAI_API_KEY: 'synthetic' }, run: async (args, opts) => {
+    await stageApplication({ directory: dir, release, get: async url => {
+        assert.equal(url, 'https://github.com/zblzbl1991/baizelingtai-pi/releases/download/v1.2.3/pivane-1.2.3.tar.gz');
+        return bytes;
+    }, env: { PATH: process.env.PATH, HOME: os.homedir(), OPENAI_API_KEY: 'synthetic' }, run: async (args, opts) => {
         calls.push(args); assert.equal(opts.env.OPENAI_API_KEY, undefined);
         if (calls.length === 1) { assert.ok(args.includes('ci')); assert.ok(args.includes('--ignore-scripts')); fs.mkdirSync(path.join(dir, 'node_modules/@earendil-works/pi-coding-agent'), { recursive: true }); fs.writeFileSync(path.join(dir, 'node_modules/@earendil-works/pi-coding-agent/package.json'), '{"version":"0.86.0"}'); }
         else assert.equal(opts.env.PI_OFFLINE, '1');
@@ -40,6 +43,6 @@ test('application installer fails before npm on checksum mismatch and isolates i
 });
 test('release download rejects off-origin redirects before requesting them', async () => {
     let calls = 0;
-    await assert.rejects(download('https://github.com/YogurtJ/pivane/releases/download/v1.2.3/a', { env: {}, request: async () => { calls++; return { status: 302, headers: { get: () => 'https://evil.example/payload' } }; } }), /Untrusted/);
+    await assert.rejects(download('https://github.com/zblzbl1991/baizelingtai-pi/releases/download/v1.2.3/a', { env: {}, request: async () => { calls++; return { status: 302, headers: { get: () => 'https://evil.example/payload' } }; } }), /Untrusted/);
     assert.equal(calls, 1);
 });
