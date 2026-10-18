@@ -257,19 +257,20 @@ class ProfileLearningService {
     // free; without one, the whole service must be idle.
     // auxiliaryModels and legacyReviewModel serve legacy auto-learning adoption.
     constructor({ profiles, store, preferences, knowledge, getAgentDir, createModelRuntime, idle = () => true,
-        auxiliaryModels = null, legacyReviewModel = async () => null }) {
+        auxiliaryModels = null, legacyReviewModel = async () => null, isSuspended = () => false, onActivity = () => {} }) {
         Object.assign(this, { profiles, store, preferences, knowledge, getAgentDir, createModelRuntime, idle,
-            auxiliaryModels, legacyReviewModel });
+            auxiliaryModels, legacyReviewModel, isSuspended, onActivity });
         this.active = new Map(); this.closed = false; this.recovering = false; this.pending = new Set(); this.retries = new Map(); this.enrolling = new Set();
         this.mutations = new Set(); this.scans = new Set();
         this.timer = setInterval(() => { void this.tick(); }, 60000);
         this.timer.unref?.();
     }
     tick() {
-        if (this.closed) return Promise.resolve();
+        if (this.closed || this.isSuspended()) return Promise.resolve();
         // A slow native scan must not accumulate another scan on every timer tick.
         // Existing scans also cover instances already scanning during a code refresh.
         if (this.scans.size) return this.scans.values().next().value;
+        this.onActivity();
         const pending = Promise.resolve().then(() => this._tick());
         this.scans.add(pending);
         void pending.then(() => this.scans.delete(pending), () => this.scans.delete(pending));
@@ -709,7 +710,8 @@ class ProfileLearningService {
         await this.tick();
     }
     wake(id) {
-        if (this.closed || this.pending.has(id)) return;
+        if (this.closed || this.isSuspended() || this.pending.has(id)) return;
+        this.onActivity();
         this.pending.add(id);
         queueMicrotask(() => { void this.drain(id).then(ran => {
             this.pending.delete(id);
@@ -726,7 +728,7 @@ class ProfileLearningService {
         this.retries.set(id, timer);
     }
     async drain(id) {
-        if (this.closed || this.recovering) return;
+        if (this.closed || this.isSuspended() || this.recovering) return;
         if (this.active.size >= 2 || [...this.active.values()].some(item => item.profileId === id)) return;
         try {
             const profile = await this.profile(id), models = this.preferences.getMemoryModels();

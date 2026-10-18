@@ -207,6 +207,22 @@ test('application startup failure waits for candidate exit and boots retained re
     assert.equal(launcher.state.active, null); assert.equal(launcher.state.job.phase, 'failed'); assert.ok(launcher.state.job.backup);
 });
 
+test('desktop maintenance never restores or boots another service after missing cleanup proof', async t => {
+    for (const phase of ['stopping','starting']) {
+        const root=fixture(t);packageFixture(root);const events=[];
+        const unknown=Object.assign(Error('Synthetic missing cleanup proof'),{code:'DESKTOP_CLEANUP_UNKNOWN'});
+        const launcher=new ManagedLauncher({root,env:{},requireShutdownProof:true,stageApp:async()=>{},onCleanupUnknown:()=>events.push('unknown')});
+        launcher.send=message=>events.push(message.type);launcher.child={};launcher.backupInputs=[path.join(root,'package.json')];
+        let stops=0;launcher.stopChild=async()=>{stops++;launcher.child=null;if(phase==='stopping'||stops>1)throw unknown;};
+        launcher.boot=async()=>{events.push('candidate');launcher.child={};throw Error('Synthetic candidate startup failure')};
+        await launcher.execute({id:randomUUID(),action:'application',release:{version:'1.2.3',sha256:'a'.repeat(64)}});
+        assert.equal(launcher.closed,true);assert.equal(launcher.state.needsRecovery,true);
+        assert.equal(events.filter(event=>event==='candidate').length,phase==='starting'?1:0);
+        assert.equal(events.filter(event=>event==='unknown').length,1);
+        assert.equal(events.includes('maintenance-release'),false,'unknown cleanup never reopens the old service gate');
+    }
+});
+
 test('application tickets preserve reviewed hash and reject browser overrides', () => {
     const { value, sent } = client(); value.state.appUpdateSupported = true;
     const release = { version: '1.2.3', sha256: 'a'.repeat(64) };

@@ -76,7 +76,7 @@ Node 专项经 `npm test -- <文件>`，自动浏览器经统一 `npm run test:b
 | Office 工作副本 → 原生 MCP → 编辑与交付 | [pi-officecli-runtime](../../test/pi-officecli-runtime.test.js)、[副本与程序检查](../../test/pi-officecli.test.js) | 原生程序须按[Office 文档](../OFFICE_DOCUMENTS.md)准备；浏览器编辑全链见 [pi-office-editing-e2e](../../test/browser/pi-office-editing-e2e.cjs)，Word/WPS 实机渲染仍按下节单独验收 |
 | 原生 MCP / Codemode / 子任务 | [原生 MCP](../../test/pi-native-mcp.test.js)、[控制边界](../../test/pi-native-mcp-control.test.js)、[子任务](../../test/pi-native-mcp-child.test.js) | [MCP 工作台](../../test/browser/pi-native-mcp-workbench.cjs)的 API / WS 有替身；原生连接与子任务结果依靠 Node 集成 |
 | 文件交付 → 成果发现与管理 | [pi-deliverables-runtime](../../test/pi-deliverables-runtime.test.js)、[成果服务](../../test/pi-artifacts.test.js)、[成果库](../../test/pi-artifacts-library.test.js) | [交付](../../test/browser/pi-deliverables.cjs)、[成果管理](../../test/browser/pi-artifacts-management.cjs)覆盖 UI；按用例核对跨会话授权与失败结果 |
-| 启动 → 维护互斥 → 停机／重启 | [维护](../../test/pi-maintenance.test.js)、[安装锁](../../test/pi-installation-lock.test.js)、[桌面重启](../../test/pivane-desktop-restart.test.js) | [启动等待页](../../test/browser/pivane-desktop-startup.cjs)与 Windows 原生托盘分别验证；平台条件和跳过项单独记账 |
+| 启动 → 维护互斥 → 停机／重启 | [维护](../../test/pi-maintenance.test.js)、[安装锁](../../test/pi-installation-lock.test.js)、[桌面启停](../../test/pivane-desktop-control.integration.test.js)、[停机装配](../../test/pi-desktop-stop-gateway.test.js) | [启动等待页](../../test/browser/pivane-desktop-startup.cjs)与 Windows 原生托盘分别验证；平台条件和跳过项单独记账 |
 | 下载更新 → 安装／回退 | [应用更新](../../test/pi-application-update.test.js)、[受管 HTTP](../../test/pi-managed-http.test.js) | [更新 UI](../../test/browser/pi-updates.cjs)不替代准确 ZIP 更新 E2E，见下节 |
 
 例如，只核对公文原生交付链与相关规则：

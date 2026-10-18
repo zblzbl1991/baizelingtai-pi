@@ -997,7 +997,9 @@ const httpServer = app.listen(PORT, network.host, () => {
             ...['generation_history.json', 'video_history.json', 'tts_history.json', 'media_chat_requests.json', 'media_references', 'prompts.json', 'public/images', 'public/videos', 'public/audio'].map(p => path.join(mediaDataRoot, p)),
             ...(process.env.PI_CODING_AGENT_SESSION_DIR ? [path.resolve(process.env.PI_CODING_AGENT_SESSION_DIR)] : [])].filter(Boolean).map(p => path.resolve(p));
         const updateFeed = require('./server/pi-update-feed').configuredFeed(__dirname, process.env);
-        process.send({ type: 'maintenance-ready', nonce: maintenance.nonce, backupInputs, port: address.port, appVersion: require('./package.json').version, desktopRestart: true,
+        process.send({ type: 'maintenance-ready', nonce: maintenance.nonce, backupInputs, port: address.port, appVersion: require('./package.json').version,
+            engineVersion: require('./node_modules/@earendil-works/pi-coding-agent/package.json').version,
+            capabilities: { shutdownProof: true },
             healthUrl: process.env.PI_WORKSPACE_INTERNAL_ORIGIN + '/api/access/status',
             runtimePaths: { PI_CODING_AGENT_DIR: agent, PI_MEDIA_DATA_DIR: mediaDataRoot, PI_MEDIA_CONFIG_DIR: mediaProfile.directory,
                 PI_WEB_DEFERRED_FILE: path.resolve(piAgentGateway.deferred.filePath), BAIZELINGTAI_UPDATE_FEED_URL: updateFeed || '',
@@ -1007,23 +1009,20 @@ const httpServer = app.listen(PORT, network.host, () => {
 piAgentGateway.attachWebSocket(httpServer);
 
 const shutdown = require('./server/pi-process-shutdown').registerProcessShutdown(async () => {
-    httpServer.close();
+    const httpClosed = new Promise((resolve, reject) => httpServer.close(error => error ? reject(error) : resolve()));
     try { await piAgentGateway.dispose(); }
     finally { await require('./server/pi-rpc-client').shutdownRpcProcesses(); workspaceAccess.dispose(); }
+    await httpClosed;
+    if (maintenance.managed && process.connected) await new Promise((resolve, reject) => {
+        process.send({ type: 'maintenance-shutdown-complete', nonce: maintenance.nonce }, error => error ? reject(error) : resolve());
+    });
 });
 if (maintenance.managed) {
     process.on('message', message => {
         if (message?.nonce !== maintenance.nonce) return;
+        if (require('./server/pivane-desktop-stop').receiveDesktopRequest({ message, maintenance, stop: piAgentGateway.desktopStop,
+            send: reply => process.send(reply, () => {}) })) return;
         maintenance.receive(message);
-        if (message.type === 'desktop-restart' && /^[a-f0-9-]{36}$/.test(message.id || '')) {
-            try {
-                piAgentGateway.prepareDesktopRestart();
-                process.send({ type: 'desktop-restart-result', nonce: maintenance.nonce, id: message.id, accepted: true });
-            } catch {
-                process.send({ type: 'desktop-restart-result', nonce: maintenance.nonce, id: message.id, accepted: false,
-                    message: '实例仍有任务、Shell、侧聊、预约、媒体、配置或文件操作，请完成后再重启。' });
-            }
-        }
         if (message.type === 'maintenance-shutdown') { maintenance.locked = true; void shutdown(); }
     });
     process.on('disconnect', () => { maintenance.locked = true; void shutdown(); });

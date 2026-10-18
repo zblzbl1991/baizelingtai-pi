@@ -51,6 +51,44 @@ function browserUrl(host, port) {
     return new URL(`http://${address.includes(':') ? `[${address}]` : address}:${port}/`).href;
 }
 
+function desktopStartupTimeout(env) {
+    const value = env.PIVANE_DESKTOP_START_TIMEOUT_MS;
+    if (value === undefined || value === '') return 180000;
+    if (!/^[0-9]+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 10000 || Number(value) > 900000)
+        throw Error('PIVANE_DESKTOP_START_TIMEOUT_MS must be an integer from 10000 to 900000.');
+    return Number(value);
+}
+
+async function withinStartup(promise, deadline) {
+    let timer;
+    try {
+        return await Promise.race([promise, new Promise((_resolve, reject) => {
+            timer = setTimeout(() => reject(Error('Desktop startup timed out')), Math.max(0, deadline - Date.now()));
+        })]);
+    } finally { clearTimeout(timer); }
+}
+
+function listenForDesktopCommands(input, generation, dispatch, lost) {
+    const decoder = new StringDecoder('utf8');
+    let pending = '', discarding = false;
+    input.on('data', bytes => {
+        pending += decoder.write(bytes);
+        let newline;
+        while ((newline = pending.indexOf('\n')) !== -1) {
+            const line = pending.slice(0, newline); pending = pending.slice(newline + 1);
+            if (!discarding && Buffer.byteLength(line) <= 8192) {
+                try {
+                    const command = JSON.parse(line);
+                    if (command?.generation === generation && typeof command.id === 'string' && /^[A-Za-z0-9-]{1,80}$/.test(command.id)) void dispatch(command);
+                } catch { /* Invalid private input grants no authority. */ }
+            }
+            discarding = false;
+        }
+        if (Buffer.byteLength(pending) > 8192) { pending = ''; discarding = true; }
+    });
+    input.on('end', lost); input.on('error', lost);
+}
+
 async function checkReady(url, fetcher = fetch) {
     const response = await fetcher(new URL('api/access/status', url), { redirect: 'error', signal: AbortSignal.timeout(5000) });
     const status = await response.json();
@@ -59,7 +97,7 @@ async function checkReady(url, fetcher = fetch) {
 
 // Only the owning tray's inherited stdin can request stop. No public stop API,
 // PID file, process-name matching, or control token is created.
-function listenForStop(input, stop, restart) {
+function listenForStop(input, stop) {
     const decoder = new StringDecoder('utf8');
     let pending = '';
     input.on('data', bytes => {
@@ -68,46 +106,21 @@ function listenForStop(input, stop, restart) {
         let newline;
         while ((newline = pending.indexOf('\n')) !== -1) {
             const line = pending.slice(0, newline); pending = pending.slice(newline + 1);
-            try {
-                const message = JSON.parse(line);
-                if (message.type === 'stop') void stop();
-                else if (message.type === 'restart' && restart) void restart();
-            } catch { /* Ignore unknown input; never execute it. */ }
+            try { if (JSON.parse(line).type === 'stop') void stop(); } catch { /* Ignore unknown input; never execute it. */ }
         }
     });
     input.on('end', () => { void stop(); });
     input.on('error', () => { void stop(); });
 }
 
-function prepareDesktopRestart(launcher, { supported = false, onWaiting = () => {}, timeoutMs = 10000 } = {}) {
-    if (!supported) return Promise.reject(new Error('当前运行版本不支持托盘重启，请先正常退出并重新打开启动入口。'));
-    const child = launcher.child, id = randomUUID();
-    if (launcher.closed || launcher.operation || !child?.connected) return Promise.reject(new Error('服务尚未就绪或正在维护，请稍后重启。'));
-    return new Promise((resolve, reject) => {
-        const cleanup = () => { clearTimeout(timer); child.off('message', receive); child.off('exit', exited); child.off('disconnect', disconnected); };
-        const receive = message => {
-            if (message?.type !== 'desktop-restart-result' || message.nonce !== launcher.nonce || message.id !== id || launcher.child !== child) return;
-            cleanup();
-            if (message.accepted === true) resolve();
-            else reject(new Error(message.message || '实例当前不能重启，请完成任务后重试。'));
-        };
-        const exited = () => { cleanup(); reject(new Error('服务已退出，重启检查未完成。')); };
-        const disconnected = () => { cleanup(); reject(new Error('服务连接已断开，重启结果尚未确认。')); };
-        // A slow response does not cancel the request or allow another submission.
-        const timer = setTimeout(onWaiting, timeoutMs);
-        child.on('message', receive); child.once('exit', exited); child.once('disconnect', disconnected);
-        try { child.send({ type: 'desktop-restart', nonce: launcher.nonce, id }, error => { if (error) disconnected(); }); }
-        catch (error) { cleanup(); reject(error); }
-    });
-}
-
 async function startDesktop(options = {}) {
     const root = fs.realpathSync.native(options.root);
+    if (options.controlled) return startDesktopService({ ...options, root });
     const startupEnvironment = { ...(options.environment || process.env) };
     loadLocalEnv(path.join(root, '.env'), startupEnvironment);
     const startup = await require('./pivane-desktop-startup').createDesktopStartup({ root, reservedPorts: [Number(startupEnvironment.PORT || 11408)] });
     try {
-        options.emit({ type: 'waiting', url: startup.url });
+        options.emit({ type: 'waiting', url: startup.url, instance: startup.instance, generation: startup.generation });
         return await startDesktopService({ ...options, root, startup });
     } catch (error) {
         startup.fail(error.desktopMessage || outputRedactor(options.environment || process.env)(error.message));
@@ -117,15 +130,17 @@ async function startDesktop(options = {}) {
 }
 
 async function startDesktopService({ root, environment = process.env, emit, log = text => process.stderr.write(text + '\n'),
-    Manager = ManagedLauncher, Network = WorkspaceNetworkService, fetcher = fetch, forkServer = fork, startup } = {}) {
+    Manager = ManagedLauncher, Network = WorkspaceNetworkService, fetcher = fetch, forkServer = fork, startup, controlled = false, generation, input = process.stdin } = {}) {
     if (Number(process.versions.node.split('.')[0]) < 22) throw Error('The desktop launcher requires Node.js 22 or later.');
     root = fs.realpathSync.native(root);
     if (fs.existsSync(path.join(root, '.pivane-runtime/service/installation.json'))) {
         throw Error('This installation already has a background service. Use its desktop shortcut or stop and uninstall that service before enabling the tray.');
     }
     const env = desktopEnvironment(root, environment);
+    const startupTimeoutMs = desktopStartupTimeout(env);
+    const startupDeadline = Date.now() + startupTimeoutMs;
     // Resolve the native Pi identity with the same public API as normal installation.
-    const { getAgentDir } = await import('@earendil-works/pi-coding-agent');
+    const { getAgentDir } = await withinStartup(import('@earendil-works/pi-coding-agent'), startupDeadline);
     env.PI_CODING_AGENT_DIR ||= getAgentDir();
     if (!path.isAbsolute(env.PI_CODING_AGENT_DIR)) throw Error('PI_CODING_AGENT_DIR must be an absolute path.');
     const network = new Network({ root, env });
@@ -140,65 +155,86 @@ async function startDesktopService({ root, environment = process.env, emit, log 
         if (logFd !== undefined) fs.writeSync(logFd, new Date().toISOString() + ' ' + safe + '\n');
         log(safe);
     }
-    const restartCapableChildren = new WeakSet();
-    const launcher = new Manager({ root, env, networkEnvironment, forkServer: (file, args, options) => {
+    const launcher = new Manager({ root, env, networkEnvironment, startupTimeoutMs, requireShutdownProof: true,
+        onCleanupUnknown: error => { cleanupUnknown=true; emit({ type: 'error', code: 'DESKTOP_CLEANUP_UNKNOWN', message: redact(error.message), clean: false }); },
+        forkServer: (file, args, options) => {
         const child = forkServer(file, args, { ...options, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], windowsHide: true });
-        child.on('message', message => {
-            if (message?.nonce === launcher.nonce && message.type === 'maintenance-ready' && message.desktopRestart === true) restartCapableChildren.add(child);
-        });
         for (const name of ['stdout', 'stderr']) {
             const lines = outputLines(name, (_stream, text) => writeLog(text), redact);
             child[name].on('data', bytes => lines.write(bytes)); child[name].on('end', () => lines.end());
         }
         return child;
     } });
-    let stopping;
+    let stopping, ready = false, operationId, commandPending = false, cleanupUnknown = false;
     const stop = () => {
         if (!stopping) stopping = Promise.resolve().then(async () => {
             emit({ type: 'stopping' });
             try { await launcher.close(); }
             finally {
-                try { await startup.close({ allowFailureView: true }); }
+                try { await startup?.close({ allowFailureView: true }); }
                 finally { fs.closeSync(logFd); logFd = undefined; }
             }
+            if (controlled) emit({ type: 'stopped', clean: true, ...(operationId ? { operationId } : {}) });
         });
         return stopping;
     };
-    const shutdown = require('./pi-process-shutdown').registerProcessShutdown(stop);
-    let ready = false, restarting;
-    const restart = () => {
-        if (stopping || restarting) return restarting;
-        if (!ready) { emit({ type: 'restart-blocked', message: '服务尚未就绪，请稍后重启。' }); return; }
-        // Reserve before the first IPC await. The owning tray reopens a fresh Node
-        // runner only after this one has shut down successfully and drained its pipes.
-        restarting = prepareDesktopRestart(launcher, { supported: restartCapableChildren.has(launcher.child), onWaiting: () => emit({ type: 'restart-pending', message: '正在等待重启检查，请勿重复提交。' }) })
-            .then(() => { if (!stopping) emit({ type: 'restarting' }); return shutdown(); })
-            .catch(error => { if (!stopping) emit({ type: 'restart-blocked', message: redact(error.message) }); })
-            .finally(() => { if (!stopping) restarting = null; });
-        return restarting;
-    };
-    listenForStop(process.stdin, shutdown, restart);
+    const shutdown = require('./pi-process-shutdown').registerProcessShutdown(stop, { exitOnFailure: !controlled,
+        onFailure: error => { cleanupUnknown=true; if (controlled) emit({ type: 'error', code: 'DESKTOP_CLEANUP_UNKNOWN', message: redact(error.message), clean: false }); } });
+    if (controlled) {
+        listenForDesktopCommands(input, generation, async command => {
+            const response = value => emit({ ...value, id: command.id });
+            if (operationId && stopping && ['snapshot','execute-stop'].includes(command.type)) {
+                response({ type: 'snapshot', accepted: true, operationId, cleanup: cleanupUnknown ? 'unknown' : 'pending', complete: false,
+                    revision: `desktop:${generation}`, blockers: [{ type: 'cleanup', count: 1, label: cleanupUnknown ? '服务清理尚未获确认' : '服务清理仍在进行' }], scheduled: { futureCount: 0, latestCount: 0 } });
+                return;
+            }
+            if (commandPending) { response({ type: 'error', code: 'DESKTOP_BUSY', message: 'A service control request is already pending.' }); return; }
+            commandPending = true;
+            try {
+                if (command.type === 'stop') {
+                    if (ready || !['stop', 'exit'].includes(command.action)) throw Object.assign(Error('Review service blockers before stopping.'), { code: 'DESKTOP_REVIEW_REQUIRED' });
+                    await shutdown(); return;
+                }
+                if (!ready || stopping) throw Object.assign(Error('Service control is not ready.'), { code: 'DESKTOP_NOT_READY' });
+                const method = { snapshot: 'snapshot', 'review-stop': 'review', 'execute-stop': 'execute' }[command.type];
+                if (!method) throw Object.assign(Error('Unknown service control request.'), { code: 'DESKTOP_INVALID_REQUEST' });
+                const request = method === 'review' ? { action: command.action } : method === 'execute' ? { ticket: command.ticket, draftsSaved: command.draftsSaved, externalWritersStopped: command.externalWritersStopped } : {};
+                const result = await launcher.desktopRequest(method, request);
+                if (!result || typeof result !== 'object') throw Error('Invalid service control response.');
+                if (result.accepted === true && typeof result.operationId === 'string' && ['execute', 'snapshot'].includes(method)) {
+                    operationId = result.operationId;
+                    response({ type: 'stop-accepted', operationId });
+                    await shutdown(); return;
+                }
+                response({ ...result, versions: launcher.runningVersions, type: method === 'review' ? 'stop-review' : 'snapshot' });
+            } catch (error) { response({ type: 'error', code: error.code || 'DESKTOP_FAILED', message: redact(error.message) }); }
+            finally { commandPending = false; }
+        }, () => { void shutdown(); });
+    } else listenForStop(input, shutdown);
     try {
         emit({ type: 'starting', logFile });
-        await launcher.start();
+        await withinStartup(launcher.start(), startupDeadline);
         if (stopping) { await stopping; return; }
         const url = browserUrl(networkEnvironment.HOST, Number(launcher.env.PORT || env.PORT || 11408));
-        await checkReady(url, fetcher);
+        await withinStartup(checkReady(url, fetcher), startupDeadline);
         if (!stopping) {
             ready = true;
-            startup.ready(url);
-            emit({ type: 'ready', url, logFile, agentDir: env.PI_CODING_AGENT_DIR, mediaDir: env.PI_MEDIA_DATA_DIR });
+            startup?.ready(url);
+            emit({ type: 'ready', url, logFile, versions: launcher.runningVersions, agentDir: env.PI_CODING_AGENT_DIR, mediaDir: env.PI_MEDIA_DATA_DIR });
         }
     } catch (error) {
         if (stopping) { await stopping; return; }
         error.desktopMessage = redact(error.message);
-        startup.fail(error.desktopMessage);
+        startup?.fail(error.desktopMessage);
         emit({ type: 'error', message: error.desktopMessage });
         error.desktopReported = true;
-        try { await stop(); } catch (cleanup) { log(redact(cleanup.message)); }
+        try { await stop(); } catch (cleanup) {
+            log(redact(cleanup.message));
+            if (controlled) { error.desktopCleanupUnknown = true; emit({ type: 'error', code: 'DESKTOP_CLEANUP_UNKNOWN', message: redact(cleanup.message), clean: false }); }
+        }
         throw error;
     }
     return { launcher, stop, shutdown };
 }
 
-module.exports = { installationId, desktopEnvironment, browserUrl, checkReady, listenForStop, prepareDesktopRestart, startDesktop };
+module.exports = { installationId, desktopEnvironment, desktopStartupTimeout, browserUrl, checkReady, listenForStop, listenForDesktopCommands, startDesktop };

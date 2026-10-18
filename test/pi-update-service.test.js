@@ -222,11 +222,12 @@ test('concurrent checks and repeated failure checks are coalesced and cached for
     let now = 0;
     const { service, requests } = fixture([release('1.0.0-rc.2')], { now: () => now });
     const first = service.check('preview'); assert.equal(first, service.check('preview'));
+    assert.equal(service.stopReadiness(), 1, 'a shared in-flight version check blocks stopping');
     const [a, b] = await Promise.all([first, service.check('preview')]);
     assert.deepEqual(a, b); assert.equal(requests.length, 2); assert.equal(a.pivane.status, 'current');
     now += 299999; await service.check('preview'); assert.equal(requests.length, 2);
     now += 1; await service.check('preview'); assert.equal(requests.length, 4);
-    assert.equal(service.inflight.size, 0);
+    assert.equal(service.stopReadiness(), 0);
 });
 
 test('missing stable releases, partial failure and mismatched dependencies remain explicit without raw errors', async () => {

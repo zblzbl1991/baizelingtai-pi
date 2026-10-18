@@ -31,6 +31,8 @@ class AgentWorker extends EventEmitter {
         this.cwd = options.cwd;
         this.sessionPath = options.sessionPath;
         this.sessionId = options.sessionId;
+        this.isSuspended = options.isSuspended || (() => false);
+        this.onActivity = options.onActivity || (() => {});
         this.activity = new PiRuntimeActivity();
         this.compactPending = false;
         this.promptPending = 0;
@@ -114,6 +116,8 @@ class AgentWorker extends EventEmitter {
     }
 
     async request(type, payload = {}, timeoutMs, operationToken) {
+        if (this.isSuspended()) throw Object.assign(new Error('实例正在维护，请等待完成'), { code: 'SESSION_BUSY' });
+        if (!type.startsWith('get_')) this.onActivity();
         if (this.disposed || this.restarting) throw new Error('Pi runtime 已关闭或正在重新打开');
         if (['bash', 'abort_bash', 'set_steering_mode', 'set_follow_up_mode'].includes(type)) throw new Error('请使用受控运行入口');
         if (this.cronRun && (!this.operation || operationToken !== this.operation) && !type.startsWith('get_') && type !== 'abort') throw new Error('定时任务正在运行或恢复设置，请等待结束或在定时任务页核对');
@@ -261,6 +265,8 @@ class AgentWorker extends EventEmitter {
     }
 
     async exclusive(callback, { idle = true, cron = false } = {}) {
+        if (this.isSuspended()) throw Object.assign(new Error('实例正在维护，请等待完成'), { code: 'SESSION_BUSY' });
+        this.onActivity();
         if (this.cronRun && !cron || idle && this.shell.busy || this.disposed || this.operation || this.controlPending || this.promptPending || this.compactPending || idle && (this.activity.snapshot().busy || this.historyWriting)) {
             const error = new Error('会话正在运行或处理其他操作，请等待空闲');
             error.code = 'SESSION_BUSY';
@@ -714,6 +720,7 @@ class AgentWorker extends EventEmitter {
     }
 
     _broadcast(event) {
+        this.onActivity();
         // Pi 0.86 exposes persisted system prompt checkpoints as message events.
         // They are internal transcript state and must not enter the browser chat,
         // side-chat event stream, or extension UI history.
@@ -770,6 +777,8 @@ class AgentWorker extends EventEmitter {
 class PiAgentSupervisor extends EventEmitter {
     constructor(options = {}) {
         super();
+        this.isSuspended = options.isSuspended || (() => false);
+        this.onActivity = options.onActivity || (() => {});
         this.idleMs = options.idleMs || Number(process.env.PI_WEB_IDLE_MS) || DEFAULT_IDLE_MS;
         this.healthTimeoutMs = options.healthTimeoutMs || DEFAULT_HEALTH_TIMEOUT_MS;
         this.startupTimeoutMs = options.startupTimeoutMs; // Unset: PIVANE_WEB_STARTUP_TIMEOUT_MS or the default.
@@ -785,6 +794,8 @@ class PiAgentSupervisor extends EventEmitter {
     }
 
     async getWorker({ cwd, sessionPath, sessionId }) {
+        if (this.isSuspended()) throw Object.assign(new Error('实例正在维护，请等待完成'), { code: 'SESSION_BUSY' });
+        this.onActivity();
         if (this.disposing) throw new Error('Pi supervisor is shutting down');
         if (this.removing.has(sessionPath)) throw new Error('Session is being deleted');
         if (this.editing.has(sessionPath)) throw new Error('Session metadata is being changed');
@@ -797,7 +808,8 @@ class PiAgentSupervisor extends EventEmitter {
 
         const starting = (async () => {
             const env = this.workerEnvironment ? await this.workerEnvironment({ cwd, sessionId, sessionPath }) : {};
-            const worker = new AgentWorker({ cwd, sessionPath, sessionId, env, startupTimeoutMs: this.startupTimeoutMs });
+            const worker = new AgentWorker({ cwd, sessionPath, sessionId, env, startupTimeoutMs: this.startupTimeoutMs,
+                isSuspended: this.isSuspended, onActivity: this.onActivity });
             worker.on('completion', notice => this.emit('completion', notice, worker));
             worker.on('attention', event => this.emit('attention', event));
             worker.on('exit', () => {
@@ -846,8 +858,11 @@ class PiAgentSupervisor extends EventEmitter {
     }
 
     async createEphemeralWorker(cwd, options = {}) {
+        if (this.isSuspended()) throw Object.assign(new Error('实例正在维护，请等待完成'), { code: 'SESSION_BUSY' });
+        this.onActivity();
         if (this.disposing) throw new Error('Pi supervisor is shutting down');
-        const worker = new AgentWorker({ startupTimeoutMs: this.startupTimeoutMs, ...options, cwd, noSession: true });
+        const worker = new AgentWorker({ startupTimeoutMs: this.startupTimeoutMs, ...options, cwd, noSession: true,
+            isSuspended: this.isSuspended, onActivity: this.onActivity });
         this.ephemeralWorkers.add(worker);
         const forget = () => this.ephemeralWorkers.delete(worker);
         worker.once('exit', forget);
@@ -884,6 +899,16 @@ class PiAgentSupervisor extends EventEmitter {
     isIdle() {
         return !this.disposing && !this.starting.size && !this.removing.size && !this.editing.size && !this.moving.size && !this.ephemeralWorkers.size
             && [...this.workers.values()].every(worker => worker.isIdle() && !worker.retainsBackgroundWork());
+    }
+
+    stopReadiness() {
+        const rows = [{ count: Number(this.disposing) + this.starting.size + this.removing.size + this.editing.size + this.moving.size + this.ephemeralWorkers.size }];
+        for (const worker of this.workers.values()) {
+            const count = worker.lifecycle().blockers.length + Number(worker.retainsBackgroundWork());
+            if (count) rows.push({ count, cwd: worker.cwd, sessionId: worker.sessionId });
+        }
+        if (!this.isIdle() && !rows.some(row => row.count)) throw new Error('Incomplete worker readiness');
+        return rows;
     }
 
     // Per-session idleness for background work sourced from one native session.
@@ -983,7 +1008,8 @@ class PiAgentSupervisor extends EventEmitter {
         const workers = [...this.workers.values(), ...this.ephemeralWorkers];
         this.workers.clear();
         this.ephemeralWorkers.clear();
-        await Promise.allSettled(workers.map(worker => worker.dispose()));
+        const results = await Promise.allSettled(workers.map(worker => Promise.resolve().then(() => worker.dispose())));
+        if (results.some(result => result.status === 'rejected')) throw new Error('Pi worker cleanup could not be confirmed');
     }
 }
 

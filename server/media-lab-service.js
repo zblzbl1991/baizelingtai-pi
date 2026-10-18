@@ -91,6 +91,10 @@ const REMOTE_ADAPTERS = new Set(['http-provider', 'http-json', 'minimax-video'])
 const slotOf = model => ({ pool: REMOTE_ADAPTERS.has(model?.adapter) ? 'remote' : 'local', video: model?.kind === 'video' });
 
 class MediaLabService {
+    stopReadiness() {
+        return Number(Boolean(this.inFlight)) + Number(Boolean(this.chatRequests?.preparing)) + (this.chatRequests?.waiting?.length || 0)
+            + (this.pendingReviews || 0) + Number(Boolean(this.providerService?.busy)) + Number(Boolean(this.providerService?.active));
+    }
     constructor(options) {
         Object.assign(this, options);
         this.tickets = new Map();
@@ -367,6 +371,10 @@ class MediaLabService {
         const slot = slotOf(model);
         if (slot.pool === 'local') return this.running.local < SLOT_LIMITS.local;
         return this.running.remote < SLOT_LIMITS.remote && (!slot.video || this.running.video < SLOT_LIMITS.video);
+    }
+
+    get pendingReviews() {
+        return [...this.tickets.values()].filter(ticket => ticket.status === 'reviewed' && ticket.expiresAt > this.now()).length;
     }
 
     onSlotFree(listener) { this.slotListeners.add(listener); return () => this.slotListeners.delete(listener); }
