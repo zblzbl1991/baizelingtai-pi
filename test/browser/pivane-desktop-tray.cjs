@@ -6,6 +6,7 @@ const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { createApplication } = require('../desktop-launcher-fixture.cjs');
+const { selectBrowserTargets } = require('./targets.cjs');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function main() {
@@ -31,10 +32,11 @@ async function main() {
         }
         throw Error(`Tray state timeout: ${JSON.stringify(state())} ${diagnostic}`);
     }
-    const pageErrors = []; let retainedContext, workbenchClosed;
+    const pageErrors = []; let retainedContext, workbenchClosed, failed = false;
     try {
         const initial = await wait(value => value.waitingUrl);
-        for (const width of [1440, 390]) {
+        const widths = selectBrowserTargets([1440, 390]);
+        for (const width of widths) {
             const context = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
             try {
                 const page = await context.newPage(); page.on('pageerror', error => pageErrors.push(error.message));
@@ -51,7 +53,7 @@ async function main() {
                 await page.waitForURL(actual.url);
                 assert.equal(await page.title(), '白泽灵台');
                 assert.ok(reads >= 2, 'read-only recovery reaches actual current service');
-                if(width===390){
+                if(width===widths.at(-1)){
                     const created=await fetch(new URL('api/pi/sessions',actual.url),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cwd:root,name:'Synthetic browser idle workbench'})});
                     assert.equal(created.status,201);const session=await created.json();
                     const socketOpened=page.waitForEvent('websocket',{predicate:socket=>socket.url().endsWith('/api/pi/ws')});
@@ -60,6 +62,8 @@ async function main() {
                     const socket=await socketOpened;
                     workbenchClosed=new Promise(resolve=>socket.on('close',resolve));
                     await page.waitForFunction(()=>document.getElementById('pi-connection-text')?.textContent==='已连接');
+                    // Finish bootstrap reads before obtaining a stop ticket bound to work activity.
+                    await page.waitForLoadState('networkidle');
                     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
                     retainedContext=context;
                 }
@@ -69,7 +73,13 @@ async function main() {
         let reviewed;
         for(let attempt=0;attempt<5;attempt++){
             const previous=state().reviewId;command('stop');
-            reviewed=await wait(value=>value.reviewId!==previous&&!value.pending);
+            reviewed=await wait(value=>{
+                if(value.reviewId!==previous&&!value.pending)return true;
+                // A periodic snapshot can occupy the tray between two smoke reports.
+                // Re-ask only the read-only review; never replay stop execution.
+                if(!value.pending&&!value.confirm)command('stop');
+                return false;
+            });
             if(reviewed.confirm)break;
             // Bootstrap resource reads may still be finishing after the socket
             // opens. A blocked review ends; explicitly ask again only once the
@@ -81,7 +91,8 @@ async function main() {
         await workbenchClosed;
         await retainedContext.close();retainedContext=null;
         assert.equal(child.exitCode, null, 'actual service stop retains the native tray');
-        const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true });
+        const width = widths.at(-1);
+        const context = await browser.newContext({ viewport: { width, height: 844 }, isMobile: width < 900 });
         try {
             const page = await context.newPage(); page.on('pageerror', error => pageErrors.push(error.message));
             await page.goto(initial.waitingUrl);
@@ -94,11 +105,15 @@ async function main() {
             assert.equal(await page.title(), '白泽灵台');
         } finally { await context.close(); }
         assert.deepEqual(pageErrors, []);
-        console.log(JSON.stringify({ ok: true, realNativeTray: true, realControlledService: true, viewports: [1440, 390], stableEntryAcrossRestart: true, idleWorkbenchOpenThroughStop: true, pageErrors }));
-    } finally {
+        console.log(JSON.stringify({ ok: true, realNativeTray: true, realControlledService: true, viewports: widths, stableEntryAcrossRestart: true, idleWorkbenchOpenThroughStop: true, pageErrors }));
+    } catch (error) { failed = true; throw error; } finally {
         await browser.close();
         if (child.exitCode === null) command('finish');
         await exited;
+        if (failed) {
+            const report = path.join(root, '.pivane-runtime/desktop/smoke-result.json');
+            if (fs.existsSync(report)) console.error(JSON.stringify({ nativeErrors: JSON.parse(fs.readFileSync(report, 'utf8')).filter(event => event.type === 'error') }));
+        }
         fs.rmSync(base, { recursive: true, force: true });
     }
 }

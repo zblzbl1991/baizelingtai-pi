@@ -63,7 +63,7 @@ async function main() {
             await lostPage.waitForFunction(() => document.getElementById('startup-title').textContent === '正在重新连接');
             assert.equal(lostPage.url(), lost.url);
         } finally { await lostContext.close(); await lost.close(); }
-        for (const width of [1440, 390]) {
+        for (const width of selectBrowserTargets([1440, 390])) {
             const recovering = await createDesktopStartup({ root });
             const recoveryContext = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
             const recoveryPage = await recoveryContext.newPage(); recoveryPage.on('pageerror', error => errors.push(error.message));
