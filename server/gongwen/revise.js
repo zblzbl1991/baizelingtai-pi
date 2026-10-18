@@ -7,11 +7,13 @@ const { officeZip, xml, parseDocument } = require('../pi-document-parser');
 const { inspectTables } = require('./revision-tables');
 const { inspect } = require('./checks');
 const { finish } = require('./report');
+const { formatSnapshot, formatChanges } = require('./format-changes');
 const { MAX_SOURCE } = require('./limits');
 const { fail } = require('../pi-file-scope');
 const { parseParagraph, applyEdits, unitalic, elementAt } = require('../../vendor/gongwen-kit/lib/fix/runs');
 const { editsFor } = require('../../vendor/gongwen-kit/lib/fix/text-rules');
 const { fixStyles, fixDocument, redStyleIds } = require('../../vendor/gongwen-kit/lib/fix/layout');
+const { children, editRPr, editPPr } = require('../../vendor/gongwen-kit/lib/fix/ooxml');
 const { addComments, paragraphsOf } = require('../../vendor/gongwen-kit/lib/fix/comments');
 const { rejectAll } = require('../../vendor/gongwen-kit/lib/fix/revisions');
 const PARAGRAPH = /<w:p(?:\s[^>]*)?>(?:(?!<w:p[\s>])[\s\S])*?<\/w:p>/g;
@@ -60,7 +62,29 @@ function protectedStyles(styles) {
     }
     return protectedIds;
 }
-function normalize(document, styles, headingIds, rev) {
+function normativeStyleTypography(styles, headingIds, protectedIds) {
+    return styles.replace(/<w:style\b[^>]*w:type="paragraph"[^>]*>[\s\S]*?<\/w:style>/g, style => {
+        const id = /\bw:styleId="([^"]+)"/.exec(style)?.[1];
+        const title = id === 'Title' || /<w:name\b[^>]*w:val="(?:title|公文标题)"/i.test(style);
+        if (protectedIds.has(id) || !/\bw:default="1"/.test(style) && !headingIds[id] && !title) return style;
+        const open = /^<w:style\b[^>]*>/.exec(style)[0], content = children(style.slice(open.length, -'</w:style>'.length));
+        const rpr = content.find(child => child.name === 'w:rPr');
+        const inner = rpr ? rpr.xml.replace(/^<w:rPr(?:\s[^>]*)?\s*\/>$/, '').replace(/^<w:rPr(?:\s[^>]*)?>|<\/w:rPr>$/g, '') : '';
+        const set = { 'w:color': '<w:color w:val="000000"/>' };
+        if (title) Object.assign(set, { 'w:rFonts': '<w:rFonts w:ascii="方正小标宋简体" w:hAnsi="方正小标宋简体" w:eastAsia="方正小标宋简体"/>',
+            'w:sz': '<w:sz w:val="44"/>', 'w:szCs': '<w:szCs w:val="44"/>' });
+        const replacement = `<w:rPr>${editRPr(inner, { set, remove: ['w:b', 'w:bCs', 'w:i', 'w:iCs'] })}</w:rPr>`;
+        if (rpr) rpr.xml = replacement; else content.push({ name: 'w:rPr', xml: replacement });
+        if (title) {
+            const ppr = content.find(child => child.name === 'w:pPr');
+            const prior = ppr ? ppr.xml.replace(/^<w:pPr\s*\/>$/, '').replace(/^<w:pPr>|<\/w:pPr>$/g, '') : '';
+            const value = `<w:pPr>${editPPr(prior, { set: { 'w:jc': '<w:jc w:val="center"/>', 'w:ind': '<w:ind w:firstLine="0" w:firstLineChars="0"/>' } })}</w:pPr>`;
+            if (ppr) ppr.xml = value; else content.splice(content.findIndex(child => child.name === 'w:rPr'), 0, { name: 'w:pPr', xml: value });
+        }
+        return open + content.map(child => child.xml).join('') + '</w:style>';
+    });
+}
+function normalize(document, styles, headingIds, rev, { layout = false } = {}) {
     const protectedRanges = ranges(document, ['w:tbl', 'w:txbxContent']);
     const numberedStyles = new Set([...styles.matchAll(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g)]
         .filter(m => /<w:numPr>/.test(m[2])).map(m => m[1]));
@@ -83,7 +107,7 @@ function normalize(document, styles, headingIds, rev) {
             corrections.push(record);
         }
         let output = result.xml || p;
-        if (!para.tokens.some(token => token.kind === 'opaque')) {
+        if (layout && !para.tokens.some(token => token.kind === 'opaque')) {
             const italic = unitalic(output, rev); output = italic.xml;
             if (italic.n) corrections.push({ where: `原稿段落 ${paragraph}`, rules: ['斜体改正体'], before: '斜体', after: '正体' });
         }
@@ -110,6 +134,17 @@ async function revise(raw, bytes, directory, checkpoint = () => {}, implementati
     if (request.action === 'revise' && zip.file(/(?:^|\/)origin\.sigs$|^_xmlsignatures\//i).length) throw fail('带数字签名的公文仅支持检查，不能自动修改；原件保留', 415, 'GONGWEN_SIGNED');
     let document = original, styles = await read(zip, 'word/styles.xml'), rels = await read(zip, 'word/_rels/document.xml.rels'),
         types = await read(zip, '[Content_Types].xml'), settings = await read(zip, 'word/settings.xml');
+    const formatParts = async () => {
+        const parts = { 'word/document.xml': document, 'word/styles.xml': styles, 'word/settings.xml': settings };
+        if (rels) for (const relation of xml(Buffer.from(rels)).children.filter(child => typeof child === 'object')) {
+            if (!/\/footer$/.test(relation.attrs.Type || '') || relation.attrs.TargetMode === 'External') continue;
+            const part = path.posix.normalize(path.posix.join('word', relation.attrs.Target || ''));
+            if (part.startsWith('word/') && !part.includes('..') && zip.file(part)) parts[part] = await read(zip, part);
+        }
+        return parts;
+    };
+    const originalFormat = request.action === 'revise' && request.layout ? formatSnapshot(await formatParts()) : null;
+    let changedFormat = { formatChanges: [], formatChangesTotal: 0, formatChangesTruncated: false };
     const previousRevisions = revisionFragments(document + styles);
     const author = `白泽灵台公文修订-${randomUUID()}`, date = new Date().toISOString(), notes = [], corrections = [];
     let next = 1, headingIds = {}, skipped = 0, layoutApplied = false;
@@ -133,6 +168,7 @@ async function revise(raw, bytes, directory, checkpoint = () => {}, implementati
                 .filter(match => protectedIds.has(match[1])).map(match => [match[1], match[0]]));
             const result = fixStyles(priorStyles.document, notes); styles = priorStyles.restore(result.xml); headingIds = result.headingIds;
             styles = styles.replace(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>[\s\S]*?<\/w:style>/g, (value, id) => preservedStyles.get(id) || value);
+            styles = normativeStyleTypography(styles, headingIds, protectedIds);
             const priorSections = protectProperties(document, ['w:sectPrChange']); document = priorSections.document;
             document = fixDocument(document, { headingIds, titleFont: '方正小标宋简体', redStyles: protectedStyles(styles) }, notes);
             document = priorSections.restore(document);
@@ -140,7 +176,8 @@ async function revise(raw, bytes, directory, checkpoint = () => {}, implementati
             ({ document, rels, types, settings } = await require('./revision-layout').layoutPackage(zip, document, { rels, types, settings }, notes)); layoutApplied = true;
         } else if (request.layout) notes.push(styles && settings ? '原稿含主题色，保留版式以保护无法可靠识别的版头' : '原稿缺少样式或排版设置部件，保留原有版式');
         if (!Object.keys(headingIds).length) for (const match of styles.matchAll(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>[\s\S]*?<w:name w:val="heading ([1-4])"/gi)) headingIds[match[1]] = +match[2];
-        const result = normalize(document, styles, headingIds, { nextId: () => next++, author, date });
+        if (layoutApplied) changedFormat = formatChanges(originalFormat, formatSnapshot(await formatParts()));
+        const result = normalize(document, styles, headingIds, { nextId: () => next++, author, date }, { layout: layoutApplied });
         document = result.document; corrections.push(...result.corrections); skipped = result.skipped;
         if (layoutApplied) ({ rels, types } = await require('./revision-fonts').titleAlternative(zip, rels, types));
         if (JSON.stringify(visibleParagraphs(rejectAll(document, author))) !== JSON.stringify(visibleParagraphs(original))) throw Error('拒绝本轮修订后与原文不一致，未交付修改稿');
@@ -195,6 +232,7 @@ async function revise(raw, bytes, directory, checkpoint = () => {}, implementati
     checks.faults.push(...finalChecks.faults); checks.stages = finalChecks.stages;
     const report = finish(input, checks, corrections, request.action === 'revise' ? 1 : 0);
     Object.assign(report, { operation: request.action, editing: 'complete', originalSnapshot: request.action === 'inspect', checkView: 'proposed', revisionAuthor: author,
+        ...changedFormat,
         layoutApplied, layoutNotes: notes, fontScope: layoutApplied ? 'normative' : 'reference-only', comments: { placed: comments.placed, unplaced: comments.unplaced }, reviewPending: corrections.length > 0, previousRevisions: previousRevisions.length });
     if (report.reviewPending && report.status === 'checked') { report.status = 'needs-review'; report.label = '待核对草稿'; }
     report.coverage = ['检查按建议修订后的可见文本执行；Word 审阅中仍须逐条接受或拒绝本轮修订',
