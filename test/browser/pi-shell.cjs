@@ -158,6 +158,6 @@ async function run(browser, width, legacy = false) {
 }
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const width of selectBrowserTargets([1440, 393, 320])) await run(browser, width); await run(browser, 393, true); }
+    try { for (const width of selectBrowserTargets([1440, 393, 320])) await run(browser, width); if (browserTargetEnabled(393)) await run(browser, 393, true); }
     finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

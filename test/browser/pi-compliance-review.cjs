@@ -1,3 +1,4 @@
+const { selectBrowserTargets } = require('./targets.cjs');
 const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http');
 const { once } = require('node:events'), express = require('express'), { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = path.resolve(__dirname, '../..'), temporary = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-review-browser-'))), agent = path.join(temporary, 'agent'), cwd = path.join(temporary, 'project'); fs.mkdirSync(agent); fs.mkdirSync(cwd);
@@ -76,5 +77,5 @@ async function run(browser, origin, width) {
 (async () => {
     const app = express(); for (const [name, directory] of [['marked', 'marked/lib'], ['dompurify', 'dompurify/dist'], ['highlight', '@highlightjs/cdn-assets']]) app.use('/vendor/' + name, express.static(path.join(root, 'node_modules', directory))); app.use(express.static(path.join(root, 'public'))); access.mount(app); app.use(express.json({ limit: '32mb' })); const router = express.Router(); router.use(access.middleware()); mountCompliance(router, service); router.get('/profiles', async (_req, res) => res.json(await profiles.list())); app.use('/api/pi', router);
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening'); const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true, args: ['--no-sandbox'] });
-    try { for (const width of [1440, 393]) await run(browser, `http://127.0.0.1:${server.address().port}`, width); } finally { await browser.close(); await service.dispose(); await documents.dispose(); access.dispose(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); fs.rmSync(temporary, { recursive: true, force: true }); }
+    try { for (const width of selectBrowserTargets([1440, 393])) await run(browser, `http://127.0.0.1:${server.address().port}`, width); } finally { await browser.close(); await service.dispose(); await documents.dispose(); access.dispose(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); fs.rmSync(temporary, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

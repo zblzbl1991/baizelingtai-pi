@@ -1,3 +1,4 @@
+const { selectBrowserTargets } = require('./targets.cjs');
 const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http');
 const { once } = require('node:events'), express = require('express');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -185,6 +186,6 @@ async function run(browser, origin, width, theme) {
     process.env.PI_WORKSPACE_INTERNAL_ORIGIN = `http://127.0.0.1:${server.address().port}`;
     fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR || os.tmpdir(), { recursive: true });
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const width of (process.env.PIVANE_COMPLIANCE_WIDTHS || '1440,393').split(',').map(Number)) await run(browser, `http://127.0.0.1:${server.address().port}`, width, width < 900 ? 'dark' : 'daylight'); }
+    try { for (const width of selectBrowserTargets((process.env.PIVANE_COMPLIANCE_WIDTHS || '1440,393').split(',').map(Number))) await run(browser, `http://127.0.0.1:${server.address().port}`, width, width < 900 ? 'dark' : 'daylight'); }
     finally { await browser.close(); await gateway.dispose(); access.dispose(); server.closeAllConnections(); provider.closeAllConnections(); await Promise.all([new Promise(r => server.close(r)),new Promise(r=>provider.close(r))]); fs.rmSync(temporary, { recursive: true, force: true }); assert.equal(modelCalls,0); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
