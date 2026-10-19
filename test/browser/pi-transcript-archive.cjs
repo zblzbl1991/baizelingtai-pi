@@ -1,3 +1,4 @@
+const { selectBrowserTargets } = require('./targets.cjs');
 // Synthetic Chromium regression: native SessionManager is the only history source.
 // No real gateway, provider, session files or service is used.
 const assert = require('node:assert/strict');
@@ -489,7 +490,7 @@ async function boundaries(browser, sdk) {
     const sdk = await import('@earendil-works/pi-coding-agent');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'], headless: true });
     try {
-        for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }]) await core(browser, sdk, viewport);
+        for (const viewport of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }])) await core(browser, sdk, viewport);
         await boundaries(browser, sdk);
         console.log('PASS archive: all 16 scenario groups; desktop 1440/mobile 393/320, daylight/mint/dark; no pageerror or forbidden writes');
     } finally { await browser.close(); }
