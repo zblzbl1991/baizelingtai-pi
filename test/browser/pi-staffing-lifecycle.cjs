@@ -3,6 +3,8 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), os = requ
 const { once } = require('node:events'), express = require('express'), { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = path.resolve(__dirname, '../..');
 async function main() {
+    const widths = process.env.PI_STAFFING_VIEWPORT ? [Number(process.env.PI_STAFFING_VIEWPORT)] : [1440, 393, 320];
+    assert.ok(widths.every(width => Number.isInteger(width) && width >= 320), 'valid staffing lifecycle viewports');
     const cleanups = [], cleanupErrors = [], diagnosticErrors = [], closed = [], failures = [];
     const own = (name, priority, close) => cleanups.push({ name, priority, close, order: cleanups.length });
     const closeServer = server => new Promise((resolve, reject) => server.close(error => {
@@ -90,7 +92,7 @@ async function main() {
         document.addEventListener('DOMContentLoaded', () => new MutationObserver(records => { if (records.some(row => row.target.matches?.('.staffing-panel'))) record('panel render'); }).observe(document.body, { subtree: true, childList: true }));
     }, cwd);
     const screenshot = async (phase, locator, focus) => {
-        for (const width of [1440, 393, 320]) {
+        for (const width of widths) {
             await page.setViewportSize({ width, height: 1000 }); await page.emulateMedia({ colorScheme: width === 393 ? 'dark' : 'light' });
             if (focus) await focus.scrollIntoViewIfNeeded();
             assert.deepEqual(await page.evaluate(() => ['body', '#staffing-tab', '.staffing-panel', '.staffing-views', '.staffing-plan-card'].filter(selector => { const node = document.querySelector(selector); return node && node.offsetParent !== null && node.scrollWidth > node.clientWidth + 1; })), [], phase + ' actual width at ' + width);
@@ -170,8 +172,8 @@ async function main() {
         assert.equal((await gateway.staffing.status()).profileId, ready.profileId); assert.ok((await gateway.staffing.ledger()).occupancies.length > 0);
         const stale = await fetch(origin + '/api/pi/staffing/commit', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: 'old-after-enable', planId: old.id, expectedRevision: (await gateway.staffing.status()).revision, action: 'apply', source: { kind: 'page' } }) }); assert.equal(stale.status, 409);
         assert.equal((await gateway.artifacts.preview(report.artifactKey)).revision, report.sha256); assert.deepEqual(errors, []); assert.deepEqual(dialogs, []); assert.deepEqual(targetCrashes, []); assert.ok(requests.some(body => body.tools?.some(tool => tool.function?.name === 'staffing_query')));
-        if (process.env.PIVANE_TEST_SCREENSHOT_DIR) fs.writeFileSync(path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, 'completed.json'), JSON.stringify({ browserVersion, performance: await performanceMetrics(), lifecycle, targetCrashes, stages, dialogs, sockets, network, uploads, screenshots: [1440, 393, 320] }, null, 2));
-        console.log('staffing full workspace lifecycle: actual native provider/cards/views/Excel/artifacts/disable; 1440/393/320 passed');
+        if (process.env.PIVANE_TEST_SCREENSHOT_DIR) fs.writeFileSync(path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, 'completed.json'), JSON.stringify({ browserVersion, performance: await performanceMetrics(), lifecycle, targetCrashes, stages, dialogs, sockets, network, uploads, screenshots: widths }, null, 2));
+        console.log('staffing full workspace lifecycle: actual native provider/cards/views/Excel/artifacts/disable; ' + widths.join('/') + ' passed');
     } catch (error) {
         console.error('staffing lifecycle failed phase:', phase, 'pageerrors:', errors);
         try {

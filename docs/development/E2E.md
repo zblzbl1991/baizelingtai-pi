@@ -19,6 +19,9 @@
 
 | 场景 | 入口 | 真实范围与限制 |
 |---|---|---|
+| 人员调配完整生命周期 | [pi-staffing-lifecycle.cjs](../../test/browser/pi-staffing-lifecycle.cjs) | Chromium → 隔离网关 → 受管 Pi worker 与合成 Provider → 台账 → Excel → 独立成果；核对普通对话与专用智能体的资源隔离，不代表真实供应商验收 |
+| 人员调配启用与初始核对 | [pi-staffing-initialize.cjs](../../test/browser/pi-staffing-initialize.cjs) | 真实页面、调配 HTTP、职责服务与私有持久化；相邻工作台接口与聊天连接有替身 |
+| 调配卡片、三视图及 Excel 操作 | [pi-staffing-cards.cjs](../../test/browser/pi-staffing-cards.cjs)、[pi-staffing-views.cjs](../../test/browser/pi-staffing-views.cjs)、[pi-staffing-excel.cjs](../../test/browser/pi-staffing-excel.cjs) | 真实页面、调配服务与私有持久化，Excel 脚本还经过解析与成果服务；相邻工作台和聊天有替身，原生聊天链路见生命周期脚本 |
 | 助手项目、对话和档案联动 | [pi-assistant-workspace-integration.cjs](../../test/browser/pi-assistant-workspace-integration.cjs) | 浏览器、真实网关、Pi worker、合成 Provider 与隔离档案 |
 | 记住 → 纠正 → 使用的记忆闭环 | [pi-memory-learning-e2e.cjs](../../test/browser/pi-memory-learning-e2e.cjs) | 浏览器、网关、审查过的记忆 bundle、原生 RPC 与合成学习模型 |
 | 原生历史与正文兼容 | [pi-087-compat.cjs](../../test/browser/pi-087-compat.cjs) | 实际 SessionManager、网关、worker 和页面；预置历史，不发送模型请求；文件名保留历史来源 |

@@ -77,4 +77,4 @@ async function run(browser,width) {
         assert.deepEqual(errors,[]);console.log('staffing views '+width+'px passed');
     } finally {await context.close();await service.dispose();access.dispose();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 }
-(async()=>{const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});try{for(const width of [1440,393,320])await run(browser,width);}finally{await browser.close();fs.rmSync(temporary,{recursive:true,force:true});}})().catch(e=>{console.error(e);process.exitCode=1});
+(async()=>{const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});try{for (const width of (process.env.PI_STAFFING_VIEWPORT ? [Number(process.env.PI_STAFFING_VIEWPORT)] : [1440, 393, 320]))await run(browser,width);}finally{await browser.close();fs.rmSync(temporary,{recursive:true,force:true});}})().catch(e=>{console.error(e);process.exitCode=1});

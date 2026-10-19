@@ -7,6 +7,8 @@ process.env.PI_CODING_AGENT_DIR = temporary;
 const { PiProfileRegistry } = require('../../server/pi-profile-registry'), { StaffingService } = require('../../server/staffing/service');
 const { mountStaffingRoutes } = require('../../server/staffing/routes'), { WorkspaceAccessService } = require('../../server/workspace-access-service');
 async function run(browser, width, raceOnly = false) {
+    const actualWidth = process.env.PI_STAFFING_VIEWPORT ? Number(process.env.PI_STAFFING_VIEWPORT) : width;
+    assert.ok(Number.isInteger(actualWidth) && actualWidth >= 320, 'valid staffing test viewport');
     const stage = name => console.log(`staffing cards ${width}: ${name} ${new Date().toISOString()}`);
     stage('start');
     const agent = path.join(temporary, (raceOnly ? 'race-' : '') + width); fs.mkdirSync(agent); process.env.PI_CODING_AGENT_DIR = agent;
@@ -32,7 +34,7 @@ async function run(browser, width, raceOnly = false) {
     for (const [name, folder] of [['marked', 'marked/lib'], ['dompurify', 'dompurify/dist'], ['highlight', '@highlightjs/cdn-assets']]) app.use('/vendor/' + name, express.static(path.join(root, 'node_modules', folder)));
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening'); const origin = `http://127.0.0.1:${server.address().port}`;
-    const context = await browser.newContext({ viewport: { width, height: 900 }, locale: 'zh-CN', hasTouch: width < 900 }), page = await context.newPage();
+    const context = await browser.newContext({ viewport: { width: actualWidth, height: 900 }, locale: 'zh-CN', hasTouch: actualWidth < 900 }), page = await context.newPage();
     const errors = [], planReads = []; let commits = 0, dropped = false, releaseCommit;
     page.on('pageerror', error => errors.push(error.message)); page.setDefaultTimeout(30000);
     page.on('request', req => { if (new URL(req.url()).pathname.startsWith('/api/pi/staffing/plans/')) planReads.push({ event: 'request', at: Date.now() }); });
@@ -125,7 +127,7 @@ async function run(browser, width, raceOnly = false) {
         assert.equal(await page.locator('[data-staffing-action="reserve"]').count(), 0);
         if (width === 320) assert.match(await page.locator('.staffing-plan-card').innerText(), /缺直签/);
         assert.deepEqual(await page.evaluate(() => ['body', '.staffing-plan-card'].filter(selector => { const el = document.querySelector(selector); return el && el.scrollWidth > el.clientWidth + 1; })), []);
-        assert.deepEqual(errors, []); console.log(`staffing cards: ${width}px passed`);
+        assert.deepEqual(errors, []); console.log(`staffing cards case ${width}: actual ${actualWidth}px passed`);
     } catch (error) {
         console.error('Card DOM:', JSON.stringify(await page.locator('.staffing-plan-card').evaluateAll(cards => cards.map((card, index) => ({ index, connected: card.isConnected, rect: card.getBoundingClientRect().toJSON(), fields: [...card.querySelectorAll('input')].map(input => ({ person: input.dataset.staffingPerson, disabled: input.disabled, connected: input.isConnected, checked: input.checked, rect: input.getBoundingClientRect().toJSON() })) })))), 'Plan GET:', JSON.stringify(planReads));
         if (process.env.PIVANE_TEST_SCREENSHOT_DIR) { fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, `staffing-card-failure-${width}.png`), fullPage: true }).catch(() => {}); }

@@ -36,10 +36,15 @@ test('a disconnected export stays busy and drains through independent artifact s
     const exporting = post('staffing/excel/export', { requestId: 'draining-export', expectedRevision: ready.revision }, controller.signal).catch(error => error);
     await held.promise; controller.abort(); assert.equal((await exporting).name, 'AbortError');
     const activity = await fetch(origin + '/api/pi/activity', { headers }); assert.equal((await activity.json()).staffingBusy, true);
+    const readiness = gateway.desktopStop.review({ action: 'stop' });
+    assert.equal(readiness.complete, true);
+    assert.ok(readiness.blockers.some(row => row.type === 'staffing' && row.count > 0));
+    assert.equal(readiness.ticket, undefined);
     const blockedReview = await post('settings/updates/review', { action: 'backup' }); assert.equal(blockedReview.status, 409);
     const blockedExecute = await post('settings/updates/execute', { ticket: ticket.id, confirmed: true, externalWritersStopped: true, draftsSaved: true }); assert.equal(blockedExecute.status, 409);
     let finished = false; stopping = gateway.dispose().then(() => { finished = true; });
     await new Promise(resolve => setImmediate(resolve)); assert.equal(finished, false, 'shutdown cannot pass an admitted export');
+    assert.throws(() => gateway.artifacts.check(), { code: 'ARTIFACT_SUSPENDED' }, 'unrelated artifact work stays blocked during drain');
     const rejected = await post('staffing/excel/export', { requestId: 'too-late', expectedRevision: ready.revision }); assert.equal(rejected.status, 503);
     release.resolve(); await stopping;
     restarted = createPiAgentGateway({ accessService: access, deferredFilePath: path.join(agent, 'deferred.json'), cronFilePath: path.join(agent, 'cron.sqlite') });

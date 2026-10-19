@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('node:fs');
 const path = require('path');
 const { randomUUID } = require('node:crypto');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const { version: PI_VERSION } = require('../node_modules/@earendil-works/pi-coding-agent/package.json');
 const { WebSocketServer, WebSocket } = require('ws');
 const { PiAgentSupervisor } = require('./pi-agent-supervisor');
@@ -189,9 +190,18 @@ function createPiAgentGateway(options = {}) {
     require('./pi-file-routes').mountFilePreviews(router, { files, store, supervisor });
     require('./pi-file-roots').mountFileRoots(router, fileRoots);
     require('./pi-project-directories').mountProjectDirectories(router, projectDirectories);
+    // Only admitted exports may finish artifact work while disposal drains them.
+    // Revoke the scope on completion, including for escaped async descendants.
+    const staffingArtifactContext = new AsyncLocalStorage(), admittedArtifactSaves = new Set();
+    const withArtifactSave = async action => {
+        const admission = {}; admittedArtifactSaves.add(admission);
+        try { return await staffingArtifactContext.run(admission, action); }
+        finally { admittedArtifactSaves.delete(admission); }
+    };
     const artifacts = require('./pi-artifacts-routes').mountArtifacts(router, { store, supervisor, preferences, mediaRoot: options.artifactMediaRoot,
-        isSuspended: () => maintenance.locked || maintenance.referenceLocked || Boolean(store.sessionMoves?.running) || Boolean(sessionTransfer.running) });
-    const staffingExcel = new (require('./staffing/excel-service').StaffingExcelService)({ staffing, artifacts, documents,
+        isSuspended: () => (maintenance.locked && !(disposing && admittedArtifactSaves.has(staffingArtifactContext.getStore())))
+            || maintenance.referenceLocked || Boolean(store.sessionMoves?.running) || Boolean(sessionTransfer.running) });
+    const staffingExcel = new (require('./staffing/excel-service').StaffingExcelService)({ staffing, artifacts, documents, withArtifactSave,
         authorizeSource: async source => {
             if (source.kind === 'page') { await staffing.requireSource(source, { phase: 'initial' }); return; }
             const current = await resolveStaffingSource({ cwd: source.cwd, sessionId: source.sessionId });

@@ -37,5 +37,5 @@ async function run(browser, width) {
     finally { await context.close(); await excel.dispose(); await staffing.dispose(); await artifacts.dispose(); access.dispose(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 (async () => { const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true, args: ['--no-sandbox'] });
-    try { for (const width of [1440, 393, 320]) await run(browser, width); } finally { await browser.close(); fs.rmSync(temporary, { recursive: true, force: true }); }
+    try { for (const width of (process.env.PI_STAFFING_VIEWPORT ? [Number(process.env.PI_STAFFING_VIEWPORT)] : [1440, 393, 320])) await run(browser, width); } finally { await browser.close(); fs.rmSync(temporary, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

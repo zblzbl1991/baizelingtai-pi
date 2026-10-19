@@ -12,6 +12,8 @@ const { mountStaffingRoutes } = require('../../server/staffing/routes');
 const { WorkspaceAccessService } = require('../../server/workspace-access-service');
 
 async function run(browser, width, locale) {
+    const actualWidth = process.env.PI_STAFFING_VIEWPORT ? Number(process.env.PI_STAFFING_VIEWPORT) : width;
+    assert.ok(Number.isInteger(actualWidth) && actualWidth >= 320, 'valid staffing test viewport');
     const agent = path.join(temporary, String(width)); fs.mkdirSync(agent); process.env.PI_CODING_AGENT_DIR = agent;
     const profiles = new PiProfileRegistry({ resolveProject: value => value });
     const service = new StaffingService({ profiles });
@@ -23,7 +25,7 @@ async function run(browser, width, locale) {
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const origin = `http://127.0.0.1:${server.address().port}`;
-    const context = await browser.newContext({ viewport: { width, height: 900 }, locale, hasTouch: width < 900 });
+    const context = await browser.newContext({ viewport: { width: actualWidth, height: 900 }, locale, hasTouch: actualWidth < 900 });
     const page = await context.newPage(), errors = [];
     let enableRequests = 0, dropped = false;
     page.setDefaultTimeout(30000); page.on('pageerror', error => errors.push(error.message));
@@ -56,7 +58,7 @@ async function run(browser, width, locale) {
         }
         await page.locator('[data-staffing-advanced] > summary').click();
         await page.locator('#staffing-initial-json').waitFor();
-        if (width < 680) assert.ok(await page.locator('#staffing-initial-json').evaluate(element => parseFloat(getComputedStyle(element).fontSize)) >= 16);
+        if (actualWidth < 680) assert.ok(await page.locator('#staffing-initial-json').evaluate(element => parseFloat(getComputedStyle(element).fontSize)) >= 16);
         const initial = { people: [{ id: 'P1', name: '<img src=x onerror=alert(1)>', department: 'A', direct: true }],
             projects: [], occupancies: [], historyComplete: false };
         await page.locator('#staffing-initial-json').fill(JSON.stringify(initial));
@@ -83,7 +85,7 @@ async function run(browser, width, locale) {
         assert.deepEqual(await page.evaluate(() => ['body', '#staffing-tab', '.staffing-panel'].filter(selector => { const el = document.querySelector(selector); return el && el.scrollWidth > el.clientWidth + 1; })), []);
         if (process.env.PIVANE_TEST_SCREENSHOT_DIR) { fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, `staffing-${width}.png`) }); }
         assert.deepEqual(errors, []);
-        console.log(`staffing initialize: ${width}px ${locale} passed`);
+        console.log(`staffing initialize case ${width}: actual ${actualWidth}px ${locale} passed`);
     } finally { await context.close(); await service.dispose(); access.dispose(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 (async () => {

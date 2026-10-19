@@ -11,8 +11,8 @@ const { keys, id, fail } = require('./validation');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const stable = source => source?.kind === 'page' ? { kind: 'page', profileId: source.profileId } : { sessionId: source?.sessionId, sessionPath: source?.sessionPath, cwd: source?.cwd, profileId: source?.profileId };
 class StaffingExcelService {
-    constructor({ pool = new DocumentParserPool(), staffing, artifacts, authorizeSource, documents } = {}) {
-        Object.assign(this, { pool, staffing, artifacts, authorizeSource, documents }); this.jobs = new Set(); this.stopping = false;
+    constructor({ pool = new DocumentParserPool(), staffing, artifacts, authorizeSource, documents, withArtifactSave = action => action() } = {}) {
+        Object.assign(this, { pool, staffing, artifacts, authorizeSource, documents, withArtifactSave }); this.jobs = new Set(); this.stopping = false;
         if (staffing) staffing.imports = this;
         if (artifacts) artifacts.staffingSource = locator => this.source(locator);
     }
@@ -181,6 +181,7 @@ class StaffingExcelService {
             const record = { exportId, requestId: input.requestId, requestHash, source: stable(source), epoch: state.epoch, phase: 'generated', name: `staffing-${state.revision}-${exportId.slice(0, 12)}.xlsx`, ledgerRevision: state.revision, generatedAt, sha256: hash(bytes), size: bytes.length };
             storage.writeJson(exportId + '.json', record, 128 * 1024);
             try {
+                await this.withArtifactSave(async () => {
                 const key = this.artifacts.addLocator({ source: 'generated-staffing', exportId, revision: record.sha256 });
                 await this.source({ exportId, revision: record.sha256 }); storage.check(); record.phase = 'available'; record.sourceKey = key; storage.writeJson(exportId + '.json', record, 128 * 1024);
                 const saveRequestId = 'staffing-' + exportId; record.saveRequestId = saveRequestId; storage.writeJson(exportId + '.json', record, 128 * 1024);
@@ -189,6 +190,7 @@ class StaffingExcelService {
                 const item = result.results?.find(row => row.key === key && row.ok);
                 if (item) { record.phase = 'saved'; record.artifactKey = item.item.key; } else record.saveError = result.results?.[0]?.error || result.error || 'Artifact save outcome requires review';
                 storage.writeJson(exportId + '.json', record, 128 * 1024);
+                });
             } catch (error) { if (error.outcomeUnknown) throw error; record.saveError = error.status ? error.message : 'Export save outcome requires review'; storage.writeJson(exportId + '.json', record, 128 * 1024); }
             return this.receipt(record);
             });
