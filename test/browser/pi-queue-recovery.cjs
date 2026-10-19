@@ -80,6 +80,6 @@ async function run(browser, viewport) {
 }
 (async () => {
     const browser = await chromium.launch({ executablePath: '/usr/bin/chromium', args: ['--no-sandbox'], headless: true });
-    try { for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }]) await run(browser, viewport); }
+    try { for (const viewport of (process.env.PI_TEST_DESKTOP_ONLY === '1' ? [{ width: 1440, height: 1000 }] : [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }])) await run(browser, viewport); }
     finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

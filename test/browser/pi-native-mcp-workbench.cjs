@@ -80,6 +80,6 @@ async function run(browser, base, width, locale) {
     const app = express(); app.use(express.static(path.join(root, 'public'))); app.use('/vendor', express.static(path.join(root, 'node_modules')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const [width, locale] of [[1440, 'zh-CN'], [393, 'zh-CN'], [320, 'en']]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
+    try { for (const [width, locale] of (process.env.PI_TEST_DESKTOP_ONLY === '1' ? [[1440, 'zh-CN'], [1440, 'en']] : [[1440, 'zh-CN'], [393, 'zh-CN'], [320, 'en']])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
     finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

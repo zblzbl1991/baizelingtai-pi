@@ -460,7 +460,8 @@ async function main() {
         step('legacy adoption', { health: adopted.health.state });
 
         // 11. Mobile management layout with real data.
-        const mobile = await open(393, '#/profiles');
+        const layoutWidth = process.env.PI_TEST_DESKTOP_ONLY === '1' ? 1440 : 393;
+        const mobile = await open(layoutWidth, '#/profiles');
         await mobile.page.locator(`[data-profile-id="${profileId}"]`).click();
         await mobile.page.locator('[data-profile-section="skills"]').click();
         await mobile.page.locator('.pi-profile-kinds button').first().click();
@@ -469,10 +470,10 @@ async function main() {
             small: [...document.querySelectorAll('textarea,input,select')].filter(el => el.offsetParent && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => el.name || el.className) }));
         assert.ok(geometry.document <= geometry.viewport + 1, JSON.stringify(geometry));
         assert.deepEqual(geometry.small, []);
-        await mobile.page.screenshot({ path: path.join(screenshots, 'knowledge-393.png'), fullPage: true });
+        await mobile.page.screenshot({ path: path.join(screenshots, `knowledge-${layoutWidth}.png`), fullPage: true });
         assert.deepEqual(mobile.errors, []);
         await mobile.context.close();
-        step('mobile layout', geometry);
+        step('management layout', geometry);
 
         console.log(JSON.stringify({ status: 'passed', chatCalls: chat.length, learnerCalls: learner.length, ...report }, null, 1));
     } catch (error) {

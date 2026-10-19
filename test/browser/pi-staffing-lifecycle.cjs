@@ -128,9 +128,14 @@ async function main() {
         await screenshot('card', card);
         await page.locator('#pi-input').fill('尚未发送的合成草稿'); await page.locator('#pi-composer-add-button').click(); await page.locator('#pi-composer-add-menu').waitFor();
         assert.equal(await page.locator('#pi-attach-button').isVisible(), true); await page.keyboard.press('Escape');
-        await page.locator('#pi-toggle-sessions').click(); await page.waitForFunction(() => document.querySelector('#pi-session-pane').classList.contains('open'));
-        assert.equal(await page.locator('#pi-session-pane').evaluate(node => node.inert), false);
-        await page.locator('#pi-close-sessions').click(); await page.waitForFunction(() => !document.querySelector('#pi-session-pane').classList.contains('open'));
+        if (await page.locator('#pi-toggle-sessions').isVisible()) {
+            await page.locator('#pi-toggle-sessions').click(); await page.waitForFunction(() => document.querySelector('#pi-session-pane').classList.contains('open'));
+            assert.equal(await page.locator('#pi-session-pane').evaluate(node => node.inert), false);
+            await page.locator('#pi-close-sessions').click(); await page.waitForFunction(() => !document.querySelector('#pi-session-pane').classList.contains('open'));
+        } else {
+            assert.equal(await page.locator('#pi-session-pane').isVisible(), true);
+            assert.equal(await page.locator('#pi-session-pane').evaluate(node => node.inert), false);
+        }
         assert.equal(await page.locator('#pi-input').inputValue(), '尚未发送的合成草稿');
         await card.locator('[data-staffing-action="reserve"]').click(); await card.locator('[data-staffing-outcome="completed"]').waitFor();
         assert.equal(await page.locator('#pi-input').inputValue(), '尚未发送的合成草稿'); assert.equal((await gateway.staffing.ledger()).occupancies.length, 2);

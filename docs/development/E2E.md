@@ -40,12 +40,20 @@ npm run test:browser -- test/browser/pi-assistant-workspace-integration.cjs test
 
 统一运行器会过滤供应商凭据、提供静态资源并设置审查过的记忆 bundle 路径。浏览器选择器接受精确脚本名。`pivane-browser: manual` 标记的脚本另走下节入口。
 
+人员调配的五个脚本支持 `PI_STAFFING_VIEWPORT=1440`：只使用桌面视口，保留卡片和初始化脚本原有的业务分支。默认仍覆盖各脚本定义的全部视口。Office 编辑、记忆闭环、MCP 工作台、附件存储、队列恢复和字体不可达脚本支持 `PI_TEST_DESKTOP_ONLY=1`；重新打开会话等业务检查仍会执行。
+
+```powershell
+$env:PI_STAFFING_VIEWPORT = '1440'
+npm run test:browser -- test/browser/pi-staffing-initialize.cjs test/browser/pi-staffing-cards.cjs test/browser/pi-staffing-views.cjs test/browser/pi-staffing-excel.cjs test/browser/pi-staffing-lifecycle.cjs
+```
+
 ## 按功能选择跨层检查
 
 下表为代表性入口；完整实现和相邻测试按[模块导航](MODULES.md)继续查。Node 用例通过 `npm test -- <文件...>` 运行，浏览器脚本通过 `npm run test:browser -- <文件...>` 运行。
 
 | 改动链路 | Node / 原生集成 | 配套浏览器与需补的边界 |
 |---|---|---|
+| 人员调配 → 确认 → 台账 → Excel 成果 | [初始化](../../test/staffing-initialization.test.js)、[专用上下文](../../test/staffing-runtime.test.js)、[显式路径隔离](../../test/staffing-paths.test.js)、[导出关停](../../test/staffing-shutdown.test.js)；其余 `staffing-*.test.js` 由统一入口发现 | 上表五个调配脚本；生命周期经过原生聊天和真实服务，其余脚本隔离相邻工作台接口 |
 | 附件上传 → 原生读取 | [pi-document-runtime](../../test/pi-document-runtime.test.js)、[pi-document-uploads](../../test/pi-document-uploads.test.js) | [附件 UI](../../test/browser/pi-document-uploads.cjs)验证模拟接口下的页面行为；上传授权与原生分支由 runtime 用例覆盖 |
 | 公文生成／修订 → 版本 → 授权下载 | [pi-gongwen-runtime](../../test/pi-gongwen-runtime.test.js)、[生成规则](../../test/pi-gongwen.test.js)、[修订保护](../../test/pi-gongwen-revise.test.js) | [交付 UI](../../test/browser/pi-deliverables.cjs)另验；上传→修订→授权下载已由 [pi-gongwen-revision-e2e](../../test/browser/pi-gongwen-revision-e2e.cjs) 用合成 Provider 贯通，生成→版本→下载仍是 Node 集成，真实 Office 渲染走下节 |
 | Office 工作副本 → 原生 MCP → 编辑与交付 | [pi-officecli-runtime](../../test/pi-officecli-runtime.test.js)、[副本与程序检查](../../test/pi-officecli.test.js) | 原生程序须按[Office 文档](../OFFICE_DOCUMENTS.md)准备；浏览器编辑全链见 [pi-office-editing-e2e](../../test/browser/pi-office-editing-e2e.cjs)，Word/WPS 实机渲染仍按下节单独验收 |

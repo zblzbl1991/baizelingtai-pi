@@ -86,6 +86,6 @@ async function run(browser, base, width) {
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const width of [1440, 393, 320]) await run(browser, `http://127.0.0.1:${server.address().port}`, width); }
+    try { for (const width of (process.env.PI_TEST_DESKTOP_ONLY === '1' ? [1440] : [1440, 393, 320])) await run(browser, `http://127.0.0.1:${server.address().port}`, width); }
     finally { await browser.close(); server.closeAllConnections(); await new Promise(r => server.close(r)); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

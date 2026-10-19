@@ -12,7 +12,7 @@ const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['te
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try {
-        for (const width of [1440, 393, 320]) {
+        for (const width of (process.env.PI_TEST_DESKTOP_ONLY === '1' ? [1440] : [1440, 393, 320])) {
             const context = await browser.newContext({ viewport: { width, height: 950 }, locale: 'zh-CN', isMobile: width < 900, hasTouch: width < 900 });
             const page = await context.newPage(), errors = [], commands = [];
             page.setDefaultTimeout(12000);

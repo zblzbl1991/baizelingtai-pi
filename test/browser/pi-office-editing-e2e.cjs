@@ -179,15 +179,15 @@ async function main() {
             assert.equal(await page.locator('.pi-delivery-card').count(), 1);
             await page.screenshot({ path: path.join(screenshots, 'office-e2e-desktop.png') });
             const sessionId = new URLSearchParams(page.url().split('?')[1]).get('sessionId');
-            const mobile = await openPage(390, sessionId);
+            const mobile = await openPage(process.env.PI_TEST_DESKTOP_ONLY === '1' ? 1440 : 390, sessionId);
             try {
                 await mobile.page.locator('#pi-transcript-content .assistant a[href*="#pi-delivery="]').first().waitFor({ timeout: 30000 });
                 const overflow = await mobile.page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
                 assert.ok(overflow.document <= overflow.viewport + 1 && overflow.body <= overflow.viewport + 1, `mobile overflow: ${JSON.stringify(overflow)}`);
                 assert.deepEqual(mobile.errors, []);
-                await mobile.page.screenshot({ path: path.join(screenshots, 'office-e2e-mobile.png') });
+                await mobile.page.screenshot({ path: path.join(screenshots, process.env.PI_TEST_DESKTOP_ONLY === '1' ? 'office-e2e-reopened-desktop.png' : 'office-e2e-mobile.png') });
             } finally { await mobile.context.close(); }
-            console.log('office editing e2e: upload → prepare → native MCP edit → deliver → viewer download passed (desktop + mobile)');
+            console.log('office editing e2e: upload → prepare → native MCP edit → deliver → viewer download passed (initial and reopened session)');
         } finally { await desktop.context.close(); }
         console.log(JSON.stringify({ status: 'passed', copyPath: Boolean(facts.copyPath), delivery: facts.delivery?.reference?.id, requests: requests.length, screenshots }));
     } catch (error) {
