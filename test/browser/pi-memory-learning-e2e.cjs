@@ -474,7 +474,7 @@ async function main() {
         assert.equal(learner.length, learnerBeforeAdopt, 'adoption made no model request');
         step('legacy adoption', { health: adopted.health.state });
 
-        // 11. Mobile management layout with real data.
+        // 11. Management layout with real data; the 16px form rule is phone-specific.
         const layoutWidth = browserTargetEnabled(393) ? 393 : 1440;
         const mobile = await open(layoutWidth, '#/profiles');
         await mobile.page.locator(`[data-profile-id="${profileId}"]`).click();
@@ -484,7 +484,7 @@ async function main() {
         const geometry = await mobile.page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth,
             small: [...document.querySelectorAll('textarea,input,select')].filter(el => el.offsetParent && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => el.name || el.className) }));
         assert.ok(geometry.document <= geometry.viewport + 1, JSON.stringify(geometry));
-        assert.deepEqual(geometry.small, []);
+        if (layoutWidth < 900) assert.deepEqual(geometry.small, []);
         await mobile.page.screenshot({ path: path.join(screenshots, `knowledge-${layoutWidth}.png`), fullPage: true });
         assert.deepEqual(mobile.errors, []);
         await mobile.context.close();
