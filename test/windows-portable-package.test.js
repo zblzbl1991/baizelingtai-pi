@@ -7,12 +7,49 @@ const { createHash } = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
 const { once } = require('node:events');
 const { portableEnvironment, inventory, download, updateOptions, updateManifest, relocateWithin,
-    portableDirectoryName, createPortableArchive, buildUpdateOptions } = require('../scripts/package-windows-portable.cjs');
+    portableDirectoryName, createPortableArchive, createOfflineBundle, buildUpdateOptions, prepareBuild } = require('../scripts/package-windows-portable.cjs');
 
 function fixture(t) {
     const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-package-')));
     t.after(() => fs.rmSync(root, { recursive: true, force: true })); return root;
 }
+test('one-command preparation rebuilds stale launcher metadata and verifies the result before packaging', t => {
+    const root = fixture(t), version = '1.8.0';
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version }));
+    const inputs = { sourceSha256: 'native/pivane-desktop-launcher.cs', manifestSha256: 'native/pivane-desktop-launcher.manifest',
+        iconSha256: 'public/brand/favicon.ico', binarySha256: '白泽灵台.exe' };
+    const metadata = { version: 1, appVersion: '1.7.0', platform: 'win32', arch: 'anycpu', runtime: '.NET Framework 4', compilerSha256: 'a'.repeat(64) };
+    for (const [key, file] of Object.entries(inputs)) {
+        fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+        fs.writeFileSync(path.join(root, file), file);
+        metadata[key] = createHash('sha256').update(file).digest('hex');
+    }
+    const manifest = path.join(root, 'native/pivane-desktop-launcher-build.json');
+    fs.writeFileSync(manifest, JSON.stringify(metadata));
+    const calls = [];
+    const run = (node, args, options) => {
+        assert.equal(node, process.execPath); assert.equal(options.cwd, root); assert.equal(options.windowsHide, true);
+        calls.push(path.basename(args[0]));
+        if (calls.at(-1) === 'build-desktop-launcher.cjs') {
+            metadata.appVersion = version; fs.writeFileSync(manifest, JSON.stringify(metadata));
+        }
+    };
+    prepareBuild(root, run);
+    assert.deepEqual(calls, ['install.cjs', 'build-desktop-launcher.cjs']);
+    calls.length = 0;
+    prepareBuild(root, run);
+    assert.deepEqual(calls, ['install.cjs'], 'matching launcher is preserved');
+    metadata.binarySha256 = 'b'.repeat(64); fs.writeFileSync(manifest, JSON.stringify(metadata));
+    assert.throws(() => prepareBuild(root, () => {}), /Desktop executable differs/, 'a successful child exit cannot bypass byte verification');
+});
+
+test('failed dependency preparation stops before rebuilding or packaging', t => {
+    const root = fixture(t), calls = [], failure = new Error('synthetic install failure');
+    assert.throws(() => prepareBuild(root, (_node, args) => { calls.push(path.basename(args[0])); throw failure; }), error => error === failure);
+    assert.deepEqual(calls, ['install.cjs']);
+    assert.deepEqual(fs.readdirSync(root), []);
+});
+
 test('portable build environment uses bundled npm/runtime and never inherits account configuration', t => {
     const root = fixture(t), scratch = path.join(root, 'scratch');
     const env = portableEnvironment(root, scratch);
@@ -77,6 +114,67 @@ test('Windows ZIP uses Unicode names understood by the independent Windows decod
         assert.throws(() => createPortableArchive(app, archive), /already exists/);
         assert.deepEqual(fs.readFileSync(archive), before);
         assert.ok(!fs.readdirSync(base).some(name => name.startsWith('.baizelingtai-')), 'temporary ZIP removed');
+    });
+
+test('offline transfer ZIP matches the GitLab detection path and preserves the exact application ZIP',
+    { skip: process.platform !== 'win32' }, async t => {
+        const base = fixture(t), app = path.join(base, 'baizelingtai-1.8.0');
+        fs.mkdirSync(app); fs.writeFileSync(path.join(app, '白泽灵台.exe'), 'binary fixture');
+        const archive = app + '.zip', bundle = app + '-offline.zip';
+        createPortableArchive(app, archive);
+        const original = fs.readFileSync(archive);
+        const sha256 = createHash('sha256').update(original).digest('hex');
+        const checksum = `${sha256}  ${path.basename(archive)}\n`;
+        fs.writeFileSync(archive + '.sha256', checksum);
+        fs.writeFileSync(path.join(base, '.baizelingtai-update-build.json'),
+            JSON.stringify({ version: 1, gitlabProjectUrl: 'http://gitlab.example/team/baizelingtai' }));
+        const options = buildUpdateOptions(base, '1.8.0');
+        const manifest = updateManifest({ archive, sha256, bytes: original.length,
+            appVersion: '1.8.0', piVersion: '1.2.0', options });
+        fs.writeFileSync(archive + '.update.json', JSON.stringify(manifest));
+        fs.writeFileSync(path.join(base, 'private.env'), 'must not be included');
+        createOfflineBundle(archive, bundle);
+        const script = `$ErrorActionPreference='Stop'
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zip=[IO.Compression.ZipFile]::OpenRead($env:PIVANE_TEST_ZIP)
+            try {
+                ConvertTo-Json -Compress -InputObject @($zip.Entries | ForEach-Object { $_.FullName })
+                [IO.Compression.ZipFileExtensions]::ExtractToDirectory($zip,$env:PIVANE_TEST_EXTRACT)
+            } finally { $zip.Dispose() }`;
+        const extracted = path.join(base, 'extracted');
+        const names = JSON.parse(execFileSync(path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe'),
+            ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
+            { env: { ...process.env, PIVANE_TEST_ZIP: bundle, PIVANE_TEST_EXTRACT: extracted }, encoding: 'utf8', windowsHide: true }));
+        assert.deepEqual(names.sort(), [path.basename(archive), path.basename(archive) + '.sha256', 'updates/latest.json'].sort());
+        assert.deepEqual(fs.readFileSync(path.join(extracted, path.basename(archive))), original);
+        assert.equal(fs.readFileSync(path.join(extracted, path.basename(archive) + '.sha256'), 'utf8'), checksum);
+        assert.deepEqual(JSON.parse(fs.readFileSync(path.join(extracted, 'updates/latest.json'), 'utf8')), manifest);
+        const requests = [];
+        const { UpdateService } = require('../server/pi-update-service');
+        const service = new UpdateService({ env: { BAIZELINGTAI_UPDATE_FEED_URL: options.feed },
+            appVersion: '1.7.3', piVersion: '1.1.0', platform: 'win32', arch: 'x64',
+            fetch: async url => {
+                requests.push(url);
+                assert.equal(url, options.feed);
+                // Model GitLab's repository-files endpoint using the actual extracted file tree.
+                const file = decodeURIComponent(new URL(url).pathname.match(/\/repository\/files\/([^/]+)\/raw$/)[1]);
+                assert.equal(file, 'updates/latest.json');
+                return { ok: true, json: async () => JSON.parse(fs.readFileSync(path.join(extracted, file), 'utf8')) };
+            } });
+        const detected = await service.check();
+        assert.deepEqual(requests, [options.feed]);
+        assert.equal(detected.pivane.status, 'available');
+        assert.equal(detected.pivane.version, manifest.version);
+        assert.equal(detected.pivane.downloadUrl, manifest.package);
+        assert.equal(detected.pivane.sha256, sha256);
+        assert.equal(detected.pivane.bytes, original.length);
+        const before = fs.readFileSync(bundle);
+        assert.throws(() => createOfflineBundle(archive, bundle), /already exists/);
+        assert.deepEqual(fs.readFileSync(bundle), before);
+        assert.ok(!fs.readdirSync(base).some(name => name.startsWith('.baizelingtai-') && name.endsWith('.zip')));
+        fs.unlinkSync(archive + '.sha256');
+        assert.throws(() => createOfflineBundle(archive, app + '-incomplete.zip'), /ENOENT/);
+        assert.equal(fs.existsSync(app + '-incomplete.zip'), false);
     });
 
 test('portable update sidecar binds the exact ZIP and accepts public GitLab package/release links', () => {

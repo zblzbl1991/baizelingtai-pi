@@ -18,12 +18,36 @@ function portableDirectoryName(version) {
 }
 
 function createPortableArchive(app, archive) {
+    createZip(path.dirname(app), [path.basename(app)], archive);
+}
+
+function createOfflineBundle(archive, bundle) {
+    if (fs.existsSync(bundle)) throw Error('Portable archive already exists.');
+    const entries = [archive, archive + '.sha256', archive + '.update.json'];
+    for (const file of entries) {
+        if (!fs.lstatSync(file).isFile()) throw Error('Offline bundle requires regular package files.');
+    }
+    const names = [path.basename(archive), path.basename(archive) + '.sha256', 'updates/latest.json'];
+    const staging = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'baizelingtai-offline-bundle-')));
+    try {
+        fs.mkdirSync(path.join(staging, 'updates'));
+        // Keep the ZIP bytes intact; publish the sidecar at the configured GitLab repository path.
+        for (let i = 0; i < entries.length; i++) fs.copyFileSync(entries[i], path.join(staging, names[i]), fs.constants.COPYFILE_EXCL);
+        // Only these three artifacts belong in the transfer bundle, never the dist directory.
+        createZip(staging, names, bundle);
+    } finally {
+        // This exact canonical mkdtemp-created path is the only recursive cleanup target.
+        fs.rmSync(staging, { recursive: true, force: true });
+    }
+}
+
+function createZip(directory, entries, archive) {
     if (fs.existsSync(archive)) throw Error('Portable archive already exists.');
     const temporary = path.join(path.dirname(archive), `.baizelingtai-${randomUUID()}.zip`);
     try {
         // Windows tar otherwise emits ANSI/GBK names without a Unicode flag.
         execFileSync(tar, ['--options', 'zip:hdrcharset=UTF-8', '-a', '-cf', temporary,
-            '-C', path.dirname(app), path.basename(app)], { windowsHide: true });
+            '-C', directory, ...entries], { windowsHide: true });
         // Also refuse a competing build that published after the initial check.
         fs.copyFileSync(temporary, archive, fs.constants.COPYFILE_EXCL);
     } finally {
@@ -98,6 +122,19 @@ function updateManifest({ archive, sha256, bytes, appVersion, piVersion, options
     return data;
 }
 
+function prepareBuild(directory, run = execFileSync) {
+    const options = { cwd: directory, stdio: 'inherit', windowsHide: true };
+    console.log('Preparing locked build dependencies');
+    run(process.execPath, [path.join(directory, 'scripts/install.cjs')], options);
+    const { verifyDesktopLauncher } = require('./source-files.cjs');
+    try { verifyDesktopLauncher(directory); }
+    catch {
+        console.log('Rebuilding Windows desktop launcher');
+        run(process.execPath, [path.join(directory, 'scripts/build-desktop-launcher.cjs')], options);
+        verifyDesktopLauncher(directory);
+    }
+}
+
 // A fresh build must never import the maintainer's npm credentials or Pi identity.
 function portableEnvironment(app, scratch) {
     const env = {};
@@ -158,12 +195,15 @@ async function main() {
     const updates = buildUpdateOptions(root, appVersion, args.filter(arg => arg !== '--dry-run'));
     const appName = portableDirectoryName(appVersion);
     const archive = path.join(root, 'dist', `${appName}.zip`);
+    const offlineBundle = path.join(root, 'dist', `${appName}-offline.zip`);
     if (dryRun) {
-        console.log(JSON.stringify({ dryRun: true, archive, updateFeed: archive + '.update.json', updates }, null, 2));
+        console.log(JSON.stringify({ dryRun: true, offlineBundle, offlineUpdateFeed: 'updates/latest.json', archive,
+            updateFeed: archive + '.update.json', updates }, null, 2));
         return;
     }
-    if ([archive, archive + '.sha256', archive + '.update.json'].some(file => fs.existsSync(file)))
+    if ([archive, archive + '.sha256', archive + '.update.json', offlineBundle].some(file => fs.existsSync(file)))
         throw Error('Portable output already exists; preserve or move the existing package before building.');
+    prepareBuild(root);
     const cache = path.join(root, 'dist/portable-cache'); fs.mkdirSync(cache, { recursive: true });
     // Reuse the one public inventory and all neutral-config/native/license gates.
     const snapshot = JSON.parse(execFileSync(process.execPath, [path.join(root, 'scripts/package-trial.cjs')], { encoding: 'utf8', windowsHide: true }));
@@ -218,12 +258,14 @@ async function main() {
         const bytes = fs.statSync(archive).size, updateFeed = archive + '.update.json';
         fs.writeFileSync(updateFeed, JSON.stringify(updateManifest({ archive, sha256, bytes, appVersion: snapshot.appVersion,
             piVersion: snapshot.piVersion, options: updates }), null, 2) + '\n', { flag: 'wx' });
-        console.log(JSON.stringify({ archive, sha256, updateFeed, appVersion: snapshot.appVersion, files: files.length, bytes }, null, 2));
+        createOfflineBundle(archive, offlineBundle);
+        console.log(JSON.stringify({ offlineBundle, offlineBundleSha256: hash(offlineBundle), offlineUpdateFeed: 'updates/latest.json', archive, sha256, updateFeed,
+            appVersion: snapshot.appVersion, files: files.length, bytes }, null, 2));
     } finally {
         // This exact, canonical, mkdtemp-created path is the only recursive cleanup target.
         fs.rmSync(temporary, { recursive: true, force: true });
     }
 }
 module.exports = { portableEnvironment, inventory, download, updateOptions, updateManifest, relocateWithin,
-    portableDirectoryName, createPortableArchive, buildUpdateOptions };
+    portableDirectoryName, createPortableArchive, createOfflineBundle, buildUpdateOptions, prepareBuild };
 if (require.main === module) main().catch(error => { console.error(error.stack); process.exitCode = 1; });

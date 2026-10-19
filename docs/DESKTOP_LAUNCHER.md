@@ -72,11 +72,12 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File scripts/desktop-tra
 维护者在 Windows x64 源码目录执行：
 
 ```powershell
-node scripts/install.cjs
 npm run pack:windows
 ```
 
-脚本使用统一公开源码清单生成快照，从官方地址下载固定版本的运行环境并核对 SHA256，随后用包内 Node/npm 在独立目录锁定安装生产依赖。不会复制当前 `node_modules`、`.env`、身份或运行数据。`dist/portable-cache` 缓存经校验的下载；缓存不进入交付包。构建需要网络和 Windows 自带 `tar.exe` / `curl.exe`，无须预装 7-Zip。结果为 `dist/baizelingtai-<版本>.zip` 及同名 `.sha256`、`.update.json`；解压顶层目录为 `baizelingtai-<版本>`，中文文件名使用明确的 ZIP UTF-8 编码标记。同名 ZIP 或配套文件存在时构建拒绝覆盖，应先保存或移动旧包再构建。
+这一条命令会先按 lockfile 准备构建依赖和内置能力，再核对 Windows 启动器；版本、源码或构建清单不匹配时自动重建并复核，无需另外执行安装或 EXE 构建命令。应用版本仍取自 `package.json`，不会自动升版本。
+
+脚本使用统一公开源码清单生成快照，从官方地址下载固定版本的运行环境并核对 SHA256，随后用包内 Node/npm 在独立目录锁定安装生产依赖。不会复制当前 `node_modules`、`.env`、身份或运行数据。`dist/portable-cache` 缓存经校验的下载；缓存不进入交付包。构建需要网络和 Windows 自带 `tar.exe` / `curl.exe`，无须预装 7-Zip。最终生成 `dist/baizelingtai-<版本>-offline.zip`，拷贝这一个文件到内网即可。外层 ZIP 包含应用包 `baizelingtai-<版本>.zip`、校验文件 `baizelingtai-<版本>.zip.sha256` 和更新清单 `updates/latest.json`；清单路径与默认 GitLab 自动检测地址一致。`dist` 另外保留应用 ZIP 及同名 `.sha256`、`.update.json`，外层包中的 `updates/latest.json` 与该 `.update.json` 内容相同。先解压外层 ZIP，再解压应用 ZIP 即可使用；应用包顶层目录为 `baizelingtai-<版本>`，中文文件名使用明确的 ZIP UTF-8 编码标记。任一同名产物存在时构建拒绝覆盖，应先保存或移动旧包再构建。
 
 `scripts/windows-portable-assets.json` 是运行环境版本、下载地址和哈希的唯一清单。更换运行环境版本须重新验证。包内 `PORTABLE_MANIFEST.json` 记录源码归档哈希和全部应用、依赖、工具文件哈希；原始第三方许可证保留，来源见 `PORTABLE_NOTICES.txt`。
 
@@ -101,7 +102,7 @@ npm run pack:windows -- --update-feed-url 'http://gitlab.example/team/baizelingt
 
 所有链接须与清单同源。`--package-url` 和 `--release-url` 可省略：包地址默认是相对清单的 ZIP 文件名，“查看更新来源”默认打开清单。只给源域名不够，必须给出能返回 JSON 的完整清单地址。也支持 GitLab repository files API 的 `.../repository/files/updates%2Flatest.json/raw?ref=main`，或 `ref=HEAD` 跟随默认分支；API 清单地址应同时显式指定 `--package-url`，避免把 ZIP 相对地址解析到 API 目录。
 
-构建成功不等于发布：先按准确 ZIP 的验收流程验证，再把 ZIP 上传到公开 Generic Package Registry；随后将生成的 `.update.json` 内容作为项目的 `updates/latest.json` 提交。发布操作由维护者完成，构建脚本不登录 GitLab、不上传。Package Registry 须允许匿名下载。若用仓库原始文件分发 ZIP，把 ZIP 与清单放在同目录即可使用默认相对地址。完整检测规则及失败边界见[内网更新源](UPDATES.md#gitlab-与内网-windows-更新源)。
+将 `-offline.zip` 拷贝到内网并解压后，使用其中的应用 ZIP 分发更新；SHA256 和更新清单始终绑定这个应用 ZIP。构建成功不等于发布：先按准确 ZIP 的验收流程验证，再把应用 ZIP 上传到公开 Generic Package Registry；随后将解压所得的 `updates/latest.json` 按原路径提交到 GitLab 项目，无需手动改名。发布操作由维护者完成，构建脚本不登录 GitLab、不上传。Package Registry 须允许匿名下载。若用仓库原始文件或静态站点分发 ZIP，须在构建时指定相对 `updates/latest.json` 的包地址（例如 `../baizelingtai-<版本>.zip`）或同源完整地址，避免默认相对文件名解析到 `updates` 子目录。完整检测规则及失败边界见[内网更新源](UPDATES.md#gitlab-与内网-windows-更新源)。
 
 原来的包不会自动知道新增源；首次需要发放包含源地址的新包，或在已有实例 `.env` 中设置 `BAIZELINGTAI_UPDATE_FEED_URL`。地址由本机发布配置、构建参数或部署配置决定，不使用运行机器上维护者的凭据。旧 `pivane-portable.json` 和 `PIVANE_UPDATE_FEED_URL` 保留读取兼容，不复制或迁移既有数据。
 
