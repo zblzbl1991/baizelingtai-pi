@@ -140,7 +140,7 @@ async function check(browser, base, width, language, scenario = 'normal') {
     try {
         await check(browser, `http://127.0.0.1:${server.address().port}`, 1440, 'zh-CN', 'selection-race');
         for (const width of selectBrowserTargets([1440, 393, 320])) for (const language of ['zh-CN', 'en']) await check(browser, `http://127.0.0.1:${server.address().port}`, width, language);
-        for (const language of ['zh-CN', 'en']) await check(browser, `http://127.0.0.1:${server.address().port}`, language === 'zh-CN' ? 1440 : 393, language, 'slow');
+        for (const language of ['zh-CN', 'en']) for (const width of selectBrowserTargets([language === 'zh-CN' ? 1440 : 393])) await check(browser, `http://127.0.0.1:${server.address().port}`, width, language, 'slow');
         console.log('Scheduled tasks: desktop/mobile, two languages, HTTP UUID fallback, asynchronous loading and draft checks passed');
     } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

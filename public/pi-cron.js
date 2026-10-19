@@ -199,7 +199,7 @@
             const cwd = field(destGrid, '工作目录', 'text', draft.target.cwd || currentCwd() || projects[0]?.cwd || '', { placeholder: t('项目的绝对路径') });
             const sessions = field(destGrid, '目标线程', 'select', '', { choices: [['', t('请选择线程')]] });
             const targetStatus = node('p', 'cron-muted'), targetActions = node('div', 'cron-actions'); destination.append(targetStatus, targetActions);
-            let sessionsEpoch = 0;
+            let sessionsEpoch = 0, displayedDestinationKey;
             const destinationKey = () => JSON.stringify([kind.value, profile.value, cwd.value]);
             let selectedDestination;
             sessions.addEventListener('change', () => { selectedDestination = { key: destinationKey(), sessionId: sessions.value }; });
@@ -208,9 +208,9 @@
                 const key = destinationKey();
                 profile.parentElement.hidden = !isProfile; targetActions.replaceChildren();
                 targetStatus.textContent = isProfile ? home?.status === 'ready' ? `${t('当前主线程')}：${home.name || home.sessionId}` : t('尚未设置主线程。可指定已有线程，或在这个目录创建。') : '';
-                // Invalidate the previous directory's options immediately, so a
-                // late response cannot reset a choice made from stale options.
-                sessions.disabled = true; sessions.replaceChildren();
+                // A scope change invalidates old choices immediately. Within the
+                // same scope keep the current list usable while refreshing it.
+                if (displayedDestinationKey !== key) { sessions.disabled = true; sessions.replaceChildren(); }
                 try {
                     const data = await api(`/api/pi/sessions?cwd=${encodeURIComponent(cwd.value)}`);
                     if (v !== sessionsEpoch || !form.isConnected) return;
@@ -220,6 +220,7 @@
                         const option = node('option', '', s.name || s.firstMessage || s.id); option.value = s.id; sessions.append(option);
                     }
                     sessions.value = selected;
+                    displayedDestinationKey = key;
                 } catch (error) { if (v === sessionsEpoch) targetStatus.textContent = error.message; }
                 finally { if (v === sessionsEpoch && form.isConnected) sessions.disabled = false; }
                 if (isProfile && v === sessionsEpoch) {
