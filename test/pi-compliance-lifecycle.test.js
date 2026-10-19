@@ -67,11 +67,13 @@ test('accepted original reads remain busy until the real file read settles and u
         var draining = event('disposed');
         const observation=await Promise.race([draining.then(()=> 'disposed'),new Promise(resolve=>setTimeout(()=>resolve('waiting'),80))]);
         assert.equal(observation,'waiting','shutdown must wait for the actual accepted fd read');
-        assert.equal((await call('GET',`/documents/${document.id}/content`)).status,409,'no new read after close');
+        const rejected = await call('GET',`/documents/${document.id}/content`);
+        assert.equal(rejected.status,503,'unified maintenance admission rejects new reads after close');
+        assert.match(rejected.data.error,/维护/);
     } finally { child.send({type:'release'}); }
     const result=await pending; assert.equal(result.status,200); assert.deepEqual(Buffer.from(result.data.base64,'base64'),bytes);
     await draining;
-    assert.equal((await call('GET',`/projects/${project.id}/batches`)).status,409,'a first lazy recovery cannot start after unified shutdown has finished');
+    assert.equal((await call('GET',`/projects/${project.id}/batches`)).status,503,'a first lazy recovery cannot start after unified shutdown has finished');
 });
 
 test('unified shutdown rejects new ordinary documents while the accepted PDF step finishes its subsequent shared-pool read', async () => {

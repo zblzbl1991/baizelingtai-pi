@@ -1,6 +1,7 @@
 // Loading and activity feedback: boot cover, list/transcript placeholders that never claim
 // "empty" before the answer is known, the live activity line before visible output, the
 // compaction card and result notice, the deferred chip in the status row, and deliberate-reload drafts.
+const { selectBrowserTargets } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -340,8 +341,8 @@ async function composerLayout(browser, width, language, theme) {
 (async () => {
     const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium' });
     try {
-        for (const width of [1440, 1024, 393, 320]) for (const language of ['zh-CN', 'en']) for (const theme of ['daylight', 'dark']) await composerLayout(browser, width, language, theme);
-        if (process.env.PI_COMPOSER_LAYOUT_BASELINE !== '1') for (const viewport of [{ width: 1440, height: 900 }, { width: 393, height: 852 }]) await run(browser, viewport);
+        for (const width of selectBrowserTargets([1440, 1024, 393, 320])) for (const language of ['zh-CN', 'en']) for (const theme of ['daylight', 'dark']) await composerLayout(browser, width, language, theme);
+        if (process.env.PI_COMPOSER_LAYOUT_BASELINE !== '1') for (const viewport of selectBrowserTargets([{ width: 1440, height: 900 }, { width: 393, height: 852 }])) await run(browser, viewport);
         console.log('feedback states and composer layout passed');
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

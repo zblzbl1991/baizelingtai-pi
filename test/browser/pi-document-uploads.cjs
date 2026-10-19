@@ -133,8 +133,11 @@ async function run(browser, base, width, locale) {
     assert.equal(await input.inputValue(), 'Summarize these documents');
     assert.equal(uploads.length, beforeForkUploads, 'fork reuses original references without uploading');
     assert.equal(prompts.length, beforeForkPrompts, 'opening a fork never sends its draft');
-    const forkDownloadEvent = page.waitForEvent('download'); await page.locator('[data-preview-attachment]').first().click();
+    await page.locator('[data-preview-attachment]').first().click();
+    await page.locator('.pi-document-preview[open]').waitFor();
+    const forkDownloadEvent = page.waitForEvent('download'); await page.locator('.pi-document-preview header button').first().click();
     const forkDownload = await forkDownloadEvent; assert.deepEqual(fs.readFileSync(await forkDownload.path()), samples[0].buffer);
+    await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('.pi-document-preview[open]'));
     await page.locator('[data-remove-attachment]').last().click(); await count(4);
     await input.press('Enter'); await count(0);
     assert.equal((prompts.at(-1).message.match(/<pivane_document /g) || []).length, 4, 'removal changes the next message');
