@@ -42,6 +42,7 @@
 | 编辑 Word／Excel／PPT 原件副本、原生 MCP 与文本／视觉检查 | [Office 文档](OFFICE_DOCUMENTS.md) |
 | 预览六种 Office 格式、只读表格、字体与原件下载 | [Office 预览](OFFICE_PREVIEW.md) |
 | 生成公文 Word、核对数字并交付检查报告 | [公文生成](GONGWEN.md) |
+| 启用合规专用助手和保存工程项目档案 | [合规审查](COMPLIANCE.md) |
 | 文件浏览、交付物与正文渲染 | [文件查看](FILE_VIEWER.md) · [数学公式](MATH.md) · [Mermaid](MERMAID.md) |
 | 用量与朗读 | [用量统计](USAGE.md) · [回复朗读](REPLY_TTS.md) |
 

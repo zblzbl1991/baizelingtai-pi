@@ -15,6 +15,7 @@ const { createPiAgentGateway } = require('../server/pi-agent-routes');
 
 test('activity and pins are protected, root-checked and do not launch workers', async t => {
     const gateway = createPiAgentGateway();
+    const fixtureChildren = [];
     const app = express();
     app.use(express.json());
     gateway.mount(app);
@@ -27,6 +28,16 @@ test('activity and pins are protected, root-checked and do not launch workers', 
         }));
         await gateway.dispose();
         await new Promise(resolve => server.close(resolve));
+        // Rpc disposal waits for exit. Windows fixture deletion also needs the
+        // known child's stdio/process handles to finish their close callbacks.
+        await Promise.all(fixtureChildren.map(({ closed }) => closed));
+        assert.equal(gateway.supervisor.workers.size, 0);
+        assert.equal(gateway.supervisor.ephemeralWorkers.size, 0);
+        assert.equal(gateway.cron.db.db, null, 'scheduler database is closed before fixture deletion');
+        assert.ok(fixtureChildren.every(({ child }) => child.exitCode !== null || child.signalCode !== null), 'each actual managed child has exited');
+        // Remove only the two fixture link objects before recursive Windows
+        // cleanup, including the self-directory alias. Never follow a target.
+        for (const name of ['alias','escape']) { const link=path.join(root,name); try { if (fs.lstatSync(link).isSymbolicLink()) fs.unlinkSync(link); } catch(error) { if(error.code!=='ENOENT')throw error; } }
         assert.equal(fs.realpathSync.native(root), root);
         assert.equal(path.dirname(root), fs.realpathSync.native(os.tmpdir()));
         assert.match(path.basename(root), /^pi-activity-api-[A-Za-z0-9]+$/);
@@ -61,7 +72,7 @@ test('activity and pins are protected, root-checked and do not launch workers', 
     assert.ok(fs.statSync(root).isDirectory());
     assert.equal((await visibility(root, false)).status, 200);
     const alias = path.join(root, 'alias');
-    fs.symlinkSync(root, alias);
+    fs.symlinkSync(root, alias, 'dir');
     const recent = [root + '/', alias, '/etc', path.join(root, 'missing')];
     const resolvedProjects = await (await request(`/projects?recent=${encodeURIComponent(JSON.stringify(recent))}`)).json();
     assert.deepEqual(resolvedProjects.projectAliases, recent.map((input, index) => ({ input, cwd: index < 2 ? root : null })));
@@ -77,6 +88,8 @@ test('activity and pins are protected, root-checked and do not launch workers', 
     const startingTemporary = gateway.supervisor.createEphemeralWorker(root);
     assert.equal(gateway.supervisor.hasProjectRuntime(root), true);
     const temporary = await startingTemporary;
+    const temporaryChild = temporary.client.processChild || temporary.client.child;
+    fixtureChildren.push({ child: temporaryChild, closed: once(temporaryChild, 'close') });
     assert.equal((await visibility(root, true)).status, 409);
     await temporary.dispose();
 
@@ -134,6 +147,8 @@ test('activity and pins are protected, root-checked and do not launch workers', 
     assert.equal(opened.data.session.id, session.id);
     assert.deepEqual(opened.data.completion, secondManual, 'opening the thread captures the manual read token');
     const worker = gateway.supervisor.getActiveWorker(session.path);
+    const sessionChild = worker.client.processChild || worker.client.child;
+    fixtureChildren.push({ child: sessionChild, closed: once(sessionChild, 'close') });
     worker.client.emit('event', { type: 'agent_start' });
     const busyBeforeArchive = gateway.supervisor.getActivity();
     await archive(threadArchive, root, true);

@@ -12,7 +12,7 @@ const { openInspector } = require('./pi-mobile-view-helper.cjs');
 const levels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const model = { provider: 'fixture', id: 'reasoning', name: 'Fixture reasoning', reasoning: true, input: ['text'], contextWindow: 32000, levels };
 const cwd = '/synthetic/side-layout';
-const evidence = process.env.PI_SIDE_LAYOUT_EVIDENCE || '/tmp/pi-side-layout';
+const evidence = process.env.PI_SIDE_LAYOUT_EVIDENCE || process.env.PIVANE_TEST_SCREENSHOT_DIR || '/tmp/pi-side-layout';
 async function run(browser, base, viewport, locale, preferred = 336, navExpanded = false) {
     if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ viewport, locale, reducedMotion: 'reduce', deviceScaleFactor: 2, isMobile: viewport.width <= 680, hasTouch: viewport.width <= 680 });
@@ -179,16 +179,19 @@ async function run(browser, base, viewport, locale, preferred = 336, navExpanded
     await page.screenshot({ path: path.join(evidence, `${viewport.width}-${preferred}-${locale}-${navExpanded}-conversation.png`) });
     await context.close(); console.log(`PASS side layout ${viewport.width}x${viewport.height} ${locale} saved=${preferred} expandedNav=${navExpanded}`);
 }
-(async () => {
+async function runSuite(locales, launch) {
     await fs.mkdir(evidence, { recursive: true });
     const root = path.resolve(__dirname, '../..'), app = express(); app.use(express.static(path.join(root, 'public')));
     for (const [n,d] of [['marked','marked/lib'],['dompurify','dompurify/dist'],['highlight','@highlightjs/cdn-assets']]) app.use('/vendor/'+n,express.static(path.join(root,'node_modules',d)));
     const server = app.listen(0,'127.0.0.1'); await once(server,'listening');
-    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    const browser = await launch();
     try {
-        for (const locale of ['zh-CN','en-US']) for (const [width,height,preferred,navExpanded] of selectBrowserTargets([[1468,834,700],[1280,800,800],[1440,900,800,true],[1920,1080,800],[1024,768,336],[901,768,800],[901,768,800,true],[1199,800,700],[1200,800,700],[1200,800,800,true],[960,720,336],[900,720,700],[393,852,336],[320,740,336]])) {
+        for (const locale of locales) for (const [width,height,preferred,navExpanded] of selectBrowserTargets([[1468,834,700],[1280,800,800],[1440,900,800,true],[1920,1080,800],[1024,768,336],[901,768,800],[901,768,800,true],[1199,800,700],[1200,800,700],[1200,800,800,true],[960,720,336],[900,720,700],[393,852,336],[320,740,336]])) {
             if (process.env.PI_SIDE_LAYOUT_WIDTH && process.env.PI_SIDE_LAYOUT_WIDTH !== String(width)) continue;
             await run(browser, 'http://127.0.0.1:'+server.address().port, {width,height},locale,preferred,navExpanded);
         }
     } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve=>server.close(resolve)); }
-})().catch(error=>{console.error(error);process.exitCode=1;});
+}
+module.exports = { runSuite };
+if (require.main === module) runSuite(['zh-CN'], () => chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] }))
+    .catch(error=>{console.error(error);process.exitCode=1;});

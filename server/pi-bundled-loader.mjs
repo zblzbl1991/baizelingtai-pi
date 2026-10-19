@@ -8,6 +8,7 @@ import { nativeExtensionFactories, selectedNativeBuiltins } from './pi-native-mc
 import staffing from './staffing/runtime-scope.js';
 // Use the locked native loader's path grammar before the realpath ownership gate.
 const { resolvePath } = await import(new URL('./utils/paths.js', import.meta.resolve('@earendil-works/pi-coding-agent')).href);
+import compliance from './pi-compliance-runtime.js';
 
 // Build the same native resource inventory used by Settings, then let Pi load
 // only selected paths. Filtering happens before any third-party factory runs.
@@ -15,9 +16,11 @@ export async function managedLoaderOptions({ cwd, agentDir, settings, parsed, se
     configureComputerHelpers(agentDir);
     setComputerConfigScope(cwd, agentDir, settings.isProjectTrusted());
     const { resolved, settingsView } = await bundled.resolveManagedResources(sdk, { cwd, agentDir, settings });
+    const eligible = Boolean(compliance.complianceRuntime(sessionManager, cwd, agentDir));
     const scope = await staffing.runtimeScope({ cwd, agentDir, sessionManager });
     // Application staffing resources are selected here, never put in the global catalog/guidance.
     const permitted = file => {
+        if (compliance.isComplianceResource(file)) return false;
         if (scope.eligible) return true;
         const source = file.trim().replace(/^[!+-]/, ''), resolved = resolvePath(source, cwd, { trim: true });
         if (staffing.ownedResource(resolved, cwd)) return false;
@@ -45,9 +48,9 @@ export async function managedLoaderOptions({ cwd, agentDir, settings, parsed, se
         extensionFactories: [...await nativeExtensionFactories(parsed), bundledGuidance],
         disabledBuiltinExtensions: parsed.noMcp ? ['mcp'] : undefined,
         noContextFiles: parsed.noContextFiles, systemPrompt: parsed.systemPrompt, appendSystemPrompt: parsed.appendSystemPrompt,
-        additionalExtensionPaths: [...new Set([...builtins, ...explicit(parsed.extensions), ...(parsed.noExtensions ? [] : paths('extensions')),
+        additionalExtensionPaths: [...new Set([...(eligible && !parsed.noExtensions ? [compliance.extensionPath] : []), ...builtins, ...explicit(parsed.extensions), ...(parsed.noExtensions ? [] : paths('extensions')),
             ...(scope.eligible ? [fileURLToPath(new URL('./staffing/extension.ts', import.meta.url))] : [])])].filter(file => file !== officeExtension || builtins.includes('builtin:mcp')).map(extensionPath),
-        additionalSkillPaths: [...new Set([...explicit(parsed.skills), ...(parsed.noSkills ? [] : paths('skills')),
+        additionalSkillPaths: [...new Set([...(eligible && !parsed.noSkills ? [compliance.skillPath] : []), ...explicit(parsed.skills), ...(parsed.noSkills ? [] : paths('skills')),
             ...(scope.eligible ? [fileURLToPath(new URL('./staffing/skills/staffing-management', import.meta.url))] : [])])],
         additionalPromptTemplatePaths: [...explicit(parsed.promptTemplates), ...(parsed.noPromptTemplates ? [] : paths('prompts'))],
         additionalThemePaths: [...explicit(parsed.themes), ...(parsed.noThemes ? [] : paths('themes'))],

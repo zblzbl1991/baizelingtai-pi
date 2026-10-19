@@ -151,7 +151,20 @@ async function main() {
             });
             page.on('pageerror', error => errors.push(error.message));
             await page.route('**/*', request => new URL(request.request().url()).origin === base() ? request.continue() : request.abort());
+            // A real worker can use the documented startup window. Wait for its
+            // actual initial snapshot before applying the ordinary UI deadline.
+            const opening = route.startsWith('#/chat?') ? page.waitForEvent('websocket', {
+                predicate: socket => new URL(socket.url()).pathname === '/api/pi/ws'
+            }).then(socket => socket.waitForEvent('framereceived', {
+                predicate: frame => { const value = JSON.parse(frame.payload); return value.type === 'response' && value.command === 'open_session'; },
+                timeout: 180000
+            })) : null;
             await page.goto(`${base()}/${route}`, { waitUntil: 'domcontentloaded' });
+            if (opening) {
+                const snapshot = JSON.parse((await opening).payload);
+                assert.equal(snapshot.success, true, 'native initial snapshot succeeds');
+                assert.equal(snapshot.data.session.id, new URL(route.slice(1), base()).searchParams.get('sessionId'));
+            }
             await page.waitForFunction(() => window.PiWorkspaceRoute && window.PiAgentProfiles);
             if (requestedSession) {
                 // Keep the real cold worker in this flow. Session opening has the

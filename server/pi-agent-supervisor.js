@@ -42,6 +42,7 @@ class AgentWorker extends EventEmitter {
         this.runStartupCalls = new Set();
         this.runStartupSequence = 0;
         this.modelChangesPending = 0;
+        this.modelChangeGeneration = 0;
         this.modelChangeUncertain = false;
         this.compaction = null;
         this.live = new (require('./pi-live-state').PiLiveState)();
@@ -155,7 +156,7 @@ class AgentWorker extends EventEmitter {
         // Reserve before awaiting readiness so two browser clients cannot compact together.
         if (type === 'compact') this.compactPending = true;
         const changingModel = ['set_model', 'cycle_model'].includes(type);
-        if (changingModel) this.modelChangesPending++;
+        if (changingModel) { this.modelChangesPending++; this.modelChangeGeneration++; }
         const prompting = ['prompt', 'steer', 'follow_up'].includes(type);
         if (prompting) this.promptPending++;
         let intentId, releaseQueueOperation;
@@ -650,6 +651,7 @@ class AgentWorker extends EventEmitter {
             if (payload.mode === 'cron' && !command.description?.includes('cron-v1')) throw new Error('Scheduled task bridge is not loaded; reopen the idle thread');
             if (payload.mode === 'task-result' && !command.description?.includes('task-results-v1')) throw new Error('Task result bridge is not loaded');
             if (payload.mode === 'agent-message' && !command.description?.includes('agent-messages-v1')) throw new Error('Agent message bridge is not loaded; reopen the thread after it is idle');
+            if (payload.mode === 'compliance-report' && !command.description?.includes('compliance-report-v1')) throw new Error('报告交付桥接尚未加载，请在空闲后重新打开线程');
             if (payload.mode === 'tree' && !command.description?.includes('tree-v1')) throw new Error('当前实例尚未加载会话树导航，请在任务结束后退出并重新打开线程');
             if (options.beforeSend && !options.beforeSend()) return { cancelled: true };
             this.navigationResults.set(id, null);

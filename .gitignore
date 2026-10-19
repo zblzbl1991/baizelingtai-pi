@@ -32,6 +32,7 @@ pivane-artifacts/
 .scratch/
 /native/officecli/bin/
 pivane-staffing/
+pivane-compliance/
 *.log
 *.lnk
 *.bak*

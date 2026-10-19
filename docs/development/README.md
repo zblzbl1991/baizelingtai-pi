@@ -11,6 +11,8 @@
 | 按任务定位实现、契约和测试链路 | [Wayfinder](../../WAYFINDER.md) |
 | 一类功能应该修改哪里、相关契约在哪 | [模块导航](MODULES.md) |
 | 系统边界、数据流、设计取舍与已知技术债 | [架构](ARCHITECTURE.md) |
+| 人员调配需求与待确认设计（未实现） | [设计讨论](design/staffing.md)、[业务术语](../../GLOSSARY.md) |
+| 合规审查设计与已实现范围 | [设计讨论](design/compliance.md)、[当前功能](../COMPLIANCE.md)、[业务术语](../../GLOSSARY.md) |
 | 开发步骤、验证范围、文档责任 | [开发流程](WORKFLOW.md) |
 | 助手身份、分类与档案记忆的实现边界 | [助手档案实现](AGENT_PROFILES.md) |
 | 人员台账、专用调配资源、确认与 Excel 成果 | [人员调配](../STAFFING.md)、[模块导航](MODULES.md) |

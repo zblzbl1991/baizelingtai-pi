@@ -7,6 +7,79 @@
 新原生方案卡片使用 `details.pivaneStaffing={version:2,reference:{id,originId,kind,revision,source:{cwd,sessionId}}}`，前端经授权接口获取完整方案。成功准备或原操作状态工具可以携带该引用；旧版 `version:1` 历史方案仍可读取。状态查询仅为已验证的本来源完成回执恢复原方案，不重放写入。模型文字与引用元数据各自最多 64 KiB。
 
 标准 XLSX 的原件上传、差异计划、按需导出及独立成果阶段使用 `/api/pi/staffing/excel/*`；私有受管工具使用对应 `/agent/import`、`/agent/export` 和 `/agent/export-status`。字段与预算见 [Excel 导入与成果](STAFFING.md#excel-导入与成果)。
+## 合规审查
+
+当前实现范围和使用方法见 [合规审查](COMPLIANCE.md)。所有用户接口经过工作台身份、Origin 和 CSRF 校验，数据不可由匿名请求读取。
+
+| 接口 | 用途 |
+|---|---|
+| `GET /api/pi/compliance` | 返回 `version/revision/settingsRevision/enabled/status/profileId/mainModel/extractionModel/scanStatus/availability/requiresReload` |
+| `PUT /api/pi/compliance/settings` | 输入 `requestId/expectedRevision/enabled`；启用时首次提供 `mainModel`，可选 `extractionModel` 和首次关联的 `profileId` |
+| `GET/POST /api/pi/compliance/projects` | 列出或创建工程项目档案 |
+| `GET/PUT /api/pi/compliance/projects/:id` | 读取或更新工程项目档案 |
+| `POST /api/pi/compliance/sessions` | 输入 `cwd/requestId/expectedRevision`，建立有原生操作标记的专用聊天；重复请求返回原会话回执 |
+| `GET /api/pi/compliance/operations/:requestId` | 查询持久回执；准备中的首次配置或会话返回 `status:pending/phase/canResume`，未知操作返回 404，不表示可以重发 |
+| `GET/POST /api/pi/compliance/projects/:id/documents` | 枚举或导入明确选定资料；POST 输入操作编号、修订及 `sources` |
+| `GET /api/pi/compliance/documents/:id/content` | 返回经快照哈希校验的 `name/hash/base64` 原字节，不接受私密路径 |
+| `PUT /api/pi/compliance/documents/:id/assignment` | 用户提交 `role/identityConfirmed/selected/numberAbsentConfirmed?` 与操作编号、修订 |
+| `GET/POST /api/pi/compliance/projects/:id/batches` | 枚举历史批次摘要或以当前已选资料建立检查批次，POST 可选 `budget:{pages,modelCalls,runMs}` 及来源 `cwd/sessionId` |
+| `POST /api/pi/compliance/batches/:id/continue` | 输入稳定操作编号、当前修订及可选预算，追加额度并只继续未启动步骤 |
+| `POST /api/pi/compliance/batches/:id/pause` | 输入稳定操作编号和当前修订，请求在当前真实步骤结束后暂停 |
+| `GET /api/pi/compliance/batches/:id` | 按需读取固定的 `batch` 和当前账本 `revision` |
+| `GET /api/pi/compliance/batches/:id/evidence/:fieldId` | 返回批次内字段原文、页码/工作表行及原件摘要 |
+| `GET/POST /api/pi/compliance/batches/:id/review-proposals` | 列出方案或准备确认卡，POST 输入稳定操作编号、账本及批次修订、原生来源聊天和 `change` |
+| `GET /api/pi/compliance/review-proposals/:id` | 返回服务端精确卡片及 `ready/stale/applied` 状态 |
+| `POST /api/pi/compliance/review-proposals/:id/confirm` | 仅工作台用户提交 `requestId/expectedRevision/contentHash/cwd/sessionId`，不接受替换卡片内容 |
+| `GET/POST /api/pi/compliance/batches/:id/reports` | 列出报告；POST 输入 `requestId/expectedRevision/batchRevision`，生成固定修订 HTML 与 XLSX |
+| `GET /api/pi/compliance/reports/:id` | 报告元数据、生成/发布/原生交付状态，以及当前独立库的 `savedFiles` 证明 |
+| `GET /api/pi/compliance/reports/:id/sources` | 核对精确原生交付后返回 `reference` 与 `files:[{index,sha256,key}]`，供显式成果保存使用 |
+| `GET /api/pi/compliance/reports/:id/files/:index` | 按不透明报告 ID 和索引 0/1 返回校验后的文件表示，不接受私密路径 |
+| `POST /api/pi/compliance/reports/:id/delivery` | 输入 `requestId/expectedRevision/cwd/sessionId`；须有存活专用 worker，由该 worker 登记原生引用 |
+| `POST /api/pi/compliance/tool` | 仅接受存活受管 worker 的独立导航凭据；从真实会话绑定确定资格，用户 Token 不能调用此接口 |
+
+报告生成返回 `{ok,revision,report}`。`report` 绑定 `batchId/batchRevision/projectId/ruleVersion/generatedAt`，包含原复核/执行摘要和两份文件的 `index/format/name/size/sha256`。状态 `generated/published/delivered` 分别表示字节生成、快照发布和已核实的原生分支登记。`savedFiles` 按库内精确来源、大小和 SHA256 投影每份文件的独立库 ID、修订与保存时间，未保存项为 null；不回写批次或假报保存成功。实际保存使用现有 `POST /artifacts/batch` 的 `save`。
+
+受管 `compliance_report` 提供 `generate/list/get/deliver`；生成要求批次和批次修订，交付仅接受报告 ID，来源会话由实际 worker 决定。`list` 接受 `offset`，每页最多五十份摘要并返回 `total/nextOffset`；执行摘要不包含完整步骤。新报告文件不得覆盖，HTML 不超过 2 MiB、Excel 单元格不超过 32767 字符，超限返回 `COMPLIANCE_REPORT_LIMIT`。生成意图与交付意图均持久预占；`GET /compliance/operations/:requestId` 可返回 `generating/publishing/published` 和 `noReplay:true`，不确定结果不自动重发。若原生分支已有精确交付引用，操作查询可在复核清单出处和全部文件字节后补齐回执，能力停用或 worker 关闭不阻碍这项事实核对；不启动 worker、不重新交付。报告最多五百份、2 GiB，失败生成预留计入额度；未知对象不自动清理。报告文件入口返回 `no-store/nosniff` 与 sandbox CSP 的 JSON，不提供私密路径读取资格。
+
+修订是非负整数。所有业务变更要求稳定 `requestId` 和当前 `expectedRevision`。相同操作编号、相同语义 JSON 内容返回原回执，JSON 键顺序不影响识别；同一编号换内容返回 `COMPLIANCE_CONFLICT`，修订已变化返回 `COMPLIANCE_STALE`。回执的 `revision` 属于该次提交，继续修改前读取当前状态。
+
+带有效操作编号的 4xx 错误返回 `operationAccepted`。true 表示同编号已有持久回执/准备意图或另一在途请求，false 表示已确认拒绝且没有这些记录，null 表示无法核对账本。网页仅在确定未受理时清除待核对编号；包括 BUSY 在内的已受理或未知结果、网络失败、5xx 和回执 404 继续查询原编号，不自动重新 POST。查询返回 `status:pending` 时继续保留原编号，直到取得终态回执；不把在途检查当成已完成结果。首次配置仍须显式继续原准备记录。
+
+报告来源接口逐项验证原生 reference、manifestRevision、index、SHA256、批次出处与当前分支；不通过文件名/大小搜索替代来源。返回的不透明 key 使用现有成果保存接口，保存时再次核对来源资格；来源读取参与报告及成果服务的实际作业排空。
+
+模型引用为 `{provider,modelId}`。对话模型须在实际目录中可用并支持文本；资料识别模型另须支持图像，也可设为 null。配置不发起推理。专用档案初次绑定后不允许以显示名称或其他编号替换。
+
+新批次的 `configurationSnapshot.mainModel` 来自已验证活跃原生 worker 的实际 `get_state.model`，并记录 `mainModelSource:"native-session"` 与 `mainModelSessionId`。用户切换对话模型后新批次固定新选择。HTTP 创建可传 `cwd/sessionId`；未提供来源或来源没有活跃 worker 时，对话模型为 null、来源为 `unknown`，不以设置中的初始默认值代替。旧批次不回写。识别模型仍固定当时的 `settings.extractionModel`。
+
+原生模型切换未确认或超时结果不确定时拒绝建立已知模型快照。实际模型读取至批次持久准入使用该 worker 既有独占操作槽，与模型切换、定时任务启动/恢复和分支导航互斥；已有操作或定时任务时返回 `COMPLIANCE_BUSY`，身份或模型代次失效返回 `COMPLIANCE_STALE`。该短操作允许模型工具在当前回复中创建批次，扫描执行在释放操作槽后进行。迟到响应不清除既有模型不确定状态，沿原有空闲退出并重开流程核对。
+
+`GET /compliance` 增加 `availability:{status,text,scan,reasons}`；`status` 为 `disabled/configuration-insufficient/partial/available`，与能力开关的 `status` 分开。投影核对当前档案、公开 ModelRuntime 目录、共享解析池、文件身份和页面图像组件，不发送推理、不承诺外部供应商健康或识别质量。并发配置变化返回要求刷新的未知可用状态。配置引用仍可通过 `scanStatus` 区分是否已配置。
+
+导入的实际读取与校验不持有设置保存互斥。停用会锁存已有导入的停止请求，当前资料步骤结束后不安排下一份；本次选定范围不部分发布，返回 `409 COMPLIANCE_STOPPED`。重新启用不解除原导入停止请求。最终发布仍原子核对来源、修订、完整文件身份、容量和回执。原件读取允许在能力停用后继续使用，但新实际工作在服务关闭或维护时返回 `409 COMPLIANCE_BUSY`；已接纳工作持续计入 `activity.complianceBusy`，直到真实读取、解析和描述符关闭结束。未初始化的恢复也不能在停机或维护后通过历史 GET 启动。
+
+创建或更新档案输入 `{requestId,expectedRevision,project}`。`project` 包含 `name`，以及可为 null 的 `number/organization/year/phase/type/stage`；`identityConfirmed` 表示审查人员已核对身份。`applicability` 包含 `documents-identity/feasibility-numbers/contract-deadline/feasibility-order`，值为 true、false 或 null。返回 `{ok,project,revision}`，档案另外拥有自身的 `id/revision/createdAt/updatedAt`。当前支持创建、读取和更新，保留原有档案数据。
+
+受管 `compliance_project` 工具的 `action` 为 `list/get/create/update`。`list` 每页最多五十个编号、名称、业务编号与修订摘要，使用返回的 `nextOffset` 继续；`get` 用 `projectId` 按需读取字段。模型不能通过工具参数指定档案身份、来源聊天或私密路径。发现资源、登记工具和执行工具均核对当前启用状态与专用档案。`GET /api/pi/activity` 增加 `complianceBusy`，受管 worker 业务操作同时纳入生命周期投影。
+
+导入输入 `{requestId,expectedRevision,sources,cwd?,sessionId?}`。每项来源为 `{kind:"upload",name,base64}`、`{kind:"file",path}` 或 `{kind:"attachment",id}`；目录路径相对显式授权的 `cwd`，附件核对当前原生分支或用户明确选择的当前聊天草稿。文件每份最多 20 MiB，每个工程最多 32 份/256 MiB，原件总容量 2 GiB/一万对象。JSON 请求沿用 32 MiB 上限，本机多文件逐份上传。返回 `{ok,documents,reused,revision}`；资料拥有独立 `id/projectId/name/format/hash/size/source/assignment/createdAt`，重复内容在同工程内复用 ID。资料角色为 `award-notice/contract/feasibility-report/feasibility-review/feasibility-approval/register/unknown`。人工核对接口不向 worker 导航凭据开放。
+
+建立批次输入 `{requestId,expectedRevision}`，可选 `budget` 和来源 `cwd/sessionId`。批次保存 `id/revision/projectId/projectSnapshot/documents/rulePackage/configurationSnapshot/fields/results/execution/review/createdAt`。`rulePackage` 固定实际规则内容与版本；`fields` 含 `id/documentId/key/raw/value/precision/status/location/candidates`，日期 `value` 保存 ISO 日期区间 `start/end`，精度为 `day/month`，未知为 null。位置包含 `page/region/viewport/rects` 或 `sheet/row/column/address` 及有界 `excerpt`。`results` 使用 `conclusion:passed|issue|insufficient|not-applicable`，`execution:completed|failed`，并保存 `reason/evidence/sources/review`；证据为本批次字段 ID。人工复核状态初始为 `unreviewed`，执行失败不能解释为通过。批次最多五百个，仍受八 MiB 账本上限限制。
+
+受管 `compliance_materials` 支持 `list/import`，仅接受当前 worker 工作目录内的相对路径或当前分支附件 ID；返回必要摘要及不透明 ID。`compliance_check` 支持 `run/list/get/evidence/continue/pause`，按需读取批次和字段证据。内部工具 HTTP 输入用 `operation:materials|checks` 区分，项目工具沿用原接口。工具创建/更新工程元数据不能新设人工身份或适用性确认；原确认只在身份字段未变化时保留，字段变化重置待核对。文本处理复用办公附件的同一解析池，HTTP 断开不释放仍在执行的工作，全部任务参与维护空闲与关闭等待。
+
+批次 `execution` 保留执行状态并增加 `budget/usage/steps/reason`；`paused` 表示预算、停用或用户请求暂停，`needs-review` 专指请求执行结果待核对，不能当作普通人工未复核。`steps` 的 `pending/running/completed/failed/uncertain/blocked` 分别表示未启动、执行中、完成、失败、不确定和缺少识别配置。`usage` 保存页处理量、模型调用次数、运行毫秒和可取得的 token；`cost.actual` 未知为 `null`，`estimate` 与 `basis` 明确标识模型目录估算。批次每个检查点增加自身修订；源资料、项目和规则快照不变，字段变化重算旧规则并保留未人工复核状态。受管工具只返回执行摘要及待处理/不确定数量，完整步骤按需读取；批次目录每页最多五十项，按 `offset/nextOffset` 继续。
+
+`budget` 默认 `pages:200,modelCalls:20,runMs:600000`；单次设置范围为 1–2000 页、1–200 次、1000–3600000 毫秒，批次累计上限为一万页、一千次、二十四小时。预算只限制下一步准入，当前请求实际结束前仍计入忙碌。HTTP 断线不取消，服务中断后原执行中步骤变为不确定，读取或继续不会自动重发。初始任务在外部工作前持久登记；中断操作查询返回 `status:pending,phase:checks,batchId`。
+
+设置可额外传 `expectedSettingsRevision`，与状态中的 `settingsRevision` 比较；这样后台检查点增加账本修订不会阻止停用，真正并发配置变化仍返回 `COMPLIANCE_STALE`。旧客户端仅传 `expectedRevision` 时仍按账本修订核对。`status:disabling` 表示已拒绝新增工作，当前真实步骤尚未结束。停用在运行批次持久记录 `pauseRequested/stopReason:disabled`，重新启用不清除原暂停意图；显式继续才清除。所有实际检查、模型与解析作业参与活动、维护和异步关闭。
+
+复核准备输入 `{requestId,expectedRevision,batchRevision,cwd,sessionId,change}`。字段方案为 `{kind:"field",documentId,key,raw,location,reason}`，`key` 限 `projectName/projectNumber/organization/year/phase/date/documentNumber`；日期原文解析为日/月区间，不补造具体日。`location` 是 `{page,region,excerpt}` 或 `{sheet,row,column,excerpt}`，人工出处与原始提取定位分别保存。明确核对首页上方文号缺失时使用 `key:"documentNumber",raw:null,absent:true`，定位必须为 `page:1,region:"upper"`。结论方案为 `{kind:"conclusion",resultId,conclusion,reason}`，结论取同一四值枚举。返回 `{ok,revision,proposal}`，方案绑定项目、批次修订、源文档哈希、完整规则哈希、字段/结果快照、配置修订、原生来源和 `contentHash`，最多两千份并受八 MiB 账本限制。
+
+提交人工确认仅接受精确卡片哈希和来源，重新核对能力、原生绑定资格、账本/批次修订及冻结内容。实际运行的工程项目拒绝修正，两个聊天竞争修订只允许一次提交。原值保留在字段 `raw/value/precision/status/location/candidates`；人工值另存 `humanValue:{raw,value,precision,status,location,reason,origin,proposalId,confirmedAt}`，状态为 `known/absent`。原始缺失槽保留 `original:{absent:true}`；之后未执行步骤取得原文时保留同一字段 ID、人工值及历史。规则使用准确核验的当前值；资料读取状态保持原状，`manualInputs` 明确列出规则使用的人工字段。
+
+批次 `history` 保存旧修订的字段、规则结果和人工状态，`corrections` 保存前后值、理由及来源。字段修正产生新批次修订并重算冻结规则，重置当前复核。人工结论保存在独立的 `result.humanDecision`，不覆盖系统 `conclusion`；`result.review.status` 为 `confirmed`，批次复核为 `partial/confirmed`。继续检查前也保存已有人工决定，后续重算保留人工字段并重置当前复核。报告分别导出原始提取、人工值、人工决定及历史，旧报告不变。
+
+受管 `compliance_review` 支持 `prepare/list/get/operation`，内部输入 `operation:"review"`。准备只接受业务字段，实际来源从存活专用 worker 取得；没有 `confirm` 动作。`list` 每页至多五十份方案摘要并返回 `nextOffset`，`get` 按 `proposalId` 读卡，`operation` 按原 `requestId` 查回执。worker 导航凭据不能访问人工确认路由。网络结果未知时查原回执，不自动重发；已提交同参回执可在停用后继续核对，失效卡重新准备。
 
 ## 桌面启动私有通道
 

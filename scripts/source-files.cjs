@@ -23,7 +23,7 @@ function sourceFiles(root, group) {
         const directory = path.join(root, relative);
         if (fs.lstatSync(directory).isSymbolicLink()) throw new Error(`Source directory is a symlink: ${relative}`);
         for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name, 'en'))) {
-            if (entry.name.startsWith('.') || rule.excluded?.includes(entry.name) || ['node_modules', 'backups', 'pivane-usage', 'pivane-cron', 'pivane-uploads', 'pivane-queue', 'pivane-session-moves', 'pivane-artifacts', 'pivane-staffing'].includes(entry.name) || /\.bak(?:[.-]|$)|\.tmp$|~$/i.test(entry.name)) continue;
+            if (entry.name.startsWith('.') || rule.excluded?.includes(entry.name) || ['node_modules', 'backups', 'pivane-usage', 'pivane-cron', 'pivane-uploads', 'pivane-queue', 'pivane-session-moves', 'pivane-artifacts', 'pivane-staffing', 'pivane-compliance'].includes(entry.name) || /\.bak(?:[.-]|$)|\.tmp$|~$/i.test(entry.name)) continue;
             const file = `${relative}/${entry.name}`;
             if (entry.isSymbolicLink()) throw new Error(`Source entry is a symlink: ${file}`);
             if (entry.isDirectory()) visit(file);
@@ -72,7 +72,7 @@ function distributionFiles(root) {
         'test/fixtures/office/preview.xls', 'test/fixtures/office/LICENSE', 'test/fixtures/office/README.md',
         ...['rich.doc', 'rich.docx', 'rich.xls', 'rich.xlsx', 'rich.ppt', 'rich.pptx', 'rich-1904.xlsx', 'missing-font.docx',
             'golden-rich-doc.pdf', 'golden-rich-docx.pdf', 'golden-rich-ppt.pdf', 'golden-rich-pptx.pdf', 'rich-manifest.json'].map(name => 'test/fixtures/office/' + name),
-        'test/private-file-helper.cjs', 'test/fixtures/pi-0843-session.jsonl', 'test/fixtures/release-video.mp4'
+        'test/private-file-helper.cjs', 'test/fixtures/pi-0843-session.jsonl', 'test/fixtures/release-video.mp4',
     ];
     const fonts = 'public/vendor/katex-0.18.7/fonts';
     for (const name of fs.readdirSync(path.join(root, fonts)).sort()) {

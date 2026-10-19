@@ -37,6 +37,11 @@ test('assembled stop projection covers conservative side chat and private confir
     const before = gateway.desktopStop.snapshot();
     assert.equal(before.complete, true, JSON.stringify(before));
     assert.deepEqual(before.blockers, []);
+    gateway.compliance.mutating = true;
+    const complianceBusy = gateway.desktopStop.review({ action: 'stop' });
+    assert.equal(complianceBusy.ticket, undefined, 'compliance work prevents stop confirmation');
+    assert.equal(complianceBusy.blockers.find(row => row.type === 'compliance').count, 1);
+    gateway.compliance.mutating = false;
     const beforeCleanup = gateway.desktopStop.review({ action: 'stop' });
     const lease = maintenance.acquireReferenceLease(() => true);
     const cleaning = gateway.desktopStop.review({ action: 'stop' });

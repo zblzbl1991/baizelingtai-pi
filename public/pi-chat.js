@@ -891,6 +891,9 @@ document.addEventListener('DOMContentLoaded', () => {
         transcript: elements.transcript, anchors: () => state.messageAnchors,
         scope: () => state.connected && state.session?.agentProfile?.id && !state.session.ephemeral && state.profileLearningSupported
             ? { cwd: state.cwd, sessionId: state.session.id, profileId: state.session.agentProfile.id, generation: state.socketGeneration, busy: knowledgeBusy() } : null });
+    const complianceChat = window.PiCompliance?.createChat({ apiFetch,
+        context: () => ({ cwd: state.cwd, sessionId: state.session?.id, profileId: state.session?.agentProfile?.id,
+            connected: state.connected && !state.session?.ephemeral, generation: state.socketGeneration }) });
     // Media plans become confirmation cards in the conversation (chat is the main media entry).
     const mediaRequests = window.PiMediaRequests?.create({ fetch: apiFetch });
     const staffingCards = window.PiStaffingCards?.create({ fetch: apiFetch, context: () => state.connected && state.session ? { cwd: state.cwd, sessionId: state.session.id } : null });
@@ -1729,6 +1732,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         status.textContent = '';
         syncActualIdentity();
+        void complianceChat?.update();
         renderAssistantSessions();
         void loadAssistantUnclassified(epoch, chosen);
         if (requested.sessionId) {
@@ -4004,6 +4008,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.metaFile.title = ephemeral ? translateUi("临时 runtime 不创建 session 文件") : state.session?.path || runtime?.sessionFile || '';
         window.PiAgentProfilesUI?.displaySession(state.session, state.connected, JSON.stringify([state.cwd, state.session?.id, state.socketGeneration]));
         syncActualIdentity();
+        void complianceChat?.update();
     }
 
     function setStreaming(streaming) {
@@ -5239,6 +5244,30 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.transcript.addEventListener('click', copyFromTranscript);
     $('pi-transcript-archive')?.addEventListener('click', copyFromTranscript);
 
+    window.addEventListener('pi:compliance-start', async event => {
+        const storageKey = 'pivane.compliance.chat-operation';
+        try {
+            if (state.attachmentReads || state.submittingDrafts.has(state.composerSessionKey)) throw new Error(translateUi('请等待附件读取或消息投递完成'));
+            const originCwd = state.cwd, originId = state.session?.id, generation = state.socketGeneration;
+            let pending; try { pending = JSON.parse(sessionStorage.getItem(storageKey) || 'null'); } catch {}
+            const configuration = await apiFetch('/api/pi/compliance');
+            const input = pending || { cwd: event.detail.cwd, requestId: window.PiCompliance.randomId(), expectedRevision: configuration.revision };
+            let session;
+            if (pending) session = await apiFetch('/api/pi/compliance/operations/' + encodeURIComponent(input.requestId));
+            sessionStorage.setItem(storageKey, JSON.stringify(input));
+            if (!session || session.status === 'pending' && session.canResume) session = await apiFetch('/api/pi/compliance/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+            sessionStorage.removeItem(storageKey);
+            invalidateSessionList(session.cwd);
+            if (state.cwd !== originCwd || state.session?.id !== originId || state.socketGeneration !== generation) { toast(translateUi('合规对话已创建，可从会话列表打开。')); return; }
+            window.PiWorkspaceRoute?.navigate('chat');
+            if (state.cwd !== session.cwd) await selectProject(session.cwd);
+            const rows = state.projectSessions.get(session.cwd) || []; rows.unshift(session); state.projectSessions.set(session.cwd, rows); state.sessions = rows;
+            rememberProject(session.cwd); renderProjects(); renderSessions(); await openSession(session);
+        } catch (error) {
+            if (window.PiCompliance.isDefiniteRejection(error)) sessionStorage.removeItem(storageKey);
+            toast(error.status === 404 ? translateUi('原会话创建状态未知。请核对会话列表，系统没有重发请求。') : error.message, 'error');
+        } finally { event.detail?.complete?.(); }
+    });
     const extensionAssistant = window.PiExtensionAssistant.create({
         toast,
         context: () => ({ cwd: state.cwd, defaultProject: state.defaultProject }),

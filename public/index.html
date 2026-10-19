@@ -26,6 +26,7 @@
     <link rel="stylesheet" href="pi-model-picker.css">
     <link rel="stylesheet" href="pi-cron.css">
     <link rel="stylesheet" href="pi-agent-profiles.css">
+    <link rel="stylesheet" href="pi-compliance.css">
     <link rel="stylesheet" href="pi-profile-knowledge.css">
     <link rel="stylesheet" href="pi-chat-knowledge.css">
     <link rel="stylesheet" href="pi-mobile-header.css">
@@ -232,6 +233,7 @@
                         <span id="pi-connection-text"><!--i18n:s477-->正在连接</span>
                         <span id="pi-session-profile" class="pi-session-profile" hidden></span>
                         <span id="pi-actual-identity" class="pi-actual-identity" hidden></span>
+                        <button id="pi-compliance-open" type="button" hidden aria-expanded="false" aria-controls="pi-compliance-drawer">工程项目档案</button>
                         <button id="pi-profile-authoring-return" class="pi-conversation-origin" type="button" hidden><i class="fa-solid fa-user-pen" aria-hidden="true"></i><span></span></button>
                         <button id="pi-conversation-origin" class="pi-conversation-origin" type="button" hidden title="在工作对话中打开当前线程" aria-label="在工作对话中打开当前线程" data-i18n-title="s2574" data-i18n-aria-label="s2574"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i><span data-work-chat-label><!--i18n:s3867-->工作对话</span></button>
                         <button id="pi-current-thread-menu" type="button" title="当前线程操作" aria-label="当前线程操作" aria-haspopup="menu" aria-expanded="false" disabled data-i18n-title="s1347" data-i18n-aria-label="s1347"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></button>
@@ -241,6 +243,7 @@
                         <button id="pi-review-pending-ui" type="button"><!--i18n:s1353-->处理确认</button>
                     </div>
                     <div id="pi-chat-knowledge" hidden></div>
+                    <aside id="pi-compliance-drawer" hidden></aside>
                     <div class="pi-transcript-viewport">
                         <div id="pi-transcript" class="pi-transcript" tabindex="0" role="region" aria-label="会话消息" data-i18n-aria-label="s1354">
                             <section id="pi-transcript-archive" class="pi-transcript-archive" hidden></section>
@@ -660,6 +663,7 @@
                 <nav class="workspace-settings-nav" aria-label="设置分类" data-i18n-aria-label="s1507">
                     <button type="button" class="active" data-settings-tab="providers"><i class="fa-solid fa-key"></i><span><!--i18n:s1508-->供应商与模型</span></button>
                     <button type="button" data-settings-tab="media"><i class="fa-solid fa-photo-film"></i><span>模型与能力</span></button>
+                    <button type="button" data-settings-tab="builtins"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i><span>内置能力</span></button>
                     <button type="button" data-settings-tab="models"><i class="fa-solid fa-sliders"></i><span><!--i18n:s1509-->使用偏好</span></button>
                     <button type="button" id="system-prompts-nav" data-settings-tab="system-prompts" hidden><i class="fa-solid fa-file-lines"></i><span data-system-prompts-label></span></button>
                     <button type="button" id="native-settings-nav" data-settings-tab="native" hidden><i class="fa-solid fa-gear"></i><span><!--i18n:s726-->运行配置</span></button>
@@ -703,6 +707,7 @@
                         </div>
                         <section id="settings-subagents"></section>
                     </section>
+                    <section class="workspace-settings-panel" data-settings-panel="builtins" id="settings-builtins"></section>
                     <section class="workspace-settings-panel" data-settings-panel="profiles" id="pi-profiles-panel">
                         <div class="settings-panel-header"><i class="fa-solid fa-user-gear" aria-hidden="true"></i><div><h3>助手身份</h3><p>身份仅在新建线程时确定。已打开的线程不会因保存设置而重新加载。</p></div><button id="pi-profiles-refresh" class="settings-secondary-button settings-header-refresh" type="button" title="刷新助手身份" aria-label="刷新助手身份"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button></div>
                         <div id="pi-profiles-content"></div>
@@ -977,6 +982,10 @@
     <script src="pi-chat-knowledge.js"></script>
     <script src="pi-cron.js"></script>
     <script src="pi-agent-profiles.js"></script>
+    <script src="pi-compliance-reports.js"></script>
+    <script src="pi-compliance-review.js"></script>
+    <script src="pi-compliance-materials.js"></script>
+    <script src="pi-compliance.js"></script>
     <script src="settings.js"></script>
     <script src="media-fields.js"></script>
     <script src="media-lab.js"></script>

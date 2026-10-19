@@ -346,6 +346,7 @@ async function runChat(browser, base, width, locale) {
     // Real chat shell: verifies the pi-chat.js wiring (context anchors and transcript placement).
     const context = await browser.newContext({ viewport: { width, height: 820 }, locale, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [], writes = [], reloads = [];
+    await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, route => route.abort());
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(cwd => { localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem(`pi.web.session:${cwd}`, 'thread-one'); }, '/tmp/chat-knowledge-fixture');
     await page.route('**/api/**', async route => {
@@ -638,16 +639,23 @@ async function runWave2(browser, base, width, locale) {
     await page.locator('.pi-knowledge-editor textarea').fill('Project entry updated');
     assert.ok((await text('.pi-knowledge-editor')).includes(say('当前目录范围（按当前会话核实）', 'Current directory scope (verified per session)')));
     assert.ok((await text('.pi-knowledge-editor')).includes(say('项目记忆按当前会话目录核实。', 'Project memory is verified against the current session directory.')));
+    const projectMutationResponse = operation => page.waitForResponse(response => {
+        if (!response.url().endsWith('/knowledge/mutations') || response.request().method() !== 'POST') return false;
+        const input = response.request().postDataJSON();
+        return input.operation === operation && input.scope === 'project' && input.sessionId === 'thread-one' && input.itemId === hash('p');
+    });
+    const updated = projectMutationResponse('update');
     await page.locator('.pi-knowledge-editor button[type=submit]').click();
-    await page.waitForFunction(() => window.calls.some(call => call.body && call.body.operation === 'update'));
+    assert.equal((await updated).status(), 200);
     const update = state.mutations.at(-1);
     assert.deepEqual(Object.keys(update).sort(), ['category', 'content', 'expectedRevision', 'itemId', 'itemRevision', 'kind', 'operation', 'requestId', 'scope', 'sessionId']);
     assert.equal(update.scope, 'project'); assert.equal(update.sessionId, 'thread-one'); assert.equal(update.projectKey, undefined);
     assert.equal(update.itemId, hash('p')); assert.equal(update.itemRevision, hash('r'));
     await projectRow.click();
     await detail.locator('button').filter({ hasText: say('删除', 'Delete') }).click();
+    const deleted = projectMutationResponse('delete');
     await page.locator('.pi-profile-confirm .settings-primary-button').click();
-    await page.waitForFunction(() => window.calls.some(call => call.body && call.body.operation === 'delete'));
+    assert.equal((await deleted).status(), 200);
     const removal = state.mutations.at(-1);
     assert.deepEqual(Object.keys(removal).sort(), ['expectedRevision', 'itemId', 'itemRevision', 'kind', 'operation', 'requestId', 'scope', 'sessionId']);
     assert.equal(removal.scope, 'project'); assert.equal(removal.sessionId, 'thread-one');

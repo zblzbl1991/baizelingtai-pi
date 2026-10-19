@@ -43,23 +43,37 @@ test('managed launcher performs authenticated backup and restart with paused sch
     const queue = path.join(data, 'deferred.json');
     fs.writeFileSync(queue, JSON.stringify({ version: 1, jobs: [{ id: randomUUID(), cwd: project, sessionId: randomUUID(), dueAt: Date.now() + 3600000,
         payload: { message: 'Never deliver during maintenance', images: [] }, status: 'scheduled', revision: 1 }] }));
-    let output = '', owner;
+    let output = '', owner;const launchedAt=Date.now();let firstStdout=false,firstStderr=false;
     const child = spawn(process.execPath, [path.join(app, 'server.js')], { cwd: app,
         env: { PATH: process.env.PATH, HOME: os.homedir(), ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
             HOST: '127.0.0.1', PORT: '0', PI_CODING_AGENT_DIR: path.join(data, 'agent'), PI_MEDIA_DATA_DIR: path.join(data, 'media'),
             PI_MEDIA_CONFIG_DIR: path.join(data, 'agent/media-lab'), PI_PROJECT_ROOTS: project, PI_WEB_DEFERRED_FILE: queue,
             PI_WEB_TOKEN: 'maintenance-fixture-only', PI_OFFLINE: '1', PI_TELEMETRY: '0', PI_SKIP_VERSION_CHECK: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
     fixture.child = child;
-    child.stdout.on('data', b => { output += b; }); child.stderr.on('data', b => { output += b; });
+    child.once('spawn',()=>console.log('managed fixture: launcher process spawned',JSON.stringify({pid:child.pid,elapsedMs:Date.now()-launchedAt})));
+    child.stdout.on('data', b => { output += b;if(!firstStdout){firstStdout=true;console.log('managed fixture: first stdout',JSON.stringify({elapsedMs:Date.now()-launchedAt,bytes:b.length}));} });
+    child.stderr.on('data', b => { output += b;if(!firstStderr){firstStderr=true;console.log('managed fixture: first stderr',JSON.stringify({elapsedMs:Date.now()-launchedAt,bytes:b.length}));} });
     const port = await until(() => {
         if (child.exitCode !== null) throw new Error('Isolated launcher exited: ' + output);
         return /running at http:\/\/localhost:(\d+)/.exec(output)?.[1];
     });
     stage('launcher listening');
     const base = `http://127.0.0.1:${port}`;
+    console.log('managed fixture: launcher listening');
     const headers = { Authorization: 'Bearer maintenance-fixture-only', Origin: base, 'Content-Type': 'application/json' };
     const api = (route, method = 'GET', body, extra = {}) => fetch(base + '/api/pi/settings/updates' + route, { method, headers: { ...headers, ...extra }, ...(body ? { body: JSON.stringify(body) } : {}) });
-    const initial = await until(async () => { const response = await api('/maintenance'); const data = await response.json(); return data.supported && !data.busy && data; });
+    const initial = await until(async () => {
+        let response;
+        try { response = await api('/maintenance'); }
+        catch (error) {
+            // Readiness is a read-only poll. A connection reset during startup
+            // does not settle readiness; keep its existing deadline.
+            if (['ECONNRESET', 'ECONNREFUSED'].includes(error.cause?.code)) return false;
+            throw error;
+        }
+        assert.equal(response.status, 200);
+        const data = await response.json(); return data.supported && !data.busy && data;
+    });
     stage('maintenance ready');
     assert.equal((await fetch(base + '/api/pi/settings/updates/maintenance')).status, 401);
     assert.equal((await api('/review', 'POST', { action: 'backup' }, { Origin: 'https://untrusted.invalid' })).status, 403);
@@ -71,6 +85,7 @@ test('managed launcher performs authenticated backup and restart with paused sch
     const opened = once(owner, 'message');
     owner.send(JSON.stringify({ id: 'owner', type: 'open_session', cwd: project, sessionId: native.id, token: 'maintenance-fixture-only' }));
     assert.equal(JSON.parse((await opened)[0]).success, true);
+    console.log('managed fixture: native owner ready');
     const ownerBytes = fs.readFileSync(native.path);
     stage('native owner opened');
     const before = fs.readFileSync(path.join(data, 'agent/sessions/sentinel.jsonl'));

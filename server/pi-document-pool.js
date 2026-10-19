@@ -3,7 +3,7 @@ const path = require('node:path');
 const { fail } = require('./pi-file-scope');
 class DocumentParserPool {
     constructor({ timeout = 20000, maximum = 2 } = {}) { this.timeout = timeout; this.maximum = maximum; this.jobs = new Set(); this.closed = false; }
-    async run(bytes, format, input = {}, { signal, validateOnly = false, mode } = {}) {
+    async run(bytes, format, input = {}, { signal, validateOnly = false, render = false, mode } = {}) {
         if (mode !== undefined && mode !== 'staffing-xlsx') throw fail('Unsupported document parser mode', 400, 'DOCUMENT_INPUT');
         if (this.closed) throw fail('文档服务正在关闭', 503, 'DOCUMENT_BUSY');
         if (this.jobs.size >= this.maximum) throw fail('文档读取正在进行，请稍后再试', 429, 'DOCUMENT_BUSY');
@@ -37,7 +37,7 @@ class DocumentParserPool {
             timer = setTimeout(() => { failure ||= fail('文档读取超过 20 秒预算，请缩小文件', 413, 'DOCUMENT_TIMEOUT'); child.kill(); }, this.timeout);
             signal?.addEventListener('abort', cancel, { once: true });
             if (signal?.aborted) cancel();
-            child.send({ bytes, format, input, validateOnly, mode }, error => { if (error) { failure ||= fail('文档读取进程不可用', 503, 'DOCUMENT_PARSER'); child.kill(); } });
+            child.send({ bytes, format, input, validateOnly, render, mode }, error => { if (error) { failure ||= fail('文档读取进程不可用', 503, 'DOCUMENT_PARSER'); child.kill(); } });
         });
         return job.promise;
     }

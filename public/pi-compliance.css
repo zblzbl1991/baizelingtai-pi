@@ -1,0 +1,49 @@
+.compliance-settings { max-width: 70ch; padding-block: 12px 24px; }
+.compliance-settings h4 { font-size: 1.15rem; margin: 12px 0; }
+.compliance-status { font-weight: 600; color: var(--text-main); }
+.compliance-settings form { margin: 20px 0; }
+.compliance-settings fieldset, .compliance-project-form fieldset { border: 0; min-width: 0; padding: 0; margin: 0 0 16px; display: grid; gap: 16px; }
+.compliance-fields { display: grid; gap: 16px; margin-top: 20px; }
+.compliance-fields[hidden], #pi-compliance-drawer[hidden], #pi-compliance-open[hidden] { display: none; }
+.compliance-fields label, .compliance-project-form label { display: grid; gap: 7px; color: var(--text-main); font-size: .875rem; }
+.compliance-settings label:has(input[type="checkbox"]), .compliance-project-form label:has(input[type="checkbox"]) { display: flex; align-items: center; flex-direction: row-reverse; justify-content: flex-end; gap: 10px; }
+.compliance-settings input[type="checkbox"], .compliance-project-form input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--green); }
+.compliance-fields select, .compliance-project-form input:not([type="checkbox"]), .compliance-project-form select { width: 100%; min-width: 0; min-height: 42px; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; background: var(--surface-2); color: var(--text-main); font: inherit; font-size: 16px; }
+.compliance-fields select:focus-visible, .compliance-project-form input:focus-visible, .compliance-project-form select:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.pi-transcript-shell { position: relative; }
+#pi-compliance-open { border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--surface-2); color: var(--text-main); font: inherit; cursor: pointer; white-space: nowrap; }
+#pi-compliance-drawer { position: absolute; z-index: 25; top: 42px; right: 0; bottom: 0; width: min(480px,100%); overflow-y: auto; overscroll-behavior: contain; background: var(--surface-1); border: 1px solid var(--line); padding: 20px; box-sizing: border-box; }
+.compliance-drawer-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; position: sticky; top: -20px; margin: -20px -20px 0; padding: 20px; background: var(--surface-1); z-index: 2; border-bottom: 1px solid var(--line); }
+.compliance-drawer-header h3 { font-size: 1.15rem; margin: 0; }
+.compliance-project-list { display: grid; gap: 6px; margin-bottom: 16px; }
+.compliance-project-list button { text-align: left; overflow-wrap: anywhere; white-space: normal; }
+.compliance-project-form { margin-top: 24px; }
+.compliance-materials { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 12px; }
+.compliance-materials fieldset { min-width: 0; border: 0; padding: 0; margin: 0; display: grid; gap: 12px; }
+.compliance-materials label { display: grid; gap: 7px; }
+.compliance-materials input, .compliance-materials select, .compliance-materials textarea { min-width: 0; width: 100%; max-width: 100%; box-sizing: border-box; font: inherit; font-size: 16px; color: var(--text-main); background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+.compliance-materials label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: 10px; }
+.compliance-materials input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 18px; }
+.compliance-materials .compliance-material-row { border-top: 1px solid var(--line); padding-block: 16px; margin-top: 16px; }
+.compliance-materials legend, .compliance-materials p { overflow-wrap: anywhere; }
+.compliance-result { padding-block: 12px; border-bottom: 1px solid var(--line); }
+.compliance-result p { margin-block: 8px; }
+.compliance-evidence { margin-top: 16px; padding: 12px; background: var(--surface-2); }
+.compliance-evidence[hidden] { display: none; }
+.compliance-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.compliance-materials button { white-space: normal; }
+.compliance-review { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 12px; }
+.compliance-review-fields, .compliance-review-location { display: grid; gap: 12px; min-width: 0; }
+.compliance-review-fields[hidden] { display: none; }
+.compliance-review [hidden] { display: none; }
+#compliance-review-form :is(input, select, textarea) { font-size: 16px; }
+.compliance-review-card { margin-block: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.compliance-review-card p, .compliance-review-card pre { overflow-wrap: anywhere; white-space: pre-wrap; font: inherit; }
+.compliance-review details { margin-block: 12px; }
+.compliance-review details button { display: block; margin-block: 8px; }
+.compliance-review button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.compliance-reports { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 12px; min-width: 0; }
+.compliance-report-row { padding-block: 16px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.compliance-report-row strong, .compliance-report-row p { flex-basis: 100%; margin: 0 0 6px; overflow-wrap: anywhere; }
+.compliance-reports iframe { width: 100%; min-width: 0; height: 480px; border: 1px solid var(--line); margin-top: 12px; box-sizing: border-box; }
+@media(max-width:680px) { #pi-compliance-drawer { padding: 16px; } .compliance-drawer-header { top: -16px; margin: -16px -16px 0; padding: 16px; } #pi-compliance-open { font-size: .75rem; } }
