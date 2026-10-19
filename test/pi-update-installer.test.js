@@ -44,7 +44,9 @@ test('current bound Pi install verifies all seven packages without retired exper
             calls.push(args);
             if (calls.length === 1) installed(root, JSON.parse(readSafe(path.join(root, 'package.json'))), '1.2.0');
         } });
-    assert.equal(calls.length, 2, 'installation and credential-free probe run');
+    assert.equal(calls.length, 3, 'installation, required Office preflight and credential-free probe run');
+    assert.deepEqual(calls[1], [path.join(root, 'scripts/install-office-preview.cjs'), '--require-available']);
+    assert.deepEqual(calls[2], [path.join(root, 'server/pi-update-probe.js')]);
     assert.ok(fs.existsSync(path.join(root, 'PI_INSTALL_COMPLETE.json')));
 });
 
