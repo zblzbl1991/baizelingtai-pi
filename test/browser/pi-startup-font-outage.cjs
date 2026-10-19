@@ -21,11 +21,12 @@ const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['te
                 localStorage.setItem('pi.web.cwd', cwd);
                 localStorage.setItem('pi.web.session:' + cwd, 'font-fixture');
             }, cwd);
-            let releaseFont, fontRequested = false;
+            let releaseFont, fontRequested = false, fontReleased = false;
             const fontBarrier = new Promise(resolve => { releaseFont = resolve; });
             await page.route(/https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com)\//, async route => {
                 fontRequested = true;
                 await fontBarrier;
+                fontReleased = true;
                 await route.fulfill({ contentType: 'text/css', body: '' });
             });
             await page.route('**/api/**', route => {
@@ -49,7 +50,6 @@ const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['te
             }));
             try {
                 await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 12000 });
-                await page.waitForLoadState('load', { timeout: 12000 });
                 await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
                 await page.locator('#pi-input').fill('字体不可达时仍可编辑');
                 assert.equal(await page.locator('#pi-input').inputValue(), '字体不可达时仍可编辑');
@@ -59,10 +59,13 @@ const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['te
                 const sizes = await page.locator('body').evaluate(element => ({ width: element.clientWidth, scroll: element.scrollWidth }));
                 assert.ok(sizes.scroll <= sizes.width + 1, JSON.stringify(sizes));
                 assert.deepEqual(errors, []);
+                assert.equal(fontReleased, false, 'workbench is usable before the held optional font responds');
                 const screenshots = process.env.PIVANE_TEST_SCREENSHOT_DIR || path.join(os.tmpdir(), 'pivane-startup-font-outage');
                 fs.mkdirSync(screenshots, { recursive: true });
                 await page.screenshot({ path: path.join(screenshots, `startup-${width}.png`) });
                 console.log(JSON.stringify({ width, usableWhileFontHeld: true, fontRequested }));
+                releaseFont();
+                await page.waitForLoadState('load', { timeout: 12000 });
             } catch (error) {
                 console.error(JSON.stringify({ width, fontRequested, commands, symptom: error.message.split('\n')[0] }));
                 throw error;
