@@ -16,23 +16,26 @@ function zip(files, { compress = true } = {}) {
 }
 const contentType = (part, type) => `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/${part}" ContentType="application/vnd.openxmlformats-officedocument.${type}"/></Types>`;
 function docxFiles() { return {
+    '_rels/.rels': '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="office" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
     '[Content_Types].xml': contentType('word/document.xml', 'wordprocessingml.document.main+xml'),
     'word/document.xml': '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>合同 &amp; 分析</w:t></w:r></w:p><w:p><w:r><w:t>第二段</w:t><w:tab/><w:t>金额</w:t><w:br/><w:t>100</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>项目</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>预算</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>'
 }; }
 function xlsxFiles() { return {
+    '_rels/.rels': '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="office" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
     '[Content_Types].xml': contentType('xl/workbook.xml', 'spreadsheetml.sheet.main+xml'),
-    'xl/workbook.xml': '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr date1904="1"/><sheets><sheet name="销售" sheetId="1" r:id="r1"/><sheet name="隐藏表" state="hidden" sheetId="2" r:id="r2"/></sheets></workbook>',
-    'xl/_rels/workbook.xml.rels': '<Relationships><Relationship Id="r1" Target="worksheets/sheet1.xml"/><Relationship Id="r2" Target="worksheets/sheet2.xml"/></Relationships>',
+    'xl/workbook.xml': '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr date1904="1"/><sheets><sheet name="销售" sheetId="1" r:id="r1"/><sheet name="隐藏表" state="hidden" sheetId="2" r:id="r2"/></sheets></workbook>',
+    'xl/_rels/workbook.xml.rels': '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r1" Target="worksheets/sheet1.xml"/><Relationship Id="r2" Target="worksheets/sheet2.xml"/></Relationships>',
     'xl/sharedStrings.xml': '<sst><si><t>金额</t></si><si><r><t>销售</t></r><r><t>总额</t></r></si></sst>',
     'xl/worksheets/sheet1.xml': '<worksheet><dimension ref="A1:C6"/><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="inlineStr"><is><t>部门 &lt;A&gt;</t></is></c></row><row r="3"><c r="A3"><v>100</v></c><c r="B3"><f>SUM(A3:A4)</f><v>300</v></c><c r="C3" t="b"><v>1</v></c></row><row r="6"><c r="A6" t="s"><v>1</v></c></row></sheetData></worksheet>',
     'xl/worksheets/sheet2.xml': '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>隐藏内容</t></is></c></row></sheetData></worksheet>'
 }; }
 function pptxFiles() { return {
+    '_rels/.rels': '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="office" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>',
     '[Content_Types].xml': contentType('ppt/presentation.xml', 'presentationml.presentation.main+xml'),
-    'ppt/presentation.xml': '<p:presentation xmlns:p="urn:p" xmlns:r="urn:r"><p:sldIdLst><p:sldId id="1" r:id="r2"/><p:sldId id="2" r:id="r1"/></p:sldIdLst></p:presentation>',
-    'ppt/_rels/presentation.xml.rels': '<Relationships><Relationship Id="r1" Target="slides/slide1.xml"/><Relationship Id="r2" Target="slides/slide2.xml"/></Relationships>',
-    'ppt/slides/slide1.xml': '<p:sld xmlns:p="urn:p" xmlns:a="urn:a"><p:cSld><a:p><a:r><a:t>第二页</a:t></a:r></a:p></p:cSld></p:sld>',
-    'ppt/slides/slide2.xml': '<p:sld xmlns:p="urn:p" xmlns:a="urn:a"><p:cSld><a:p><a:r><a:t>第一</a:t></a:r><a:r><a:t>页</a:t></a:r></a:p></p:cSld></p:sld>'
+    'ppt/presentation.xml': '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId id="1" r:id="r2"/><p:sldId id="2" r:id="r1"/></p:sldIdLst></p:presentation>',
+    'ppt/_rels/presentation.xml.rels': '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r1" Target="slides/slide1.xml"/><Relationship Id="r2" Target="slides/slide2.xml"/></Relationships>',
+    'ppt/slides/slide1.xml': '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><a:p><a:r><a:t>第二页</a:t></a:r></a:p></p:cSld></p:sld>',
+    'ppt/slides/slide2.xml': '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><a:p><a:r><a:t>第一</a:t></a:r><a:r><a:t>页</a:t></a:r></a:p></p:cSld></p:sld>'
 }; }
 function pdfBytes() {
     const stream = 'BT /F1 12 Tf 20 40 Td (Office upload fixture) Tj ET';

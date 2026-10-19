@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { selectMessageView } = require('./pi-mobile-view-helper.cjs');
 const http = require('node:http');
@@ -31,6 +32,7 @@ const messages = [
     result('unknown', 'unknown_tool', provenance('wrong-id', 'unknown_tool', { source: { source: 'false-owner', path: '/x' } }))
 ];
 async function run(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ locale, viewport: { width, height: 900 } }), page = await context.newPage();
     const errors = []; let socket;
     page.on('pageerror', e => errors.push(e.message));
@@ -99,6 +101,6 @@ async function run(browser, base, width, locale) {
     const app = require('express')(); app.use(require('express').static(path.resolve(__dirname, '../../public'))); app.use('/vendor', require('express').static(path.resolve(__dirname, '../../node_modules')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const [width, locale] of [[1440, 'zh-CN'], [393, 'zh-CN'], [320, 'en']]) await run(browser, process.env.PI_TOOL_LABELS_TEST_URL || `http://127.0.0.1:${server.address().port}`, width, locale); }
+    try { for (const [width, locale] of selectBrowserTargets([[1440, 'zh-CN'], [393, 'zh-CN'], [320, 'en']])) await run(browser, process.env.PI_TOOL_LABELS_TEST_URL || `http://127.0.0.1:${server.address().port}`, width, locale); }
     finally { await browser.close(); await new Promise(r => server.close(r)); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

@@ -17,7 +17,7 @@
     function create({ api, currentCwd }) {
         const root = document.getElementById('cron-tab'); if (!root) return;
         let snapshot = null, profiles = [], projects = [], selected = '', draft = null, dirty = false, busy = false, visible = false, epoch = 0, query = '', filterProfile = '';
-        let runRequest = null, previewEpoch = 0, projectsRequested = false;
+        let runRequest = null, previewEpoch = 0, projectsRequested = false, projectsLoad;
         const header = node('header', 'cron-header'), heading = node('div');
         heading.append(node('span', 'cron-eyebrow', '白泽灵台'), node('h1', '', t('定时任务')), node('p', '', t('让日常安排，准时回到对话里。')));
         const actions = node('div', 'cron-actions');
@@ -78,7 +78,7 @@
             if (!snapshot && !draft) { message(); loading(); }
             if (!projectsRequested) {
                 projectsRequested = true;
-                void api('/api/pi/projects').then(data => { projects = data.projects || []; }).catch(() => { projectsRequested = false; });
+                projectsLoad = api('/api/pi/projects').then(data => { projects = data.projects || []; }).catch(() => { projectsRequested = false; });
             }
             try {
                 const [data, profileData] = await Promise.all([api('/api/pi/cron'), api('/api/pi/profiles')]);
@@ -204,6 +204,9 @@
                 const v = ++sessionsEpoch, isProfile = kind.value === 'profile', home = snapshot.homes.find(h => h.profileId === profile.value);
                 profile.parentElement.hidden = !isProfile; targetActions.replaceChildren();
                 targetStatus.textContent = isProfile ? home?.status === 'ready' ? `${t('当前主线程')}：${home.name || home.sessionId}` : t('尚未设置主线程。可指定已有线程，或在这个目录创建。') : '';
+                // Invalidate the previous directory's options immediately, so a
+                // late response cannot reset a choice made from stale options.
+                sessions.disabled = true; sessions.replaceChildren();
                 try {
                     const data = await api(`/api/pi/sessions?cwd=${encodeURIComponent(cwd.value)}`);
                     if (v !== sessionsEpoch || !form.isConnected) return;
@@ -215,6 +218,7 @@
                     }
                     sessions.value = isProfile ? home?.sessionId || '' : selectedSession || draft.target.sessionId || '';
                 } catch (error) { if (v === sessionsEpoch) targetStatus.textContent = error.message; }
+                finally { if (v === sessionsEpoch && form.isConnected) sessions.disabled = false; }
                 if (isProfile && v === sessionsEpoch) {
                     const saveHome = async (b, create) => {
                         if (create && !await confirm('创建主线程', '将在所填工作目录创建一个持久线程，并设为此身份的主线程。', '创建')) return;
@@ -310,6 +314,12 @@
         }
         async function openHomes() {
             if (!snapshot || !await leave()) return;
+            // The task list can load before projects. Resolve this form's
+            // directory defaults before letting it submit a main-thread target.
+            const pending = { home: true }; draft = pending; dirty = false; showDetail(); detail.replaceChildren();
+            const waiting = node('p', 'cron-muted', t('正在读取定时任务…')); waiting.setAttribute('role', 'status'); detail.append(waiting);
+            const version = epoch; await projectsLoad;
+            if (!visible || version !== epoch || draft !== pending) { if (draft === pending) draft = null; return; }
             draft = { home: true }; dirty = false; showDetail(); detail.replaceChildren();
             const form = node('div', 'cron-form'); form.append(back(), node('h2', '', t('主线程')), node('p', 'cron-muted', t('主线程按需创建，也可以指定已有线程作为定时任务的默认目标。')));
             const profile = field(form, '助手身份', 'select', filterProfile || profiles[0]?.id || '', { choices: profiles.filter(p => p.enabled).map(p => [p.id, p.name]) });

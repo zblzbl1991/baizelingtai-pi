@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -18,7 +19,7 @@ async function main() {
     const evidence = process.env.PIVANE_TEST_SCREENSHOT_DIR;
     if (evidence) fs.mkdirSync(evidence, { recursive: true });
     try {
-        for (const [name, width, scheme] of [['desktop', 1440, 'light'], ['mobile', 390, 'light'], ['dark', 1440, 'dark']]) {
+        for (const [name, width, scheme] of selectBrowserTargets([['desktop', 1440, 'light'], ['mobile', 390, 'light'], ['dark', 1440, 'dark']])) {
             const startup = await createDesktopStartup({ root });
             const context = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900, colorScheme: scheme });
             const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
@@ -38,7 +39,7 @@ async function main() {
             } finally { await context.close(); await startup.close(); }
         }
         const failed = await createDesktopStartup({ root });
-        const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+        const context = await browser.newContext({ viewport: { width: process.env.PIVANE_BROWSER_TARGET === 'desktop' ? 1440 : 390, height: 844 }, reducedMotion: 'reduce' });
         const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
         try {
             await page.goto(failed.url, { waitUntil: 'domcontentloaded' });
@@ -62,7 +63,7 @@ async function main() {
             await lostPage.waitForFunction(() => document.getElementById('startup-title').textContent === '正在重新连接');
             assert.equal(lostPage.url(), lost.url);
         } finally { await lostContext.close(); await lost.close(); }
-        for (const width of [1440, 390]) {
+        for (const width of selectBrowserTargets([1440, 390])) {
             const recovering = await createDesktopStartup({ root });
             const recoveryContext = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
             const recoveryPage = await recoveryContext.newPage(); recoveryPage.on('pageerror', error => errors.push(error.message));
@@ -92,7 +93,7 @@ async function main() {
             } finally { await recoveryContext.close(); await recovering.close(); }
         }
         assert.deepEqual(errors, []);
-        console.log(JSON.stringify({ ok: true, viewports: ['desktop', 'mobile'], themes: ['light', 'dark'], pageErrors: errors, evidence }));
+        console.log(JSON.stringify({ ok: true, viewports: process.env.PIVANE_BROWSER_TARGET === 'desktop' ? ['desktop'] : ['desktop', 'mobile'], themes: ['light', 'dark'], pageErrors: errors, evidence }));
     } finally {
         await browser.close();
         await new Promise(resolve => target.close(resolve));

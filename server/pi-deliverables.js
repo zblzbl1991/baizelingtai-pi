@@ -13,6 +13,8 @@ const ENTRY = 'pivane-deliverable';
 const idPattern = /^[a-f0-9]{64}$/;
 const digest = value => createHash('sha256').update(value).digest('hex');
 const invalid = () => fail('交付参数无效', 400, 'DELIVERY_INPUT');
+const workerIds = new WeakMap(); let nextWorkerId = 0;
+const workerIdentity = worker => { if (!worker) return null; if (!workerIds.has(worker)) workerIds.set(worker, ++nextWorkerId); return workerIds.get(worker); };
 function validate(input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)
         || Object.keys(input).some(k => !['requestId', 'title', 'files', 'sourceRoot'].includes(k))
@@ -132,14 +134,14 @@ class DeliverableService {
             if (worker.disposed || worker.restarting || worker.sessionId !== session.id || worker.cwd !== session.cwd) throw fail('会话运行身份已变化', 409, 'DELIVERY_CONTEXT');
             const snapshot = await worker.request('get_entries');
             if (worker !== this.supervisor.getActiveWorker(session.path) || worker.disposed) throw fail('会话连接已变化', 409, 'DELIVERY_CONTEXT');
-            return { session, refs: references(activeBranch(snapshot)) };
+            return { session, refs: references(activeBranch(snapshot)), worker };
         }
         if (fs.statSync(session.path).size > 128 * 1024 * 1024) throw fail('会话超过交付索引读取预算', 413, 'DELIVERY_LIMIT');
         const { SessionManager } = await getSdk();
         const manager = this.store.profileManager(session, SessionManager);
         return { session, refs: references(manager.getBranch()) };
     }
-    async request(input) {
+    async request(input, office = false) {
         if (!input || Object.keys(input).some(k => !['cwd', 'sessionId', 'id', 'index', 'path'].includes(k))
             || (input.id === undefined) !== (input.index === undefined) || input.id !== undefined && input.path !== undefined) throw invalid();
         if (this.reading >= 4) throw fail('交付读取正在进行，请稍后再试', 429, 'FILE_BUSY');
@@ -158,7 +160,8 @@ class DeliverableService {
                 const result = await this.objects.content(ref, index);
                 await require('./pi-session-fork-access').checkForkAccess(this.store, initial.session, proof.forkRevision);
                 const current = await this.branch(input);
-                if (current.session.path !== initial.session.path || !current.refs.some(r => r.id === ref.id && r.manifestRevision === ref.manifestRevision)) throw fail('会话分支已变化', 409, 'DELIVERY_CONTEXT');
+                if (current.session.path !== initial.session.path || current.worker !== initial.worker || !current.refs.some(r => r.id === ref.id && r.manifestRevision === ref.manifestRevision)) throw fail('会话分支已变化', 409, 'DELIVERY_CONTEXT');
+                if (office) result.officeProof = JSON.stringify([initial.session.path, workerIdentity(initial.worker), ref]);
                 return result;
             }
             const items = [];

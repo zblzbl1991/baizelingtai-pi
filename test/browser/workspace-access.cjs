@@ -1,4 +1,5 @@
 // Synthetic HTTP/API/WebSocket fixtures only; never connects to a running workbench or provider.
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -128,7 +129,7 @@ async function widths(page) {
     const base = `http://127.0.0.1:${server.address().port}`;
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const width of [1440, 393, 320]) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) {
             state = fixture();
             const status = await (await fetch(base + '/api/pi/status')).json();
             assert.ok(status.projectRoots.every(p => p.startsWith('/tmp/pi-access-')), 'must use isolated project roots');

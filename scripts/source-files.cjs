@@ -52,6 +52,7 @@ function distributionFiles(root) {
         ...publicDocumentation(root), 'docs/public-files.json',
         ...require('./vendor-files.cjs').vendorFiles(root),
         ...require('../server/officecli/inventory').distributionFiles(root),
+        ...require('../server/office-preview/inventory').distributionFiles(root),
         'native/pi-win32-fd.c', 'native/pi-win32-x64-fd.node', 'native/win32-x64-manifest.json',
         'native/pi-darwin-fd.c', 'native/pi-darwin-fd.node', 'native/darwin-fd-manifest.json',
         'package.json', 'package-lock.json', 'LICENSE', 'server.js', '.env.example', '.gitignore', 'scripts/windows-portable-assets.json',
@@ -68,6 +69,9 @@ function distributionFiles(root) {
         ...[64, 192, 512, 1024].map(size => `public/brand/logo-${size}.png`),
         'config/media-lab.json', 'config/tts-providers.json',
         'server/profile-memory/upstream-lock.json',
+        'test/fixtures/office/preview.xls', 'test/fixtures/office/LICENSE', 'test/fixtures/office/README.md',
+        ...['rich.doc', 'rich.docx', 'rich.xls', 'rich.xlsx', 'rich.ppt', 'rich.pptx', 'rich-1904.xlsx', 'missing-font.docx',
+            'golden-rich-doc.pdf', 'golden-rich-docx.pdf', 'golden-rich-ppt.pdf', 'golden-rich-pptx.pdf', 'rich-manifest.json'].map(name => 'test/fixtures/office/' + name),
         'test/private-file-helper.cjs', 'test/fixtures/pi-0843-session.jsonl', 'test/fixtures/release-video.mp4'
     ];
     const fonts = 'public/vendor/katex-0.18.7/fonts';

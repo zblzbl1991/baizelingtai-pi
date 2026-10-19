@@ -5,6 +5,7 @@ const { createHash } = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const { checkDocumentation } = require('./check-docs.cjs');
 const { distributionFiles } = require('./source-files.cjs');
+const { tarInvocation } = require('./package-tar.cjs');
 
 const root = path.resolve(__dirname, '..');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -65,9 +66,8 @@ try {
     const ownerOptions = ['darwin', 'win32'].includes(process.platform)
         ? ['--uid', '0', '--gid', '0', '--uname', 'root', '--gname', 'root']
         : ['--sort=name', '--owner=0', '--group=0', '--numeric-owner'];
-    const tarExecutable = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/tar.exe')
-        : process.platform === 'darwin' ? '/usr/bin/tar' : 'tar';
-    execFileSync(tarExecutable, [...ownerOptions, '-czf', archive, '-C', temporary, packageName], {
+    const tar = tarInvocation([...ownerOptions, '--format=ustar', '-czf', archive, '-C', temporary, packageName]);
+    execFileSync(tar.file, tar.args, {
         env: { ...process.env, COPYFILE_DISABLE: '1' }, windowsHide: true
     });
     const sha256 = hash(fs.readFileSync(archive));

@@ -139,7 +139,7 @@ node test/release/windows-portable.cjs 'C:/packages/portable.zip' '<实际SHA256
 
 ## 实现与参考
 
-托盘交互参考 [dsh-tray-launcher](https://github.com/fancr-code/dsh-tray-launcher) 的 PowerShell/Windows Forms 方案，本项目独立实现。服务由现有 ManagedLauncher 启动；服务日志与私有 LF 状态消息分开；退出通过托盘拥有的 stdin 管道进入统一异步停机，不通过端口或命令行特征寻找并强杀进程。
+托盘交互参考 [dsh-tray-launcher](https://github.com/fancr-code/dsh-tray-launcher) 的 PowerShell/Windows Forms 方案，本项目独立实现。服务由现有 ManagedLauncher 启动；服务日志与私有 LF 状态消息分开。停止与退出经过托盘拥有的私有控制管道、一次性停机票据和统一异步清理，不通过端口或命令行特征寻找并强杀进程。服务停止并核实清理完成后，用户可明确启动新一轮服务以加载代码；管理窗口不提供旧版的一键重启或 R/Q 控制台快捷键。
 
 同目录托盘通过当前用户会话内的 Mutex 与 EventWaitHandle 合并重复启动。托盘常驻，每轮服务使用新代次、新 Node runner 与新 ManagedLauncher；安装级运行锁在所属服务及 worker 清理得到私有通道证明且服务真正退出后释放，托盘的桌面互斥继续保留。退出码 0 本身不是清理证明；无法确认时保留 runner 和运行锁，防止建立新所有者。旧代次回调不能覆盖当前状态。现有受管维护在 runner 内切换服务时仍使用原来的内部代次与就绪核对。
 

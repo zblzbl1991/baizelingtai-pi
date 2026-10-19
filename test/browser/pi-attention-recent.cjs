@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const base = process.env.PI_ATTENTION_TEST_URL || 'http://127.0.0.1:3001';
@@ -10,6 +11,7 @@ const sessions = [make(cwdA, 'active', '2020-01-01T00:00:00Z'), make(cwdA, 'old-
     ...Array.from({ length: 15 }, (_, i) => make(i % 2 ? cwdB : cwdA, `recent-${String(i + 1).padStart(2, '0')}`, new Date(Date.UTC(2026, 8, 20, 0, 30 - i)).toISOString()))];
 
 async function run(browser, viewport) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width < 900, hasTouch: viewport.width < 900 });
     const page = await context.newPage();
     const errors = [], writes = [], commands = [], loaded = [];
@@ -273,6 +275,6 @@ async function run(browser, viewport) {
 }
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }]) await run(browser, viewport); }
+    try { for (const viewport of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }])) await run(browser, viewport); }
     finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

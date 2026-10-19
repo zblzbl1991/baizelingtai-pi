@@ -34,10 +34,11 @@
                 delete: act('delete', tr('删除', 'Delete'), 'fa-trash-can', 'is-icon is-danger-quiet', true, 'fa-regular')
             };
             this.buttons.download.dataset.action = 'download';
+            this.officeRefresh = button(tr('刷新预览', 'Refresh preview'), () => { this.refreshOffice = true; this.render(); }, 'artifacts-btn', { icon: 'fa-rotate' });
             const more = button(tr('更多操作', 'More actions'), null, 'artifacts-btn is-icon', { icon: 'fa-ellipsis', iconOnly: true });
             this.moreMenu = ui.menu(more, () => this.menuItems());
             this.closeButton = button(tr('关闭预览', 'Close preview'), () => this.dialog.close(), 'artifacts-btn is-icon artifacts-close', { icon: 'fa-xmark', iconOnly: true });
-            this.toolbar.append(this.buttons.save, this.buttons.restore, this.buttons.favorite, this.buttons.download, this.buttons.purge, this.buttons.delete, this.moreMenu);
+            this.toolbar.append(this.buttons.save, this.buttons.restore, this.buttons.favorite, this.buttons.download, this.buttons.purge, this.buttons.delete, this.officeRefresh, this.moreMenu);
             const top = node('div', null, 'artifacts-detail-top'); top.append(this.badge, names, this.toolbar, this.closeButton);
             this.chips = node('div', null, 'artifacts-detail-chips');
             header.append(top, this.chips);
@@ -126,7 +127,7 @@
             b.favorite.querySelector('i').className = (favorite ? 'fa-solid' : 'fa-regular') + ' fa-star';
             b.favorite.setAttribute('aria-pressed', String(favorite)); b.favorite.classList.toggle('is-on', favorite);
             this.toolbar.querySelectorAll('button').forEach(button => { button.disabled = false; });
-            b.download.disabled = !this.raw;
+            b.download.disabled = !this.raw; this.officeRefresh.hidden = trashed || !window.PiOfficeFilePreview?.supports(file.name);
             // Collections are shown where they apply, each removable in place.
             this.chips.replaceChildren();
             if (library && !trashed) {
@@ -177,7 +178,7 @@
         }
         async select(file) {
             this.controller?.abort(); this.controller = new AbortController(); const seq = ++this.sequence;
-            this.cleanup(); this.file = file; this.data = null; this.raw = null; this.source = false; this.loadingError = false;
+            this.cleanup(); this.file = file; this.data = null; this.raw = null; this.source = false; this.loadingError = false; this.refreshOffice = false; this.previewState = {};
             this.files.querySelectorAll('[data-key]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.key === file.key)));
             this.modes.hidden = true; this.chrome();
             if (this.item.trashedAt) {
@@ -197,6 +198,14 @@
         }
         render() {
             this.cleanup(); const data = this.data; if (!data) return;
+            if (window.PiOfficeFilePreview?.supports(this.file.name)) {
+                this.modes.hidden = true; const seq = this.sequence, refresh = this.refreshOffice; this.refreshOffice = false;
+                this.dispose = window.PiOfficeFilePreview.render(this.body, { source: { type: 'artifact', key: this.readable(this.file).key }, name: this.file.name, revision: data.revision }, {
+                    api: (...args) => this.api(...args), state: this.previewState, refresh,
+                    signal: this.controller.signal, isCurrent: () => seq === this.sequence && this.dialog.open,
+                    retry: () => { this.refreshOffice = true; this.render(); }, isFullscreen: () => true
+                }); return;
+            }
             const text = TEXT_KINDS.includes(data.kind) && data.kind !== 'text';
             this.modes.hidden = !text;
             this.previewMode.setAttribute('aria-pressed', String(!this.source)); this.toggle.setAttribute('aria-pressed', String(Boolean(this.source)));

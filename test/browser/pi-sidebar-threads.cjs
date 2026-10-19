@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Sidebar regression: inline search header, project menu without duplicated open/collapse rows,
 // and the capped thread list with explicit "show more" / "show less" control.
 // Mocks REST/WebSocket only; never creates real sessions or sends model prompts.
@@ -21,6 +22,7 @@ const sessions = Array.from({ length: 9 }, (_, index) => session(9 - index));
 const activeSession = sessions[sessions.length - 1];
 
 async function run(browser, viewport) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, hasTouch: viewport.width < 900, isMobile: viewport.width < 900 });
     const page = await context.newPage();
     const errors = [];
@@ -101,7 +103,7 @@ async function run(browser, viewport) {
     };
 
     // Search replaces the title without moving the filters or thread list.
-    for (const width of viewport.width > 900 ? [232, 278, 440] : [null]) {
+    for (const width of (viewport.width > 900 ? [232, 278, 440] : [null])) {
         if (width) await page.locator('#pi-session-pane').evaluate((node, width) => node.style.setProperty('--split-size', `${width}px`), width);
         await checkHeader(false);
         const before = await listTop();
@@ -229,6 +231,6 @@ async function run(browser, viewport) {
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 412, height: 915 }, { width: 320, height: 740 }]) await run(browser, viewport);
+        for (const viewport of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 412, height: 915 }, { width: 320, height: 740 }])) await run(browser, viewport);
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

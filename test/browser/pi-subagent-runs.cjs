@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { selectMessageView } = require('./pi-mobile-view-helper.cjs');
 const http = require('node:http');
@@ -33,6 +34,7 @@ const messages = [
 ];
 const innerWidthOf = width => width;
 async function check(browser, base, width, language) {
+    if (!browserTargetEnabled(width)) return;
     const fixtureNow = Date.now();
     running.generatedAt = fixtureNow; running.runs[0].startedAt = fixtureNow - 65000;
     finished.runs[0].startedAt = fixtureNow - 65000; finished.runs[0].endedAt = fixtureNow - 1000;
@@ -283,7 +285,7 @@ async function check(browser, base, width, language) {
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const width of [1440, 393, 320]) for (const language of ['zh-CN', 'en']) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) for (const language of ['zh-CN', 'en']) {
             await check(browser, `http://127.0.0.1:${server.address().port}`, width, language);
             console.log(`Subagent runs passed: ${width} ${language}`);
         }

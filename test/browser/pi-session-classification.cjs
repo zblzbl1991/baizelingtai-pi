@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Full UI against synthetic loopback REST/WS. No real sessions, identities or model calls.
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -17,6 +18,7 @@ const model = { id: 'fixture', provider: 'fixture', name: 'Fixture', input: ['te
 const evidence = process.env.PIVANE_TEST_SCREENSHOT_DIR || path.join(os.tmpdir(), 'pivane-classification-design');
 let classificationWrite;
 async function run(browser, base, width, language, variant = 'assistant') {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 900 }, locale: language, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [], posts = [], opened = [];
     const en = language === 'en', assistant = variant !== 'ordinary', noGroups = variant === 'no-categories';
@@ -186,7 +188,7 @@ async function run(browser, base, width, language, variant = 'assistant') {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
         const base = 'http://127.0.0.1:' + server.address().port;
-        for (const width of [1440, 393, 320]) for (const language of ['zh-CN', 'en']) await run(browser, base, width, language);
+        for (const width of selectBrowserTargets([1440, 393, 320])) for (const language of ['zh-CN', 'en']) await run(browser, base, width, language);
         await run(browser, base, 1440, 'zh-CN', 'no-categories'); await run(browser, base, 393, 'en', 'no-categories');
         await run(browser, base, 1440, 'en', 'ordinary'); await run(browser, base, 393, 'zh-CN', 'ordinary');
     } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }

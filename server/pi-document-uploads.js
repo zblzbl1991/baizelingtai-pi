@@ -22,7 +22,7 @@ function uploadInput(raw) {
         || typeof raw.requestId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(raw.requestId)
         || typeof raw.name !== 'string' || !raw.name || raw.name.length > 240 || /[\x00-\x1f\x7f/\\]/.test(raw.name)) throw invalid();
     const format = raw.name.split('.').at(-1).toLowerCase();
-    if (!['docx', 'xlsx', 'pptx', 'pdf'].includes(format)) throw fail('请上传 DOCX、XLSX、PPTX 或 PDF 文件', 415, 'DOCUMENT_FORMAT');
+    if (!['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf'].includes(format)) throw fail('请上传 DOC、DOCX、XLS、XLSX、PPT、PPTX 或 PDF 文件', 415, 'DOCUMENT_FORMAT');
     return { ...raw, format };
 }
 class DocumentUploads {
@@ -62,10 +62,10 @@ class DocumentUploads {
             || typeof manifest.cwd !== 'string' || typeof manifest.sessionId !== 'string' || typeof manifest.requestId !== 'string') throw fail('文档清单无效', 409, 'DOCUMENT_CHANGED');
         return { folder, check, manifest };
     }
-    async bytes(object) {
+    async bytes(object, verified = false) {
         const content = await readVerifiedFile(path.join(object.folder, 'original'), { check: object.check, maxBytes: MAX_BYTES });
         if (content.revision !== object.manifest.reference.revision || content.size !== object.manifest.reference.size) throw fail('文档原件已变化', 409, 'DOCUMENT_CHANGED');
-        return content.bytes;
+        return verified ? content : content.bytes;
     }
     async session(input) {
         if (typeof input.cwd !== 'string' || typeof input.sessionId !== 'string' || !input.sessionId || input.sessionId.length > 160) throw invalid();
@@ -94,7 +94,8 @@ class DocumentUploads {
             await this.bytes(existing); return { reference, marker: refs.marker(reference), reused: true };
         } catch (error) { if (error.code !== 'ENOENT') throw error; }
         // Validate only; full contents enter the model exclusively on explicit reads.
-        await this.pool.run(bytes, input.format, {}, { validateOnly: true });
+        if (['doc', 'xls', 'ppt'].includes(input.format)) require('./pi-office-format').validateOfficeFormat(bytes, input.format);
+        else await this.pool.run(bytes, input.format, {}, { validateOnly: true });
         const current = await this.session(input);
         if (session.path !== current.path || session.cwd !== current.cwd || this.closed || this.isSuspended()) throw fail('会话已变化，原上传未提交', 409, 'DOCUMENT_CONTEXT');
         if (this.writing) throw fail('文档附件正在保存，请稍后再试', 429, 'DOCUMENT_BUSY');
@@ -170,8 +171,8 @@ class DocumentUploads {
         const access = !attached && !ownUpload && draft ? await require('./pi-session-fork-access').readForkAccess(this.store, initial.session) : null;
         const inheritedDraft = access?.documents.some(item => refs.marker(item) === refs.marker(ref));
         if (!attached && !ownUpload && !inheritedDraft) throw fail('文档附件不属于当前会话分支', 403, 'DOCUMENT_SCOPE');
-        const bytes = await this.bytes(object);
-        return { initial, object, bytes, reference: ref, attached, draftRevision: inheritedDraft ? access.revision : null };
+        const content = await this.bytes(object, true);
+        return { initial, object, bytes: content.bytes, nativeProof: content[require('./pi-file-bytes').VERIFIED_IDENTITY], reference: ref, attached, draftRevision: inheritedDraft ? access.revision : null };
     }
     async checkCurrent(input, authorized) {
         if (authorized.draftRevision) {
@@ -199,6 +200,7 @@ class DocumentUploads {
         const input = { cwd: worker.cwd, sessionId: worker.sessionId, id }, authorized = await this.authorized(input);
         if (authorized.initial.worker !== worker) throw fail('会话运行身份已变化', 409, 'DOCUMENT_CONTEXT');
         signal?.throwIfAborted();
+        if (['doc', 'xls', 'ppt'].includes(authorized.reference.format)) throw fail('旧格式附件仅支持预览和下载；请转换为 DOCX、XLSX 或 PPTX 后由 Agent 读取', 415, 'DOCUMENT_FORMAT');
         if (source && (!['docx', 'xlsx', 'pptx'].includes(authorized.reference.format) || authorized.bytes.length > 16 * 1024 * 1024)) throw fail('Office 编辑仅支持不超过 16 MiB 的 DOCX、XLSX 或 PPTX', 415, 'DOCUMENT_FORMAT');
         // Private worker transport only: bytes stay outside model/tool output.
         const result = source ? { encoding: 'base64', base64: authorized.bytes.toString('base64') }

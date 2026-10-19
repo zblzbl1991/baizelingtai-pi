@@ -11,7 +11,7 @@ const { once } = require('node:events');
 
 const release = (version, extra = {}) => ({ tag_name: 'v' + version, prerelease: version.includes('-'), draft: false,
     assets: ['', '.sha256'].map(suffix => ({ name: `pivane-${version}.tar.gz${suffix}`, state: 'uploaded',
-        browser_download_url: `https://github.com/YogurtJ/pivane/releases/download/v${version}/pivane-${version}.tar.gz${suffix}` })), ...extra });
+        browser_download_url: `https://github.com/zblzbl1991/baizelingtai-pi/releases/download/v${version}/pivane-${version}.tar.gz${suffix}` })), ...extra });
 const fixture = (releases, options = {}) => {
     const requests = [];
     const service = new UpdateService({ env: { BAIZELINGTAI_UPDATE_FEED_URL: '' }, appVersion: '1.0.0-rc.2', piVersion: options.piVersion || '0.85.1',
@@ -23,6 +23,16 @@ const fixture = (releases, options = {}) => {
 };
 
 const feedSource = 'http://gitlab.example:8080/team/pivane/-/raw/main/updates/latest.json';
+
+test('external application updates use the configured distribution repository', async () => {
+    const { service, requests } = fixture([]);
+    assert.equal(service.snapshot().pivane.releasesUrl, 'https://github.com/zblzbl1991/baizelingtai-pi/releases');
+    await service.check();
+    assert.deepEqual(requests.map(request => request.url), [
+        'https://api.github.com/repos/zblzbl1991/baizelingtai-pi/releases?per_page=100',
+        'https://registry.npmjs.org/@earendil-works%2fpi-coding-agent/latest'
+    ]);
+});
 const feed = (extra = {}) => ({ schemaVersion: 1, version: '1.8.0', piVersion: '1.1.0', platform: 'win32', arch: 'x64',
     channel: 'stable', publishedAt: '2026-10-12T00:00:00Z', package: 'pivane-1.8.0-windows-x64-portable.zip',
     sha256: 'a'.repeat(64), bytes: 1234, releasesUrl: 'http://gitlab.example:8080/team/pivane/-/releases/v1.8.0', ...extra });

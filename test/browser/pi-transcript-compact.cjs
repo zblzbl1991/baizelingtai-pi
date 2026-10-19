@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { selectMessageView } = require('./pi-mobile-view-helper.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -32,6 +33,7 @@ function fixture() {
 }
 
 async function run(browser, size) {
+    if (!browserTargetEnabled(size)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport: size, isMobile: size.width < 900, hasTouch: size.width < 900 });
     const page = await context.newPage();
     // Keep surrounding text geometry stable while comparing view-mode anchors.
@@ -251,6 +253,6 @@ async function run(browser, size) {
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const size of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 412, height: 915 }]) await run(browser, size);
+        for (const size of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 412, height: 915 }])) await run(browser, size);
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

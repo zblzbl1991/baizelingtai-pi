@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const path = require('node:path');
@@ -15,6 +16,7 @@ const sessions = [{ cwd, id: 'one', name: 'Model picker' }, { cwd, id: 'two', na
 const models = Array.from({ length: 425 }, (_, index) => ({ provider: index < 200 ? 'provider-a' : 'provider-b', id: `model/${index}`, name: index === 424 ? '<img src=x onerror=alert(1)> Special model' : `Model ${index}`, input: ['text'], contextWindow: 32000 }));
 models.push({ ...models[0], provider: 'other-provider' });
 async function check(browser, base, width, language, theme) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 900 }, locale: language });
     const page = await context.newPage(), errors = [], calls = [];
     const favorites = new WorkspacePreferencesService({ filePath: path.join(favoritesRoot, `${width}-${language}.json`) });
@@ -154,6 +156,7 @@ async function check(browser, base, width, language, theme) {
     assert.ok(!(await page.evaluate(() => localStorage.getItem('pivane.models.recent'))).includes('model/15'));
     fail = false;
     await openPicker(); await page.keyboard.press('Escape');
+    // Native Escape closes the dialog before its queued close event updates ARIA.
     await page.waitForFunction(() => !document.querySelector('#pi-model-dialog').open && document.querySelector('#pi-model-select').getAttribute('aria-expanded') === 'false');
     assert.equal(await button.getAttribute('aria-expanded'), 'false');
     assert.equal(await page.locator(width <= 680 ? '#pi-mobile-context-trigger' : '#pi-model-select').evaluate(node => node === document.activeElement), true);
@@ -287,7 +290,7 @@ async function check(browser, base, width, language, theme) {
     const base = `http://127.0.0.1:${server.address().port}`;
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try {
-        for (const [width, language, theme] of [[1440, 'zh-CN', 'daylight'], [768, 'en', 'daylight'], [393, 'zh-CN', 'dark'], [320, 'en', 'mint']].filter(([width]) => !process.env.PI_MODEL_PICKER_WIDTH || width === Number(process.env.PI_MODEL_PICKER_WIDTH))) await check(browser, base, width, language, theme);
+        for (const [width, language, theme] of selectBrowserTargets([[1440, 'zh-CN', 'daylight'], [768, 'en', 'daylight'], [393, 'zh-CN', 'dark'], [320, 'en', 'mint']].filter(([width]) => !process.env.PI_MODEL_PICKER_WIDTH || width === Number(process.env.PI_MODEL_PICKER_WIDTH)))) await check(browser, base, width, language, theme);
         for (const [file, envName] of [['pi-model-onboarding.cjs', 'PI_MODEL_ONBOARDING_TEST_URL']]) {
             if (process.env.PI_MODEL_PICKER_SKIP_RELATED) continue;
             const child = spawn(process.execPath, [path.join(__dirname, file)], { env: { ...process.env, [envName]: base }, stdio: 'inherit' });

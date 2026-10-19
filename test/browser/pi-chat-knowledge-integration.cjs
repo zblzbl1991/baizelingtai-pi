@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const express = require('express');
@@ -12,6 +13,7 @@ const sessions = ['one', 'two'].map(id => ({ id: `thread-${id}`, cwd, name: `Thr
     agentProfile: { id: 'profile-one', name: 'Research', enabled: true, available: true } }));
 const revision = 'a'.repeat(64);
 async function run(browser, base, width) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 820 }, locale: width === 393 ? 'zh-CN' : 'en-US',
         isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [], writes = [];
@@ -101,6 +103,6 @@ async function run(browser, base, width) {
 (async () => {
     const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
-    try { for (const width of [320, 393, 1440]) await run(browser, `http://127.0.0.1:${server.address().port}`, width); }
+    try { for (const width of selectBrowserTargets([320, 393, 1440])) await run(browser, `http://127.0.0.1:${server.address().port}`, width); }
     finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

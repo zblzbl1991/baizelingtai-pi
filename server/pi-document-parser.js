@@ -6,14 +6,17 @@ const bad = message => fail(message, 415, 'DOCUMENT_FORMAT');
 
 // Office packages are read in memory. No extraction to disk, external targets,
 // executable parts or archive-provided paths are ever opened.
-function officeZip(bytes) {
+function officeZip(bytes, limits = {}) {
+    const maxEntries = limits.maxArchiveEntries ?? 4096, maxExpanded = limits.maxUncompressedBytes ?? MAX_EXPANDED;
+    const maxPart = limits.maxPartBytes ?? MAX_PART;
     const endMin = Math.max(0, bytes.length - 65557);
     let end = -1;
     for (let i = bytes.length - 22; i >= endMin; i--) if (bytes.readUInt32LE(i) === 0x06054b50 && i + 22 + bytes.readUInt16LE(i + 20) === bytes.length) { end = i; break; }
     if (end < 0) throw bad('Office 文件损坏，无法读取压缩目录');
     const count = bytes.readUInt16LE(end + 10), size = bytes.readUInt32LE(end + 12), start = bytes.readUInt32LE(end + 16);
     if (bytes.readUInt16LE(end + 4) || bytes.readUInt16LE(end + 6) || count !== bytes.readUInt16LE(end + 8)
-        || count > 4096 || !count || start + size !== end) throw bad('不支持多卷、ZIP64 或过多条目的 Office 文件');
+        || !count || start + size !== end) throw bad('不支持多卷或 ZIP64 Office 文件');
+    if (count > maxEntries) throw fail('Office 压缩条目超过读取预算', 413, 'DOCUMENT_LIMIT');
     const entries = new Map(); let offset = start, expanded = 0;
     for (let i = 0; i < count; i++) {
         if (offset + 46 > end || bytes.readUInt32LE(offset) !== 0x02014b50) throw bad('Office 压缩目录无效');
@@ -25,7 +28,7 @@ function officeZip(bytes) {
         try { name = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(offset + 46, offset + 46 + n)); } catch { throw bad('Office 内部文件名编码无效'); }
         if (/^[\/]|[\\\x00-\x1f\x7f]/.test(name) || name.split('/').some(part => part === '..' || part === '.') || entries.has(name)) throw bad('Office 包含无效或重复路径');
         expanded += length;
-        if (expanded > MAX_EXPANDED || length === 0xffffffff || compressed === 0xffffffff || local === 0xffffffff) throw fail('Office 解压后超过 64 MiB 读取预算', 413, 'DOCUMENT_LIMIT');
+        if (expanded > maxExpanded || length === 0xffffffff || compressed === 0xffffffff || local === 0xffffffff) throw fail(`Office 解压后超过 ${maxExpanded / 1024 / 1024} MiB 读取预算`, 413, 'DOCUMENT_LIMIT');
         if (local + 30 > start || bytes.readUInt32LE(local) !== 0x04034b50 || bytes.readUInt16LE(local + 6) !== flags || bytes.readUInt16LE(local + 8) !== method) throw bad('Office 压缩条目无效');
         const localNameLength = bytes.readUInt16LE(local + 26), localExtra = bytes.readUInt16LE(local + 28), data = local + 30 + localNameLength + localExtra;
         if (data + compressed > start || !bytes.subarray(local + 30, local + 30 + localNameLength).equals(bytes.subarray(offset + 46, offset + 46 + n))) throw bad('Office 压缩条目位置无效');
@@ -37,10 +40,10 @@ function officeZip(bytes) {
         read(name) {
             const entry = entries.get(name);
             if (!entry) throw bad(`Office 缺少必要内容：${name}`);
-            if (entry.length > MAX_PART) throw fail('Office 单个 XML 部分超过 8 MiB 读取预算', 413, 'DOCUMENT_LIMIT');
+            if (entry.length > maxPart) throw fail('Office 单个部分超过读取预算', 413, 'DOCUMENT_LIMIT');
             const compressed = bytes.subarray(entry.data, entry.data + entry.compressed);
             let result;
-            try { result = entry.method === 0 ? compressed : zlib.inflateRawSync(compressed, { maxOutputLength: MAX_PART }); }
+            try { result = entry.method === 0 ? compressed : zlib.inflateRawSync(compressed, { maxOutputLength: maxPart }); }
             catch { throw bad('Office 压缩内容损坏或超过读取预算'); }
             if (result.length !== entry.length || crc32(result) !== entry.crc) throw bad('Office 内容校验失败');
             return result;
@@ -55,22 +58,40 @@ function entities(value) {
     return value.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[\da-fA-F]+);/g, (_, entity) => {
         if (entity[0] !== '#') return ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" })[entity];
         const code = entity[1] === 'x' ? parseInt(entity.slice(2), 16) : Number(entity.slice(1));
-        if (!Number.isInteger(code) || code <= 0 || code > 0x10ffff || code >= 0xd800 && code <= 0xdfff) throw bad('Office XML 字符无效');
+        if (!Number.isInteger(code) || code <= 0 || code > 0x10ffff || code >= 0xd800 && code <= 0xdfff
+            || code < 32 && ![9, 10, 13].includes(code) || code === 0xfffe || code === 0xffff) throw bad('Office XML 字符无效');
         return String.fromCodePoint(code);
     });
 }
 // A bounded XML reader for OOXML data, with no DTD/entity expansion or I/O.
-function xml(bytes) {
+function decodeXml(bytes) {
+    const encoding = bytes[0] === 0xff && bytes[1] === 0xfe || bytes[0] === 0x3c && bytes[1] === 0 ? 'utf-16le'
+        : bytes[0] === 0xfe && bytes[1] === 0xff || bytes[0] === 0 && bytes[1] === 0x3c ? 'utf-16be' : 'utf-8';
     let text;
-    try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { throw bad('仅支持 UTF-8 Office XML'); }
-    if (/<!DOCTYPE|<!ENTITY/i.test(text) || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(text)) throw bad('Office XML 包含不支持的声明或字符');
+    try { text = new TextDecoder(encoding, { fatal: true }).decode(bytes); }
+    catch { throw bad('Office XML 编码无效，仅支持 UTF-8、UTF-16LE 或 UTF-16BE'); }
+    if (/^<\?xml(?=[\s?])/i.test(text)) {
+        const declaration = /^<\?xml\s+version\s*=\s*(['"])1\.0\1(?:\s+encoding\s*=\s*(['"])([A-Za-z][A-Za-z0-9._-]*)\2)?(?:\s+standalone\s*=\s*(['"])(?:yes|no)\4)?\s*\?>/.exec(text);
+        if (!declaration) throw bad('Office XML 声明无效');
+        const declared = declaration[3]?.toLowerCase();
+        if (declared && declared !== encoding && !(declared === 'utf-16' && encoding.startsWith('utf-16'))) throw bad('Office XML 编码声明与内容不符');
+    }
+    return text;
+}
+function xml(bytes) {
+    const text = decodeXml(bytes);
+    if (/<!DOCTYPE|<!ENTITY/i.test(text) || /[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]/.test(text)) throw bad('Office XML 包含不支持的声明或字符');
     const root = { name: '#root', attrs: {}, children: [] }, stack = [root];
     const tokens = /<!--[^]*?-->|<\?[^]*?\?>|<!\[CDATA\[[^]*?\]\]>|<(?:"[^"<]*"|'[^'<]*'|[^'"<>])*>|[^<]+/g;
     let offset = 0, nodes = 0, token;
     while ((token = tokens.exec(text))) {
         if (token.index !== offset || ++nodes > MAX_XML_TOKENS || stack.length > 128) throw fail('Office XML 无效或超过结构预算', 413, 'DOCUMENT_LIMIT');
         offset = tokens.lastIndex; const value = token[0];
-        if (value.startsWith('<!--') || value.startsWith('<?')) continue;
+        if (value.startsWith('<!--')) continue;
+        if (value.startsWith('<?')) {
+            if (/^<\?xml(?=[\s?])/i.test(value) && token.index !== 0) throw bad('Office XML 声明位置无效');
+            continue;
+        }
         if (value.startsWith('<![CDATA[')) { stack.at(-1).children.push(value.slice(9, -3)); continue; }
         if (value.startsWith('</')) {
             const close = /^<\/([\w:.-]+)\s*>$/.exec(value);
@@ -111,23 +132,71 @@ function relationships(zip, base) {
     }
     return map;
 }
+// Shared OPC identity: preview and modern attachment reads must follow the same
+// package relationship rather than guessing a conventional main-part filename.
+function xmlNamespace(node, inherited = {}) {
+    const bindings = { ...inherited };
+    for (const [key, value] of Object.entries(node.attrs)) if (key === 'xmlns') bindings[''] = value; else if (key.startsWith('xmlns:')) bindings[key.slice(6)] = value;
+    return { bindings, uri: bindings[node.qualified.includes(':') ? node.qualified.split(':')[0] : ''] };
+}
+function opcPart(value, absolute = false) {
+    if (typeof value !== 'string' || !value || value.length > 4096 || /[\\\x00-\x20?#%:]/.test(value) || value.startsWith('//')) throw bad('Office 部件路径无效');
+    if (value.startsWith('/')) { if (!absolute) throw bad('Office 部件路径无效'); value = value.slice(1); }
+    const parts = [];
+    for (const piece of value.split('/')) {
+        if (piece === '..') { if (!parts.length) throw bad('Office 关系越界'); parts.pop(); }
+        else if (piece === '.') continue;
+        else if (!piece) throw bad('Office 部件路径无效');
+        else parts.push(piece);
+    }
+    if (!parts.length) throw bad('Office 部件路径无效');
+    return parts.join('/');
+}
+function officeMainPart(zip, format) {
+    const expected = { docx: 'wordprocessingml.document', xlsx: 'spreadsheetml.sheet', pptx: 'presentationml.presentation' }[format];
+    if (!expected) throw bad('Office 内容与扩展名不符');
+    const relations = getXml(zip, '_rels/.rels'), relNs = xmlNamespace(relations);
+    if (relations.name !== 'Relationships' || relNs.uri !== 'http://schemas.openxmlformats.org/package/2006/relationships') throw bad('Office 根关系命名空间无效');
+    const ids = new Set(), roots = [], rootTypes = ['http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument', 'http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument'];
+    for (const relation of children(relations)) {
+        const a = relation.attrs;
+        if (relation.name !== 'Relationship' || xmlNamespace(relation, relNs.bindings).uri !== relNs.uri || !a.Id || ids.has(a.Id) || !a.Type || !a.Target) throw bad('Office 根关系重复或无效');
+        ids.add(a.Id);
+        if (rootTypes.includes(a.Type)) roots.push(a);
+        else if (/\/officeDocument$/.test(a.Type)) throw bad('Office 主关系 URI 无效');
+    }
+    if (roots.length !== 1 || roots[0].TargetMode && roots[0].TargetMode !== 'Internal') throw bad('Office 主关系缺失、重复或指向外部');
+    const main = opcPart(roots[0].Target, true);
+    if (!zip.names.includes(main)) throw bad('Office 主关系目标缺失');
+    const types = getXml(zip, '[Content_Types].xml'), ns = xmlNamespace(types), overrides = new Map(), defaults = new Map();
+    if (types.name !== 'Types' || ns.uri !== 'http://schemas.openxmlformats.org/package/2006/content-types') throw bad('Office 内容类型命名空间无效');
+    for (const declaration of children(types)) {
+        const a = declaration.attrs;
+        if (xmlNamespace(declaration, ns.bindings).uri !== ns.uri || !a.ContentType || /vbaProject|macroEnabled/i.test(a.ContentType)) throw bad('Office 内容类型无效或包含宏');
+        if (declaration.name === 'Override') {
+            if (!a.PartName?.startsWith('/')) throw bad('Office 内容类型路径无效');
+            const part = opcPart(a.PartName, true);
+            if ('/' + part !== a.PartName || overrides.has(part)) throw bad('Office 内容类型重复或路径无效');
+            overrides.set(part, a.ContentType);
+        } else if (declaration.name === 'Default') {
+            if (!/^[A-Za-z0-9]+$/.test(a.Extension || '') || defaults.has(a.Extension.toLowerCase())) throw bad('Office 默认内容类型重复或无效');
+            defaults.set(a.Extension.toLowerCase(), a.ContentType);
+        } else throw bad('Office 内容类型声明无效');
+    }
+    if ((overrides.get(main) ?? defaults.get(path.posix.extname(main).slice(1).toLowerCase())) !== 'application/vnd.openxmlformats-officedocument.' + expected + '.main+xml') throw bad('Office 内容与扩展名不符或为启用宏的文件');
+    const root = getXml(zip, main), family = { docx: 'wordprocessingml', xlsx: 'spreadsheetml', pptx: 'presentationml' }[format];
+    if (root.name !== { docx: 'document', xlsx: 'workbook', pptx: 'presentation' }[format] || ![`http://schemas.openxmlformats.org/${family}/2006/main`, `http://purl.oclc.org/ooxml/${family}/main`].includes(xmlNamespace(root).uri)) throw bad('Office 主部件名称或命名空间无效');
+    return main;
+}
 function detectDocument(bytes, format) {
     if (format === 'pdf') {
         if (!bytes.subarray(0, 1024).includes(Buffer.from('%PDF-'))) throw bad('PDF 内容与扩展名不符');
         return null;
     }
-    const zip = officeZip(bytes), types = getXml(zip, '[Content_Types].xml');
-    const main = { docx: 'word/document.xml', xlsx: 'xl/workbook.xml', pptx: 'ppt/presentation.xml' }[format];
-    const expected = { docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml' }[format];
-    // OPC permits a main XML part to use Default's extension mapping. Open XML
-    // SDK writers use this valid form when all other XML parts have overrides.
-    const overrides = children(types, 'Override').filter(item => item.attrs.PartName === '/' + main);
-    const defaults = children(types, 'Default').filter(item => String(item.attrs.Extension || '').toLowerCase() === 'xml');
-    if (overrides.length > 1 || defaults.length > 1) throw bad('Office 主内容类型声明重复');
-    const effective = overrides[0]?.attrs.ContentType ?? defaults[0]?.attrs.ContentType;
-    if (!main || effective !== expected) throw bad('Office 内容与扩展名不符或为启用宏的文件');
-    if (zip.names.some(name => /(?:^|\/)vbaProject\.bin$/i.test(name)) || children(types).some(item => /vbaProject|macroEnabled/i.test(item.attrs.ContentType || ''))) throw bad('暂不支持包含宏的 Office 文件');
-    getXml(zip, main); return zip;
+    const zip = officeZip(bytes);
+    zip.main = officeMainPart(zip, format);
+    if (zip.names.some(name => /(?:^|\/)vbaProject\.bin$/i.test(name))) throw bad('暂不支持包含宏的 Office 文件');
+    return zip;
 }
 function validateRead(raw = {}) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(key => !['action', 'start', 'count', 'sheet', 'column', 'columns'].includes(key))) throw fail('文档读取参数无效', 400, 'DOCUMENT_INPUT');
@@ -140,7 +209,7 @@ function validateRead(raw = {}) {
 }
 function clip(text, max = 24000) { return { text: text.slice(0, max), truncated: text.length > max }; }
 function docx(zip, input) {
-    const body = children(getXml(zip, 'word/document.xml'), 'body')[0];
+    const body = children(getXml(zip, zip.main), 'body')[0];
     if (!body) throw bad('Word 缺少正文');
     const paragraph = node => {
         function visit(current) { if (current.name === 't') return plain(current); if (current.name === 'tab') return '\t'; if (['br', 'cr'].includes(current.name)) return '\n'; if (current.name === 'del') return ''; return children(current).map(visit).join(''); }
@@ -160,7 +229,7 @@ function docx(zip, input) {
     return { ...base, start: input.start, items, truncated, nextStart: input.start + selected.length <= units.length ? input.start + selected.length : null };
 }
 function pptx(zip, input) {
-    const main = 'ppt/presentation.xml', presentation = getXml(zip, main), rels = relationships(zip, main);
+    const main = zip.main, presentation = getXml(zip, main), rels = relationships(zip, main);
     const slides = descendants(presentation, 'sldId').map(item => rels.get(item.attrs['r:id']));
     if (slides.length > 10000 || slides.some(file => !file || !/^ppt\/slides\/[^/]+\.xml$/.test(file))) throw bad('PPT 幻灯片关系无效或超过预算');
     const base = { format: 'pptx', unit: 'slide', total: slides.length, warnings: ['提取幻灯片文本与表格文本；图片、图表数据、动画、备注和原版布局未提取。'] };
@@ -174,7 +243,7 @@ function pptx(zip, input) {
 }
 const columnNumber = letters => [...letters].reduce((value, char) => value * 26 + char.charCodeAt(0) - 64, 0);
 function xlsx(zip, input) {
-    const main = 'xl/workbook.xml', workbook = getXml(zip, main), rels = relationships(zip, main);
+    const main = zip.main, workbook = getXml(zip, main), rels = relationships(zip, main);
     const sheets = descendants(workbook, 'sheet').map(item => ({ name: item.attrs.name, state: item.attrs.state || 'visible', file: rels.get(item.attrs['r:id']) }));
     if (sheets.length > 200 || sheets.some(sheet => !sheet.name || !sheet.file || !/^xl\/worksheets\/[^/]+\.xml$/.test(sheet.file))) throw bad('Excel 工作表关系无效或超过预算');
     const base = { format: 'xlsx', unit: 'row', sheets: sheets.map(({ name, state }) => ({ name, state })),
@@ -244,4 +313,4 @@ async function parseDocument(bytes, format, raw, validateOnly = false) {
     if (Buffer.byteLength(JSON.stringify(result)) > 256 * 1024) throw fail('文档结果超过输出预算，请缩小读取范围', 413, 'DOCUMENT_LIMIT');
     return result;
 }
-module.exports = { parseDocument, officeZip, xml, validateRead, crc32 };
+module.exports = { parseDocument, officeZip, xml, xmlNamespace, officeMainPart, validateRead, crc32 };

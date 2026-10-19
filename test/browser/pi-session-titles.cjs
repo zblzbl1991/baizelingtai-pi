@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { selectMessageView } = require('./pi-mobile-view-helper.cjs');
 const path = require('node:path');
@@ -7,6 +8,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = path.resolve(__dirname, '../..');
 
 async function run(browser, base, width, locale, supported = true, modelSupport = true, missingModel = false) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: width === 320 ? 640 : 950 }, locale, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(); page.setDefaultTimeout(12000);
     const en = locale === 'en', errors = [], calls = [], writes = [];
@@ -238,7 +240,7 @@ async function run(browser, base, width, locale, supported = true, modelSupport 
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
         const base = `http://127.0.0.1:${server.address().port}`;
-        for (const locale of ['zh-CN', 'en']) for (const width of [1440, 393, 320]) await run(browser, base, width, locale);
+        for (const locale of ['zh-CN', 'en']) for (const width of selectBrowserTargets([1440, 393, 320])) await run(browser, base, width, locale);
         await run(browser, base, 393, 'en', false);
         await run(browser, base, 393, 'en', true, false);
         await run(browser, base, 320, 'en', true, true, true);

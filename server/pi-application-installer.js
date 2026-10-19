@@ -77,7 +77,7 @@ function unpack(bytes, version, directory) {
 async function stageApplication({ directory, release, env = process.env, signal, run = runNode, get = download, progress = () => {}, onOutput = () => {} }) {
     if (!validRelease(release)) throw Error('Invalid application release identity');
     progress('downloading');
-    const url = `https://github.com/YogurtJ/pivane/releases/download/v${release.version}/pivane-${release.version}.tar.gz`;
+    const url = `https://github.com/zblzbl1991/baizelingtai-pi/releases/download/v${release.version}/pivane-${release.version}.tar.gz`;
     const bytes = await get(url, { env, signal });
     if (bytes.length > MAX_ARCHIVE || hash(bytes) !== release.sha256) throw Error('Application archive SHA256 mismatch');
     const manifest = unpack(bytes, release.version, directory);
@@ -90,6 +90,9 @@ async function stageApplication({ directory, release, env = process.env, signal,
     await run([npmCli(env), 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: directory, env: installEnv, signal, onOutput, secretEnv: env });
     await require('./pi-update-installer').prepareBundled({ directory, env: { ...installEnv, PI_NPM_CLI: npmCli(env) }, signal, run, onOutput, secretEnv: env });
     if (JSON.parse(readSafe(path.join(directory, 'node_modules/@earendil-works/pi-coding-agent/package.json'))).version !== pi) throw Error('Installed Pi mismatch');
+    if (pkg.dependencies?.['@deepseek-ai/libreoffice-kit']) {
+        await run([path.join(directory, 'scripts/install-office-preview.cjs'), '--require-available'], { cwd: directory, env: installEnv, signal, onOutput, secretEnv: env });
+    }
     progress('verifying');
     const probe = privateDir(path.join(directory, 'probe-data'));
     const probeEnv = Object.fromEntries(Object.entries(installEnv).filter(([key]) => !/proxy|^npm_/i.test(key)));

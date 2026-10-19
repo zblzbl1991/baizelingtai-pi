@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const http = require('node:http');
@@ -18,6 +19,7 @@ const sessions = [
  ['empty', '', '(no messages)']
 ].map(([id,name,firstMessage]) => ({ cwd,id,name,firstMessage,messageCount:id==='empty'?0:40,modified:'2026-09-19T10:08:00Z' }));
 async function run(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
  const context=await browser.newContext({locale,viewport:{width,height:1000},isMobile:width<900,hasTouch:width<900});
  const page=await context.newPage(), errors=[], commands=[];let fresh=true, phase='tool', retained=true;
  page.on('pageerror',e=>errors.push(e.message));
@@ -118,6 +120,9 @@ async function run(browser, base, width, locale) {
  assert.equal(await row('search').locator('.pi-session-deferred').isVisible(),true,'sidebar retains queued-message indication');
  await row('search').locator('.pi-session-main').click();
  await page.locator('#pi-deferred-open').click();await page.locator('#pi-workflow-dialog').waitFor();
+ // Opening the shell precedes the deferred HTTP read. Observe its existing
+ // public loading boundary before asserting the selected thread's contents.
+ await page.waitForFunction(()=>document.querySelector('#pi-workflow-content').getAttribute('aria-busy')!=='true');
  await page.locator('#pi-workflow-content').getByText('Fixture queued message',{exact:false}).waitFor();
  assert.match(await page.locator('#pi-workflow-content').innerText(),/Fixture queued message/);
  await page.locator('#pi-workflow-close').click();await drawer();
@@ -134,6 +139,6 @@ async function run(browser, base, width, locale) {
  const app=express();for(const [name,dir]of [['marked','marked/lib'],['dompurify','dompurify/dist'],['highlight','@highlightjs/cdn-assets']])app.use('/vendor/'+name,express.static(path.join(root,'node_modules',dir)));
  app.use(express.static(path.join(root,'public')));const server=http.createServer(app);server.listen(0,'127.0.0.1');await once(server,'listening');
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
- try{for(const locale of (process.env.PI_CARD_LOCALES?.split(',') || ['zh-CN','en-US']))for(const width of (process.env.PI_CARD_WIDTHS?.split(',').map(Number) || [1440,393,320]))await run(browser,process.env.PI_CARD_TEST_URL || `http://127.0.0.1:${server.address().port}`,width,locale)}
+ try{for(const locale of (process.env.PI_CARD_LOCALES?.split(',') || ['zh-CN','en-US']))for(const width of (selectBrowserTargets(process.env.PI_CARD_WIDTHS?.split(',').map(Number) || [1440,393,320])))await run(browser,process.env.PI_CARD_TEST_URL || `http://127.0.0.1:${server.address().port}`,width,locale)}
  finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r))}
 })().catch(e=>{console.error(e);process.exitCode=1});

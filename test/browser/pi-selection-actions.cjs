@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const express = require('express');
@@ -10,6 +11,7 @@ const selectedText = '最大化和恢复默认尺寸 <script>literal</script> **
 const messages = [{ role: 'user', content: '请解释布局', timestamp: 1 }, { role: 'assistant', content: '第一段。\n\n' + selectedText.replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('*', '\\*'), timestamp: 2, stopReason: 'stop' }];
 const speech = { id: 'speech', name: 'Fixture', kind: 'tts', executable: true, textFields: ['text'], parameters: { text: { type: 'textarea', maxLength: 1000 } } };
 async function run(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 960 }, locale, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(); page.setDefaultTimeout(30000);
     const errors = [], prompts = [], reviews = [], executions = []; let fail = false;
@@ -118,7 +120,7 @@ async function run(browser, base, width, locale) {
     app.use(express.static(path.join(root, 'public')));
     const server = await new Promise(resolve => { const server = app.listen(0, '127.0.0.1', () => resolve(server)); });
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const [width, locale] of [[1440, 'zh-CN'], [393, 'en-US'], [320, 'zh-CN'], [320, 'en-US']]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
+    try { for (const [width, locale] of selectBrowserTargets([[1440, 'zh-CN'], [393, 'en-US'], [320, 'zh-CN'], [320, 'en-US']])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
     finally {
         console.log('selection fixture: closing browser');
         await browser.close();

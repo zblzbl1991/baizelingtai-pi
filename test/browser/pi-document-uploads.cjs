@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), { once } = require('node:events');
 const { createHash } = require('node:crypto');
@@ -11,6 +12,7 @@ const sessions = ['a', 'b'].map(id => ({ id, cwd, name: id, messageCount: 0 }));
 const samples = ['docx', 'xlsx', 'pptx', 'pdf'].map((format, i) => ({ name: ['合同 & "样本".docx', '销售.xlsx', '演示.pptx', '报告.pdf'][i], format,
     buffer: format === 'pdf' ? pdfBytes() : zip(({ docx: docxFiles, xlsx: xlsxFiles, pptx: pptxFiles })[format]()), mimeType: 'application/octet-stream' }));
 async function run(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ locale, viewport: { width, height: width < 900 ? 852 : 1000 }, isMobile: width < 900, hasTouch: width < 900, acceptDownloads: true });
     const page = await context.newPage(), errors = [], uploads = [], prompts = [], saved = new Map(), threads = sessions.map(session => ({ ...session }));
     let active = 'a', reject = false, held, hold = false, loseResponse = false; const messages = { a: [], b: [] };
@@ -32,6 +34,11 @@ async function run(browser, base, width, locale) {
             return json(result);
         }
         if (endpoint === '/api/pi/uploads/status') return json(saved.get(url.searchParams.get('sessionId') + url.searchParams.get('requestId')));
+        if (endpoint === '/api/pi/office/preview') {
+            const { source } = req.postDataJSON(), found = uploads.find(item => item.reference.id === source.id);
+            assert.equal(source.type, 'upload'); assert.equal(source.sessionId, active); assert.ok(found);
+            return json({ source: found.reference, preview: { kind: 'workbook', encoding: 'base64', base64: found.bytes.toString('base64'), size: found.bytes.length }, warnings: [] });
+        }
         if (endpoint === '/api/pi/uploads') {
             const found = uploads.find(item => item.reference.id === url.searchParams.get('id')); assert.ok(found); assert.equal(url.searchParams.get('sessionId'), active);
             return route.fulfill({ body: found.bytes, contentType: 'application/octet-stream' });
@@ -99,6 +106,16 @@ async function run(browser, base, width, locale) {
     await switchTo('b'); await input.fill('new thread draft'); hold = false; await select([{ ...samples[1], name: 'new.xlsx' }]); await count(1); await held();
     await page.waitForTimeout(80); assert.match(await chips.textContent(), /new.xlsx/); assert.ok(!(await chips.textContent()).includes('slow.docx')); assert.equal(await input.inputValue(), 'new thread draft'); await clear();
     await switchTo('a'); assert.equal(await input.inputValue(), 'retain old draft'); await count(0);
+    // Legacy Office stays an opaque raw attachment; draft preview uses the actual
+    // workbook Worker and closing it preserves the composer and original bytes.
+    const legacy = fs.readFileSync(path.join(root, 'test/fixtures/office/preview.xls'));
+    await select([{ name: 'legacy.xls', buffer: legacy, mimeType: 'application/octet-stream' }]); await count(1);
+    assert.match(await chips.innerText(), locale === 'en' ? /Preview and download only/ : /仅预览和下载/);
+    await page.locator('[data-preview-attachment]').first().click(); await page.locator('.pi-document-preview td[data-address=A1]').waitFor();
+    const legacyDownloadEvent = page.waitForEvent('download'); await page.locator('.pi-document-preview header button').first().click();
+    const legacyDownload = await legacyDownloadEvent; assert.deepEqual(fs.readFileSync(await legacyDownload.path()), legacy);
+    await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('.pi-document-preview[open]'));
+    assert.equal(await input.inputValue(), 'retain old draft'); await count(1); await clear();
     // Scheduled-message editor uses the same raw upload and reference payload.
     await page.locator('#pi-composer-add-button').click(); await page.locator('#pi-schedule-button').click();
     await page.locator('#pi-workflow-files').setInputFiles({ name: 'scheduled.pptx', mimeType: 'application/octet-stream', buffer: samples[2].buffer });
@@ -136,6 +153,6 @@ async function run(browser, base, width, locale) {
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const locale of ['zh-CN', 'en']) for (const width of [1440, 393]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
+    try { for (const locale of ['zh-CN', 'en']) for (const width of selectBrowserTargets([1440, 393])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
     finally { await browser.close(); server.closeAllConnections(); await new Promise(r => server.close(r)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

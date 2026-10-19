@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { openInspector } = require('./pi-mobile-view-helper.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -6,6 +7,7 @@ const { sessionTree, checkNavigation } = require('../../server/pi-session-tree')
 const { promptFromEntry } = require('../../server/pi-message-payload');
 const base = process.env.PI_TREE_TEST_URL || 'http://127.0.0.1:3134', cwd = '/srv/tree-fixture';
 async function run(browser, viewport, SessionManager) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width < 900, hasTouch: viewport.width < 900 });
     const page = await context.newPage(), errors = [], commands = [], writes = [];
     page.on('pageerror', e => errors.push(e.message));
@@ -189,6 +191,6 @@ async function run(browser, viewport, SessionManager) {
 }
 (async () => {
     const { SessionManager } = await import('@earendil-works/pi-coding-agent'); const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'], headless: true });
-    try { for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }]) await run(browser, viewport, SessionManager); }
+    try { for (const viewport of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }])) await run(browser, viewport, SessionManager); }
     finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

@@ -15,13 +15,15 @@ package.json的应用版本、Pi依赖版本和快照时间戳是不同概念。
 ## 候选包
 
 1. 从明确的源码提交准备候选，核对 Git 跟踪清单与未提交改动，冻结公开文档，列清上述完整门槛的执行位置并在发布前全部完成。源码阶段先做受影响专项和必要集成、尽早发现问题；剩余全量检查可安排在冻结包内，避免相同环境下源码与包内机械执行两轮。记录源码提交、实际运行版本和候选之间的差异。
-2. 运行npm run pack:release（开发快照仍用pack:trial）。相同版本包存在时拒绝覆盖；冻结包变化须重新验收，已公开版本不能悄悄替换。`scripts/source-files.cjs` 的发行集合与 docs/public-files.json 决定内容；LICENSE、第三方声明和原生manifest随包；AGENTS.local.md、docs/local、身份、媒体和备份禁止纳入。构建前强制核对档案记忆 bundle 存在且与审查哈希一致，保证跳过安装脚本的旧版网页更新器仍能使用新包。构建后核对manifest/hash，不能仅检查.gitignore。
+2. 运行npm run pack:release（开发快照仍用pack:trial）。相同版本包存在时拒绝覆盖；冻结包变化须重新验收，已公开版本不能悄悄替换。`scripts/source-files.cjs` 的发行集合与 docs/public-files.json 决定内容；LICENSE、第三方声明和原生manifest随包；AGENTS.local.md、docs/local、身份、媒体和备份禁止纳入。构建前强制核对档案记忆 bundle 存在且与审查哈希一致，保证跳过安装脚本的旧版网页更新器仍能使用新包。构建后核对manifest/hash，不能仅检查.gitignore。归档显式使用 UTF-8 USTAR；[tar 调用策略](../../scripts/package-tar.cjs)统一生产器、准确包验收与便携打包的原生 tar 选择及字符集，Windows 固定调用 System32 tar 并显式按 UTF-8 读写，避免 PAX 扩展头或本地代码页乱码；不要以放宽解包器的文件类型、路径或完整性检查代替格式兼容验证。
 3. 从该包在独立目录执行 `node scripts/install.cjs`（旧归档没有此脚本时使用 `npm ci`），不继承维护者的node_modules、Provider环境或Pi身份；完成宣称支持平台的浏览器、安装、更新和恢复回归。开发专项、源码预检和冻结归档验收是不同层；最终结果必须证明准确包内运行。
 4. 更新公开平台范围与CHANGELOG，将测试结果绑定到准确的包SHA256。后续改动先按影响获得开发反馈；重新生成的正式候选仍须完整准确包验收。
 5. 准备下载包、SHA256、版本说明、安装/恢复步骤与已知限制。发布仓库/渠道和外部上传作为独立明确操作。
 6. 公开发布后，在主分支把版本说明、CHANGELOG 版本标题、文档目录的“当前正式版”和[平台验证范围](../RELEASE_INSTALL_VALIDATION.md)改为已发布状态，写入最终包 SHA256；标签内的候选措辞保持不变，以 Release 页面为准。
 
 根目录 README（英文）与 README.zh-CN.md 面向首次访问者，介绍功能、平台和快速开始，通过 Release 徽章和链接指向最新版本；不要在其中写入具体版本号、测试数量、验收平台版本或包 SHA256，这些只放在版本说明、平台验证范围和 Release 附件中。首页截图和动图保存在仓库的 `docs/assets/readme/`，README 用 GitHub 绝对地址引用，不进入发行包；界面有明显变化时，用独立身份和合成数据重新截取中英文两套。
+
+Office 预览的 [inventory](../../server/office-preview/inventory.js)和审查清单必须随准确包核对，涵盖引擎全目录、源码、manifest、NOTICE／许可证、传递依赖及生成的 Worker／模型资源；不能把开发目录可转换当作包内引擎完整。已声明支持的 Windows x64 候选执行严格隔离转换预检，组件缺失或损坏时不得标记完成／激活；首装的工作台可用但 Office 降级是另一种结果。未声明平台经同一策略明确降级，不因缺少 Windows 引擎阻断工作台更新，也不宣称原生转换可用。完整原生及浏览器入口见 [Office 预览验证](E2E.md#office-预览验证入口)，最终办公软件版面和实际新增字体效果单独记录。
 
 Git忽略不删除已经跟踪的内容或历史。新仓库初始化时检查暂存清单；如果别处已有仓库，先检查git ls-files和历史是否包含私有文件，不能据ignore宣称历史已经清理。
 
@@ -33,11 +35,13 @@ Git忽略不删除已经跟踪的内容或历史。新仓库初始化时检查�
 node test/release/acceptance.cjs --archive /path/pivane-VERSION.tar.gz --sha256 SHA256_VALUE --browser /path/to/chrome --playwright /path/to/playwright --output /path/to/new-report-directory
 ```
 
+`acceptance.cjs` 支持 `--target=desktop` 或 `--target desktop`，省略时固定为 `all`，不从外部身份环境推断选择。`result.json` 与最终控制台结果的 `browserTarget` 记录实际选择；浏览器子进程使用同一场景选择器并预加载候选包内的视口 guard。用户明确只验桌面时传 desktop，并在包验收结论保留该范围，不将其计作手机已验；默认 all 继续保留桌面和手机场景。无效或重复 target 在创建验收身份前拒绝。
+
 Windows用自己的node.exe和带引号的Windows路径传递相同参数。脚本可选的--previous-archive和--previous-sha256用于真正的旧包升级验收；公开发布已有前一正式版时必须传入已核对的旧包，不能用省略参数的同包重开替代。确无前版的首次发布记录不适用原因；没有旧包时结果只表示同包重开与恢复，不称跨版本升级。不要将来自未知来源的压缩包交给此脚本。
 
 脚本新建系统临时目录，使用随机run ID、哨兵、独立Agent/媒体/项目/预约路径和最小环境，从归档解包后执行统一安装入口（旧归档回退 `npm ci`）；npm配置也独立。固定loopback8089只用于合成Provider，占用时失败，不结束已有进程；Web使用独立随机loopback端口。仅该标记临时目录允许测试脚本运行，普通安装不调用此入口。当前测试守卫不再按历史 `pi-workspace` 目录名豁免哨兵检查；复跑验收应使用上述入口新建隔离目录，旧发行归档内容保持不变。
 
-脚本验收包含npm test、check、check:docs、audit、目标系统打包、桌面/手机安装与刷新、真实Pi RPC/Shell/历史/侧聊/导入导出，以及停机更新、原路径逐文件恢复、正数用量、搜索和媒体解码。16×16一秒黑色视频为随包合成fixture，不调用媒体生成服务。服务器通过测试父进程的私有IPC触发原SIGINT关闭逻辑，没有新增HTTP退出接口。RC各阶段必须退出码0；旧包的已知signal-exit问题只在结束全部worker后单独记录，不计作RC正常停机或放宽新包断言。
+脚本验收包含npm test、check、check:docs、audit、目标系统打包、按所选 target 的安装与刷新、真实Pi RPC/Shell/历史/侧聊/导入导出，以及停机更新、原路径逐文件恢复、正数用量、搜索和媒体解码。16×16一秒黑色视频为随包合成fixture，不调用媒体生成服务。服务器通过测试父进程的私有IPC触发原SIGINT关闭逻辑，没有新增HTTP退出接口。RC各阶段必须退出码0；旧包的已知signal-exit问题只在结束全部worker后单独记录，不计作RC正常停机或放宽新包断言。
 
 `acceptance.cjs` **不运行完整 `npm run test:browser`**。在同一最终归档的另一个隔离解包/锁定安装目录中显式跑全量自动浏览器、相关手动专项，绑定归档 SHA256、环境和前后文件哈希；不能用 acceptance 成功或语法检查冒充浏览器全量。每个宣称支持的平台都要有上述完整检查证据；缺项明确阻塞发布，不沿用旧平台报告。
 

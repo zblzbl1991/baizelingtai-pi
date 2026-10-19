@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Synthetic REST/WS only: workbench layout, real entry points, drafts and focus.
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -15,6 +16,7 @@ const session = { id: 'empty', cwd, name: 'Synthetic workbench', modified: new D
 const model = { provider: 'fixture', id: 'model', name: 'A deliberately long model name for layout checks', input: ['text'], contextWindow: 32000 };
 const plan = id => ({ version: 1, id, explanation: '', plan: [{ step: 'Inspect the workspace', status: 'in_progress' }, { step: 'Verify controls', status: 'pending' }] });
 async function run(browser, base, viewport, preferences = {}) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ viewport, reducedMotion: 'reduce', locale: 'en-US', isMobile: viewport.width <= 680, hasTouch: viewport.width <= 680 });
     const page = await context.newPage(), errors = [], writes = [], commands = [];
     let socket, streaming = false, progress = null, sequence = 0;
@@ -282,7 +284,7 @@ async function run(browser, base, viewport, preferences = {}) {
     const results = [];
     try {
         const base = `http://127.0.0.1:${server.address().port}`;
-        for (const [width, height] of [[1366, 768], [1440, 900], [1536, 864], [1920, 1080], [1280, 800], [1024, 768], [960, 720], [900, 720], [768, 768], [393, 852], [320, 740]]) {
+        for (const [width, height] of selectBrowserTargets([[1366, 768], [1440, 900], [1536, 864], [1920, 1080], [1280, 800], [1024, 768], [960, 720], [900, 720], [768, 768], [393, 852], [320, 740]])) {
             results.push(await run(browser, base, { width, height })); console.log(`PASS workbench ${width}x${height}`);
         }
         results.push(await run(browser, base, { width: 1440, height: 900 }, { 'pi.workspace.sidebarCollapsed': false, 'pi.workspace.split:agent-sessions': 320, 'pi.workspace.split:agent-inspector': 400 }));

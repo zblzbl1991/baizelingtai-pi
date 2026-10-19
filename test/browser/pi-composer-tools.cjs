@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { BUILTINS } = require('../../server/pi-composer-service');
@@ -11,6 +12,7 @@ const nextModel = { ...model, id: 'next', name: 'Next fixture' };
 const messages = [{ role: 'user', content: 'fixture question', timestamp: 1 }, { role: 'assistant', content: [{ type: 'text', text: 'Fixture reply' }], timestamp: 2 }];
 let debugPage;
 async function run(browser, viewport) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width < 900, hasTouch: viewport.width < 900, permissions: ['clipboard-read', 'clipboard-write'] });
     const page = await context.newPage(), errors = [], commands = [], mutations = [], pending = [];
     debugPage = page;
@@ -302,7 +304,7 @@ async function run(browser, viewport) {
     const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
     base = `http://127.0.0.1:${server.address().port}`;
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }].filter(v => !process.env.PI_COMPOSER_VIEWPORT || v.width === Number(process.env.PI_COMPOSER_VIEWPORT))) await run(browser, viewport); }
+    try { for (const viewport of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 320, height: 740 }].filter(v => !process.env.PI_COMPOSER_VIEWPORT || v.width === Number(process.env.PI_COMPOSER_VIEWPORT)))) await run(browser, viewport); }
     catch (error) {
         await debugPage.screenshot({ path: '/tmp/pi-composer-plus-failure.png', timeout: 5000 }).catch(() => {});
         console.log(await debugPage.evaluate(() => ['#workspace-settings-close', '#workspace-settings-dialog', '.workspace-settings-dialog', '[data-settings-panel="installed"]', '#settings-manage-templates', '#pi-template-dialog'].map(s => { const n = document.querySelector(s), box = n.getBoundingClientRect(); return { selector: s, x: box.x, y: box.y, width: box.width, height: box.height, scroll: n.scrollTop, focused: document.activeElement?.id }; })).catch(() => []));

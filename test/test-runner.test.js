@@ -38,6 +38,8 @@ test('browser runner selects launching scripts and leaves helpers and manual liv
     fs.writeFileSync(path.join(browser, 'live.cjs'), '// pivane-browser: manual \u2014 live server\nchromium.launch()');
     fs.writeFileSync(path.join(browser, 'helper.cjs'), 'module.exports = {};');
     assert.deepEqual(selectBrowserTests(directory, []), { files: ['test/browser/a.cjs'], list: false });
+    assert.deepEqual(selectBrowserTests(directory, ['--target=desktop']), {files:['test/browser/a.cjs'],list:false,target:'desktop'});
+    assert.throws(() => selectBrowserTests(directory, ['--target=phone']), /target/);
     assert.deepEqual(selectBrowserTests(directory, ['--list', './test/browser/a.cjs']), { files: ['test/browser/a.cjs'], list: true });
     for (const args of [['test/browser/live.cjs'], ['test/browser/helper.cjs'], ['test/browser/missing.cjs'], ['--headed']]) assert.throws(() => selectBrowserTests(directory, args));
 });
@@ -46,6 +48,22 @@ test('selection still rejects linked source directories', t => {
     const directory = fixture(t), outside = fixture(t);
     fs.symlinkSync(outside, path.join(directory, 'test/linked'), process.platform === 'win32' ? 'junction' : 'dir');
     assert.throws(() => selectTests(directory, ['test/a.test.js']), /symlink/);
+});
+
+test('native Office browser metadata uses the shared platform policy without calling unsupported cases passes', t => {
+    const directory = fixture(t), browser = path.join(directory, 'test/browser'); fs.mkdirSync(browser);
+    fs.writeFileSync(path.join(browser, 'excel.cjs'), 'chromium.launch()');
+    fs.writeFileSync(path.join(browser, 'native.cjs'), '// pivane-browser: office-native\nchromium.launch()');
+    const native = 'test/browser/native.cjs', excel = 'test/browser/excel.cjs';
+    assert.deepEqual(selectBrowserTests(directory, [], { platform: 'win32', arch: 'x64' }), { files: [excel, native], list: false });
+    for (const target of [{ platform: 'linux', arch: 'x64' }, { platform: 'darwin', arch: 'arm64' }, { platform: 'win32', arch: 'arm64' }]) {
+        const selected = selectBrowserTests(directory, ['--target=desktop'], target);
+        assert.deepEqual(selected.files, [excel]); assert.equal(selected.target, 'desktop'); assert.equal(selected.skipped.length, 1);
+        assert.equal(selected.skipped[0].file, native); assert.match(selected.skipped[0].reason, /requires Windows x64/); assert.match(selected.skipped[0].reason, new RegExp(target.platform + '-' + target.arch));
+        const explicit = selectBrowserTests(directory, [native, '--list'], target); assert.deepEqual(explicit.files, []); assert.equal(explicit.list, true); assert.deepEqual(explicit.skipped, selected.skipped);
+        assert.equal(selectBrowserTests(directory, ['--target=all'], target).target, undefined, 'The default mobile/all selection is unchanged');
+    }
+    assert.throws(() => selectBrowserTests(directory, ['--office-platform=win32-x64']), /Unknown option/, 'Platform applicability is never a CLI override');
 });
 
 test('targeted and full execution share credential filtering without mutating caller environment', () => {
@@ -109,4 +127,19 @@ test('timing reporter keeps TAP failures and Node exit status, including multili
     assert.match(result.stdout, /# Timing diagnostics/);
     assert.match(result.stdout, /# Slowest cases/);
     assert.match(result.stdout, /failing\\nlabel/);
+});
+
+test('desktop target selection filters scenarios before any mobile browser context is created', () => {
+    const { selectBrowserTargets } = require('../test/browser/targets.cjs');
+    const cases = [1440, 393, { width: 1024, height: 768 }, { width: 900, height: 700 }, ['mobile', {width:390}], ['desktop', {width:1440}], [320, 'en'], [1440, 'en']];
+    assert.deepEqual(selectBrowserTargets(cases, 'desktop'), [1440, {width:1024,height:768}, ['desktop',{width:1440}], [1440,'en']]);
+    assert.deepEqual(selectBrowserTargets(cases, 'all'), cases);
+    assert.throws(() => selectBrowserTargets(cases, 'phone'), /target/);
+});
+
+test('browser scenario discovery excludes instrumentation helpers while retaining real scenarios', () => {
+    const selected = selectBrowserTests(root, []).files;
+    assert.ok(selected.includes('test/browser/pi-office-file-preview.cjs'));
+    assert.ok(!selected.includes('test/browser/target-guard.cjs'));
+    assert.throws(() => selectBrowserTests(root, ['test/browser/target-guard.cjs']), /Not a runnable browser test/);
 });

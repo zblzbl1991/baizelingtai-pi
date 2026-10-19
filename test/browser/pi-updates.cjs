@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { selectMessageView } = require('./pi-mobile-view-helper.cjs');
 const express = require('express');
@@ -11,9 +12,10 @@ const session = { id: 'updates-fixture', cwd, name: 'Fixture conversation', mess
 const model = { provider: 'fixture', id: 'fixture-model', name: 'Fixture', input: ['text', 'image'], contextWindow: 32000, available: true, thinkingLevels: ['off'] };
 const empty = () => ({ appVersion: '1.0.0-rc.2', piVersion: '0.85.0', bundledPiVersion: '0.85.0', dependencyMatches: true,
     channel: 'preview', platform: 'linux', checkedAt: null,
-    pivane: { status: 'unchecked', releasesUrl: 'https://github.com/YogurtJ/pivane/releases' },
+    pivane: { status: 'unchecked', releasesUrl: 'https://github.com/zblzbl1991/baizelingtai-pi/releases' },
     pi: { status: 'unchecked', releasesUrl: 'https://www.npmjs.com/package/@earendil-works/pi-coding-agent' } });
 async function run(browser, base, width, language) {
+    if (!browserTargetEnabled(width)) return;
     const english = language === 'en-US';
     const context = await browser.newContext({ viewport: { width, height: 1000 }, locale: language, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(); page.setDefaultTimeout(10000);
@@ -37,9 +39,9 @@ async function run(browser, base, width, language) {
             data.pi = { ...data.pi, version: '0.86.0', status: 'available' };
             data.pivane = mode === 'error' ? { ...data.pivane, status: 'error' } : mode === 'empty' ? { ...data.pivane, status: 'no-release' } : {
                 status: 'available', version: '1.0.0-rc.10', prerelease: true,
-                releasesUrl: 'https://github.com/YogurtJ/pivane/releases/tag/v1.0.0-rc.10',
-                downloadUrl: 'https://github.com/YogurtJ/pivane/releases/download/v1.0.0-rc.10/pivane-1.0.0-rc.10.tar.gz',
-                checksumUrl: 'https://github.com/YogurtJ/pivane/releases/download/v1.0.0-rc.10/pivane-1.0.0-rc.10.tar.gz.sha256' };
+                releasesUrl: 'https://github.com/zblzbl1991/baizelingtai-pi/releases/tag/v1.0.0-rc.10',
+                downloadUrl: 'https://github.com/zblzbl1991/baizelingtai-pi/releases/download/v1.0.0-rc.10/pivane-1.0.0-rc.10.tar.gz',
+                checksumUrl: 'https://github.com/zblzbl1991/baizelingtai-pi/releases/download/v1.0.0-rc.10/pivane-1.0.0-rc.10.tar.gz.sha256' };
             if (mode.startsWith('intranet')) {
                 data.source = { type: 'manifest', origin: 'http://gitlab.example:8080', url: 'http://gitlab.example:8080/api/v4/projects/team%2Fbaizelingtai/repository/files/updates%2Flatest.json/raw?ref=HEAD' };
                 data.pivane = { version: '1.8.0', status: 'available', packageFormat: 'windows-portable-zip', sha256: 'a'.repeat(64),
@@ -99,7 +101,10 @@ async function run(browser, base, width, language) {
     assert.ok((await page.locator('#updates-pi').innerText()).includes('0.86.0'));
     assert.equal(await page.locator('#updates-pivane a[href$=".tar.gz"]').count(), 0);
     assert.equal(await page.locator('#updates-pivane a[href$=".sha256"]').count(), 0);
-    await page.locator('#updates-agent-guide summary').click();
+    assert.equal(await page.locator('#updates-pivane a[href*="github.com"]').isVisible(), false);
+    assert.equal(await page.locator('#updates-agent-guide').isVisible(), false);
+    assert.equal(await page.locator('#updates-agent-guide summary').isVisible(), false);
+    assert.equal(await page.locator('#updates-copy-prompt').isVisible(), false);
     const prompt = await page.locator('#updates-agent-prompt').inputValue();
     assert.ok((await page.locator('#updates-pivane h4').textContent()).includes('白泽灵台'));
     assert.ok(prompt.includes('白泽灵台') && !prompt.includes('Pivane'));
@@ -108,10 +113,6 @@ async function run(browser, base, width, language) {
     assert.ok(prompt.includes(english ? 'independent Agent' : '独立 Agent'));
     assert.ok(prompt.includes(english ? 'existing authorization' : '已有授权'));
     assert.ok(prompt.includes(english ? 'stop or restart the service hosting' : '不要停止或重启承载当前对话的服务'));
-    await page.locator('#updates-copy-prompt').click();
-    await page.waitForFunction(() => document.querySelector('.updates-copy-feedback').textContent.length > 0);
-    const copyStatus = await page.locator('.updates-copy-feedback').textContent();
-    assert.ok(copyStatus.includes(english ? 'Copied' : '复制') || copyStatus.includes(english ? 'selected' : '选中'));
     const overflow = async () => {
         const metrics = await page.evaluate(() => [...document.querySelectorAll('.workspace-settings-dialog, .workspace-settings-body, .workspace-settings-content, .workspace-settings-nav, #settings-updates-panel, #settings-updates-panel *')].filter(e => e.clientWidth).map(e => ({ id: e.id || e.className || e.tagName, client: e.clientWidth, scroll: e.scrollWidth })));
         for (const m of metrics) assert.ok(m.scroll <= m.client + 1, `${language}/${width}: ${JSON.stringify(m)}`);
@@ -130,10 +131,12 @@ async function run(browser, base, width, language) {
     const lateResponse = page.waitForResponse(r => r.url().endsWith('/settings/updates/check'));
     releaseResponse(); hold = null; await lateResponse;
     assert.equal(await page.locator('#updates-pivane [data-state="unchecked"]').count(), 1);
+    assert.equal(await page.locator('#updates-pivane a[href*="github.com"]').isVisible(), false);
     mode = 'error'; await page.locator('#updates-check').click(); await page.locator('#updates-pivane [data-state="error"]').waitFor();
     assert.equal(await page.locator('#updates-pi [data-state="available"]').count(), 1);
     mode = 'empty'; await page.locator('#updates-check').click(); await page.locator('#updates-pivane [data-state="no-release"]').waitFor();
     mode = 'intranet'; await page.locator('#updates-check').click(); await page.locator('#updates-source').waitFor();
+    assert.equal(await page.locator('#updates-agent-guide').isVisible(), false);
     assert.ok((await page.locator('#updates-source').textContent()).includes('http://gitlab.example:8080'));
     const zip = page.locator('#updates-pivane a[href$="baizelingtai-1.8.0.zip"]');
     assert.equal(await zip.textContent(), english ? 'Download Windows ZIP' : '下载 Windows ZIP');
@@ -157,6 +160,7 @@ async function run(browser, base, width, language) {
     await overflow();
     await page.screenshot({ path: path.join(process.env.PI_BROWSER_ARTIFACT_DIR || os.tmpdir(), `pivane-intranet-updates-${language}-${width}.png`) });
     mode = 'intranet-error'; await page.locator('#updates-check').click(); await page.locator('#updates-pivane [data-state="error"]').waitFor();
+    assert.equal(await page.locator('#updates-agent-guide').isVisible(), false);
     assert.equal(await page.locator('#updates-pivane a').getAttribute('href'), 'http://gitlab.example:8080/team/baizelingtai/-/releases');
     const unverified = await page.locator('#updates-agent-prompt').inputValue();
     assert.equal(unverified, intranetPrompt, 'check failures must retain the same manifest-first prompt');
@@ -180,6 +184,6 @@ async function run(browser, base, width, language) {
     app.use(express.static(path.join(root, 'public')));
     const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
-    try { for (const language of ['zh-CN', 'en-US']) for (const width of [320, 393, 1024, 1440]) await run(browser, `http://127.0.0.1:${server.address().port}`, width, language); }
+    try { for (const language of ['zh-CN', 'en-US']) for (const width of selectBrowserTargets([320, 393, 1024, 1440])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, language); }
     finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

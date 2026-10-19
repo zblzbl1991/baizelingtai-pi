@@ -4,6 +4,7 @@ const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
 const { execFile, execFileSync } = require('node:child_process');
 const { promisify } = require('node:util');
+const { tarInvocation } = require('./package-tar.cjs');
 const root = path.resolve(__dirname, '..');
 const assets = require('./windows-portable-assets.json');
 const { feedUrl, sourceLink, parseFeed } = require('../server/pi-update-feed');
@@ -173,7 +174,8 @@ async function main() {
     try {
         const app = path.join(temporary, appName), scratch = path.join(temporary, 'build-only');
         fs.mkdirSync(scratch); fs.writeFileSync(path.join(scratch, 'empty.npmrc'), ''); fs.writeFileSync(path.join(scratch, 'empty-global.npmrc'), '');
-        execFileSync(tar, ['-xf', snapshot.archive, '-C', temporary], { windowsHide: true });
+        const snapshotTar = tarInvocation(['-xf', snapshot.archive, '-C', temporary]);
+        execFileSync(snapshotTar.file, snapshotTar.args, { windowsHide: true });
         fs.renameSync(path.join(temporary, 'pivane-trial'), app);
         const unpack = path.join(temporary, 'unpack'); fs.mkdirSync(unpack);
         for (const name of ['node', 'rg', 'fd']) execFileSync(tar, ['-xf', downloads[name], '-C', unpack], { windowsHide: true });
@@ -195,6 +197,7 @@ async function main() {
             if (!execFileSync(file, args, { env, encoding: 'utf8', windowsHide: true }).trim().startsWith(expected)) throw Error('Runtime version mismatch: ' + file);
         }
         execFileSync(node, [path.join(app, 'scripts/install.cjs'), '--omit=dev'], { cwd: app, env, stdio: 'inherit', windowsHide: true });
+        execFileSync(node, [path.join(app, 'scripts/install-office-preview.cjs'), '--require-available'], { cwd: app, env, stdio: 'inherit', windowsHide: true });
         // Retain installed dependency and tool licenses in full; do not prune packages.
         fs.writeFileSync(path.join(app, 'baizelingtai-portable.json'), JSON.stringify({ version: 1, platform: 'win32', arch: 'x64',
             ...(updates.feed ? { updateFeedUrl: updates.feed } : {}) }, null, 2) + '\n');

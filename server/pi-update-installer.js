@@ -134,6 +134,9 @@ async function stagePi({ root, directory, version, env = process.env, signal, ru
     await prepareBundled({ directory, env: { ...installEnv, PI_NPM_CLI: npmCli(env) }, signal, run, onOutput, secretEnv: env });
     const lock = JSON.parse(readSafe(path.join(directory, 'package-lock.json'), 16 * 1024 * 1024));
     verifyPiPackages(directory, manifest, lock, version);
+    if (manifest.dependencies?.['@deepseek-ai/libreoffice-kit']) {
+        await run([path.join(directory, 'scripts/install-office-preview.cjs'), '--require-available'], { cwd: directory, env: installEnv, signal, onOutput, secretEnv: env });
+    }
     progress('verifying');
     // Every runtime test runs with a newly allocated identity and no provider credentials.
     const probe = privateDir(path.join(directory, 'probe-data'));

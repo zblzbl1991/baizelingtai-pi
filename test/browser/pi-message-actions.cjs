@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { selectMessageView } = require('./pi-mobile-view-helper.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -13,6 +14,7 @@ const png = { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUhEU
 const text = message => typeof message.content === 'string' ? message.content : (message.content || []).filter(block => block.type === 'text').map(block => block.text).join('\n');
 
 async function run(browser, viewport, theme) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width <= 900, hasTouch: viewport.width <= 900, timezoneId: 'Asia/Shanghai' });
     const page = await context.newPage(), errors = [], writes = [], commands = [];
     const pendingRequests = new Set();
@@ -262,6 +264,6 @@ async function run(browser, viewport, theme) {
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const [viewport, theme] of [[{ width: 1440, height: 1000 }, 'daylight'], [{ width: 393, height: 852 }, 'mint'], [{ width: 412, height: 915 }, 'dark'], [{ width: 320, height: 740 }, 'daylight']]) await run(browser, viewport, theme);
+        for (const [viewport, theme] of selectBrowserTargets([[{ width: 1440, height: 1000 }, 'daylight'], [{ width: 393, height: 852 }, 'mint'], [{ width: 412, height: 915 }, 'dark'], [{ width: 320, height: 740 }, 'daylight']])) await run(browser, viewport, theme);
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

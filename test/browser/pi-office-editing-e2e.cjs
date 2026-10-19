@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Browser full chain: upload DOCX → managed work copy → native OfficeCLI MCP edit →
 // deliver_files → viewer download. Real gateway, managed worker, stdio OfficeCLI process
 // and deliverable snapshots; only the model is a local synthetic provider.
@@ -11,7 +12,7 @@ const SETTLE_TIMEOUT = 180000;
 
 async function main() {
     // Read runner-provided paths first, then drop inherited identities and provider credentials.
-    for (const key of Object.keys(process.env)) if (/^(?:PI_|PIVANE_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|OPENROUTER_|AZURE_OPENAI_|AWS_|BEDROCK_|MISTRAL_|GROQ_|XAI_|DEEPSEEK_)/.test(key)) delete process.env[key];
+    for (const key of Object.keys(process.env)) if (/^(?:PI_|PIVANE_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|OPENROUTER_|AZURE_OPENAI_|AWS_|BEDROCK_|MISTRAL_|GROQ_|XAI_|DEEPSEEK_)/.test(key) && !['PIVANE_BROWSER_TARGET', 'PIVANE_BROWSER_AUDIT_FILE'].includes(key)) delete process.env[key];
     const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-office-e2e-')));
     const agent = path.join(root, 'agent'), cwd = path.join(root, '合同项目');
     fs.mkdirSync(agent); fs.mkdirSync(cwd); fs.mkdirSync(screenshots, { recursive: true });
@@ -102,6 +103,7 @@ async function main() {
         process.env.PI_WORKSPACE_INTERNAL_ORIGIN = origin;
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true });
         const openPage = async (width, sessionId) => {
+    if (!browserTargetEnabled(width)) return;
             const context = await browser.newContext({ viewport: { width, height: width < 680 ? 844 : 1000 }, locale: 'zh-CN', reducedMotion: 'reduce', acceptDownloads: true });
             await context.addInitScript(({ cwd, sessionId }) => {
                 localStorage.setItem('pi.web.cwd', cwd);

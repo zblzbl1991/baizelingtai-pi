@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Isolated browser regression: generic async video, ordered frame previews, retrieval after interruption.
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http');
@@ -65,7 +66,7 @@ document.querySelector('#chat').append(cards.render(message));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening'); let browser;
     try {
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-        for (const width of [1440, 393, 320]) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) {
             const image = lab.references.put('data:image/png;base64,' + png).ref;
             const video = lab.references.put('data:video/mp4;base64,' + mp4.toString('base64')).ref;
             plan = await lab.plan({ modelId: 'media:fixture:video', summary: '从首帧过渡到尾帧 · 合成测试', parameters: { prompt: '镜头缓慢推进', first: image, last: image, clips: [video] } });

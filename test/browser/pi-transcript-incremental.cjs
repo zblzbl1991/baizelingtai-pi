@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const http = require('node:http');
@@ -27,6 +28,7 @@ function history(turns) {
     return rows;
 }
 async function run(browser, base, width) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -195,6 +197,6 @@ async function run(browser, base, width) {
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const width of [1440, 393]) await run(browser, `http://127.0.0.1:${server.address().port}`, width); }
+    try { for (const width of selectBrowserTargets([1440, 393])) await run(browser, `http://127.0.0.1:${server.address().port}`, width); }
     finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -74,7 +74,10 @@
                 card.append(versions);
                 if (key === 'pi' && !data.dependencyMatches) card.append(node('p', t("当前引擎与发布包配套版本不同。"), { class: 'updates-note' }));
                 const links = node('div', undefined, { class: 'updates-links' });
-                links.append(link(t(custom ? '查看更新来源' : key === 'pi' ? 'Pi 官方页面' : '白泽灵台发布页面'), info.releasesUrl, data.source?.origin));
+                const releaseLink = link(t(custom ? '查看更新来源' : key === 'pi' ? 'Pi 官方页面' : '白泽灵台发布页面'), info.releasesUrl, data.source?.origin);
+                // 暂时隐藏白泽灵台 GitHub 发布页入口。
+                releaseLink.hidden = key === 'pivane' && !custom;
+                links.append(releaseLink);
                 if (custom && key === 'pivane' && info.packageFormat === 'windows-portable-zip' && info.downloadUrl) {
                     links.append(link(t('下载 Windows ZIP'), info.downloadUrl, data.source.origin));
                     card.append(node('p', `SHA256: ${info.sha256}`, { class: 'updates-note', id: 'updates-package-hash' }));
@@ -97,6 +100,8 @@
             const feedback = node('p', data.checkedAt ? t('上次检查：{0}', new Date(data.checkedAt).toLocaleString(globalThis.PiI18n?.locale || undefined)) : t(custom ? '尚未检查此更新源。' : "尚未手动检查。引擎详情可能显示自动检查的结果。"), { id: 'updates-feedback', role: 'status', 'aria-live': 'polite' });
             panel.append(feedback);
             const guide = node('details', undefined, { class: 'updates-agent-guide', id: 'updates-agent-guide' }); guide.open = promptOpen;
+            // 暂时隐藏 Agent 更新引导，保留实现以便后续恢复。
+            guide.hidden = true;
             guide.append(node('summary', t('交给独立 Agent 协助更新')));
             const content = node('div', undefined, { class: 'updates-agent-content' });
             content.append(node('p', t('在部署机器上使用独立 Agent；不要让正在被更新的白泽灵台会话重启自身。先让它核对并提出计划，确认后再执行。')));

@@ -30,13 +30,15 @@
     "@earendil-works/pi-agent-core": "1.2.0",
     "@earendil-works/pi-telemetry": "1.2.0",
     "@earendil-works/pi-codemode": "1.2.0",
-    "@earendil-works/pi-mcp": "1.2.0"
+    "@earendil-works/pi-mcp": "1.2.0",
+    "@deepseek-ai/libreoffice-kit": { "fflate": "0.8.3" }
   },
   "keywords": [],
   "author": "Pivane contributors",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@deepseek-ai/libreoffice-kit": "0.1.1",
     "@earendil-works/pi-agent-core": "1.2.0",
     "@earendil-works/pi-ai": "1.2.0",
     "@earendil-works/pi-coding-agent": "1.2.0",
@@ -50,6 +52,7 @@
     "dompurify": "3.4.16",
     "esbuild": "0.28.2",
     "express": "^5.2.1",
+    "fflate": "0.8.3",
     "https-proxy-agent": "7.0.6",
     "jiti": "2.7.0",
     "marked": "18.0.11",
@@ -60,6 +63,7 @@
     "undici": "8.11.2",
     "web-push": "3.6.7",
     "ws": "8.21.3",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yaml": "2.8.3",
     "@modelcontextprotocol/sdk": "1.32.1",
     "@mozilla/readability": "0.6.0",

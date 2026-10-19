@@ -108,7 +108,7 @@ class ArtifactsService {
             const entries = await worker.request('get_entries');
             if (worker !== this.supervisor.getActiveWorker(session.path) || worker.disposed || worker.restarting) throw fail('来源会话正在变化', 409, 'DELIVERY_CONTEXT');
             this.qualify(candidate);
-            return { session, refs: project(activeBranch(entries)) };
+            return { session, refs: project(activeBranch(entries)), worker };
         };
         return service;
     }
@@ -216,7 +216,8 @@ class ArtifactsService {
         if (media.kind === 'video' && file.bytes.length >= 12 && file.bytes.toString('ascii', 4, 8) === 'ftyp') Object.assign(data, { kind: 'video', mime: 'video/mp4', encoding: 'base64', base64: file.bytes.toString('base64') });
         return data;
     }
-    async preview(key, signal, cover = false) {
+    async officeSource(key, signal) { return this.preview(key, signal, false, true); }
+    async preview(key, signal, cover = false, office = false) {
         return this.job(async () => {
             let data;
             const saved = (await this.library.catalog()).entries.find(e => e.id === key);
@@ -224,9 +225,10 @@ class ArtifactsService {
                 if (saved.trashedAt) throw fail('成果已在回收站，请先恢复', 409, 'ARTIFACT_TRASHED');
                 data = (await this.library.content(saved, cover)).data;
                 const current = (await this.library.catalog()).entries.find(e => e.id === key);
-                if (!current || current.trashedAt || current.sha256 !== saved.sha256) throw fail('成果状态已变化，请刷新', 409, 'ARTIFACT_CONFLICT');
+                if (!current || current.trashedAt || current.sha256 !== saved.sha256 || office && current.revision !== saved.revision) throw fail('成果状态已变化，请刷新', 409, 'ARTIFACT_CONFLICT');
                 this.check(); signal?.throwIfAborted();
                 if (cover && data.kind !== 'image') throw fail('此成果使用格式封面', 415, 'ARTIFACT_COVER');
+                if (office) return { data, name: saved.originalName, proof: String(saved.revision) };
                 return Object.fromEntries(['kind', 'mime', 'encoding', 'content', 'base64', 'width', 'height', 'delimiter', 'size', 'revision', 'readAt', 'modifiedAt', 'previewReason'].filter(k => data[k] !== undefined).map(k => [k, data[k]]));
             }
             const locator = this.locator(key);
@@ -236,11 +238,15 @@ class ArtifactsService {
             } else if (locator.source === 'media') data = await this.mediaBytes(locator.media, cover ? 2 * 1024 * 1024 : 64 * 1024 * 1024);
             else {
                 const s = locator.candidate;
-                data = await this.deliveryService(s).request({ cwd: s.cwd, sessionId: s.id, id: locator.deliveryId, index: String(locator.index) });
+                data = await this.deliveryService(s).request({ cwd: s.cwd, sessionId: s.id, id: locator.deliveryId, index: String(locator.index) }, office);
                 if (data.revision !== locator.revision) throw fail('成果版本已变化，请刷新目录', 409, 'ARTIFACT_SOURCE');
             }
             this.check(); signal?.throwIfAborted();
             if (locator.source === 'delivery') this.qualify(locator.candidate);
+            if (office) {
+                if (locator.source !== 'delivery') throw fail('此成果不是办公文件', 415, 'OFFICE_INVALID');
+                return { data, name: data.name, proof: data.officeProof };
+            }
             if (data.kind === 'binary' && data.encoding === 'base64' && data.base64) {
                 const prefix = Buffer.from(data.base64.slice(0, 16), 'base64');
                 if (prefix.length >= 12 && prefix.toString('ascii', 4, 8) === 'ftyp') Object.assign(data, { kind: 'video', mime: 'video/mp4' });

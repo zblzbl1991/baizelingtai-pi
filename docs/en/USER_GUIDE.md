@@ -51,7 +51,7 @@ Subagents ship with 白泽灵台. Global/project defaults and role overrides are
 
 ## Conversation and tools
 
-`@` inserts a server project path; attachments, paste and drag-and-drop upload browser-supplied files. Persistent threads accept DOCX, XLSX, PPTX and PDF originals, up to 20 MiB each and five documents per message. Ask the Agent to summarize or analyze them; it reads selected ranges on demand, and file cards download originals. Formulas use saved cached values, scanning requires a separate OCR workflow, and Office layout preview/editing is not included. See [document attachments](../COMPOSER_TOOLS.md#上传办公文档与-pdf). While the Agent runs, choose Steer or Follow-up from Add. An empty draft shows Stop; text, quotes or attachments show Send.
+`@` inserts a server project path; attachments, paste and drag-and-drop upload browser-supplied files. Persistent threads accept modern Office, legacy DOC/XLS/PPT and PDF originals, up to 20 MiB each and five documents per message. File cards download originals and offer [approximate Office previews](../OFFICE_PREVIEW.md): Word/PowerPoint become PDF and Excel uses a read-only grid with saved formula results. The Agent reads selected ranges of modern Office/PDF on demand; legacy files must first be saved in modern formats for Agent reading/editing. Scanned text requires a separate OCR workflow. See [document attachments](../COMPOSER_TOOLS.md#上传办公文档与-pdf). While the Agent runs, choose Steer or Follow-up from Add. An empty draft shows Stop; text, quotes or attachments show Send.
 
 Choose a message display mode under **Settings → Preferences**:
 

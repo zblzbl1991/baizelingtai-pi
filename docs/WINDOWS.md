@@ -11,6 +11,8 @@
 - 普通安装复用当前用户的 Pi CLI 身份，Windows 原生默认通常是 `C:\Users\<用户>\.pi\agent`，不是 AppData；非空 `PI_CODING_AGENT_DIR` 优先。媒体和预约使用实例独立路径。只有需要隔离身份时才另建专用 Pi 目录，不把身份指向驱动器根目录或整个主目录。
 - Git Bash 用于内置 Bash 和手动 `!`/`!!`。Pi 的可选 PowerShell 工具沿用原生设置。创建文件符号链接仍受 Windows 的开发者模式/权限限制；本项目不自动开启开发者模式。
 
+Word／PPT 的[近似预览](OFFICE_PREVIEW.md#windows-引擎字体与修复)另需 Node 至少 22.19.0、Microsoft Visual C++ v14 x64 运行库及合适字体。统一安装会执行完整性和隔离转换探针；首次安装可明确降级为仅工作台可用，Windows 更新候选须通过预检。缺失运行库的官方修复、字体安装后显式刷新及原件下载边界统一见该预览指南，不由应用自动提权安装系统组件。
+
 下面使用普通用户目录中的新实例。先将发布包和同名.sha256下载到Downloads；PowerShell执行：
 
 ```powershell
@@ -21,7 +23,7 @@ $base = Join-Path $env:USERPROFILE 'Pivane'
 if (Test-Path -LiteralPath $base) { throw '此目录已存在，请按更新流程操作或选择新的base' }
 $app = Join-Path $base 'releases\1.6.0'
 @($app, "$base\data\media", "$base\projects\demo", "$base\backups") | ForEach-Object { New-Item -ItemType Directory -Path $_ -Force | Out-Null }
-tar.exe -xzf $archive -C $app --strip-components=1
+& (Join-Path $env:SystemRoot 'System32\tar.exe') --options hdrcharset=UTF-8 -xzf $archive -C $app --strip-components=1
 if ($LASTEXITCODE -ne 0) { throw '解包失败' }
 Set-Location -LiteralPath $app
 node.exe --version

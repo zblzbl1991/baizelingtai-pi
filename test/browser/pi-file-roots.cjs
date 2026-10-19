@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { openInspector } = require('./pi-mobile-view-helper.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -8,6 +9,7 @@ const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['te
 const session = id => ({ id, cwd, name: id === 'one' ? '跨目录文件协作' : '另一条会话', messageCount: 1 });
 const document = root => root === related ? '# 私有维护笔记\n\n这里是关联目录中的 README，不是主项目文件。\n\n[详细记录](detail.md)\n\n## 发布准备\n\n保留源码与维护资料各自的位置，让阅读自然连接。\n' : root === external ? '# 任务报告\n\n仅打开此文件，不枚举父目录。' : '# 产品源码\n\n这个 README 属于主目录。';
 async function run(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ locale, viewport: { width, height: width <= 900 ? 852 : 1000 } });
     const page = await context.newPage(), errors = [], requests = [], commands = [];
     let roots = [], revision = 0, active = 'one', held = null, holdRoot = null;
@@ -136,6 +138,6 @@ async function run(browser, base, width, locale) {
     app.use(express.static(path.join(root, 'public')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'], headless: true });
-    try { for (const width of [1440, 1024, 393, 320]) for (const locale of ['zh-CN', 'en']) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
+    try { for (const width of selectBrowserTargets([1440, 1024, 393, 320])) for (const locale of ['zh-CN', 'en']) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
     finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

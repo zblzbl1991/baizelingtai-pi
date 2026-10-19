@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Run against this checkout, or set PIVANE_TEST_SOURCE_ROOT to a frozen assembled checkout.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -22,7 +23,7 @@ try {
 async function main() {
     if (!bundle || !fs.existsSync(bundle)) throw new Error('PIVANE_TEST_HERMES_BUNDLE must point to the reviewed read-only bundle');
     // Before constructing Pi services, remove inherited identities and provider credentials.
-    for (const key of Object.keys(process.env)) if (/^(?:PI_|PIVANE_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|OPENROUTER_|AZURE_OPENAI_|AWS_|BEDROCK_|MISTRAL_|GROQ_|XAI_|DEEPSEEK_)/.test(key)) delete process.env[key];
+    for (const key of Object.keys(process.env)) if (/^(?:PI_|PIVANE_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|OPENROUTER_|AZURE_OPENAI_|AWS_|BEDROCK_|MISTRAL_|GROQ_|XAI_|DEEPSEEK_)/.test(key) && !['PIVANE_BROWSER_TARGET', 'PIVANE_BROWSER_AUDIT_FILE'].includes(key)) delete process.env[key];
     const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-assistant-browser-')));
     let provider, access, gateway, server, wss, browser;
     // [DEBUG-authoring] Passive bounded evidence for the existing final-reply wait.
@@ -97,6 +98,7 @@ async function main() {
         await page.screenshot({ path: file, fullPage: true }); captures.push(file);
     };
     const open = async (width, locale, theme, route = '#/chat') => {
+    if (!browserTargetEnabled(width)) return;
         const context = await browser.newContext({ viewport: { width, height: width < 900 ? 852 : 920 }, locale,
             isMobile: width < 900, hasTouch: width < 900 });
         await context.addInitScript(({ cwd, locale, theme }) => {
@@ -423,7 +425,7 @@ async function main() {
         assert.deepEqual(desktop.errors, []);
         await desktop.context.close();
 
-        for (const [width, locale, theme] of [[1280, 'zh-CN', 'mint'], [393, 'zh-CN', 'dark'], [320, 'en', 'mint']]) {
+        for (const [width, locale, theme] of selectBrowserTargets([[1280, 'zh-CN', 'mint'], [393, 'zh-CN', 'dark'], [320, 'en', 'mint']])) {
             const view = await open(width, locale, theme, `#/assistant?profileId=${profileId}&projectId=${groups[0].id}&sessionId=${groupSessions[0].id}`);
             try {
                 await view.page.locator('#pi-assistant-profile').waitFor();

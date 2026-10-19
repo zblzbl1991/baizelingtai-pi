@@ -34,6 +34,16 @@ test('per-file limits are checked before reading file data', async () => {
     await assert.rejects(attachments.read(oversized('x.txt', attachments.limits.textBytes + 1)), /1MB/);
 });
 
+test('legacy Office attachments use the raw upload reference without pretending to be text', async () => {
+    for (const format of ['doc', 'xls', 'ppt']) {
+        assert.ok(attachments.accept.includes('.' + format));
+        const reference = { id: 'a'.repeat(64), revision: 'b'.repeat(64), name: 'legacy.' + format, format, size: 3 };
+        const file = { name: reference.name, size: 3, arrayBuffer() { throw Error('browser must not read as text'); } };
+        const result = await attachments.read(file, { upload: async submitted => { assert.equal(submitted, file); return { reference }; } });
+        assert.equal(result.kind, 'document'); assert.equal(result.text, undefined); assert.equal(result.reference, reference);
+    }
+});
+
 test('payload escaping and total limits match the gateway boundaries', () => {
     const file = { kind: 'text', name: 'a"<&.txt', text: 'content' };
     assert.match(attachments.payload('prompt', [file]).message, /name="a&quot;&lt;&amp;.txt"/);

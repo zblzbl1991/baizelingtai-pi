@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { openInspector } = require('./pi-mobile-view-helper.cjs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -9,6 +10,7 @@ const image = { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUh
 const initial = [{ role: 'user', content: '第一条问题', timestamp: 1 }, { role: 'assistant', content: '第一条回复', timestamp: 2 }, { role: 'user', content: [{ type: 'text', text: '上一条问题 <img src=x onerror=alert(1)>' }, image], timestamp: 3 }, { role: 'assistant', content: '旧的回复', timestamp: 4 }];
 
 async function run(browser, viewport, historyEnabled = true) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport, isMobile: viewport.width < 900, hasTouch: viewport.width < 900 });
     const page = await context.newPage();
     const errors = [], writes = [], rpc = [];
@@ -354,7 +356,7 @@ async function run(browser, viewport, historyEnabled = true) {
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const viewport of [{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 412, height: 915 }, { width: 320, height: 740 }]) await run(browser, viewport);
+        for (const viewport of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 393, height: 852 }, { width: 412, height: 915 }, { width: 320, height: 740 }])) await run(browser, viewport);
         await run(browser, { width: 393, height: 852 }, false);
     }
     finally { await browser.close(); }

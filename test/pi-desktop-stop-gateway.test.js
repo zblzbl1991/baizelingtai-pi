@@ -19,8 +19,10 @@ const { MaintenanceClient } = require('../server/pi-maintenance-client');
 test('assembled stop projection covers conservative side chat and private confirmation gates HTTP and WebSocket', async t => {
     const maintenance = new MaintenanceClient({ managed: true, nonce: 'synthetic' });
     maintenance.receive({ type: 'maintenance-activate', nonce: 'synthetic' });
+    let finishProbe;
+    const officePreviewEngine = { generation: 'synthetic-stop-probe', status: () => new Promise(resolve => { finishProbe = resolve; }), dispose: async () => {} };
     const mediaLabService = { pendingReviews: 0, stopReadiness() { return this.pendingReviews; } };
-    const gateway = createPiAgentGateway({ maintenance, mediaLabService });
+    const gateway = createPiAgentGateway({ maintenance, mediaLabService, officePreviewEngine });
     const app = express(); app.use(express.json());
     app.use((req, res, next) => maintenance.http(req, res, next));
     gateway.mount(app);
@@ -43,6 +45,14 @@ test('assembled stop projection covers conservative side chat and private confir
     await assert.rejects(gateway.supervisor.createEphemeralWorker(root), { code: 'DOCUMENT_STORAGE_BUSY' });
     lease.release();
     assert.throws(() => gateway.desktopStop.execute({ ticket: beforeCleanup.ticket, draftsSaved: true, externalWritersStopped: true }), { code: 'DESKTOP_REVIEW_STALE' });
+    const probe = gateway.officePreviews.status();
+    await Promise.resolve();
+    const previewBusy = gateway.desktopStop.review({ action: 'stop' });
+    assert.equal(previewBusy.ticket, undefined, 'an active Office health probe prevents stop confirmation');
+    assert.equal(previewBusy.blockers.find(row => row.type === 'office-preview').count, 1);
+    finishProbe({ available: true });
+    await probe;
+    assert.deepEqual(gateway.desktopStop.snapshot().blockers, []);
     mediaLabService.pendingReviews = 1;
     assert.equal(gateway.desktopStop.review({ action: 'stop' }).ticket, undefined, 'pending media confirmation blocks stopping');
     mediaLabService.pendingReviews = 0;

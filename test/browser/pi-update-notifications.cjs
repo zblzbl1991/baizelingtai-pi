@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const express = require('express');
 const path = require('node:path');
@@ -15,7 +16,7 @@ const root = path.resolve(__dirname, '../..');
     const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const locale of ['zh-CN', 'en-US']) for (const width of [320, 393, 1024, 1440]) {
+        for (const locale of ['zh-CN', 'en-US']) for (const width of selectBrowserTargets([320, 393, 1024, 1440])) {
             const context = await browser.newContext({ locale, viewport: { width, height: 800 } });
             const page = await context.newPage(); const errors = [], posts = [];
             page.on('pageerror', e => errors.push(e.message)); await page.clock.install();

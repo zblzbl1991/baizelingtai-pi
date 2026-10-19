@@ -4,7 +4,7 @@
     const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
     const unescape = value => value.replace(/&(amp|lt|gt|quot|apos);/g, (_, entity) => ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[entity]));
     function valid(ref) {
-        return ref && hex.test(ref.id) && hex.test(ref.revision) && ['docx', 'xlsx', 'pptx', 'pdf'].includes(ref.format)
+        return ref && hex.test(ref.id) && hex.test(ref.revision) && ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf'].includes(ref.format)
             && typeof ref.name === 'string' && ref.name.length > 0 && ref.name.length <= 240
             && !/[\x00-\x1f\x7f/\\]/.test(ref.name) && Number.isSafeInteger(ref.size) && ref.size > 0 && ref.size <= 20 * 1024 * 1024;
     }
@@ -13,7 +13,7 @@
         return `<pivane_document id="${ref.id}" revision="${ref.revision}" name="${escape(ref.name)}" format="${ref.format}" bytes="${ref.size}" />`;
     }
     function split(text) {
-        const result = [], pattern = /<pivane_document id="([a-f0-9]{64})" revision="([a-f0-9]{64})" name="([^"<>\r\n]{1,1440})" format="(docx|xlsx|pptx|pdf)" bytes="([0-9]{1,8})" \/>/g;
+        const result = [], pattern = /<pivane_document id="([a-f0-9]{64})" revision="([a-f0-9]{64})" name="([^"<>\r\n]{1,1440})" format="(doc|docx|xls|xlsx|ppt|pptx|pdf)" bytes="([0-9]{1,8})" \/>/g;
         let offset = 0, match;
         while ((match = pattern.exec(String(text)))) {
             const ref = { id: match[1], revision: match[2], name: unescape(match[3]), format: match[4], size: Number(match[5]) };

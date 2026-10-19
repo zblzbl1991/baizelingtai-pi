@@ -7,15 +7,9 @@ const net = require('node:net');
 const assert = require('node:assert/strict');
 const { createHash, randomUUID } = require('node:crypto');
 const { spawn, spawnSync, fork } = require('node:child_process');
-const args = {};
-for (let i = 2; i < process.argv.length; i += 2) {
-    const key = process.argv[i];
-    assert.ok(['--archive', '--sha256', '--previous-archive', '--previous-sha256', '--browser', '--playwright', '--video', '--output'].includes(key), 'unknown acceptance option');
-    assert.ok(process.argv[i + 1] && !args[key], 'option needs one value');
-    args[key] = process.argv[i + 1];
-}
-for (const key of ['--archive', '--sha256', '--browser', '--playwright', '--output']) assert.ok(args[key], `${key} required`);
-assert.equal(Boolean(args['--previous-archive']), Boolean(args['--previous-sha256']));
+const { options: acceptanceOptions, browserInvocation } = require('./browser-options.cjs');
+const { tarInvocation } = require('../../scripts/package-tar.cjs');
+const args = acceptanceOptions(process.argv.slice(2));
 assert.equal(process.versions.node.split('.')[0], '22', 'release baseline requires an independent Node 22');
 const output = path.resolve(args['--output']);
 assert.ok(!fs.existsSync(output), 'acceptance output directory must be new');
@@ -37,13 +31,13 @@ const npm = [path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npm
 assert.ok(npm, 'npm CLI for the selected Node is required');
 let server, provider, port, manifest, serverDirectory;
 const children = new Set(), handles = [];
-const result = { status: 'running', appVersion: null, artifactSha256: args['--sha256'], upgradeFromSha256: args['--previous-sha256'] || null, platform: process.platform, architecture: process.arch, osRelease: os.release(), node: process.versions.node, checks: [], paidProviderRequests: 0 };
+const result = { status: 'running', browserTarget: args['--target'], appVersion: null, artifactSha256: args['--sha256'], upgradeFromSha256: args['--previous-sha256'] || null, platform: process.platform, architecture: process.arch, osRelease: os.release(), node: process.versions.node, checks: [], paidProviderRequests: 0 };
 function extract(archive, expected, destination) {
     assert.match(expected, /^[a-f0-9]{64}$/);
     assert.equal(digest(fs.readFileSync(archive)), expected, 'archive SHA256 mismatch');
     fs.mkdirSync(destination);
-    const tar = process.platform === 'darwin' ? '/usr/bin/tar' : 'tar';
-    const unpack = spawnSync(tar, ['-xzf', path.resolve(archive), '-C', destination, '--strip-components=1'], { env, encoding: 'utf8' });
+    const tar = tarInvocation(['-xzf', path.resolve(archive), '-C', destination, '--strip-components=1']);
+    const unpack = spawnSync(tar.file, tar.args, { env, encoding: 'utf8', windowsHide: true });
     assert.equal(unpack.status, 0, unpack.stderr);
     const data = JSON.parse(fs.readFileSync(path.join(destination, 'TRIAL_MANIFEST.json'), 'utf8'));
     assert.equal(data.version, 1);
@@ -58,8 +52,11 @@ function extract(archive, expected, destination) {
 }
 function launch(file, label, options = {}) {
     const fd = fs.openSync(path.join(output, label + '.log'), 'w'); handles.push(fd);
-    const spawnOptions = { cwd: options.cwd || app, env: options.env || env, stdio: ['ignore', fd, fd, ...(options.ipc ? ['ipc'] : [])] };
-    const child = options.ipc ? fork(file, [], spawnOptions) : spawn(process.execPath, [file, ...(options.args || [])], spawnOptions);
+    const invocation = path.dirname(file) === path.join(app, 'test/browser')
+        ? browserInvocation(app, file, options.args || [], args['--target'], options.env || env)
+        : { args: [file, ...(options.args || [])], env: options.env || env };
+    const spawnOptions = { cwd: options.cwd || app, env: invocation.env, stdio: ['ignore', fd, fd, ...(options.ipc ? ['ipc'] : [])] };
+    const child = options.ipc ? fork(file, [], spawnOptions) : spawn(process.execPath, invocation.args, spawnOptions);
     children.add(child); child.once('exit', () => children.delete(child));
     return child;
 }
@@ -218,6 +215,6 @@ async function cleanup() {
         // Retain failed isolated fixtures for diagnosis; successful identities are removed.
         if (result.status === 'passed') fs.rmSync(root, { recursive: true, force: true });
         else fs.writeFileSync(path.join(output, 'isolated-root.txt'), root);
-        console.log(JSON.stringify({ status: result.status, output, artifactSha256: result.artifactSha256, checks: result.checks, error: result.error?.split('\n')[0] }, null, 2));
+        console.log(JSON.stringify({ status: result.status, browserTarget: result.browserTarget, output, artifactSha256: result.artifactSha256, checks: result.checks, error: result.error?.split('\n')[0] }, null, 2));
     }
 })().catch(error => { console.error(error); process.exitCode = 1; });

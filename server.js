@@ -85,7 +85,7 @@ mediaLabService.references = new MediaReferences({ directory: path.join(mediaDat
 mediaLabService.chatRequests = new MediaChatRequests({ lab: mediaLabService, file: path.join(mediaDataRoot, 'media_chat_requests.json') });
 
 const workspaceAccess = new WorkspaceAccessService({
-    publicFiles: ['/', '/index.html', '/pi-mermaid-frame.html', '/site.webmanifest', ...fs.readdirSync(path.join(__dirname, 'public'))
+    publicFiles: ['/', '/index.html', '/pi-mermaid-frame.html', '/site.webmanifest', ...require('./server/office-preview/inventory').ASSETS.map(asset => asset.url), ...fs.readdirSync(path.join(__dirname, 'public'))
         .filter(name => /\.(?:css|js)$/.test(name)).map(name => '/' + name)],
     publicPrefixes: ['/brand/', '/vendor/marked/', '/vendor/dompurify/', '/vendor/highlight/', '/vendor/pdfjs/', '/vendor/katex-0.18.7/'],
 });

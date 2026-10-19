@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -6,6 +7,7 @@ const cwd = '/tmp/package-layout-fixture';
 const provider = 'fixture-' + 'provider-'.repeat(15);
 const model = { provider, id: 'model/' + 'identifier-'.repeat(15), name: 'Planning model', available: true, input: ['text'] };
 async function run(browser, width, locale, theme) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 960 }, locale, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [], writes = [];
     let revision = 'r1', empty = false, conflict = false, accept = true, held = false, release, failRead = false;
@@ -158,7 +160,7 @@ async function run(browser, width, locale, theme) {
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try {
-        for (const locale of ['zh-CN', 'en']) for (const width of [320, 393, 768, 1440]) {
+        for (const locale of ['zh-CN', 'en']) for (const width of selectBrowserTargets([320, 393, 768, 1440])) {
             if (process.env.PI_SETTINGS_TEST_WIDTH && width !== Number(process.env.PI_SETTINGS_TEST_WIDTH)) continue;
             await run(browser, width, locale, width === 320 ? 'dark' : width === 768 ? 'mint' : 'daylight');
         }

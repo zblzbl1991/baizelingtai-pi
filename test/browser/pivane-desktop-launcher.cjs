@@ -1,4 +1,5 @@
 // pivane-browser: manual — Windows native tray + isolated real server.
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // PLAYWRIGHT_MODULE and CHROMIUM_PATH select installed QA dependencies.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -56,7 +57,7 @@ async function main() {
         const waiting = JSON.parse(fs.readFileSync(path.join(root, '.pivane-runtime/desktop/smoke-waiting.json'), 'utf8'));
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true });
         const pageErrors = [];
-        for (const [name, viewport] of [['desktop', { width: 1440, height: 900 }], ['mobile', { width: 390, height: 844 }]]) {
+        for (const [name, viewport] of selectBrowserTargets([['desktop', { width: 1440, height: 900 }], ['mobile', { width: 390, height: 844 }]])) {
             const context = await browser.newContext({ viewport, locale: 'zh-CN', isMobile: name === 'mobile', hasTouch: name === 'mobile' });
             const page = await context.newPage(); page.on('pageerror', error => pageErrors.push(error.message));
             await page.goto(waiting.url, { waitUntil: 'domcontentloaded' });

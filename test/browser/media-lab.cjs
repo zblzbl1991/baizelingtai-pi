@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const baseUrl = process.env.PI_LAB_TEST_URL || 'http://127.0.0.1:3101';
@@ -21,6 +22,7 @@ const ttsModel = { id: 'fixture-tts', name: 'Speech Fixture', kind: 'tts', adapt
 const asset = (id, prompt) => ({ id, kind: 'image', model: 'fixture-image', labModelId: 'fixture-image', filename: `${id}.png`, url: `/images/${id}.png`, prompt, parameters: { prompt, quality: 'high', options: { colors: ['blue'] }, transparent: true, seed: 12 }, createdAt: '2026-09-01T10:00:00Z' });
 
 async function run(browser, size, theme) {
+    if (!browserTargetEnabled(size)) return;
     const context = await browser.newContext({ locale: 'zh-CN', viewport: size, isMobile: size.width <= 900, hasTouch: size.width <= 900 });
     const page = await context.newPage();
     page.setDefaultTimeout(10000);
@@ -306,7 +308,7 @@ async function run(browser, size, theme) {
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try {
-        for (const size of [{ width: 1440, height: 1000 }, { width: 768, height: 900 }, { width: 412, height: 852 }, { width: 393, height: 852 }, { width: 320, height: 740 }]) {
+        for (const size of selectBrowserTargets([{ width: 1440, height: 1000 }, { width: 768, height: 900 }, { width: 412, height: 852 }, { width: 393, height: 852 }, { width: 320, height: 740 }])) {
             if (process.env.PI_LAB_TEST_WIDTH && size.width !== Number(process.env.PI_LAB_TEST_WIDTH)) continue;
             for (const theme of ['daylight', 'dark', 'mint']) {
                 if (process.env.PI_LAB_TEST_THEME && theme !== process.env.PI_LAB_TEST_THEME) continue;

@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const http = require('node:http');
@@ -12,6 +13,7 @@ const messages = [{ role: 'user', content: 'Fixture only', timestamp: 1 },
     { role: 'toolResult', toolCallId: 'parent', toolName: 'codemode', timestamp: 3, isError: false, content: [{ type: 'text', text: 'done' }], nestedCalls: { complete: true, calls: [{ id: 'parent/1', name: 'write', arguments: { path: 'fixture.txt', content: 'recorded' }, status: 'ok' }, { id: 'parent/2', name: 'edit', arguments: { path: 'fixture.txt', edits: [] }, status: 'ok' }] } },
     { role: 'assistant', timestamp: 4, stopReason: 'stop', content: [{ type: 'text', text: 'Finished fixture.' }] }];
 async function run(browser, base, width, locale) {
+    if (!browserTargetEnabled(width)) return;
     const ctx = await browser.newContext({ locale, viewport: { width, height: 900 }, isMobile: width < 900, hasTouch: width < 900 });
     const page = await ctx.newPage(), errors = [], actions = []; let socket, reconnectAuth = false, outcome = 'completed';
     const auth = { server: 'demo', runtimeId: 'runtime', url: 'https://example.invalid/oauth?state=synthetic' };
@@ -80,6 +82,6 @@ async function run(browser, base, width, locale) {
     const app = express(); app.use(express.static(path.join(root, 'public'))); app.use('/vendor', express.static(path.join(root, 'node_modules')));
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const [width, locale] of (process.env.PI_TEST_DESKTOP_ONLY === '1' ? [[1440, 'zh-CN'], [1440, 'en']] : [[1440, 'zh-CN'], [393, 'zh-CN'], [320, 'en']])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
+    try { for (const [width, locale] of selectBrowserTargets(process.env.PI_TEST_DESKTOP_ONLY === '1' ? [[1440, 'zh-CN'], [1440, 'en']] : [[1440, 'zh-CN'], [393, 'zh-CN'], [320, 'en']])) await run(browser, `http://127.0.0.1:${server.address().port}`, width, locale); }
     finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

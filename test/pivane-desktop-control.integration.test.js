@@ -120,7 +120,8 @@ test('controlled desktop checks and stops the actual owned service, then starts 
             if (!run.child.stdin.destroyed) run.child.stdin.end();
             await run.exited;
         }
-        fs.rmSync(base, { recursive: true, force: true });
+        // Owned runners and their pipes have closed; Windows may still be releasing directory handles.
+        await fs.promises.rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
 });
 

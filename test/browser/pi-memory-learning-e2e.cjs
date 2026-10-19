@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // End-to-end rehearsal of the profile "remember -> correct -> use" loop against the real
 // assembled gateway, a real isolated Hermes bundle, real Pi RPC workers and a local synthetic
 // provider. Uses a throwaway identity; never touches a real agent directory or provider.
@@ -24,7 +25,7 @@ const SECRET = 'ghp_' + 'Z'.repeat(36);
 
 async function main() {
     if (!bundle || !fs.existsSync(bundle)) throw new Error('PIVANE_TEST_HERMES_BUNDLE must point to the reviewed read-only bundle');
-    for (const key of Object.keys(process.env)) if (/^(?:PI_|PIVANE_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|OPENROUTER_|AZURE_OPENAI_|AWS_|BEDROCK_|MISTRAL_|GROQ_|XAI_|DEEPSEEK_)/.test(key)) delete process.env[key];
+    for (const key of Object.keys(process.env)) if (/^(?:PI_|PIVANE_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|OPENROUTER_|AZURE_OPENAI_|AWS_|BEDROCK_|MISTRAL_|GROQ_|XAI_|DEEPSEEK_)/.test(key) && !['PIVANE_BROWSER_TARGET', 'PIVANE_BROWSER_AUDIT_FILE'].includes(key)) delete process.env[key];
     const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-memory-e2e-')));
     let provider, access, gateway, server, wss, browser;
     const report = { steps: [], findings: [] };
@@ -125,6 +126,7 @@ async function main() {
         };
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
         const open = async (width, route) => {
+    if (!browserTargetEnabled(width)) return;
             const context = await browser.newContext({ viewport: { width, height: width < 900 ? 852 : 920 }, locale: 'zh-CN',
                 isMobile: width < 900, hasTouch: width < 900 });
             await context.addInitScript(cwd => { localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem('pi.workspace.language', 'zh-CN'); }, cwd);

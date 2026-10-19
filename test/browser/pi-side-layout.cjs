@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 // Synthetic service and WebSockets only. CSS pixels + Retina density, saved split widths,
 // interactive parallel tool panels, expanded file reading, mobile modal transitions,
 // retained side/history/file state, and native thinking values.
@@ -13,6 +14,7 @@ const model = { provider: 'fixture', id: 'reasoning', name: 'Fixture reasoning',
 const cwd = '/synthetic/side-layout';
 const evidence = process.env.PI_SIDE_LAYOUT_EVIDENCE || '/tmp/pi-side-layout';
 async function run(browser, base, viewport, locale, preferred = 336, navExpanded = false) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ viewport, locale, reducedMotion: 'reduce', deviceScaleFactor: 2, isMobile: viewport.width <= 680, hasTouch: viewport.width <= 680 });
     const page = await context.newPage(), errors = [], prompts = [], preparations = [];
     let side, sockets = 0, closes = 0;
@@ -99,11 +101,13 @@ async function run(browser, base, viewport, locale, preferred = 336, navExpanded
     await page.screenshot({ path: path.join(evidence, `${viewport.width}-${preferred}-${locale}-${navExpanded}-settings.png`) });
     await page.locator('#pi-side-reference > summary').click();
     if (viewport.width > 900) {
+        if (browserTargetEnabled(393)) {
         await page.setViewportSize({ width: 393, height: 852 });
         await page.waitForFunction(() => document.querySelector('.pi-transcript-shell').inert);
         assert.equal(await page.locator('#pi-inspector').getAttribute('aria-modal'), 'true');
         assert.equal(await page.locator('#pi-inspector-split').isVisible(), false);
         await page.setViewportSize(viewport); await docked();
+        }
         const fitted = await page.locator('#pi-inspector').evaluate(node => node.getBoundingClientRect().width);
         assert.ok(fitted <= preferred + 1);
         assert.equal(await page.evaluate(() => localStorage.getItem('pi.workspace.split:agent-inspector')), String(preferred), 'viewport fitting preserves saved preference');
@@ -133,11 +137,13 @@ async function run(browser, base, viewport, locale, preferred = 336, navExpanded
                 await readerSettled();
                 const readerShape = () => page.locator('#pi-file-body').evaluate(node => ({ top: node.scrollTop, width: node.clientWidth, height: node.clientHeight, scrollHeight: node.scrollHeight, paragraphs: node.querySelectorAll('p').length, font: getComputedStyle(node.querySelector('p')).font, paragraphTop: node.querySelector('p').getBoundingClientRect().top - node.getBoundingClientRect().top + node.scrollTop }));
                 const reading = await readerShape();
+                if (browserTargetEnabled(393)) {
                 await page.setViewportSize({ width: 393, height: 852 });
                 await page.waitForFunction(() => document.querySelector('.pi-transcript-shell').inert);
                 assert.equal(await page.locator('#pi-inspector').getAttribute('aria-modal'), 'true');
                 assert.equal(await page.locator('#pi-file-body h1').textContent(), 'Synthetic file');
                 await page.setViewportSize(viewport); await docked(tool); await readerSettled();
+                }
                 const restored = await readerShape();
                 assert.deepEqual(restored, reading, JSON.stringify({ reading, restored }));
                 await page.locator('#pi-files-expand').click(); await docked(tool);
@@ -180,7 +186,7 @@ async function run(browser, base, viewport, locale, preferred = 336, navExpanded
     const server = app.listen(0,'127.0.0.1'); await once(server,'listening');
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
-        for (const locale of ['zh-CN','en-US']) for (const [width,height,preferred,navExpanded] of [[1468,834,700],[1280,800,800],[1440,900,800,true],[1920,1080,800],[1024,768,336],[901,768,800],[901,768,800,true],[1199,800,700],[1200,800,700],[1200,800,800,true],[960,720,336],[900,720,700],[393,852,336],[320,740,336]]) {
+        for (const locale of ['zh-CN','en-US']) for (const [width,height,preferred,navExpanded] of selectBrowserTargets([[1468,834,700],[1280,800,800],[1440,900,800,true],[1920,1080,800],[1024,768,336],[901,768,800],[901,768,800,true],[1199,800,700],[1200,800,700],[1200,800,800,true],[960,720,336],[900,720,700],[393,852,336],[320,740,336]])) {
             if (process.env.PI_SIDE_LAYOUT_WIDTH && process.env.PI_SIDE_LAYOUT_WIDTH !== String(width)) continue;
             await run(browser, 'http://127.0.0.1:'+server.address().port, {width,height},locale,preferred,navExpanded);
         }

@@ -2,6 +2,8 @@
 
 当前源码内置固定版本 OfficeCLI，支持读取、创建和编辑 DOCX、XLSX、PPTX。它使用 Open XML SDK，运行不需要 Microsoft Office；已有公文规则检查继续使用[公文工具](GONGWEN.md)。源码完成不代表实际运行实例已更新或正式发行包已包含。
 
+只想阅读文件时，使用独立的 [Office 预览](OFFICE_PREVIEW.md)：Word／PPT 转为近似 PDF，Excel 显示只读表格，六种现代及旧格式均保留原件。预览不经 OfficeCLI，不扩大旧 DOC／XLS／PPT 的 Agent 读取或编辑范围。
+
 ## 使用
 
 在持久聊天上传 Office 文档并发送，例如：

@@ -58,3 +58,6 @@ dist/
 # Local native linker output; release binaries are explicitly listed.
 /native/*.lib
 media_references/
+
+# Rebuilt from the Office asset inventory during install/package preparation.
+/public/vendor/office-preview/

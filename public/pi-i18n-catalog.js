@@ -10085,5 +10085,43 @@
         ["Excel 文件不得超过 20 MiB。", "Excel files must not exceed 20 MiB."],
         ["请核对具体差异，再确认导入。", "Review the exact changes, then confirm the import."]
     );
+    rows.push(
+        ["正在解析工作簿…", "Parsing workbook…"],
+        ["工作表", "Worksheet"],
+        ["前列", "Previous columns"],
+        ["后列", "Next columns"],
+        ["选择单元格查看原式与已保存值", "Select a cell to inspect its formula and saved value"],
+        [" ↔ 合并延续", " ↔ Merge continues"],
+        ["合并区域跨越当前行页或列窗口", "Merged region extends beyond this row page or column window"],
+        ["无已保存结果", "No saved result"],
+        ["（无已保存结果）", "(No saved result)"],
+        ["表格预览组件不可用", "Workbook preview component unavailable"],
+        ["Excel 原件超过预览预算", "Excel file exceeds the preview budget"],
+        ["工作簿无法预览", "Workbook cannot be previewed"],
+        ["工作簿解析失败", "Workbook parsing failed"],
+        ["工作簿解析结果无效", "Invalid workbook result"],
+        ["工作簿解析超时", "Workbook parsing timed out"],
+        ["{0} 可下载原件并用办公软件打开。", "{0} Download the original and open it in an Office app."],
+        ["已省略 {0} 张隐藏工作表。", "{0} hidden worksheets omitted."],
+        ["共享主原式：{0}（从属原式未展开）", "Shared master formula: {0} (dependent formulas are not expanded)"],
+        ["{0} · 原式：{1}{2} · 已保存值：{3}", "{0} · Formula: {1}{2} · Saved value: {3}"],
+        [" · 范围：{0}", " · Range: {0}"],
+        ["{0}–{1} / {2} 行", "Rows {0}–{1} / {2}"],
+        ["{0}–{1} / {2} 列", "Columns {0}–{1} / {2}"],
+        ["近似只读预览；图表、图片、批注、条件格式及其他未支持内容可能省略。公式仅显示文件中已保存的缓存，可能过期，不重新计算。", "Approximate read-only preview. Charts, images, comments, conditional formatting and unsupported content may be omitted. Formulas show saved caches, which may be stale; they are not recalculated."],
+        ["文件包含外部关系；预览未读取任何外部目标。", "External relationships exist; no external targets were read."],
+        ["检测到未支持的工作表对象或链接；这些内容未在网格中还原。", "Unsupported worksheet objects or links were omitted from the grid."],
+        ["共享/数组公式保留主原式及范围；不展开或猜测从属单元格的原式。", "Shared and array formulas retain the master formula and range. Dependent formulas are not expanded or guessed."],
+        ["部分公式没有已保存缓存；请用办公软件重新计算后保存。", "Some formulas have no saved cache. Recalculate and save in an Office app."],
+        ["部分共享公式缺失主原式；只展示已保存值。", "Some shared formulas lack a master formula; only saved values are shown."],
+        ["隐藏和 veryHidden 工作表不会在预览中显示。", "Hidden and veryHidden worksheets are omitted."],
+        ["XLS 近似只读预览：字体、边框、图形等未恢复；公式仅显示已保存的缓存，可能过期，不重新计算。", "Approximate read-only XLS preview: fonts, borders and graphics are omitted. Formulas show saved caches, which may be stale; they are not recalculated."],
+        ["部分公式没有已保存缓存。", "Some formulas have no saved cache."],
+        ["隐藏工作表不会在预览中显示。", "Hidden worksheets are omitted."],
+        ["预览文档", "Preview document"],
+        ["仅支持预览和下载；Agent 不能读取或编辑旧版 Office 格式，请另存为 DOCX、XLSX 或 PPTX 后交给 Agent 处理。", "Preview and download only. The Agent cannot read or edit legacy Office formats. Save as DOCX, XLSX or PPTX for Agent processing."],
+        ["刷新预览", "Refresh preview"]
+    );
+    rows.push(['仅预览和下载', 'Preview and download only']);
     globalThis.PiI18nCatalog = Object.freeze(rows.map(row => Object.freeze(row)));
 })();
