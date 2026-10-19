@@ -35,6 +35,22 @@
 
 证据均在本任务外部目录：`notes/continuation-progress.md`、`continuation-node-d50b266-v2-result.json` 与日志、`continuation-browser-final-coverage.json`、`notes/learning-e2e-open-diagnostic-once-results.md`、`notes/cleanup-delta-review.md`、`continuation-checks-d50b266-result.json`、`continuation-pack-d50b266-result.json`、`continuation-archive-check.json`、`continuation-staffing-d50b266-screenshots/`。无部署、发布、版本升级、真实人员导入或真实服务重启；原用户工作区改动保留。06 票继续追踪学习流程间歇超时及受管归档确认，不将旧 wayfinder 的未决设计自动关闭。
 
+## 2026-10-16 zcode E2E 验收跟进（历史补录）
+
+由 wayfinder staffing 10 票登记 zcode 执行。全程源码 `003c1e9`（应用/测试/依赖输入等同 `d50b266`，diff 仅规划记录），测试执行期间工作树干净；Node 24.19.0、Playwright 1.62.1、Chromium 151 revision 1234。
+
+- 学习流程 E2E 首跑失败：162 秒、退出 1，第二次 1440 打开时项目入口按钮 30 秒未启用。一次有界被动诊断通过：93 秒、退出 0；轨迹显示 16 个 `get_state` 就绪探针超时后 worker 才就绪（`startupMs=16277`），`open_session` 成功后按钮在第二次打开开始后 19.4 秒启用。诊断指向原生冷启动超出 fixture 固定等待期限；原失败跑没有直接轨迹，不能据诊断通过抹除失败。
+- 人员调配五脚本本轮 5/5（initialize 31s、cards 38s、views 27s、excel 27s、lifecycle 41s），各自覆盖 1440/393/320；这是历史执行范围，不改变本机当前仅验桌面的偏好。Node/静态/打包/审计按输入未变复用当时结果。
+- 树外证据目录 `zcode-e2e-20261016-122218-a0932c32` 包含 env-record、实际退出结果、失败截图与诊断记录；原始私有路径仅保留在本地合并快照和未跟踪的交接资料中。
+
+## 2026-10-16 学习 E2E 等待阶段修复（历史补录）
+
+`51ac81e` 只改学习浏览器夹具：按目标 sessionId、同一 socket、请求 id 关联实际 `open_session` 响应，核对成功及快照身份，然后执行原 30 秒界面就绪断言。原生会话阶段使用产品既有 180 秒预算；原发送等待、业务断言及运行器 300 秒总上限保留。不预热、不另起 worker、不重放请求，无生产代码或依赖变化。
+
+同一隔离原生进程启动延迟 35 秒时，旧测试 99 秒、退出 1；修复后 64 秒、退出 0；无注入正常完整运行 71 秒、退出 0。当时主工作区已同步测试文件，但因缺 express 未进入 E2E，通过仅指原集成工作树。该历史环境限制不代表当前工作区状态。
+
+树外 `learning-startup-fix-20261016` 保存红/绿/正常的实际退出结果与截图。zcode 在 `51ac81e` 后无注入独立复验两次，114 秒与 42 秒均退出 0；测试文件 SHA256 为 `20fb46c2e63b9108bcd647f06ed1554eaf262cdeb5095240d482f717b9b1b30b`，证据目录为 `zcode-e2e-fixverify-20261016-143200-37d16d4b`。等待缺陷关闭，本票继续追踪受管归档确认，不把分批结果写成一次完整全绿。
+
 ## 历史源码交付与未完成验收
 
 人员调配功能及 01–05 票已实现，源码交付分支为 `codex/staffing-integration`。本票保留开放，原因是共享完整回归仍有失败，且受管归档只返回排队、未确认完成。不会因功能完成而将这些事项自动标为通过。

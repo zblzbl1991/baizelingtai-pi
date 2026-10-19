@@ -102,20 +102,20 @@
     }
     function createChat({ apiFetch, context }) {
         const trigger = document.getElementById('pi-compliance-open'), drawer = document.getElementById('pi-compliance-drawer');
-        let generation = 0, settings, loaded, selected = null, sessionKey = ''; const pending = new Map();
+        let generation = 0, settingsGeneration = 0, loaded, selected = null, sessionKey = ''; const pending = new Map();
         const key = () => { const value = context(); return value ? JSON.stringify([value.cwd, value.sessionId, value.generation]) : ''; };
         function close() { generation++; drawer.hidden = true; trigger.setAttribute('aria-expanded', 'false'); }
         async function update() {
             const expected = key(); if (expected !== sessionKey) { sessionKey = expected; selected = null; close(); }
             const current = context();
             if (!current?.connected || !current.profileId) { trigger.hidden = true; close(); return; }
-            const n = ++generation;
+            const n = ++settingsGeneration, viewGeneration = generation;
             try {
-                settings = await apiFetch('/api/pi/compliance');
-                if (n !== generation || expected !== key()) return;
+                const settings = await apiFetch('/api/pi/compliance');
+                if (n !== settingsGeneration || viewGeneration !== generation || expected !== key()) return;
                 trigger.hidden = !settings.enabled || settings.profileId !== current.profileId;
                 if (trigger.hidden) close();
-            } catch { if (n === generation) { trigger.hidden = true; close(); } }
+            } catch { if (n === settingsGeneration && viewGeneration === generation && expected === key()) { trigger.hidden = true; close(); } }
         }
         async function open() {
             const n = ++generation, expected = key(); trigger.disabled = true;

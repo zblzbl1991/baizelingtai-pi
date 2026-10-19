@@ -90,6 +90,18 @@ Node 专项经 `npm test -- <文件>`，自动浏览器经统一 `npm run test:b
 | 启动 → 维护互斥 → 停机／重新启动 | [维护](../../test/pi-maintenance.test.js)、[安装锁](../../test/pi-installation-lock.test.js)、[受控停机](../../test/pivane-desktop-control.integration.test.js)、[停机事务](../../test/pi-desktop-stop.test.js)、[停机装配](../../test/pi-desktop-stop-gateway.test.js) | [启动等待页](../../test/browser/pivane-desktop-startup.cjs)与 Windows 原生托盘分别验证；平台条件和跳过项单独记账 |
 | 下载更新 → 安装／回退 | [应用更新](../../test/pi-application-update.test.js)、[受管 HTTP](../../test/pi-managed-http.test.js) | [更新 UI](../../test/browser/pi-updates.cjs)不替代准确 ZIP 更新 E2E，见下节 |
 
+## 合规全链路与故障注入
+
+[完整链路](../../test/browser/pi-compliance-full-chain.cjs)使用真实 Chromium、HTTP/聊天 WebSocket、唯一受管 worker、本地 SSE 合成供应商、合规账本与原生会话，覆盖规则、人工复核、报告、交付与成果保存。[故障链路](../../test/browser/pi-compliance-full-chain-faults.cjs)覆盖明确拒绝、响应丢失、在途请求、修订冲突、迟到结果、停用、重启后的未知步骤、原生确认丢失与同名报告来源核对。故障用例在声明的边界注入失败，其余业务服务保持真实。
+
+两者经统一浏览器入口运行，使用独立临时身份和项目，不需要维护者的样本目录；[样本生成器](../../test/compliance-full-chain-fixtures.cjs)按固定哈希生成合成 PDF/CSV。全链默认运行中文 1440 桌面场景；`COMPLIANCE_FULLCHAIN_COMBOS` 可指定 `1440:full:zh,1440:min:en` 等组合，`--target=desktop` 会过滤手机组合。历史六组合结果不代表当前源码已重新验收。
+
+```powershell
+npm run test:browser -- --target=desktop test/browser/pi-compliance-full-chain.cjs test/browser/pi-compliance-full-chain-faults.cjs
+```
+
+`COMPLIANCE_FULLCHAIN_SAMPLES` 可指定带 `MANIFEST.sha256` 的外部样本目录；`COMPLIANCE_FULLCHAIN_EVIDENCE` 与 `COMPLIANCE_FAULTS_EVIDENCE` 可指定树外结果 JSON。`COMPLIANCE_FAULTS_ONLY=f8` 仅用于定向诊断，不能作为九项故障全验收。浏览器与 Playwright 的准备沿用本页统一入口。
+
 例如，只核对公文原生交付链与相关规则：
 
 ```powershell
