@@ -475,7 +475,7 @@ async function main() {
         step('legacy adoption', { health: adopted.health.state });
 
         // 11. Mobile management layout with real data.
-        const layoutWidth = process.env.PI_TEST_DESKTOP_ONLY === '1' ? 1440 : 393;
+        const layoutWidth = browserTargetEnabled(393) ? 393 : 1440;
         const mobile = await open(layoutWidth, '#/profiles');
         await mobile.page.locator(`[data-profile-id="${profileId}"]`).click();
         await mobile.page.locator('[data-profile-section="skills"]').click();
