@@ -183,11 +183,12 @@ test('unified shutdown waits for the actual recognition request and preserves it
     try{await new Promise(resolve=>setTimeout(resolve,80));assert.equal(finished,false,'shutdown cannot report completion while the provider request is still held');}
     finally{release();}
     const result=await pending;await closing;assert.equal(result.status,200,JSON.stringify(result.data));assert.equal(result.data.batch.execution.steps[0].status,'completed');
-    assert.equal((await call('GET',`/batches/${result.data.batch.id}`)).data.batch.execution.status,'completed');
+    assert.equal((await call('GET',`/batches/${result.data.batch.id}`)).status,503,'shutdown seals HTTP reads after the accepted step finishes');
     assert.ok(composed,'the complete human-to-independent-report chain ran before restart');
     let child;const originalOrigin=origin;
     try{
         child=require('node:child_process').fork(path.join(__dirname,'compliance-service-fixture.cjs'),[],{env:{...process.env},execArgv:[],stdio:['ignore','inherit','inherit','ipc']});origin=(await once(child,'message'))[0].origin;
+        const checkpoint=await call('GET',`/batches/${result.data.batch.id}`);assert.equal(checkpoint.status,200);assert.equal(checkpoint.data.batch.execution.status,'completed','the completed recognition checkpoint survives actual restart');
         const restored=(await call('GET',`/batches/${composed.batchId}`)).data.batch;assert.equal(restored.results.find(r=>r.id==='contract-deadline').humanDecision.reason,'最终核对三十自然日');
         await call('GET','');assert.equal((await write('/settings',{enabled:false},'PUT')).status,200);
         const preview=await fetch(origin+'/api/pi/artifacts/'+composed.libraryId+'/preview',{headers:{Authorization:'Bearer synthetic-scans'}});assert.equal(preview.status,200);assert.equal((await preview.json()).content,composed.html);
