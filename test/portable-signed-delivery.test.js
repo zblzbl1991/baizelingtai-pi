@@ -14,7 +14,7 @@ test('Windows build preview requires explicitly supplied trusted public keys and
     assert.equal(plan.launcherUpdateProtocol, 1); assert.equal(plan.offlineBundle, null);
     assert.match(plan.unsignedManifest, /\.update\.unsigned\.json$/); assert.equal(plan.signedManifest, null);
     assert.equal(run(['--dry-run', '--update-feed-url', 'https://updates.example/latest.json']).status, 1);
-    fs.writeFileSync(path.join(root, 'config/update-trust.json'), JSON.stringify({ schemaVersion: 1, keys: [], privateKey: 'never-print-this-private-field' }));
+    fs.writeFileSync(path.join(root, 'config/update-trust.json'), JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(root, 'config/update-trust.json'))), privateKey: 'never-print-this-private-field' }));
     const invalid = run(args); assert.equal(invalid.status, 1); assert.ok(!invalid.stderr.includes('never-print-this-private-field'));
 });
 
