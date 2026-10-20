@@ -165,6 +165,7 @@ async function main(argv) {
         const root = fs.realpathSync.native(args['installation-root']), rotationFile = path.resolve(args.rotation);
         const lock = await require('../server/pi-installation-lock').acquireInstallationLock(root);
         try {
+            require('../server/pi-desktop-owner').assertStopped(root);
             const original = readSafe(rotationFile, 64 * 1024), rotation = JSON.parse(original);
             signatures.verifyTrustRotation(rotation, root);
             currentBytes(rotationFile, original, 64 * 1024);
@@ -219,7 +220,8 @@ async function main(argv) {
 }
 if (require.main === module) main(process.argv.slice(2)).catch(error => {
     // Never print OpenSSL errors, stack traces, input arguments, key material or passwords.
-    const message = error?.code === 'ACTIVE_SIGNER_REQUIRED'
+    const message = error?.code === 'DESKTOP_OWNER_UNPROVEN' ? '上次桌面服务清理未获证明，请先进入独立维护。'
+        : error?.code === 'ACTIVE_SIGNER_REQUIRED'
         ? '当前已提交版本仍依赖原签名密钥；请先加入新密钥、完成新密钥版本升级，再移除旧密钥。'
         : error?.code === 'ACTIVE_UPDATE_PENDING' ? '升级尚未完成；请先结束升级或进入独立恢复流程，再执行换钥。'
             : '签名工具操作失败；请核对输入、口令、信任配置及输出文件状态。';

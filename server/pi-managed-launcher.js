@@ -10,6 +10,7 @@ const { stageApplication, validRelease } = require('./pi-application-installer')
 const { outputRedactor, appendOutput } = require('./pi-update-output');
 const portable = require('./pi-portable-installer');
 const retention = require('./pi-managed-retention');
+const desktopOwner = require('./pi-desktop-owner');
 
 class ManagedLauncher {
     constructor({ root, env = process.env, networkEnvironment = env, stage = stagePi, stageApp = stageApplication, backup = backupRoots, forkServer = fork, startupTimeoutMs = 45000, requireShutdownProof = false, onCleanupUnknown = () => {}, onHandoff, programRoot, onDiagnostic = () => {} } = {}) {
@@ -32,9 +33,13 @@ class ManagedLauncher {
         this.launcherVersion = require('../package.json').version;
         this.onDiagnostic = onDiagnostic;
         this.state = { version: 1, active: null, previous: null, job: null };
+        this.serviceOwner = null; this.ownerStateLoaded = false;
     }
     loadState() {
-        this.state = fs.existsSync(this.stateFile) ? JSON.parse(readSafe(this.stateFile)) : this.state;
+        this.state = desktopOwner.stateOf(this.root);
+        desktopOwner.assertStopped(this.root, this.state);
+        this.ownerStateLoaded = true;
+        if (this.state.desktopOwnerProtocol === 1) this.requireShutdownProof = true;
         if (this.state.version !== 1 || this.state.needsRecovery) throw new Error('Invalid maintenance state or incomplete data restoration');
         if (this.state.activation && !['validating', 'committed', 'rolled-back'].includes(this.state.activation.phase))
             throw Error('Launcher activation requires manual recovery');
@@ -80,7 +85,16 @@ class ManagedLauncher {
             this.send({ type: 'maintenance-status', status: this.status() });
         }, 200);
     }
-    save() { atomicJson(this.stateFile, this.state); this.send({ type: 'maintenance-status', status: this.status() }); }
+    save() {
+        if (this.ownerStateLoaded) {
+            const persisted = desktopOwner.stateOf(this.root);
+            if (!desktopOwner.sameOwner(desktopOwner.ownerOf(persisted, this.root), this.serviceOwner)) throw desktopOwner.unproven();
+            if (persisted.desktopOwnerProtocol === 1 || this.state.desktopOwnerProtocol === 1 || this.serviceOwner) {
+                this.state.desktopOwnerProtocol = 1; this.state.desktopOwner = this.serviceOwner;
+            }
+        }
+        atomicJson(this.stateFile, this.state); this.send({ type: 'maintenance-status', status: this.status() });
+    }
     status() {
         return { supported: true, updateSupported: ['22', '24'].includes(process.versions.node.split('.')[0]) && !this.env.PI_WEB_CLI && !this.env.PI_PACKAGE_DIR,
             appUpdateSupported: ['22', '24'].includes(process.versions.node.split('.')[0]) && !this.env.PI_WEB_CLI && !this.env.PI_PACKAGE_DIR,
@@ -163,6 +177,7 @@ class ManagedLauncher {
     start() {
         if (this.starting) return this.starting;
         if (this.closed) return Promise.reject(new Error('Launcher is stopping'));
+        if (this.serviceOwner || this.child) return Promise.reject(desktopOwner.unproven());
         this.starting = Promise.resolve().then(async () => {
             if (this.closed) return;
             this.lockAcquisition = acquireInstallationLock(this.root);
@@ -184,16 +199,22 @@ class ManagedLauncher {
         if (this.requireShutdownProof && this.lastChildFacts && (!this.lastChildFacts.acknowledged || this.lastChildFacts.code !== 0))
             throw Object.assign(new Error('The previous service cleanup could not be confirmed; another service will not be started'), { code: 'DESKTOP_CLEANUP_UNKNOWN' });
         const root = this.releasePath(release);
+        if (this.requireShutdownProof) {
+            if (this.serviceOwner || this.child) throw desktopOwner.unproven();
+            const owner = { version: 1, root: this.root, runnerGeneration: this.nonce, serviceGeneration: randomUUID(), releaseId: release ?? null };
+            desktopOwner.replaceOwner(this.root, this.state, null, owner); this.serviceOwner = owner;
+        }
         return new Promise((resolve, reject) => {
             const child = this.forkServer(path.join(root, 'server.js'), [], {
                 cwd: this.root, execPath: release && portable.supported(root) ? path.join(root, 'runtime/node.exe') : process.execPath, execArgv: [],
                 env: { ...this.env, PI_MANAGED_LAUNCHER: this.nonce, PI_MANAGED_BASE: this.root,
+                    ...(this.serviceOwner ? { PIVANE_DESKTOP_SERVICE_GENERATION: this.serviceOwner.serviceGeneration } : {}),
                     PI_CODING_AGENT_DIR: this.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi/agent'),
                     PI_MEDIA_DATA_DIR: this.env.PI_MEDIA_DATA_DIR || this.root },
                 stdio: ['inherit', 'inherit', 'inherit', 'ipc'], windowsHide: true
             });
             this.child = child; let ready = false, checking = false, expired = false;
-            const facts = { requested: false, acknowledged: false, code: null }; this.childFacts.set(child, facts); this.lastChildFacts = facts;
+            const facts = { requested: false, acknowledged: false, code: null, owner: this.serviceOwner }; this.childFacts.set(child, facts); this.lastChildFacts = facts;
             const timer = setTimeout(() => {
                 if (!ready) { expired = true; void this.stopChild().catch(() => {}); reject(new Error('Service startup timed out')); }
             }, this.startupTimeoutMs);
@@ -267,7 +288,14 @@ class ManagedLauncher {
         const unknown = () => this.requireShutdownProof
             ? Object.assign(new Error('Service cleanup could not be confirmed'), { code: 'DESKTOP_CLEANUP_UNKNOWN' })
             : new Error('Service shutdown did not complete cleanly');
-        if (!child || child.exitCode !== null || child.signalCode !== null) return proven() ? Promise.resolve() : Promise.reject(unknown());
+        const clearOwner = () => {
+            if (!this.serviceOwner) return;
+            if (this.ownershipUncertain) throw desktopOwner.unproven();
+            if (!facts?.requested || !facts.acknowledged || facts.code !== 0 || !desktopOwner.sameOwner(facts.owner, this.serviceOwner)) throw desktopOwner.unproven();
+            try { desktopOwner.replaceOwner(this.root, this.state, this.serviceOwner, null); this.serviceOwner = null; }
+            catch (error) { this.ownershipUncertain = true; error.code = 'DESKTOP_CLEANUP_UNKNOWN'; throw error; }
+        };
+        if (!child || child.exitCode !== null || child.signalCode !== null) return proven() ? Promise.resolve().then(clearOwner) : Promise.reject(unknown());
         const pending = this.stoppingChildren.get(child);
         if (pending) return pending;
         if (facts) facts.requested = true;
@@ -277,7 +305,7 @@ class ManagedLauncher {
             child.removeListener('error', onError);
             if (!failure && code === 0 && proven()) resolve();
             else reject(Object.assign(failure || unknown(), { exitCode: code }));
-        }));
+        })).then(clearOwner);
         child.once('error', onError);
         this.stoppingChildren.set(child, exited);
         void exited.catch(() => {});
@@ -301,6 +329,7 @@ class ManagedLauncher {
             this.log(job, 'system', message.action === 'update' ? `Updating 白泽灵台's Pi: ${job.fromVersion} -> ${message.version}` : `白泽灵台 operation: ${message.action}`);
             this.save(); this.send({ type: 'maintenance-accepted', id: message.id });
             let next = previous;
+            if (message.release?.format === 'windows-portable-zip' && this.status().wholePackageUpdateSupported) desktopOwner.portableCapability(this.releasePath(previous));
             if (message.action === 'update' || message.action === 'application') {
                 job.phase = 'installing'; this.save();
                 const releases = privateDir(path.join(this.directory, 'releases'));
@@ -312,8 +341,7 @@ class ManagedLauncher {
                     progress: phase => { job.phase = phase; this.save(); },
                     onOutput: (stream, text) => this.log(job, stream, text) });
                 if (message.release?.format === 'windows-portable-zip' && this.status().wholePackageUpdateSupported) {
-                    const metadata = JSON.parse(readSafe(require('./pi-update-feed').portableMetadataFile(destination)));
-                    if (metadata.launcherUpdateProtocol !== 1) throw Error('Candidate does not support whole-package launcher validation; use independent migration');
+                    desktopOwner.portableCapability(destination);
                     await require('./pi-launcher-qa-checkpoints').checkpoint(this.root, 'candidate-staged', { candidateDirectory: destination, releaseId: message.id }, { environment: this.env });
                 }
                 next = message.id;

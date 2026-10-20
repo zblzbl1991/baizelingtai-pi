@@ -13,7 +13,7 @@ test('portable public trust and independent repair layout is added from a tiny s
         keys: [{ keyId: 'synthetic', publicKey: keys.publicKey.export({ type: 'spki', format: 'pem' }) }] }));
     packaging.installPortableInfrastructure(app, { trustBytes, updateFeedUrl: 'https://updates.example/latest.json' });
     const metadata = JSON.parse(fs.readFileSync(path.join(app, 'baizelingtai-portable.json')));
-    assert.equal(metadata.launcherUpdateProtocol, 1); assert.equal(metadata.updateFeedUrl, 'https://updates.example/latest.json');
+    assert.equal(metadata.launcherUpdateProtocol, 1); assert.equal(metadata.desktopOwnerProtocol, 1); assert.equal(metadata.updateFeedUrl, 'https://updates.example/latest.json');
     assert.equal(JSON.parse(fs.readFileSync(path.join(app, 'config/update-trust.json'))).keys[0].keyId, 'synthetic');
     assert.equal(fs.readFileSync(path.join(app, 'repair/runtime/node.exe'), 'utf8'), 'synthetic input');
     assert.equal(fs.readFileSync(path.join(app, 'repair/runtime/LICENSE'), 'utf8'), 'synthetic input');
