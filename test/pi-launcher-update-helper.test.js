@@ -1,0 +1,197 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync, spawn } = require('node:child_process');
+const { once } = require('node:events');
+const { randomUUID } = require('node:crypto');
+const cli = path.resolve(__dirname, '../server/pi-launcher-update-helper.js');
+
+test('independent update entry inspects one transaction without rewriting state', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-activation-'));
+    try {
+        fs.mkdirSync(path.join(root, '.pivane-runtime'));
+        const id = randomUUID();
+        const state = JSON.stringify({ version: 1, active: null, previous: null, activation: { id, root, phase: 'committed' } });
+        const file = path.join(root, '.pivane-runtime/state.json');
+        fs.writeFileSync(file, state);
+        for (let i = 0; i < 2; i++) {
+            const result = spawnSync(process.execPath, [cli, 'inspect', root, id], { encoding: 'utf8' });
+            assert.equal(result.status, 0, result.stderr);
+            assert.equal(JSON.parse(result.stdout).phase, 'committed');
+            assert.equal(fs.readFileSync(file, 'utf8'), state);
+        }
+        const other = spawnSync(process.execPath, [cli, 'inspect', root, randomUUID()], { encoding: 'utf8' });
+        assert.equal(other.status, 1);
+        assert.match(other.stderr, /identity/);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+function transactionFixture(t) {
+    const { generateKeyPairSync, sign, createHash } = require('node:crypto');
+    const { backupRoots, recordInstallation, atomicJson } = require('../server/pi-maintenance-files');
+    const { releaseSignaturePayload } = require('../server/pi-update-signatures');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-activation-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const releaseId = randomUUID(), backupId = randomUUID();
+    const candidate = path.join(root, '.pivane-runtime/releases', releaseId);
+    const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+    const write = (base, name, value) => { const file = path.join(base, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, value); };
+    const native = (base, version) => {
+        for (const name of ['native/pivane-desktop-launcher.cs', 'native/pivane-desktop-launcher.manifest', 'public/brand/favicon.ico']) write(base, name, 'synthetic native input');
+        write(base, 'native/pivane-desktop-launcher-build.json', JSON.stringify({ version: 1, appVersion: version,
+            sourceSha256: sha('synthetic native input'), manifestSha256: sha('synthetic native input'), iconSha256: sha('synthetic native input'), binarySha256: sha(fs.readFileSync(path.join(base, '白泽灵台.exe'))) }));
+    };
+    write(root, '白泽灵台.exe', 'old fixed entry');
+    write(root, 'package.json', JSON.stringify({ name: 'pivane', version: '1.8.0' }));
+    native(root, '1.8.0');
+    const source = ['白泽灵台.exe', 'package.json'].map(name => ({ path: name, bytes: fs.statSync(path.join(root, name)).size, sha256: sha(fs.readFileSync(path.join(root, name))) }));
+    write(root, 'TRIAL_MANIFEST.json', JSON.stringify({ files: source }));
+    write(candidate, '白泽灵台.exe', 'new fixed entry');
+    write(candidate, 'package.json', JSON.stringify({ name: 'pivane', version: '1.9.0' }));
+    write(candidate, 'package-lock.json', JSON.stringify({ version: '1.9.0' }));
+    native(candidate, '1.9.0');
+    const files = ['白泽灵台.exe', 'package.json', 'package-lock.json', 'native/pivane-desktop-launcher.cs', 'native/pivane-desktop-launcher.manifest', 'public/brand/favicon.ico', 'native/pivane-desktop-launcher-build.json'].map(name => ({ path: name, bytes: fs.statSync(path.join(candidate, name)).size, sha256: sha(fs.readFileSync(path.join(candidate, name))) }));
+    write(candidate, 'PORTABLE_MANIFEST.json', JSON.stringify({ version: 1, appVersion: '1.9.0', platform: 'win32', arch: 'x64', files }));
+    write(candidate, 'PI_INSTALL_COMPLETE.json', JSON.stringify({ version: '0.85.1', appVersion: '1.9.0', archiveSha256: 'a'.repeat(64), lockSha256: sha(fs.readFileSync(path.join(candidate, 'package-lock.json'))) }));
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+    write(root, 'config/update-trust.json', JSON.stringify({ schemaVersion: 1, keys: [{ keyId: 'test', publicKey: publicKey.export({ format: 'pem', type: 'spki' }) }] }));
+    const signedManifest = { schemaVersion: 1, version: '1.9.0', piVersion: '0.85.1', platform: 'win32', arch: 'x64', channel: 'stable', publishedAt: '2026-10-20T00:00:00Z', package: 'portable.zip', sha256: 'a'.repeat(64), bytes: 100 };
+    signedManifest.signature = { algorithm: 'ed25519', keyId: 'test', value: sign(null, releaseSignaturePayload(signedManifest), privateKey).toString('base64') };
+    const release = { version: '1.9.0', piVersion: '0.85.1', channel: 'stable', format: 'windows-portable-zip', feed: 'https://example.test/latest.json', downloadUrl: 'https://example.test/portable.zip', sha256: 'a'.repeat(64), bytes: 100, signedManifest };
+    write(root, 'data/value.txt', 'before update');
+    const backup = path.join(root, '.pivane-runtime/backups', backupId);
+    backupRoots([path.join(root, 'data')], backup);
+    recordInstallation(backup, { release: null, package: { version: '1.8.0' }, lock: {} });
+    const state = { version: 1, active: null, previous: null, runtimePaths: { PI_CODING_AGENT_DIR: path.join(root, 'data') } };
+    atomicJson(path.join(root, '.pivane-runtime/state.json'), state);
+    return { root, candidate, releaseId, backupId, release, state, shutdownProof: { complete: true, generation: 'old-generation' } };
+}
+
+test('independent update entry rejects candidate changed after signed preparation', async t => {
+    const activation = require('../server/pi-launcher-activation');
+    const input = transactionFixture(t);
+    input.state.activation = activation.prepareActivation(input);
+    require('../server/pi-maintenance-files').atomicJson(path.join(input.root, '.pivane-runtime/state.json'), input.state);
+    fs.writeFileSync(path.join(input.candidate, '白泽灵台.exe'), 'tampered');
+    await assert.rejects(() => activation.applyActivation(input.root, input.state.activation.id), /changed|hash/);
+    assert.equal(fs.readFileSync(path.join(input.root, '白泽灵台.exe'), 'utf8'), 'old fixed entry');
+    assert.equal(activation.inspectActivation(input.root, input.state.activation.id).phase, 'prepared');
+});
+
+test('signed update cannot overwrite an unpublished fixed desktop entry', t => {
+    const activation = require('../server/pi-launcher-activation'), input = transactionFixture(t);
+    const manifest = path.join(input.root, 'TRIAL_MANIFEST.json');
+    fs.writeFileSync(manifest, JSON.stringify({ files: JSON.parse(fs.readFileSync(manifest)).files.filter(file => file.path !== '白泽灵台.exe') }));
+    fs.writeFileSync(path.join(input.root, '白泽灵台.exe'), 'local unpublished launcher fix');
+    assert.throws(() => activation.prepareActivation(input), /native|unpublished|baseline/i);
+});
+
+test('independent helper rejects a busy installation and unbound process handoff without changing state', async t => {
+    const activation = require('../server/pi-launcher-activation'), input = transactionFixture(t);
+    const { atomicJson } = require('../server/pi-maintenance-files');
+    input.state.activation = activation.prepareActivation(input);
+    const id = input.state.activation.id, file = path.join(input.root, '.pivane-runtime/state.json');
+    atomicJson(file, input.state);
+    const before = fs.readFileSync(file, 'utf8');
+    const owner = await require('../server/pi-installation-lock').acquireInstallationLock(input.root);
+    try { await assert.rejects(() => activation.applyActivation(input.root, id), /EADDRINUSE|address already in use/); }
+    finally { await owner.close(); }
+    await assert.rejects(() => activation.runHandoff({ root: input.root, id, processes: [] }), /process identities/);
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+});
+
+test('commit requires complete startup validation and persists before business admission', t => {
+    const { commitActivation, inspectActivation } = require('../server/pi-launcher-activation');
+    const input = transactionFixture(t), id = randomUUID();
+    input.state.active = input.releaseId;
+    input.state.activation = { id, root: input.root, phase: 'validating', releaseId: input.releaseId };
+    const file = path.join(input.root, '.pivane-runtime/state.json');
+    require('../server/pi-maintenance-files').atomicJson(file, input.state);
+    assert.throws(() => commitActivation(input.root, id, { control: true }), /validation/);
+    commitActivation(input.root, id, { control: true, versions: true, service: true, data: true, tray: true, stableMs: 15000 });
+    assert.equal(inspectActivation(input.root, id).phase, 'committed');
+    assert.equal(JSON.parse(fs.readFileSync(file)).runtimePaths.PI_CODING_AGENT_DIR, path.join(input.root, 'data'));
+    commitActivation(input.root, id, { control: true, versions: true, service: true, data: true, tray: true, stableMs: 15000 });
+});
+
+test('independent helper holds exact process handles, activates after exit and rolls back only once', { skip: process.platform !== 'win32', timeout: 30000 }, async t => {
+    const activation = require('../server/pi-launcher-activation');
+    const { atomicJson } = require('../server/pi-maintenance-files');
+    const input = transactionFixture(t);
+    input.state.activation = activation.prepareActivation(input);
+    const id = input.state.activation.id, file = path.join(input.root, '.pivane-runtime/state.json');
+    atomicJson(file, input.state);
+    async function handoff(mode) {
+        const target = spawn(process.execPath, ['-e', "process.stdin.resume();process.stdin.on('end',()=>process.exit(0))"], { windowsHide: true, stdio: ['pipe', 'ignore', 'ignore'] });
+        const targetClosed = once(target, 'close');
+        t.after(() => { if (target.exitCode === null) target.stdin.end(); });
+        const creationTime = spawnSync('powershell.exe', ['-NoProfile', '-Command', '(Get-Process -Id $env:TARGET_PID).StartTime.ToFileTimeUtc().ToString()'], {
+            encoding: 'utf8', windowsHide: true, env: { SystemRoot: process.env.SystemRoot, TARGET_PID: String(target.pid) }
+        }).stdout.trim();
+        const command = activation.helperCommand(input.root, id);
+        command.args[1] = mode;
+        const identities = [{ pid: target.pid, creationTime }];
+        const current = JSON.parse(fs.readFileSync(file));
+        current.activation[mode === 'handoff' ? 'handoffProcesses' : 'failureHandoffProcesses'] = identities;
+        atomicJson(file, current);
+        const helper = spawn(command.executable, command.args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+        let output = '', errors = '';
+        const closed = once(helper, 'close');
+        helper.stderr.on('data', bytes => errors += bytes);
+        helper.stdout.on('data', bytes => output += bytes);
+        helper.stdin.end(JSON.stringify(identities) + '\n');
+        const deadline = Date.now() + 12000;
+        while (!output.includes('"ready"')) {
+            if (helper.exitCode !== null || Date.now() > deadline) assert.fail('No ready: ' + errors);
+            await new Promise(resolve => setTimeout(resolve, 25));
+        }
+        assert.equal(activation.inspectActivation(input.root, id).phase, mode === 'handoff' ? 'prepared' : 'validating');
+        target.stdin.end(); await targetClosed;
+        await closed;
+        // Synthetic EXE bytes deliberately cannot start; the durable activation
+        // and recovery results are still observable, without substituting PIDs.
+        assert.match(errors, /spawn|EINVAL|ENOEXEC/);
+    }
+    await handoff('handoff');
+    assert.equal(activation.inspectActivation(input.root, id).phase, 'validating');
+    assert.equal(fs.readFileSync(path.join(input.root, '白泽灵台.exe'), 'utf8'), 'new fixed entry');
+    fs.writeFileSync(path.join(input.root, 'data/value.txt'), 'failed validation data');
+    const state = JSON.parse(fs.readFileSync(file));
+    state.activation.failureShutdownProof = { complete: true, generation: 'candidate-generation', activationId: id, releaseId: input.releaseId };
+    atomicJson(file, state);
+    await handoff('rollback-handoff');
+    assert.equal(activation.inspectActivation(input.root, id).phase, 'rolled-back');
+    assert.equal(activation.inspectActivation(input.root, id).rollbackAttempts, 1);
+    assert.equal(fs.readFileSync(path.join(input.root, 'data/value.txt'), 'utf8'), 'before update');
+    assert.equal(fs.readFileSync(path.join(input.root, '白泽灵台.exe'), 'utf8'), 'old fixed entry');
+    const result = spawnSync(commandExe(input.root, id), [activation.helperCommand(input.root, id).args[0], 'rollback-handoff', input.root, id], { encoding: 'utf8', input: '[]\n' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /manual recovery/);
+    function commandExe(root, id) { return activation.helperCommand(root, id).executable; }
+});
+
+test('update helper refuses unproven cleanup before preparing any replacement', () => {
+    const { prepareActivation } = require('../server/pi-launcher-activation');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-activation-'));
+    try {
+        assert.throws(() => prepareActivation({ root, state: { version: 1, active: null }, shutdownProof: { complete: false } }), /cleanup/i);
+        assert.equal(fs.existsSync(path.join(root, '.pivane-runtime')), false);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('update helper never retries an interrupted replacement or restores committed data', async () => {
+    const { recoverActivation } = require('../server/pi-launcher-activation');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-activation-'));
+    fs.mkdirSync(path.join(root, '.pivane-runtime'));
+    const id = randomUUID(), file = path.join(root, '.pivane-runtime/state.json');
+    try {
+        for (const phase of ['activating', 'rolling-back', 'committed']) {
+            const state = JSON.stringify({ version: 1, active: null, activation: { root, id, phase, rollbackAttempts: 0 } });
+            fs.writeFileSync(file, state);
+            await assert.rejects(() => recoverActivation({ root, id, shutdownProof: { complete: true, generation: 'stopped' } }), /manual|committed/i);
+            assert.equal(fs.readFileSync(file, 'utf8'), state);
+        }
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
