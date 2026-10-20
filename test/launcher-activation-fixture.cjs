@@ -13,6 +13,11 @@ function transactionFixture(t) {
     const candidate = path.join(root, '.pivane-runtime/releases', releaseId);
     const sha = bytes => createHash('sha256').update(bytes).digest('hex');
     const write = (base, name, value) => { const file = path.join(base, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, value); };
+    const metadata = JSON.stringify({ version: 1, platform: 'win32', arch: 'x64', launcherUpdateProtocol: 1, desktopOwnerProtocol: 1 });
+    write(root, 'baizelingtai-portable.json', metadata);
+    write(root, 'PORTABLE_MANIFEST.json', JSON.stringify({ version: 1, appVersion: '1.8.0', platform: 'win32', arch: 'x64',
+        files: [{ path: 'baizelingtai-portable.json', bytes: Buffer.byteLength(metadata), sha256: sha(metadata) }] }));
+    write(candidate, 'baizelingtai-portable.json', metadata);
     const native = (base, version) => {
         for (const name of ['native/pivane-desktop-launcher.cs', 'native/pivane-desktop-launcher.manifest', 'public/brand/favicon.ico']) write(base, name, 'synthetic native input');
         write(base, 'native/pivane-desktop-launcher-build.json', JSON.stringify({ version: 1, appVersion: version,
@@ -28,7 +33,7 @@ function transactionFixture(t) {
     write(candidate, 'server.js', '// synthetic service entry');
     write(candidate, 'package-lock.json', JSON.stringify({ version: '1.9.0' }));
     native(candidate, '1.9.0');
-    const files = ['白泽灵台.exe', 'package.json', 'server.js', 'package-lock.json', 'native/pivane-desktop-launcher.cs', 'native/pivane-desktop-launcher.manifest', 'public/brand/favicon.ico', 'native/pivane-desktop-launcher-build.json'].map(name => ({ path: name, bytes: fs.statSync(path.join(candidate, name)).size, sha256: sha(fs.readFileSync(path.join(candidate, name))) }));
+    const files = ['白泽灵台.exe', 'package.json', 'server.js', 'package-lock.json', 'baizelingtai-portable.json', 'native/pivane-desktop-launcher.cs', 'native/pivane-desktop-launcher.manifest', 'public/brand/favicon.ico', 'native/pivane-desktop-launcher-build.json'].map(name => ({ path: name, bytes: fs.statSync(path.join(candidate, name)).size, sha256: sha(fs.readFileSync(path.join(candidate, name))) }));
     write(candidate, 'PORTABLE_MANIFEST.json', JSON.stringify({ version: 1, appVersion: '1.9.0', platform: 'win32', arch: 'x64', files }));
     write(candidate, 'PI_INSTALL_COMPLETE.json', JSON.stringify({ version: '0.85.1', appVersion: '1.9.0', archiveSha256: 'a'.repeat(64), lockSha256: sha(fs.readFileSync(path.join(candidate, 'package-lock.json'))) }));
     const { publicKey, privateKey } = generateKeyPairSync('ed25519');

@@ -1012,9 +1012,22 @@ const httpServer = app.listen(PORT, network.host, () => {
 });
 piAgentGateway.attachWebSocket(httpServer);
 
+let shutdownTrigger = 'shutdown';
 const shutdown = require('./server/pi-process-shutdown').registerProcessShutdown(async () => {
     const httpClosed = new Promise((resolve, reject) => httpServer.close(error => error ? reject(error) : resolve()));
-    if (maintenance.managed) await require('./server/pi-launcher-qa-checkpoints').checkpoint(require('node:path').resolve(process.env.PI_MANAGED_BASE || __dirname), 'service-cleanup-pending', { programRoot: __dirname });
+    if (maintenance.managed) {
+        const root = require('node:path').resolve(process.env.PI_MANAGED_BASE || __dirname);
+        let outcome = 'unavailable', ownerBound = false;
+        if (process.env.PIVANE_NATIVE_QA === '1') {
+            try {
+                const api = require('./server/pi-desktop-owner'), state = api.stateOf(root), owner = api.ownerOf(state, root);
+                outcome = state.activation?.phase || 'none';
+                ownerBound = owner?.runnerGeneration === maintenance.nonce && owner.serviceGeneration === process.env.PIVANE_DESKTOP_SERVICE_GENERATION;
+            } catch { /* Missing proof never authorizes a synthetic pause. */ }
+        }
+        await require('./server/pi-launcher-qa-checkpoints').checkpoint(root, 'service-cleanup-pending', { programRoot: __dirname,
+            trigger: shutdownTrigger, outcome, ownerBound, generation: process.env.PIVANE_DESKTOP_SERVICE_GENERATION, httpListening: httpServer.listening });
+    }
     try { await piAgentGateway.dispose(); }
     finally { await require('./server/pi-rpc-client').shutdownRpcProcesses(); workspaceAccess.dispose(); }
     await httpClosed;
@@ -1050,5 +1063,5 @@ if (maintenance.managed) {
         maintenance.receive(message);
         if (message.type === 'maintenance-shutdown') { maintenance.locked = true; void shutdown(); }
     });
-    process.on('disconnect', () => { maintenance.locked = true; void shutdown(); });
+    process.on('disconnect', () => { maintenance.locked = true; shutdownTrigger = 'parent-disconnect'; void shutdown(); });
 }

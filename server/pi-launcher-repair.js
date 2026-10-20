@@ -11,6 +11,8 @@ const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 function stateOf(root) { return JSON.parse(readSafe(path.join(root, '.pivane-runtime/state.json'))); }
 function diagnoseStopped(root) {
     const state = stateOf(root), activation = state.activation;
+    try { require('./pi-desktop-owner').assertStopped(root, state); }
+    catch (error) { return { status: 'manual-recovery', canRepair: false, code: error.code, reason: error.message }; }
     if (state.version !== 1 || state.needsRecovery || !activation || activation.root !== root
         || !['committed', 'validating'].includes(activation.phase)
         || activation.phase === 'validating' && activation.validationOwner
@@ -53,6 +55,7 @@ async function restoreEntry(root, id, { replaceChanged = false } = {}) {
     if (!uuid.test(id || '')) throw Error('Invalid activation identity');
     const owner = await acquireInstallationLock(root);
     try {
+        require('./pi-desktop-owner').assertStopped(root);
         const diagnosis = diagnoseStopped(root), state = stateOf(root);
         if (state.activation?.id !== id || state.activation.root !== root) throw Error('Repair transaction identity changed');
         if (diagnosis.alreadyHealthy) return { restored: false, alreadyHealthy: true, activationId: id };

@@ -15,7 +15,7 @@ $script:events = [Collections.Generic.List[object]]::new(); $script:smokeValidat
 $script:confirmationShown=$false; $script:uiScale=1; $script:recoverStop=$false; $script:readyAt = $null; $script:smokeStopSent = $false; $script:lastReport = ''; $script:startupStopReview=$false
 $script:versions=$null; $script:maintenanceHint=$false; $script:lastReviewId=''
 $ProgramRoot = if ($env:PIVANE_PROGRAM_ROOT) { [IO.Path]::GetFullPath($env:PIVANE_PROGRAM_ROOT) } else { [IO.Path]::GetFullPath((Split-Path $PSScriptRoot -Parent)) }
-$script:updatePhase=''; $script:nativeAssembly=$null; $script:qaComponents=$null
+$script:updatePhase=''; $script:nativeAssembly=$null; $script:qaComponents=$null; $script:ownerRefused=$false
 $mutex = $null; $ownsMutex = $false; $openEvent = $null; $tray = $null; $timer = $null; $context = $null; $window = $null; $hoster = $null
 function Write-QAReceipt([string]$Point, $Payload) {
     if (-not $script:smokeValidated -or $env:PIVANE_NATIVE_QA -cne '1') { return }
@@ -38,10 +38,12 @@ function Record-Event($Value) {
         if ($Value.type -eq 'browser-opened') { $count = @($script:events | Where-Object { $_.type -eq 'browser-opened' }).Count; [IO.File]::WriteAllText((Join-Path $dir ('smoke-open-' + $count + '.json')), (ConvertTo-Json -Compress $Value), [Text.UTF8Encoding]::new($false)) }
     }
 }
-function Show-Failure([string]$Message) {
+function Show-Failure([string]$Message, [string]$Code = '') {
     $script:result = 1; $script:lastError = $Message.Substring(0, [Math]::Min(1024,$Message.Length))
     if ($script:strictQaRequested -and -not $script:smokeValidated) { [Console]::Error.WriteLine($script:lastError); return }
-    Record-Event @{ type = 'error'; message = $script:lastError; generation = $script:generation }
+    $failureEvent=@{ type = 'error'; message = $script:lastError; generation = $script:generation }
+    if ($Code -eq 'DESKTOP_OWNER_UNPROVEN') { $failureEvent.code=$Code }
+    Record-Event $failureEvent
     if ($ConsoleMode) { Write-Host $script:lastError -ForegroundColor Red }
     if (-not $tray -and -not $SmokeTest) { [Windows.Forms.MessageBox]::Show($script:lastError,'白泽灵台','OK','Error') | Out-Null }
 }
@@ -113,7 +115,7 @@ function Send-TrayEvidence([string]$Type, [string]$Challenge) {
 }
 function Start-Run {
     if ($script:service -or -not $script:clean -or $script:state -notin @('stopped','error')) { Show-Management; return }
-    $script:recoverStop=$false; $script:generation = [Guid]::NewGuid().ToString(); $script:clean = $false; $script:exitIntent = $false; $script:pending = $null; $script:review = $null
+    $script:ownerRefused=$false; $script:recoverStop=$false; $script:generation = [Guid]::NewGuid().ToString(); $script:clean = $false; $script:exitIntent = $false; $script:pending = $null; $script:review = $null
     $script:lastError = ''; $script:logFile = $null; $script:url = $null; $script:readyAt = $null; $script:smokeStopSent = $false; $script:startupStopReview=$false; $script:versions=$null; $script:maintenanceHint=$false
     $script:qaComponents=$null
     Set-State 'starting'
@@ -131,6 +133,7 @@ function Start-Run {
     } catch { $script:clean = $null -eq $script:service; Show-Failure $_.Exception.Message; Set-State 'error' }
 }
 function Request-Stop([string]$Action) {
+    if ($script:ownerRefused -and -not $script:service) { if ($Action -eq 'exit') { $context.ExitThread() }; return }
     if ($script:state -in @('stopping','unknown') -or $script:pending) { Show-Management; return }
     if ($script:state -in @('stopped','error') -and $script:clean -and -not $script:service) { if ($Action -eq 'exit') { $context.ExitThread() }; return }
     if ($script:review) { Show-Management; return }
@@ -201,7 +204,8 @@ function Handle-Message([string]$Line, $Owner, [string]$Generation) {
                 else { $script:startupStopReview=$true; Set-State 'starting' }
                 break
             }
-            Show-Failure ([string]$message.message); $script:review=$null; Set-Confirmation $false
+            if ($message.code -eq 'DESKTOP_OWNER_UNPROVEN') { $script:ownerRefused=$true }
+            Show-Failure ([string]$message.message) ([string]$message.code); $script:review=$null; Set-Confirmation $false
             if ($message.code -eq 'DESKTOP_CLEANUP_UNKNOWN') { Set-State 'unknown' }
             elseif ($pendingType -eq 'execute-stop' -and $message.code -eq 'DESKTOP_TRANSPORT_UNKNOWN') { $script:recoverStop=$true; Set-State 'unknown' }
             elseif ($script:recoverStop -and $pendingType -eq 'snapshot') { $blockerText.Text=$script:lastError }
@@ -413,7 +417,8 @@ try {
                     while($script:errorTask -and $script:errorTask.IsCompleted){$line=$script:errorTask.GetAwaiter().GetResult();if($null -eq $line){$script:errorTask=$null;break};if($ConsoleMode){Write-Host $line};$script:errorTask=$owner.StandardError.ReadLineAsync()}
                     if($owner.HasExited -and -not $script:readTask -and -not $script:errorTask){
                         $code=$owner.ExitCode;Record-Event @{type='exited';exitCode=$code;generation=$generation};$owner.Dispose();$script:service=$null;$script:pending=$null;$script:review=$null;Set-Confirmation $false
-                        if(-not $script:clean){Show-Failure '本轮进程已退出，但服务和 Agent 清理未获确认。';Set-State 'unknown'}
+                        if($script:ownerRefused){Set-State 'error'}
+                        elseif(-not $script:clean){Show-Failure '本轮进程已退出，但服务和 Agent 清理未获确认。';Set-State 'unknown'}
                         elseif($code -ne 0 -or $script:lastError){Set-State 'error'}else{Set-State 'stopped'}
                         if($script:exitIntent -and $script:clean){$context.ExitThread()}
                     }

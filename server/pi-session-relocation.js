@@ -73,6 +73,7 @@ async function relocateProjectSessions({ installation, agentDir, sourceCwd, targ
     const guard = await acquireInstallationLock(installation);
     let quarantine, staging, sourceMoved = false, targetPublished = false;
     try {
+        require('./pi-desktop-owner').assertStopped(installation);
         if (fs.existsSync(evidenceDir)) throw new Error('Relocation evidence directory already exists');
         const evidence = privateDir(evidenceDir), names = sessionNames(sourceDir);
         if (!names.length || names.length > LIMITS.maxFiles) throw new Error('Invalid session relocation count');

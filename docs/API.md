@@ -385,6 +385,8 @@ DOC／XLS／PPT 扩展为原件上传、预览和下载格式，容器与内部�
 
 ### 版本检查与 Pi 受管维护
 
+桌面启动、独立 helper/repair、备份恢复、会话离线迁移和信任应用会拒绝未完成的持久服务所有权，错误码 `DESKTOP_OWNER_UNPROVEN`；修复诊断投影为 `{status:"manual-recovery",canRepair:false,code:"DESKTOP_OWNER_UNPROVEN"}`，不公开控制 nonce 或完整 owner。首次 fork 前原子登记，只有同代可信 shutdown ack 与实际 exit0 且清除持久化完成后才放行下一代。新 runner 的拒绝只释放自己的启动资源，不产生旧服务 `clean:true` 证明，也不进入 validating 回退或修改旧状态。便携 metadata 保持 `launcherUpdateProtocol:1`，另要求 `desktopOwnerProtocol:1`；基线和候选须由完整清单绑定，能力不足为 `DESKTOP_OWNER_PROTOCOL_REQUIRED`，须独立维护。缺字段旧 state 仅保留既有兼容读取，不追认旧 orphan 安全；已采用协议后的缺失/畸形记录拒绝启动。普通维护状态不返回完整 owner。
+
 新 Windows 包使用 `baizelingtai-portable.json`，部署配置优先读取 `BAIZELINGTAI_UPDATE_FEED_URL`；以下旧环境变量与元数据文件名继续读取兼容，两个元数据文件同时存在时拒绝猜测。标准 `pack:windows` 读取本机发布配置，并以 `baizelingtai` 作为 GitLab Generic Package Registry 包名；详见[构建与分发](DESKTOP_LAUNCHER.md#内网更新源与-gitlab-分发)。既有 REST 响应字段保持兼容。
 
 Windows 便携包内元数据 `launcherUpdateProtocol:1` 表示候选理解整包启用前验证；新整包链路在停机前拒绝缺失此标识的候选。构建在独立修复代码/native 闭包、自己的 Node 与许可证及显式公钥输入均写入后才声明该能力，随后纳入完整 PORTABLE 清单；能力字段本身不代替验签、完整库存与真实进程验收。未签草稿不能成为正式更新源。分发与独立签名命令见[签名工具](development/UPDATE_SIGNING.md)。
