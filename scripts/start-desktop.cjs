@@ -4,16 +4,19 @@ const generation = controlled ? process.argv[4] : undefined;
 const emit = value => process.stdout.write(JSON.stringify({ ...value, ...(controlled ? { generation } : {}) }) + '\n');
 process.stdout.on('error', () => process.emit('SIGTERM'));
 process.stderr.on('error', () => process.emit('SIGTERM'));
-const root = require('node:path').resolve(__dirname, '..');
+const programRoot = require('node:path').resolve(__dirname, '..');
+const root = process.env.PIVANE_INSTALLATION_ROOT || programRoot;
+if (process.env.PIVANE_PROGRAM_ROOT && require('node:fs').realpathSync.native(process.env.PIVANE_PROGRAM_ROOT) !== require('node:fs').realpathSync.native(programRoot)) throw Error('Program root does not match this runner.');
+require('../server/pivane-desktop-launcher').desktopProgramRoot(root, programRoot);
 if (process.argv.length === 3 && process.argv[2] === '--identity') {
     const { installationId, desktopEnvironment } = require('../server/pivane-desktop-launcher');
     const environment = desktopEnvironment(root);
     const port = Number(environment.PORT || 11408);
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw Error('Invalid workspace listening port.');
-    emit({ root: require('node:fs').realpathSync.native(root), id: installationId(root), reservedPorts: port ? [port] : [] });
+    emit({ root: require('node:fs').realpathSync.native(root), programRoot: require('node:fs').realpathSync.native(programRoot), id: installationId(root), reservedPorts: port ? [port] : [] });
 }
 else if (process.argv.length !== 2 && !controlled) { emit({ type: 'error', message: 'Usage: node scripts/start-desktop.cjs [--identity | --controlled --generation UUID]' }); process.exitCode = 1; }
-else require('../server/pivane-desktop-launcher').startDesktop({ root, emit, controlled, generation }).catch(error => {
+else require('../server/pivane-desktop-launcher').startDesktop({ root, programRoot, emit, controlled, generation }).catch(error => {
     const message = require('../server/pi-update-output').outputRedactor(process.env)(error.message);
     // Cleanup has completed. Flush the failure event, then release the parent pipe.
     // Unreported errors occur in preflight, before the service manager starts.

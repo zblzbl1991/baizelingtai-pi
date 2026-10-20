@@ -999,9 +999,12 @@ const httpServer = app.listen(PORT, network.host, () => {
         const updateFeed = require('./server/pi-update-feed').configuredFeed(__dirname, process.env);
         process.send({ type: 'maintenance-ready', nonce: maintenance.nonce, backupInputs, port: address.port, appVersion: require('./package.json').version,
             engineVersion: require('./node_modules/@earendil-works/pi-coding-agent/package.json').version,
-            capabilities: { shutdownProof: true },
+            capabilities: { shutdownProof: true, validationProof: true },
             healthUrl: process.env.PI_WORKSPACE_INTERNAL_ORIGIN + '/api/access/status',
-            runtimePaths: { PI_CODING_AGENT_DIR: agent, PI_MEDIA_DATA_DIR: mediaDataRoot, PI_MEDIA_CONFIG_DIR: mediaProfile.directory,
+            runtimePaths: { PI_CODING_AGENT_DIR: agent,
+                ...(process.env.PI_CODING_AGENT_SESSION_DIR ? { PI_CODING_AGENT_SESSION_DIR: path.resolve(process.env.PI_CODING_AGENT_SESSION_DIR) } : {}),
+                ...(typeof process.env.PI_PROJECT_ROOTS === 'string' ? { PI_PROJECT_ROOTS: process.env.PI_PROJECT_ROOTS } : {}),
+                PI_MEDIA_DATA_DIR: mediaDataRoot, PI_MEDIA_CONFIG_DIR: mediaProfile.directory,
                 PI_WEB_DEFERRED_FILE: path.resolve(piAgentGateway.deferred.filePath), BAIZELINGTAI_UPDATE_FEED_URL: updateFeed || '',
                 BAIZELINGTAI_UPDATE_RELEASES_URL: process.env.BAIZELINGTAI_UPDATE_RELEASES_URL || updateFeed || '' } });
     }
@@ -1020,6 +1023,22 @@ const shutdown = require('./server/pi-process-shutdown').registerProcessShutdown
 if (maintenance.managed) {
     process.on('message', message => {
         if (message?.nonce !== maintenance.nonce) return;
+        if (message.type === 'desktop-request' && message.method === 'validate') {
+            if (typeof message.id !== 'string' || message.id.length > 128) return;
+            void Promise.resolve().then(async () => {
+                if (!maintenance.locked || !message.input?.activationId || message.input.activationId !== maintenance.state.activation?.id
+                    || maintenance.state.activation.phase !== 'validating') throw Error('Validation is not pending');
+                await piAgentGateway.cron.ready; piAgentGateway.cron.healthy(); piAgentGateway.deferred.assertHealthy();
+                await piAgentGateway.learning.resumePromise;
+                // Use the native SessionManager projection. Never open a worker or send a prompt.
+                await piAgentGateway.store.listProjects();
+                return { control: true, data: true, activationId: message.input.activationId,
+                    appVersion: require('./package.json').version, engineVersion: require('./node_modules/@earendil-works/pi-coding-agent/package.json').version };
+            }).then(result => process.connected && process.send({ type: 'desktop-response', nonce: maintenance.nonce, id: message.id, result }, () => {}),
+                () => process.connected && process.send({ type: 'desktop-response', nonce: maintenance.nonce, id: message.id,
+                    error: { code: 'DESKTOP_VALIDATION_FAILED', message: 'Necessary original data could not be verified' } }, () => {}));
+            return;
+        }
         if (require('./server/pivane-desktop-stop').receiveDesktopRequest({ message, maintenance, stop: piAgentGateway.desktopStop,
             send: reply => process.send(reply, () => {}) })) return;
         maintenance.receive(message);
