@@ -122,3 +122,63 @@ test('no-op trust changes cannot create a replayable successful rotation', t => 
     assert.equal(run(['rotation-apply', '--installation-root', root, '--rotation', output]).status, 1);
     assert.deepEqual(fs.readFileSync(trustFile), before);
 });
+
+test('normal rotation cannot remove the signer needed to reopen a committed active package', t => {
+    const activation = require('../server/pi-launcher-activation'), { atomicJson } = require('../server/pi-maintenance-files');
+    const input = require('./launcher-activation-fixture.cjs').transactionFixture(t), signing = fixture(t), next = fixture(t);
+    assert.equal(run(keygen(signing)).status, 0); assert.equal(run(keygen(next, 'next-publisher')).status, 0);
+    const trustFile = path.join(input.root, 'config/update-trust.json');
+    fs.copyFileSync(path.join(signing, 'config/update-trust.json'), trustFile);
+    const key = createPrivateKey({ key: fs.readFileSync(path.join(signing, 'publisher.pem')), passphrase: password });
+    const data = input.release.signedManifest;
+    const payload = ['pivane-release-v1', data.schemaVersion, data.version, data.piVersion, data.platform, data.arch,
+        data.channel, data.publishedAt, data.package, data.sha256, data.bytes, data.releasesUrl ?? null];
+    data.signature = { algorithm: 'ed25519', keyId: 'test-publisher', value: require('node:crypto').sign(null, Buffer.from(JSON.stringify(payload)), key).toString('base64') };
+    input.state.activation = activation.prepareActivation(input); input.state.activation.phase = 'validating'; input.state.active = input.releaseId;
+    atomicJson(path.join(input.root, '.pivane-runtime/state.json'), input.state);
+    activation.commitActivation(input.root, input.state.activation.id, { control: true, versions: true, service: true, data: true, tray: true, stableMs: 15000, deadline: Date.now() + 60000 });
+    assert.equal(activation.verifyActiveProgram(input.root, input.releaseId).supported, true);
+    const before = fs.readFileSync(trustFile), output = path.join(input.root, 'remove-active-signer.json');
+    const signed = run(['rotation-sign', '--private-key', path.join(signing, 'publisher.pem'), '--key-id', 'test-publisher', '--installation-root', input.root,
+        '--next-trust', path.join(next, 'config/update-trust.json'), '--output', output]);
+    assert.equal(signed.status, 0, signed.stderr);
+    const applied = run(['rotation-apply', '--installation-root', input.root, '--rotation', output]);
+    if (applied.status === 0) {
+        assert.throws(() => activation.verifyActiveProgram(input.root, input.releaseId), /Untrusted update signature/);
+        t.diagnostic('Reproduced: accepted rotation strands the committed package at its real boot verifier');
+    }
+    assert.equal(applied.status, 1, 'must retain the currently active package signer');
+    assert.deepEqual(fs.readFileSync(trustFile), before);
+    assert.equal(activation.verifyActiveProgram(input.root, input.releaseId).supported, true);
+    assert.match(applied.stderr, /先加入新密钥/);
+    const unionFile = path.join(input.root, 'combined-trust.json'), unionRotation = path.join(input.root, 'add-next-signer.json');
+    const union = { schemaVersion: 1, keys: [...JSON.parse(before).keys, ...JSON.parse(fs.readFileSync(path.join(next, 'config/update-trust.json'))).keys] };
+    fs.writeFileSync(unionFile, JSON.stringify(union));
+    assert.equal(run(['rotation-sign', '--private-key', path.join(signing, 'publisher.pem'), '--key-id', 'test-publisher', '--installation-root', input.root,
+        '--next-trust', unionFile, '--output', unionRotation]).status, 0);
+    assert.equal(run(['rotation-apply', '--installation-root', input.root, '--rotation', unionRotation]).status, 0);
+    assert.equal(activation.verifyActiveProgram(input.root, input.releaseId).supported, true);
+    assert.deepEqual(JSON.parse(fs.readFileSync(trustFile)), union);
+});
+
+test('a new-key committed package permits retiring the no-longer-needed old signer', t => {
+    const activation = require('../server/pi-launcher-activation'), { atomicJson } = require('../server/pi-maintenance-files');
+    const input = require('./launcher-activation-fixture.cjs').transactionFixture(t), old = fixture(t), next = fixture(t);
+    assert.equal(run(keygen(old)).status, 0); assert.equal(run(keygen(next, 'next-publisher')).status, 0);
+    const oldTrust = JSON.parse(fs.readFileSync(path.join(old, 'config/update-trust.json'))), nextTrust = JSON.parse(fs.readFileSync(path.join(next, 'config/update-trust.json')));
+    const trustFile = path.join(input.root, 'config/update-trust.json');
+    fs.writeFileSync(trustFile, JSON.stringify({ schemaVersion: 1, keys: [...oldTrust.keys, ...nextTrust.keys] }));
+    const key = createPrivateKey({ key: fs.readFileSync(path.join(next, 'publisher.pem')), passphrase: password }), data = input.release.signedManifest;
+    const payload = ['pivane-release-v1', data.schemaVersion, data.version, data.piVersion, data.platform, data.arch,
+        data.channel, data.publishedAt, data.package, data.sha256, data.bytes, data.releasesUrl ?? null];
+    data.signature = { algorithm: 'ed25519', keyId: 'next-publisher', value: require('node:crypto').sign(null, Buffer.from(JSON.stringify(payload)), key).toString('base64') };
+    input.state.activation = activation.prepareActivation(input); input.state.activation.phase = 'validating'; input.state.active = input.releaseId;
+    atomicJson(path.join(input.root, '.pivane-runtime/state.json'), input.state);
+    activation.commitActivation(input.root, input.state.activation.id, { control: true, versions: true, service: true, data: true, tray: true, stableMs: 15000, deadline: Date.now() + 60000 });
+    const output = path.join(input.root, 'retire-old-signer.json');
+    assert.equal(run(['rotation-sign', '--private-key', path.join(next, 'publisher.pem'), '--key-id', 'next-publisher', '--installation-root', input.root,
+        '--next-trust', path.join(next, 'config/update-trust.json'), '--output', output]).status, 0);
+    assert.equal(run(['rotation-apply', '--installation-root', input.root, '--rotation', output]).status, 0);
+    assert.deepEqual(JSON.parse(fs.readFileSync(trustFile)), nextTrust);
+    assert.equal(activation.verifyActiveProgram(input.root, input.releaseId).supported, true);
+});
