@@ -114,6 +114,7 @@
     "docs/agents/triage-labels.md",
     "docs/agents/domain.md",
     "docs/development/LAUNCHER_UPDATE_WAYFINDER.md",
-    "docs/development/design/launcher-auto-update.md"
+    "docs/development/design/launcher-auto-update.md",
+    "docs/LAUNCHER_REPAIR.md"
   ]
 }
