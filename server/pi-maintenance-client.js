@@ -89,8 +89,8 @@ class MaintenanceClient {
         this.assertAvailable(action, idle);
         for (const [id, ticket] of this.tickets) if (ticket.expiresAt <= Date.now()) this.tickets.delete(id);
         if (this.tickets.size >= 16) throw fail('待确认维护操作过多，请稍后再试', 429);
-        const ticket = { id: randomUUID(), action, version: version || null, ...(release ? { release: { ...release } } : {}), generation: this.generation, expiresAt: Date.now() + 10 * 60 * 1000 };
-        this.tickets.set(ticket.id, ticket); return { ...ticket, storage: this.state.storage, backupScope: this.state.backupScope };
+        const ticket = { id: randomUUID(), action, version: version || null, ...(release ? { release: JSON.parse(JSON.stringify(release)) } : {}), generation: this.generation, expiresAt: Date.now() + 10 * 60 * 1000 };
+        this.tickets.set(ticket.id, ticket); return { ...ticket, ...(ticket.release ? { release: JSON.parse(JSON.stringify(ticket.release)) } : {}), storage: this.state.storage, backupScope: this.state.backupScope };
     }
     execute(input, { idle, pause }) {
         if (input?.confirmed !== true || input.externalWritersStopped !== true || input.draftsSaved !== true || Object.keys(input).some(k => !['ticket', 'confirmed', 'externalWritersStopped', 'draftsSaved'].includes(k))) throw fail('请确认已保存草稿并停止使用同一数据的外部 Pi 进程', 400);
