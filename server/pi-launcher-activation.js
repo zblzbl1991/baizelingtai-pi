@@ -10,6 +10,8 @@ const { continuationEnvironment } = require('./pi-launcher-qa-context');
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const exitWitness = Symbol('held process handles have signalled');
 const MAX_EVIDENCE = 64 * 1024 ** 2;
+const MAX_SOURCE_PROOFS = 20000;
+const CAPABILITY_PROOF_SLOTS = 2;
 const budget = () => ({ bytes: 0, files: 0, maxBytes: 4 * 1024 ** 3, maxFiles: 100000 });
 const stateFile = root => path.join(root, '.pivane-runtime/state.json');
 function readState(root) { return JSON.parse(readSafe(stateFile(root))); }
@@ -97,9 +99,16 @@ function readEvidence(root, activation) {
         || bytes.length !== expected.bytes || hash(bytes) !== expected.sha256) throw Error('Activation evidence identity or hash changed');
     const evidence = JSON.parse(bytes);
     if (evidence.version !== 1 || evidence.id !== activation.id || evidence.root !== root
-        || !Array.isArray(evidence.original) || evidence.original.length > 20000
+        || !Array.isArray(evidence.original) || evidence.original.length > MAX_SOURCE_PROOFS + CAPABILITY_PROOF_SLOTS
         || !Array.isArray(evidence.candidate) || evidence.candidate.length > 100002
         || !Array.isArray(evidence.closure) || evidence.closure.length > 128) throw Error('Invalid activation evidence');
+    if (evidence.original.length > MAX_SOURCE_PROOFS) {
+        // The source limit remains unchanged. Only one portable metadata proof
+        // and its manifest can occupy the two extra slots added at preparation.
+        const names = evidence.original.map(entry => entry?.path);
+        if (names.filter(name => name === 'baizelingtai-portable.json' || name === 'pivane-portable.json').length !== 1
+            || names.filter(name => name === 'PORTABLE_MANIFEST.json').length !== 1) throw Error('Invalid activation evidence');
+    }
     return evidence;
 }
 
@@ -153,7 +162,7 @@ function prepareActivation({ root, state, releaseId, release, backupId, shutdown
     const activeEntry = hashFileSafe(path.join(originalRoot, '白泽灵台.exe'));
     if (fixedEntry.bytes !== activeEntry.bytes || fixedEntry.sha256 !== activeEntry.sha256) throw Error('Fixed desktop entry has unpublished changes');
     const sourceManifest = JSON.parse(readSafe(path.join(originalRoot, 'TRIAL_MANIFEST.json'), 16 * 1024 ** 2));
-    if (!Array.isArray(sourceManifest.files) || sourceManifest.files.length > 20000) throw Error('Current source baseline unavailable');
+    if (!Array.isArray(sourceManifest.files) || sourceManifest.files.length > MAX_SOURCE_PROOFS) throw Error('Current source baseline unavailable');
     const original = sourceManifest.files.map(entry => {
         const name = relativeName(entry.path), proof = snapshot(path.join(originalRoot, name), 128 * 1024 ** 2);
         if (proof.bytes !== entry.bytes || proof.sha256 !== entry.sha256) throw Error('Current source has unpublished changes');
