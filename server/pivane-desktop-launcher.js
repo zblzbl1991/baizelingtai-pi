@@ -14,9 +14,29 @@ function installationId(root) {
     return createHash('sha256').update(fs.realpathSync.native(root)).digest('hex').slice(0, 16);
 }
 
+// The selected code tree is distinct from the stable installation identity.
+// Environment input never selects a different release than the single state file.
+function desktopProgramRoot(root, programRoot = path.resolve(__dirname, '..')) {
+    root = fs.realpathSync.native(root); programRoot = fs.realpathSync.native(programRoot);
+    const file = path.join(root, '.pivane-runtime/state.json');
+    const state = fs.existsSync(file) ? JSON.parse(require('./pi-maintenance-files').readSafe(file)) : { version: 1, active: null };
+    if (state.version !== 1 || state.needsRecovery || state.active != null && !/^[a-f0-9-]{36}$/.test(state.active)
+        || state.activation && !['prepared', 'validating', 'committed', 'rolled-back'].includes(state.activation.phase)) throw Error('Installation requires manual recovery.');
+    const selected = state.active == null ? root : fs.realpathSync.native(path.join(root, '.pivane-runtime/releases', state.active));
+    if (programRoot !== selected) throw Error('Desktop program root does not match the selected installation version.');
+    return programRoot;
+}
+
 function desktopEnvironment(root, environment = process.env) {
     const env = { ...environment };
     loadLocalEnv(path.join(root, '.env'), env);
+    const stateFile = path.join(root, '.pivane-runtime/state.json');
+    if (fs.existsSync(stateFile)) {
+        const state = JSON.parse(require('./pi-maintenance-files').readSafe(stateFile));
+        if (state.version !== 1) throw Error('Unsupported installation state');
+        for (const key of ['PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'PI_PROJECT_ROOTS', 'PI_MEDIA_DATA_DIR', 'PI_MEDIA_CONFIG_DIR', 'PI_WEB_DEFERRED_FILE', 'BAIZELINGTAI_UPDATE_FEED_URL', 'BAIZELINGTAI_UPDATE_RELEASES_URL', 'HOST', 'PORT'])
+            if (env[key] === undefined && typeof state.runtimePaths?.[key] === 'string') env[key] = state.runtimePaths[key];
+    }
     const portableFile = portableMetadataFile(root);
     if (fs.existsSync(portableFile)) {
         const portable = JSON.parse(fs.readFileSync(portableFile, 'utf8'));
@@ -39,7 +59,7 @@ function desktopEnvironment(root, environment = process.env) {
     // Keep their normal resolver rather than creating a new empty data store.
     if (!env.PI_PROJECT_ROOTS) env.PI_PROJECT_ROOTS = process.platform === 'win32'
         ? 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(letter => `${letter}:\\`).filter(drive => fs.existsSync(drive)).join(';') : '/';
-    for (const name of ['PI_MEDIA_DATA_DIR', 'PI_MEDIA_CONFIG_DIR', 'PI_WEB_DEFERRED_FILE']) {
+    for (const name of ['PI_CODING_AGENT_SESSION_DIR', 'PI_MEDIA_DATA_DIR', 'PI_MEDIA_CONFIG_DIR', 'PI_WEB_DEFERRED_FILE']) {
         if (env[name] && !path.isAbsolute(env[name])) throw Error(`${name} must be an absolute path.`);
     }
     return env;
@@ -115,13 +135,14 @@ function listenForStop(input, stop) {
 
 async function startDesktop(options = {}) {
     const root = fs.realpathSync.native(options.root);
-    if (options.controlled) return startDesktopService({ ...options, root });
+    const programRoot = desktopProgramRoot(root, options.programRoot);
+    if (options.controlled) return startDesktopService({ ...options, root, programRoot });
     const startupEnvironment = { ...(options.environment || process.env) };
     loadLocalEnv(path.join(root, '.env'), startupEnvironment);
     const startup = await require('./pivane-desktop-startup').createDesktopStartup({ root, reservedPorts: [Number(startupEnvironment.PORT || 11408)] });
     try {
         options.emit({ type: 'waiting', url: startup.url, instance: startup.instance, generation: startup.generation });
-        return await startDesktopService({ ...options, root, startup });
+        return await startDesktopService({ ...options, root, programRoot, startup });
     } catch (error) {
         startup.fail(error.desktopMessage || outputRedactor(options.environment || process.env)(error.message));
         await startup.close({ allowFailureView: true });
@@ -129,7 +150,7 @@ async function startDesktop(options = {}) {
     }
 }
 
-async function startDesktopService({ root, environment = process.env, emit, log = text => process.stderr.write(text + '\n'),
+async function startDesktopService({ root, programRoot = path.resolve(__dirname, '..'), environment = process.env, emit, log = text => process.stderr.write(text + '\n'),
     Manager = ManagedLauncher, Network = WorkspaceNetworkService, fetcher = fetch, forkServer = fork, startup, controlled = false, generation, input = process.stdin } = {}) {
     if (Number(process.versions.node.split('.')[0]) < 22) throw Error('The desktop launcher requires Node.js 22 or later.');
     root = fs.realpathSync.native(root);
@@ -137,11 +158,17 @@ async function startDesktopService({ root, environment = process.env, emit, log 
         throw Error('This installation already has a background service. Use its desktop shortcut or stop and uninstall that service before enabling the tray.');
     }
     const env = desktopEnvironment(root, environment);
-    const startupTimeoutMs = desktopStartupTimeout(env);
+    const updating = require('./pivane-desktop-update');
+    const priorStateFile = path.join(root, '.pivane-runtime/state.json');
+    const pendingActivation = fs.existsSync(priorStateFile) && JSON.parse(require('./pi-maintenance-files').readSafe(priorStateFile)).activation?.phase === 'validating';
+    const startupTimeoutMs = Math.min(desktopStartupTimeout(env), pendingActivation ? updating.validationBudget(env) : Infinity);
     const startupDeadline = Date.now() + startupTimeoutMs;
-    // Resolve the native Pi identity with the same public API as normal installation.
-    const { getAgentDir } = await withinStartup(import('@earendil-works/pi-coding-agent'), startupDeadline);
-    env.PI_CODING_AGENT_DIR ||= getAgentDir();
+    // Explicit/pinned identity already has an owner. Only the implicit default
+    // needs the upstream resolver; avoid loading the entire SDK twice on launch.
+    if (!env.PI_CODING_AGENT_DIR) {
+        const { getAgentDir } = await withinStartup(import('@earendil-works/pi-coding-agent'), startupDeadline);
+        env.PI_CODING_AGENT_DIR = getAgentDir();
+    }
     if (!path.isAbsolute(env.PI_CODING_AGENT_DIR)) throw Error('PI_CODING_AGENT_DIR must be an absolute path.');
     const network = new Network({ root, env });
     const networkEnvironment = { ...env }; network.applyEnvironment(networkEnvironment);
@@ -155,7 +182,15 @@ async function startDesktopService({ root, environment = process.env, emit, log 
         if (logFd !== undefined) fs.writeSync(logFd, new Date().toISOString() + ' ' + safe + '\n');
         log(safe);
     }
-    const launcher = new Manager({ root, env, networkEnvironment, startupTimeoutMs, requireShutdownProof: true,
+    const link = controlled ? updating.createTrayLink({ programRoot, emit }) : null;
+    const performHandoff = async intent => {
+        emit({ type: 'update-progress', phase: intent.mode === 'rollback' ? 'rollback-waiting-exit' : 'waiting-exit' });
+        await updating.handoffDesktop({ launcher, link, intent });
+        emit({ type: 'update-handoff', activationId: intent.id, mode: intent.mode });
+        await shutdown();
+    };
+    const launcher = new Manager({ root, programRoot, env, networkEnvironment, startupTimeoutMs, requireShutdownProof: true, onDiagnostic: writeLog,
+        ...(controlled && process.platform === 'win32' ? { onHandoff: performHandoff } : {}),
         onCleanupUnknown: error => { cleanupUnknown=true; emit({ type: 'error', code: 'DESKTOP_CLEANUP_UNKNOWN', message: redact(error.message), clean: false }); },
         forkServer: (file, args, options) => {
         const child = forkServer(file, args, { ...options, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], windowsHide: true });
@@ -183,6 +218,14 @@ async function startDesktopService({ root, environment = process.env, emit, log 
     if (controlled) {
         listenForDesktopCommands(input, generation, async command => {
             const response = value => emit({ ...value, id: command.id });
+            try {
+                if (link.receive(command)) {
+                    launcher.desktopAttached = link.attached;
+                    launcher.trayVersion = link.version;
+                    launcher.send({ type: 'maintenance-status', status: launcher.status() });
+                    return;
+                }
+            } catch (error) { emit({ type: 'error', code: 'DESKTOP_COMPONENT_MISMATCH', message: redact(error.message) }); return; }
             if (operationId && stopping && ['snapshot','execute-stop'].includes(command.type)) {
                 response({ type: 'snapshot', accepted: true, operationId, cleanup: cleanupUnknown ? 'unknown' : 'pending', complete: false,
                     revision: `desktop:${generation}`, blockers: [{ type: 'cleanup', count: 1, label: cleanupUnknown ? '服务清理尚未获确认' : '服务清理仍在进行' }], scheduled: { futureCount: 0, latestCount: 0 } });
@@ -207,7 +250,10 @@ async function startDesktopService({ root, environment = process.env, emit, log 
                     await shutdown(); return;
                 }
                 response({ ...result, versions: launcher.runningVersions, type: method === 'review' ? 'stop-review' : 'snapshot' });
-            } catch (error) { response({ type: 'error', code: error.code || 'DESKTOP_FAILED', message: redact(error.message) }); }
+            } catch (error) {
+                if (launcher.handoff) response({ type: 'update-progress', phase: launcher.handoff.mode === 'rollback' ? 'rollback-waiting-exit' : 'waiting-exit' });
+                else response({ type: 'error', code: error.code || 'DESKTOP_FAILED', message: redact(error.message) });
+            }
             finally { commandPending = false; }
         }, () => { void shutdown(); });
     } else listenForStop(input, shutdown);
@@ -217,14 +263,33 @@ async function startDesktopService({ root, environment = process.env, emit, log 
         if (stopping) { await stopping; return; }
         const url = browserUrl(networkEnvironment.HOST, Number(launcher.env.PORT || env.PORT || 11408));
         await withinStartup(checkReady(url, fetcher), startupDeadline);
+        if (!stopping && launcher.state?.activation?.phase === 'validating') {
+            emit({ type: 'update-progress', phase: 'validating' });
+            await updating.validateDesktop({ launcher, link, url, fetcher, deadline: startupDeadline });
+        }
         if (!stopping) {
             ready = true;
+            if (launcher.runningVersions) { launcher.runningVersions.launcherVersion = launcher.launcherVersion; launcher.runningVersions.trayVersion = launcher.trayVersion; }
             startup?.ready(url);
             emit({ type: 'ready', url, logFile, versions: launcher.runningVersions, agentDir: env.PI_CODING_AGENT_DIR, mediaDir: env.PI_MEDIA_DATA_DIR });
         }
     } catch (error) {
         if (stopping) { await stopping; return; }
         error.desktopMessage = redact(error.message);
+        if (launcher.state?.activation?.phase === 'validating' && controlled) {
+            try {
+                // First settle startup. A timeout is never cancellation.
+                await launcher.starting?.catch(() => {});
+                const intent = await launcher.rollbackValidation();
+                await performHandoff(intent);
+                return;
+            } catch (failure) {
+                launcher.retainRecovery(failure);
+                emit({ type: 'update-progress', phase: 'needs-recovery', message: redact(failure.message) });
+                error.desktopReported = true; error.desktopCleanupUnknown = true;
+                throw error;
+            }
+        }
         startup?.fail(error.desktopMessage);
         emit({ type: 'error', message: error.desktopMessage });
         error.desktopReported = true;
@@ -237,4 +302,4 @@ async function startDesktopService({ root, environment = process.env, emit, log 
     return { launcher, stop, shutdown };
 }
 
-module.exports = { installationId, desktopEnvironment, desktopStartupTimeout, browserUrl, checkReady, listenForStop, listenForDesktopCommands, startDesktop };
+module.exports = { installationId, desktopProgramRoot, desktopEnvironment, desktopStartupTimeout, browserUrl, checkReady, listenForStop, listenForDesktopCommands, startDesktop };
