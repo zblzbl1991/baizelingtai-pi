@@ -112,11 +112,11 @@ function inspectActivation(root, id) {
 function requireCleanup(proof) {
     if (!proof || proof.complete !== true || typeof proof.generation !== 'string' || !proof.generation) throw Error('Verified cleanup completion is required');
 }
-function helperFiles(programRoot) {
+function helperFiles(programRoot, entryPoints = ['server/pi-launcher-update-helper.js']) {
     const result = new Set();
     function add(name) {
         name = relativeName(name); if (result.has(name)) return; result.add(name);
-        if (!name.endsWith('.js')) return;
+        if (!/\.(?:js|cjs)$/.test(name)) return;
         const source = readSafe(path.join(programRoot, name), 4 * 1024 ** 2).toString('utf8');
         for (const match of source.matchAll(/require\(['"]([^'"]+)['"]\)/g)) {
             if (match[1].startsWith('node:')) continue;
@@ -126,7 +126,7 @@ function helperFiles(programRoot) {
             add(child);
         }
     }
-    add('server/pi-launcher-update-helper.js');
+    for (const entry of entryPoints) add(entry);
     add('scripts/launcher-process-wait.ps1');
     for (const name of ['native/pi-win32-fd.c', 'native/pi-win32-x64-fd.node', 'native/win32-x64-manifest.json']) add(name);
     return [...result];
@@ -355,4 +355,5 @@ async function runHandoff({ root, id, processes, onReady, mode = 'activate' }) {
     await new Promise((resolve, reject) => { entry.once('spawn', resolve); entry.once('error', reject); });
     entry.unref(); return activation;
 }
-module.exports = { inspectActivation, prepareActivation, helperCommand, helperFiles, applyActivation, recoverActivation, commitActivation, runHandoff, verifyActiveProgram };
+module.exports = { inspectActivation, prepareActivation, helperCommand, helperFiles, applyActivation, recoverActivation, commitActivation, runHandoff, verifyActiveProgram,
+    activationFileProof: snapshot, verifyActivationFile: unchanged };
