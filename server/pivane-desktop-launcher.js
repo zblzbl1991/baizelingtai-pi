@@ -200,7 +200,7 @@ async function startDesktopService({ root, programRoot = path.resolve(__dirname,
         }
         return child;
     } });
-    let stopping, ready = false, operationId, commandPending = false, cleanupUnknown = false;
+    let stopping, ready = false, operationId, commandPending = false, cleanupUnknown = false, ownerRefused = false;
     const stop = () => {
         if (!stopping) stopping = Promise.resolve().then(async () => {
             emit({ type: 'stopping' });
@@ -209,7 +209,7 @@ async function startDesktopService({ root, programRoot = path.resolve(__dirname,
                 try { await startup?.close({ allowFailureView: true }); }
                 finally { fs.closeSync(logFd); logFd = undefined; }
             }
-            if (controlled) emit({ type: 'stopped', clean: true, ...(operationId ? { operationId } : {}) });
+            if (controlled && !ownerRefused) emit({ type: 'stopped', clean: true, ...(operationId ? { operationId } : {}) });
         });
         return stopping;
     };
@@ -276,6 +276,14 @@ async function startDesktopService({ root, programRoot = path.resolve(__dirname,
     } catch (error) {
         if (stopping) { await stopping; return; }
         error.desktopMessage = redact(error.message);
+        if (error.code === 'DESKTOP_OWNER_UNPROVEN' && !launcher.serviceOwner) {
+            // This runner never owned the old service. Release only its own
+            // resources, without rollback, state edits or a cleanup proof.
+            ownerRefused = true; error.desktopReported = true;
+            emit({ type: 'error', code: 'DESKTOP_OWNER_UNPROVEN', message: error.desktopMessage });
+            require('./pi-launcher-qa-checkpoints').writeReceipt(root, 'owner-refused', { outcome: 'DESKTOP_OWNER_UNPROVEN', generation }, env);
+            await stop(); throw error;
+        }
         if (launcher.state?.activation?.phase === 'validating' && controlled) {
             try {
                 // First settle startup. A timeout is never cancellation.

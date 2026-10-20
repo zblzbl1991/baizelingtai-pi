@@ -25,6 +25,7 @@
 | 桌面身份、runner 与控制协议 | [runner](../../scripts/start-desktop.cjs)、[桌面编排](../../server/pivane-desktop-launcher.js) | 原安装根、data 默认路径、generation、LF 分帧、进程退出与 clean 状态 |
 | 版本选择与受管维护执行 | [ManagedLauncher](../../server/pi-managed-launcher.js) | `.pivane-runtime/state.json` 的 active/previous、候选 boot、关闭与恢复；旧外层指针只证明服务切换；新协议还须核对同一 activation 的外层提交记录 |
 | 安装级互斥 | [安装锁](../../server/pi-installation-lock.js) | 锁绑定原安装 realpath；迁移、更新助手和正常启动必须服从同一所有权边界，托盘 mutex 不能代替它 |
+| 崩溃后的服务所有权 | [owner 协议](../../server/pi-desktop-owner.js)、[受管生命周期](../../server/pi-managed-launcher.js)、[轻量边界测试](../../test/pi-desktop-owner.test.js) | fork 前登记、同代 ack + exit0 后持久清除；未知 owner 拒绝新启动和离线 writer，committed 数据不自动回退；两端 portable 能力须绑定库存 |
 | 版本页、清单与票据 | [更新 UI](../../public/pi-updates.js)、[更新服务及路由](../../server/pi-update-service.js)、[清单解析](../../server/pi-update-feed.js)、[签名验证](../../server/pi-update-signatures.js)、[维护客户端](../../server/pi-maintenance-client.js) | review/execute/maintenance 查询、目标重查、票据绑定、能力声明与准入；核对原始已签载荷在这些边界内是否保持绑定 |
 | 全局空闲与正常停机 | [停机事务](../../server/pivane-desktop-stop.js)、[网关装配与 dispose](../../server/pi-agent-routes.js)、[服务清理与证明](../../server.js) | 所有后台工作参与准入，实际清理完成才能交接；超时、退出码 0 或 PID 消失均不能单独替代证明 |
 | ZIP 校验、解压与候选验证 | [便携包安装器](../../server/pi-portable-installer.js)、[合成身份探针](../../server/pi-update-probe.js) | 固定目标、同源下载、字节数/哈希、逐文件清单、源码未发布修改保护；激活前还须重新核验 |

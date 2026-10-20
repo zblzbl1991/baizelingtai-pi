@@ -22,6 +22,7 @@ const ALLOWED = Object.freeze({
     'repair-entry': { 'candidate-before-validation': 'pause' },
     'repair-changed-entry': { 'candidate-before-validation': 'pause' },
     'postcommit-preservation': { 'candidate-before-validation': 'pause' },
+    'committed-crash': { 'candidate-before-validation': 'pause', 'service-cleanup-pending': 'pause' },
     'staged-mutation': { 'candidate-staged': 'pause' },
     'occupied-entry': { 'helper-before-apply': 'pause' },
     'old-tray-held': { 'handoff-outer-exit': 'pause' },
@@ -43,10 +44,11 @@ function writeReceipt(root, point, details = {}, environment = process.env) {
     const qa = context(root, environment); if (!qa) return null;
     if (!/^[a-z][a-z0-9-]{0,63}$/.test(point)) throw Error('Invalid QA checkpoint name');
     const safe = {};
-    for (const key of ['activationId', 'releaseId', 'generation', 'programRoot', 'url', 'mode', 'candidateDirectory', 'backupDirectory', 'outcome']) {
+    for (const key of ['activationId', 'releaseId', 'generation', 'programRoot', 'url', 'mode', 'candidateDirectory', 'backupDirectory', 'outcome', 'trigger']) {
         if (typeof details[key] === 'string' && details[key].length <= 4096) safe[key] = details[key];
     }
     if (Number.isSafeInteger(details.validationDeadline)) safe.validationDeadline = details.validationDeadline;
+    if (typeof details.httpListening === 'boolean') safe.httpListening = details.httpListening;
     const receipt = { schemaVersion: 1, runId: qa.runId, root, scenario: qa.scenario, point, receiptId: randomUUID(),
         pid: process.pid, parentPid: process.ppid, creationTime: processCreationTime({ ...qa.env, SystemRoot: environment.SystemRoot }), execPath: fs.realpathSync.native(process.execPath),
         at: new Date().toISOString(), state: 'observed', details: safe };
@@ -56,6 +58,8 @@ function writeReceipt(root, point, details = {}, environment = process.env) {
 async function checkpoint(root, point, details = {}, { environment = process.env, deadline } = {}) {
     const entry = writeReceipt(root, point, details, environment); if (!entry) return {};
     const { qa, receipt, file } = entry;
+    if (point === 'service-cleanup-pending' && (details.trigger !== 'parent-disconnect' || details.outcome !== 'committed'
+        || details.httpListening !== false || details.ownerBound !== true || !/^[a-f0-9-]{36}$/.test(details.generation || ''))) return {};
     const commandFile = path.join(qa.env.PIVANE_NATIVE_QA_CHECKPOINTS, point + '.json');
     let command;
     try { command = JSON.parse(readSafe(commandFile, 4096)); }

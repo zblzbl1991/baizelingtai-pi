@@ -135,16 +135,19 @@ function helperFiles(programRoot, entryPoints = ['server/pi-launcher-update-help
 function prepareActivation({ root, state, releaseId, release, backupId, shutdownProof }) {
     requireCleanup(shutdownProof);
     root = fs.realpathSync.native(root);
+    require('./pi-desktop-owner').assertStopped(root);
+    require('./pi-desktop-owner').assertStopped(root, state);
     if (state.version !== 1 || state.needsRecovery || state.activation && !['committed', 'rolled-back'].includes(state.activation.phase)) throw Error('An activation already requires recovery');
+    const originalRoot = releaseRoot(root, state.active), candidate = releaseRoot(root, releaseId);
+    const capabilityFiles = require('./pi-desktop-owner').portableCapability(originalRoot);
+    require('./pi-desktop-owner').portableCapability(candidate);
     const signature = require('./pi-update-signatures').verifyReleaseSignature(release, root);
-    const candidate = releaseRoot(root, releaseId);
     if (candidate === root) throw Error('Candidate must use an independent release directory');
     const entries = inventory(candidate, release.version);
     verifyNativeEntry(candidate, release.version);
     const marker = JSON.parse(readSafe(path.join(candidate, 'PI_INSTALL_COMPLETE.json')));
     if (marker.archiveSha256 !== release.sha256 || marker.appVersion !== release.version || marker.version !== release.piVersion
         || marker.lockSha256 !== hash(readSafe(path.join(candidate, 'package-lock.json'), 16 * 1024 ** 2))) throw Error('Activation target identity mismatch');
-    const originalRoot = releaseRoot(root, state.active);
     verifyNativeEntry(originalRoot, JSON.parse(readSafe(path.join(originalRoot, 'package.json'))).version);
     const fixedEntry = hashFileSafe(path.join(root, '白泽灵台.exe'));
     const activeEntry = hashFileSafe(path.join(originalRoot, '白泽灵台.exe'));
@@ -156,6 +159,7 @@ function prepareActivation({ root, state, releaseId, release, backupId, shutdown
         if (proof.bytes !== entry.bytes || proof.sha256 !== entry.sha256) throw Error('Current source has unpublished changes');
         return { path: name, ...proof };
     });
+    for (const name of capabilityFiles) if (!original.some(entry => entry.path === name)) original.push({ path: name, ...snapshot(path.join(originalRoot, name), 64 * 1024 ** 2) });
     if (!uuid.test(backupId || '')) throw Error('Invalid stopped backup identity');
     const backupDirectory = path.join(root, '.pivane-runtime/backups', backupId);
     const backup = inspectBackupContents(backupDirectory);
@@ -188,6 +192,8 @@ function helperCommand(root, id) {
 function verifyActivation(root, activation) {
     if (activation.root !== root) throw Error('Activation installation identity changed');
     requireCleanup(activation.shutdownProof);
+    require('./pi-desktop-owner').portableCapability(releaseRoot(root, activation.originalActive));
+    require('./pi-desktop-owner').portableCapability(releaseRoot(root, activation.releaseId));
     const signature = require('./pi-update-signatures').verifyReleaseSignature(activation.release, root);
     if (JSON.stringify(signature) !== JSON.stringify(activation.signature)) throw Error('Activation signer changed');
     const evidence = readEvidence(root, activation), candidate = releaseRoot(root, activation.releaseId);
@@ -205,6 +211,7 @@ async function applyActivation(root, id, witness, processProof) {
     root = fs.realpathSync.native(root);
     const guard = await acquireInstallationLock(root);
     try {
+        require('./pi-desktop-owner').assertStopped(root);
         const state = readState(root), activation = inspectActivation(root, id);
         if (activation.phase !== 'prepared' || state.active !== activation.originalActive) throw Error('Activation requires manual recovery');
         const evidence = verifyActivation(root, activation);
@@ -232,7 +239,10 @@ async function recoverActivation({ root, id, shutdownProof, witness, processProo
     root = fs.realpathSync.native(root);
     const guard = await acquireInstallationLock(root);
     try {
+        require('./pi-desktop-owner').assertStopped(root);
         const activation = inspectActivation(root, id), state = readState(root);
+        require('./pi-desktop-owner').portableCapability(releaseRoot(root, activation.originalActive));
+        require('./pi-desktop-owner').portableCapability(releaseRoot(root, activation.releaseId));
         if (activation.phase === 'committed') throw Error('Committed activation preserves current data');
         if (activation.phase !== 'validating' || activation.rollbackAttempts !== 0) throw Error('Activation requires manual recovery; unknown steps must not be replayed');
         if (witness !== exitWitness || shutdownProof.activationId !== id || shutdownProof.releaseId !== activation.releaseId

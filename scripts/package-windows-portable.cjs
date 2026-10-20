@@ -219,7 +219,7 @@ async function download(asset, cache) {
 
 function installPortableInfrastructure(directory, { trustBytes, updateFeedUrl }) {
     const app = fs.realpathSync.native(directory), trust = signatures.readUpdateTrust(trustBytes);
-    const metadata = { version: 1, platform: 'win32', arch: 'x64', launcherUpdateProtocol: 1,
+    const metadata = { version: 1, platform: 'win32', arch: 'x64', launcherUpdateProtocol: 1, desktopOwnerProtocol: 1,
         ...(updateFeedUrl ? { updateFeedUrl: feedUrl(updateFeedUrl) } : {}) };
     const files = require('../server/pi-launcher-repair').repairFiles(app);
     if (!Array.isArray(files) || !files.length || files.length > 128 || new Set(files).size !== files.length) throw Error('Invalid independent repair closure');
@@ -297,7 +297,7 @@ async function main() {
         const archive = path.join(root, 'dist', `${appName}.zip`);
         const offlineBundle = path.join(root, 'dist', `${appName}-offline.zip`);
         if (dryRun) {
-            console.log(JSON.stringify({ dryRun: true, launcherUpdateProtocol: 1, offlineBundle: null, archive,
+            console.log(JSON.stringify({ dryRun: true, launcherUpdateProtocol: 1, desktopOwnerProtocol: 1, offlineBundle: null, archive,
                 unsignedManifest: archive + '.update.unsigned.json', signedManifest: null, updates }, null, 2));
             return;
         }
