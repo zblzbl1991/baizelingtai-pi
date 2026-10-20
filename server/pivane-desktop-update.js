@@ -3,6 +3,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { readSafe, hash } = require('./pi-maintenance-files');
+const { continuationEnvironment } = require('./pi-launcher-qa-context');
 
 // Only the inherited private LF channel supplies tray evidence. Process names
 // and the disappearance of a PID are never treated as exit evidence.
@@ -56,13 +57,14 @@ function createTrayLink({ programRoot, emit }) {
 async function handoffDesktop({ launcher, link, intent }) {
     const activation = launcher.state.activation;
     if (!launcher.guard || activation?.id !== intent.id || launcher.operation || launcher.child || launcher.closed || launcher.closing || launcher.starting) throw Error('Stopped installation owner is required for handoff');
+    const continuation = continuationEnvironment(launcher.root, launcher.env);
     const processes = link.processes;
     activation[intent.mode === 'rollback' ? 'failureHandoffProcesses' : 'handoffProcesses'] = processes;
     launcher.save();
     const command = require('./pi-launcher-activation').helperCommand(launcher.root, intent.id);
     if (intent.mode === 'rollback') command.args[1] = 'rollback-handoff';
     const helper = spawn(command.executable, command.args, { cwd: launcher.root, detached: true, windowsHide: true,
-        env: { SystemRoot: process.env.SystemRoot, SystemDrive: process.env.SystemDrive, TEMP: process.env.TEMP, TMP: process.env.TMP },
+        env: { SystemRoot: process.env.SystemRoot, SystemDrive: process.env.SystemDrive, TEMP: process.env.TEMP, TMP: process.env.TMP, ...continuation },
         stdio: ['pipe', 'pipe', 'ignore'] });
     await new Promise((resolve, reject) => {
         let pending = '', done = false;

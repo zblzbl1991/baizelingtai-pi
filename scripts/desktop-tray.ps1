@@ -1,6 +1,10 @@
 ﻿# Existing Windows Forms tray owns the UI and read-only waiting entry. Each run has its own Node owner.
 param([Alias('Root')][string]$AppRoot = (Split-Path $PSScriptRoot -Parent), [string]$NodePath, [switch]$NoOpen, [switch]$ConsoleMode, [switch]$SmokeTest)
 $ErrorActionPreference = 'Stop'
+# Raw presence suppresses a blocking QA error dialog; it grants no smoke authority.
+$script:strictQaRequested = $false
+foreach ($name in [Environment]::GetEnvironmentVariables().Keys) { if ($name -match '^PIVANE_NATIVE_QA') { $script:strictQaRequested = $true } }
+if ($script:strictQaRequested) { $SmokeTest = $false }
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
@@ -24,6 +28,7 @@ function Record-Event($Value) {
 }
 function Show-Failure([string]$Message) {
     $script:result = 1; $script:lastError = $Message.Substring(0, [Math]::Min(1024,$Message.Length))
+    if ($script:strictQaRequested -and -not $script:smokeValidated) { [Console]::Error.WriteLine($script:lastError); return }
     Record-Event @{ type = 'error'; message = $script:lastError; generation = $script:generation }
     if ($ConsoleMode) { Write-Host $script:lastError -ForegroundColor Red }
     if (-not $tray -and -not $SmokeTest) { [Windows.Forms.MessageBox]::Show($script:lastError,'白泽灵台','OK','Error') | Out-Null }
@@ -286,7 +291,7 @@ try {
     $AppRoot = [IO.Path]::GetFullPath($AppRoot)
     if([IO.Path]::GetFullPath((Split-Path $PSScriptRoot -Parent)) -ne $ProgramRoot){throw '托盘脚本与选定程序目录不一致。'}
     $env:PIVANE_INSTALLATION_ROOT=$AppRoot; $env:PIVANE_PROGRAM_ROOT=$ProgramRoot
-    if ($env:PIVANE_DESKTOP_SMOKE_ROOT -eq $AppRoot) { $SmokeTest = $true }
+    if (-not $script:strictQaRequested -and $env:PIVANE_DESKTOP_SMOKE_ROOT -eq $AppRoot) { $SmokeTest = $true }
     if ($SmokeTest -and (-not (Test-Path -LiteralPath (Join-Path $AppRoot '.pivane-launcher-test')) -or -not $env:PI_CODING_AGENT_DIR -or -not $env:PI_MEDIA_DATA_DIR -or -not $env:PI_WEB_DEFERRED_FILE)) { throw 'SmokeTest 仅允许独立合成实例。' }
     $script:smokeValidated = [bool]$SmokeTest
     $runner = Join-Path $ProgramRoot 'scripts\start-desktop.cjs'
@@ -298,6 +303,27 @@ try {
         if (-not $NodePath) { $command = Get-Command node.exe -ErrorAction SilentlyContinue; if ($command) { $NodePath = $command.Source } }
     }
     if (-not $NodePath -or -not (Test-Path -LiteralPath $NodePath -PathType Leaf)) { throw '没有找到 Node.js。请安装 Node.js 22，或在 runtime 目录放置 node.exe。' }
+    if ($script:strictQaRequested) {
+        # Reject Node preload/options before launching even the validation CLI.
+        foreach ($name in [Environment]::GetEnvironmentVariables().Keys) { if ($name -match '^NODE_') { throw 'Native QA rejects Node execution options.' } }
+        $qaStart = [Diagnostics.ProcessStartInfo]::new(); $qaStart.FileName = $NodePath
+        $qaCli = Join-Path $ProgramRoot 'scripts\launcher-qa.cjs'
+        $qaStart.Arguments = '"' + $qaCli + '" validate "' + $AppRoot.TrimEnd('\') + '"'
+        $qaStart.UseShellExecute = $false; $qaStart.CreateNoWindow = $true
+        $qaStart.RedirectStandardOutput = $true; $qaStart.RedirectStandardError = $true
+        $qaStart.StandardOutputEncoding = [Text.UTF8Encoding]::new($false); $qaStart.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
+        $qa = [Diagnostics.Process]::Start($qaStart)
+        try {
+            $qaOutput = $qa.StandardOutput.ReadToEndAsync(); $qaError = $qa.StandardError.ReadToEndAsync()
+            if (-not $qa.WaitForExit(30000)) { $qa.Kill(); $qa.WaitForExit(); throw 'Native QA validation timed out.' }
+            $qaText = $qaOutput.GetAwaiter().GetResult(); $qaFailure = $qaError.GetAwaiter().GetResult()
+            if ($qa.ExitCode -ne 0 -or $qaText.Length -gt 65536) { throw ('Native QA validation failed. ' + $qaFailure.Substring(0, [Math]::Min(1024,$qaFailure.Length))) }
+            $qaContext = $qaText | ConvertFrom-Json
+            if ($qaContext.PIVANE_NATIVE_QA -ne '1' -or $qaContext.PIVANE_DESKTOP_SMOKE_ROOT -cne $AppRoot) { throw 'Native QA validation did not authorize this root.' }
+            foreach ($property in $qaContext.PSObject.Properties) { [Environment]::SetEnvironmentVariable($property.Name, [string]$property.Value, 'Process') }
+            $SmokeTest = $true; $script:smokeValidated = $true
+        } finally { $qa.Dispose() }
+    }
     # Prepend bundled tools and real Git Bash, avoiding the Windows WSL bash shim.
     $toolPaths = @()
     foreach ($base in @($ProgramRoot, (Split-Path $ProgramRoot -Parent))) {
