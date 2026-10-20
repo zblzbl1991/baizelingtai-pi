@@ -34,7 +34,7 @@ Windows 便携版可通过 `npm run pack:windows` 自动读取本机 `.baizeling
 
 推荐在公开 GitLab 项目保存 `updates/latest.json`，大 ZIP 放在该项目的 Generic Package Registry，或与清单一起放在仓库/内网静态站点。先上传验收通过的准确 ZIP，再发布其清单；不要只上传清单而把下载地址留在外网。同版本正式包不覆盖，版本号不变的重新构建不会提示升级。GitLab 项目的公开可见性不保证 Package Registry 已允许匿名下载，发布前须从用户网络确认清单和 ZIP 均无需登录。
 
-`npm run pack:windows` 的外层 `-offline.zip` 解压后提供应用 ZIP、同名 `.sha256` 和 `updates/latest.json`。将清单按该路径提交到内网 GitLab 仓库，将应用 ZIP 上传到清单 `package` 指定的 Generic Package Registry 地址；两处都就绪后自动检测和下载才可用。外层 ZIP 用于搬运，更新器下载内部应用 ZIP。
+Windows 构建须通过 `--update-trust` 显式内置维护者提供的公钥；构建只输出 ZIP、校验文件及未签草稿，维护者签名后再用 --bundle-only 生成正式外层 -offline.zip。外层仅提供准确应用 ZIP、同名 .sha256 和已签 updates/latest.json；将后者按该路径提交到 GitLab，ZIP 上传到清单 package 指定位置。组装重新验签并核对准确字节/哈希，不接受未签草稿。先上线签名源再交付强制验签客户端。具体命令见[构建与签名](development/UPDATE_SIGNING.md#构建草稿与正式离线分发)。
 
 支持此功能的 Windows x64 便携版，通过受管启动器启动并配置内网清单后，发现新版会显示“一键更新”。点击后服务器重新核对目标，页面展示版本与 SHA256；确认已保存草稿、结束任务、暂停预约并停止同一数据的外部 Pi 进程，再点击“确认并更新”。服务器再次检查全局空闲，锁定普通 API/WS 新工作，下载并校验完整 ZIP、安全解压路径与逐文件清单，以独立身份验证候选程序，然后正常停止旧服务、备份原路径数据并启动新版。页面只查询进度，切换断线不会重新提交；成功后刷新当前版本。关闭页面不取消已接受操作。
 
