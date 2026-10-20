@@ -22,8 +22,8 @@ async function main() {
     const exited = new Promise(resolve => child.once('close', code => resolve(code)));
     const state = () => { try { return JSON.parse(fs.readFileSync(path.join(root, '.pivane-runtime/desktop/smoke-state.json'), 'utf8')); } catch { return null; } };
     const command = action => fs.writeFileSync(path.join(root, '.pivane-launcher-command.json'), JSON.stringify({ id: randomUUID(), action }));
-    async function wait(predicate) {
-        const until = Date.now() + 45000;
+    async function wait(predicate, timeoutMs = 45000) {
+        const until = Date.now() + timeoutMs;
         while (Date.now() < until) {
             const current = state();
             if (current && predicate(current)) return current;
@@ -47,9 +47,13 @@ async function main() {
                 await page.goto(initial.waitingUrl, { waitUntil: 'domcontentloaded' });
                 await page.waitForFunction(() => document.getElementById('startup-title')?.textContent === '正在重新连接');
                 assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-                const ready = await wait(value => value.state === 'ready' && !value.pending);
+                const ready = await wait(value => value.state === 'ready' && !value.pending, 180000);
                 const actual = await fetch(new URL('status', initial.waitingUrl)).then(response => response.json());
                 assert.equal(actual.generation, ready.generation);
+                const maintenance = await fetch(new URL('api/pi/settings/updates/maintenance', actual.url)).then(response => response.json());
+                assert.equal(maintenance.wholePackageUpdateSupported, true, 'real inherited tray evidence enables the complete desktop handoff');
+                assert.equal(maintenance.launcherVersion, require('../../package.json').version);
+                assert.equal(maintenance.programRoot, root);
                 await page.waitForURL(actual.url);
                 assert.equal(await page.title(), '白泽灵台');
                 assert.ok(reads >= 2, 'read-only recovery reaches actual current service');
@@ -98,7 +102,7 @@ async function main() {
             await page.goto(initial.waitingUrl);
             await page.waitForFunction(() => document.body.dataset.state === 'stopped');
             command('start');
-            const second = await wait(value => value.state === 'ready' && value.generation !== first.generation);
+            const second = await wait(value => value.state === 'ready' && value.generation !== first.generation, 180000);
             assert.equal(second.waitingUrl, initial.waitingUrl);
             const actual = await fetch(new URL('status', initial.waitingUrl)).then(response => response.json());
             await page.waitForURL(actual.url);
@@ -114,7 +118,8 @@ async function main() {
             const report = path.join(root, '.pivane-runtime/desktop/smoke-result.json');
             if (fs.existsSync(report)) console.error(JSON.stringify({ nativeErrors: JSON.parse(fs.readFileSync(report, 'utf8')).filter(event => event.type === 'error') }));
         }
-        fs.rmSync(base, { recursive: true, force: true });
+        if (failed) console.error(JSON.stringify({ retainedSyntheticFixture: base, diagnostic }));
+        else fs.rmSync(base, { recursive: true, force: true });
     }
 }
 main().catch(error => { console.error(error.stack); process.exitCode = 1; });

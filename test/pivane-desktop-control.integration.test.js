@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn, spawnSync } = require('node:child_process');
+const { spawn, spawnSync, fork } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { once } = require('node:events');
 const { WebSocket } = require('ws');
@@ -20,6 +20,57 @@ test('tray identity reserves the resolved workspace port without starting a serv
         assert.deepEqual(identity.reservedPorts, [61234], 'inherited configuration wins over .env');
         assert.equal(fs.existsSync(path.join(root, '.pivane-runtime')), false, 'identity lookup has no owner side effects');
     } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('desktop identity rejects an unselected program directory and pins the original installation', () => {
+    const { root, base, env } = createApplication();
+    try {
+        const other = path.join(base, 'other-installation'); fs.mkdirSync(other);
+        const result = spawnSync(process.execPath, [path.join(root, 'scripts/start-desktop.cjs'), '--identity'],
+            { cwd: root, env: { ...env, PIVANE_INSTALLATION_ROOT: other, PIVANE_PROGRAM_ROOT: root }, windowsHide: true, encoding: 'utf8' });
+        assert.notEqual(result.status, 0, 'a different installation cannot execute this program as its selected version');
+        assert.equal(fs.existsSync(path.join(other, '.pivane-runtime')), false);
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('candidate private validation reads original native data while HTTP mutations remain closed until matching commit', { timeout: 90000 }, async () => {
+    const { root, base, env } = createApplication(), nonce = randomUUID(), activationId = randomUUID();
+    const child = fork(path.join(root, 'server.js'), [], { cwd: root, env: { ...env, PI_MANAGED_LAUNCHER: nonce, PI_MANAGED_BASE: root }, execArgv: [], windowsHide: true, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+    let diagnostic = ''; child.stderr.on('data', bytes => diagnostic = (diagnostic + bytes).slice(-4096));
+    const closed = once(child, 'close');
+    const messages = []; child.on('message', value => messages.push(value));
+    const wait = async predicate => {
+        const until = Date.now() + 45000;
+        while (Date.now() < until) {
+            const reply = messages.find(predicate); if (reply) return reply;
+            if (child.exitCode !== null) break;
+            await new Promise(resolve => setTimeout(resolve, 30));
+        }
+        throw Error('Candidate control response unavailable: ' + diagnostic);
+    };
+    try {
+        const ready = await wait(value => value.type === 'maintenance-ready');
+        assert.equal(ready.capabilities.validationProof, true);
+        const origin = `http://127.0.0.1:${ready.port}`;
+        child.send({ nonce, type: 'maintenance-status', status: { supported: true, activation: { id: activationId, phase: 'validating' } } });
+        child.send({ nonce, type: 'desktop-request', method: 'validate', id: 'data-proof', input: { activationId } });
+        const validation = await wait(value => value.id === 'data-proof');
+        assert.equal(validation.result?.data, true, JSON.stringify(validation.error));
+        assert.equal(validation.result?.activationId, activationId);
+        assert.equal((await fetch(origin + '/api/pi/status')).status, 503);
+        assert.equal((await fetch(origin + '/api/pi/settings/updates/notifications', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 503);
+        child.send({ nonce, type: 'maintenance-activate', activationId });
+        assert.equal((await fetch(origin + '/api/pi/status')).status, 503, 'an activation message alone is not the persisted commit');
+        child.send({ nonce, type: 'maintenance-status', status: { supported: true, activation: { id: activationId, phase: 'committed' } } });
+        child.send({ nonce, type: 'maintenance-activate', activationId });
+        child.send({ nonce, type: 'desktop-request', method: 'snapshot', id: 'after-commit', input: {} });
+        await wait(value => value.id === 'after-commit');
+        assert.equal((await fetch(origin + '/api/pi/status')).status, 200);
+    } finally {
+        if (child.connected) child.send({ nonce, type: 'maintenance-shutdown' });
+        await closed;
+        await fs.promises.rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
 });
 
 // This seam crosses the real runner, ManagedLauncher, child IPC and gateway.
@@ -54,7 +105,7 @@ function controlled(root, env, generation) {
     return { child, events, send, wait, exited };
 }
 
-test('controlled desktop checks and stops the actual owned service, then starts a fresh generation', { timeout: 150000 }, async () => {
+test('controlled desktop checks and stops the actual owned service, then starts a fresh generation', { timeout: 300000 }, async () => {
     const { root, base, env } = createApplication();
     const runs = [], sockets = [];
     try {
@@ -76,7 +127,9 @@ test('controlled desktop checks and stops the actual owned service, then starts 
             // An idle authenticated workbench keeps its transport open while its
             // actual native worker is available; no model prompt is sent.
             const opened = new Promise((resolve, reject) => {
-                const timer = setTimeout(() => reject(Error('Idle workspace did not open')), 15000);
+                // Native worker startup has its own 120s budget. It is separate
+                // from the private desktop control response's unchanged 15s.
+                const timer = setTimeout(() => reject(Error('Idle workspace did not open')), 120000);
                 workspace.on('message', bytes => { const reply=JSON.parse(bytes); if(reply.id==='idle-workspace'){clearTimeout(timer);resolve(reply);} });
             });
             workspace.send(JSON.stringify({ type:'open_session', id:'idle-workspace', cwd:root,sessionId:session.id }));

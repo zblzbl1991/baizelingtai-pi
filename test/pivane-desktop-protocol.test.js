@@ -118,3 +118,22 @@ test('startup timeout registers the cleanup request before an early completion a
     child.exitCode=0;child.emit('exit',0);
     await launcher.close();
 });
+
+test('private candidate data validation uses its remaining budget while ordinary control keeps fifteen seconds', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),'pivane-validation-budget-')); t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+    fs.writeFileSync(path.join(root,'package.json'),'{"version":"1.0.0"}');
+    const child=new EventEmitter(), sent=[];
+    Object.assign(child,{connected:true,exitCode:null,signalCode:null,send:(message,callback)=>{sent.push(message);callback?.();}});
+    const launcher=new ManagedLauncher({root,env:{},forkServer:()=>child});
+    const boot=launcher.boot(null); child.emit('message',{type:'maintenance-ready',nonce:launcher.nonce,port:12345}); await boot;
+    const validation=launcher.desktopRequest('validate',{activationId:'candidate'},{timeoutMs:60000});
+    let validationSettled=false; validation.then(()=>{validationSettled=true;},()=>{validationSettled=true;});
+    const snapshot=assert.rejects(launcher.desktopRequest('snapshot'),error=>error.code==='DESKTOP_TRANSPORT_UNKNOWN');
+    t.mock.timers.tick(15000); await snapshot;
+    assert.equal(validationSettled,false,'original data reads may use the remaining activation budget');
+    const request=sent.find(message=>message.method==='validate');
+    child.emit('message',{type:'desktop-response',nonce:launcher.nonce,id:request.id,result:{data:true}});
+    assert.deepEqual(await validation,{data:true});
+    launcher.closed=true;child.exitCode=0;child.emit('exit',0);
+});
