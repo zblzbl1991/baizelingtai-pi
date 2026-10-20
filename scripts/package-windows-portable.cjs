@@ -8,7 +8,7 @@ const { tarInvocation } = require('./package-tar.cjs');
 const root = path.resolve(__dirname, '..');
 const assets = require('./windows-portable-assets.json');
 const { feedUrl, sourceLink, parseFeed } = require('../server/pi-update-feed');
-const { readSafe, hashFileSafe } = require('../server/pi-maintenance-files');
+const { readSafe, hashFileSafe, copySafe } = require('../server/pi-maintenance-files');
 const io = require('../server/pi-file-io');
 const { descriptorPathSync } = require('../server/pi-file-descriptor');
 const signatures = require('../server/pi-update-signatures');
@@ -35,6 +35,7 @@ function createOfflineBundle(archive, bundle, { manifestFile = archive + '.updat
         try { data = JSON.parse(manifestBytes); } catch { throw Error('Invalid signed update manifest'); }
         const candidate = parseFeed(data, { source, platform: 'win32', arch: 'x64', channel: 'preview', compareVersions: require('../server/pi-update-service').compareVersions });
         if (!candidate) throw Error('No applicable Windows signed release');
+        if (path.basename(archive) !== portableDirectoryName(data.version) + '.zip') throw Error('Signed offline archive filename/version mismatch');
         signatures.verifyFeedSignatureWithTrust(data, trust.bytes);
         const proof = hashFileSafe(archive, 1024 ** 3), checksum = readSafe(archive + '.sha256', 1024);
         if (proof.bytes !== data.bytes || proof.sha256 !== data.sha256 || checksum.toString('utf8') !== `${proof.sha256}  ${path.basename(archive)}\n`) throw Error('Signed offline archive identity mismatch');
@@ -215,6 +216,32 @@ async function download(asset, cache) {
     } finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
 }
 
+function installPortableInfrastructure(directory, { trustBytes, updateFeedUrl }) {
+    const app = fs.realpathSync.native(directory), trust = signatures.readUpdateTrust(trustBytes);
+    const metadata = { version: 1, platform: 'win32', arch: 'x64', launcherUpdateProtocol: 1,
+        ...(updateFeedUrl ? { updateFeedUrl: feedUrl(updateFeedUrl) } : {}) };
+    const files = require('../server/pi-launcher-repair').repairFiles(app);
+    if (!Array.isArray(files) || !files.length || files.length > 128 || new Set(files).size !== files.length) throw Error('Invalid independent repair closure');
+    const repair = path.join(app, 'repair'); fs.mkdirSync(repair);
+    const budget = { bytes: 0, files: 0, maxBytes: 1024 ** 3, maxFiles: 256 };
+    for (const relative of [...files, 'runtime/node.exe', 'runtime/LICENSE', 'LICENSE']) {
+        require('./check-docs.cjs').assertPublicPath(relative);
+        const target = path.join(repair, relative); fs.mkdirSync(path.dirname(target), { recursive: true });
+        copySafe(path.join(app, relative), target, budget);
+    }
+    const config = path.join(app, 'config'); fs.mkdirSync(config, { recursive: true });
+    if (fs.realpathSync.native(config) !== config) throw Error('Portable config directory changed');
+    fs.writeFileSync(path.join(config, 'update-trust.json'), JSON.stringify(trust, null, 2) + '\n', { flag: 'wx' });
+    const command = ['@echo off', 'setlocal DisableDelayedExpansion', 'chcp 65001 >nul',
+        '"%~dp0repair\\runtime\\node.exe" "%~dp0repair\\scripts\\repair-launcher.cjs" diagnose "%~dp0."',
+        'set "pivane_repair_exit=%errorlevel%"', 'pause', 'exit /b %pivane_repair_exit%', ''].join('\r\n');
+    fs.writeFileSync(path.join(app, '修复白泽灵台.cmd'), command, { flag: 'wx' });
+    // Declare the protocol only after the standalone closure, runtime and trust
+    // were written. All additions are covered by the final PORTABLE inventory.
+    fs.writeFileSync(path.join(app, 'baizelingtai-portable.json'), JSON.stringify(metadata, null, 2) + '\n', { flag: 'wx' });
+    return metadata;
+}
+
 function trustInput(filename) {
     if (!filename) throw Error('An explicit --update-trust public key file is required');
     const file = path.resolve(filename), fd = io.openReadSync(file);
@@ -275,6 +302,8 @@ async function main() {
         }
         if ([archive, archive + '.sha256', archive + '.update.unsigned.json', archive + '.update.json', offlineBundle].some(file => fs.existsSync(file)))
             throw Error('Portable output already exists; preserve or move the existing package before building.');
+        for (const component of ['server/pivane-desktop-update.js', 'server/pi-launcher-repair.js', 'scripts/repair-launcher.cjs'])
+            if (!fs.existsSync(path.join(root, component))) throw Error('Complete launcher update source is required before building protocol 1');
         prepareBuild(root);
         const cache = path.join(root, 'dist/portable-cache'); fs.mkdirSync(cache, { recursive: true });
         // Reuse the one public inventory and all neutral-config/native/license gates.
@@ -311,16 +340,15 @@ async function main() {
             execFileSync(node, [path.join(app, 'scripts/install.cjs'), '--omit=dev'], { cwd: app, env, stdio: 'inherit', windowsHide: true });
             execFileSync(node, [path.join(app, 'scripts/install-office-preview.cjs'), '--require-available'], { cwd: app, env, stdio: 'inherit', windowsHide: true });
             // Retain installed dependency and tool licenses in full; do not prune packages.
-            trust.check();
-            fs.writeFileSync(path.join(app, 'config/update-trust.json'), JSON.stringify(trust.document, null, 2) + '\n', { flag: 'wx' });
-            fs.writeFileSync(path.join(app, 'baizelingtai-portable.json'), JSON.stringify({ version: 1, platform: 'win32', arch: 'x64', launcherUpdateProtocol: 1,
-                ...(updates.feed ? { updateFeedUrl: updates.feed } : {}) }, null, 2) + '\n');
             fs.writeFileSync(path.join(app, '便携版使用说明.txt'), '\ufeff白泽灵台 Windows x64 便携版\r\n\r\n解压完整目录后，双击 白泽灵台.exe。无需安装 Node、Git 或 ripgrep。\r\n首次启动后在供应商与模型设置中配置自己的账户。\r\n数据默认保存在本目录 data 中；正常退出托盘后备份完整目录。\r\n已有 .env 或环境变量配置优先。移动目录不迁移已有会话中的项目路径。\r\n需要 Windows 10/11 x64、自带 Windows PowerShell 5.1、.NET Framework 4 和默认浏览器。\r\n便携包不会注册服务或开机启动。退出前保存草稿、结束任务并暂停预约。\r\n');
             fs.writeFileSync(path.join(app, 'PORTABLE_NOTICES.txt'), 'This package retains original dependency licenses in node_modules and tool distributions.\n' +
                 Object.entries(assets.assets).map(([name, asset]) => `${name} ${asset.version}\n${asset.url}\nSHA256 ${asset.sha256}\n`).join('\n') +
-                `\nNode.js: runtime/LICENSE (includes bundled components).\nGit for Windows: tools/git/LICENSE.txt and component license files. Git is GPL-2.0; corresponding sources and build recipes: https://github.com/git-for-windows/git/tree/v${assets.assets.git.version} and https://github.com/git-for-windows/build-extra .\nRipgrep: tools/rg/COPYING, LICENSE-MIT, UNLICENSE.\nfd: tools/fd/LICENSE-MIT, LICENSE-APACHE.\n`);
+                `\nNode.js: runtime/LICENSE and repair/runtime/LICENSE (includes bundled components).\nGit for Windows: tools/git/LICENSE.txt and component license files. Git is GPL-2.0; corresponding sources and build recipes: https://github.com/git-for-windows/git/tree/v${assets.assets.git.version} and https://github.com/git-for-windows/build-extra .\nRipgrep: tools/rg/COPYING, LICENSE-MIT, UNLICENSE.\nfd: tools/fd/LICENSE-MIT, LICENSE-APACHE.\n`);
             for (const file of ['runtime/LICENSE', 'tools/git/LICENSE.txt', 'tools/rg/COPYING', 'tools/rg/LICENSE-MIT', 'tools/rg/UNLICENSE', 'tools/fd/LICENSE-MIT', 'tools/fd/LICENSE-APACHE'])
                 if (!fs.existsSync(path.join(app, file))) throw Error('Missing runtime license: ' + file);
+            trust.check();
+            installPortableInfrastructure(app, { trustBytes: trust.bytes, updateFeedUrl: updates.feed });
+            trust.check();
             const sourceFiles = JSON.parse(fs.readFileSync(path.join(app, 'TRIAL_MANIFEST.json'), 'utf8')).files;
             for (const file of sourceFiles) if (hash(path.join(app, file.path)) !== file.sha256) throw Error('Installation changed frozen source: ' + file.path);
             const files = inventory(app);
@@ -343,5 +371,5 @@ async function main() {
     } finally { trust.close(); }
 }
 module.exports = { portableEnvironment, inventory, download, updateOptions, updateManifest, relocateWithin,
-    portableDirectoryName, createPortableArchive, createOfflineBundle, buildUpdateOptions, prepareBuild };
+    portableDirectoryName, createPortableArchive, createOfflineBundle, installPortableInfrastructure, buildUpdateOptions, prepareBuild };
 if (require.main === module) main().catch(error => { console.error(error.stack); process.exitCode = 1; });

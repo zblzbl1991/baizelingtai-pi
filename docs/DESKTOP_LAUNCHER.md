@@ -61,7 +61,7 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File scripts/desktop-tra
 
 提交前失败，仅在候选清理获证、runner 与托盘均退出后尝试一次恢复，先保留失败数据现场。结果不明、退出无法证明或恢复失败时保留所有权并停止自动操作；提交成功并开放工作后，不自动恢复旧备份。中断的旧式候选启动若已可能写入数据，也不直接启动旧版覆盖现场。
 
-没有新协议的旧外层仍只具备原服务更新能力，页面会明确提示；带新版 EXE 的更新包本身不会给旧外层补上交接能力。旧版迁移和独立修复入口另按[设计与实施导航](development/LAUNCHER_UPDATE_WAYFINDER.md)推进。本节描述源码行为，不表示准确 Windows 包已验收、实例已部署或版本已发布。
+没有新协议的旧外层仍只具备原服务更新能力，页面会明确提示；带新版 EXE 的更新包本身不会给旧外层补上交接能力。独立修复入口和旧版人工维护范围见[修复指南](LAUNCHER_REPAIR.md)；1.7.3 的自动迁移仍会明确拒绝无法证明的清理。本节描述源码行为，不表示准确 Windows 包已验收、实例已部署或版本已发布。
 
 ## 与后台服务的关系
 
@@ -89,7 +89,7 @@ npm run pack:windows -- --update-trust C:\ReleasePublic\update-trust.json
 
 脚本使用统一公开源码清单生成快照，从官方地址下载固定版本运行环境并核对 SHA256，再用包内 Node/npm 在独立目录锁定安装生产依赖。不会复制当前 node_modules、.env、身份或运行数据。`dist/portable-cache` 只缓存已核验下载，不进入交付包。构建需要网络及 Windows tar.exe/curl.exe，无须预装 7-Zip。构建先生成应用 ZIP、同名 `.sha256` 和 `.update.unsigned.json` 草稿；维护者使用加密私钥显式签署新 `.update.json`，再以 `--bundle-only` 组装正式 `-offline.zip`，步骤见[签名与离线分发](development/UPDATE_SIGNING.md#构建草稿与正式离线分发)。未签名草稿不能作为正式更新源。正式外层只含准确应用 ZIP、校验文件和已签 `updates/latest.json`，中文文件名保持 ZIP UTF-8 标记，任一同名产物均拒绝覆盖。
 
-`scripts/windows-portable-assets.json` 是运行环境版本、地址和哈希的唯一清单。更换版本须重新验证。包内 PORTABLE_MANIFEST 记录源码归档及全部程序、依赖、工具文件哈希。根目录 THIRD_PARTY_NOTICES.md 汇总说明仅保留在仓库，不纳入源码或 Windows 包；依赖和工具原始 LICENSE/NOTICE 与 PORTABLE_NOTICES.txt 继续完整保留。
+`scripts/windows-portable-assets.json` 是运行环境版本、地址和哈希的唯一清单。更换版本须重新验证。包内 PORTABLE_MANIFEST 记录源码归档及全部程序、依赖、工具文件哈希。根目录 THIRD_PARTY_NOTICES.md 汇总说明仅保留在仓库，不纳入源码或 Windows 包；依赖和工具原始 LICENSE/NOTICE 与 PORTABLE_NOTICES.txt 继续完整保留。构建在源码冻结后添加稳定根公开信任文件和独立 `repair/` 闭包（含自己的 Node 与许可证），最后写入协议能力标记并生成完整 PORTABLE 清单。根目录 `修复白泽灵台.cmd` 只做独立诊断，具体修复须按[修复指南](LAUNCHER_REPAIR.md)显式执行。
 
 ### 内网更新源与 GitLab 分发
 
