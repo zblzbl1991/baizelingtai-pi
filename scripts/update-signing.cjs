@@ -117,6 +117,30 @@ function assertKeyChange(current, next) {
         .sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
     if (keySet(JSON.parse(current)) === keySet(next)) throw Error('No update trust change');
 }
+function assertActiveTrust(root, current, next) {
+    const stateFile = path.join(root, '.pivane-runtime/state.json');
+    let bytes;
+    try { bytes = readSafe(stateFile); }
+    catch (error) { if (error.code === 'ENOENT') return; throw error; }
+    const state = JSON.parse(bytes), activation = state.activation;
+    if (activation && !['committed', 'rolled-back'].includes(activation.phase)) {
+        throw Object.assign(Error('Update has not finished'), { code: 'ACTIVE_UPDATE_PENDING' });
+    }
+    // This is the same complete evidence/inventory verifier used by normal boot.
+    // A broken or unknown installation requires independent recovery, never a
+    // trust rewrite that could conceal the original failure.
+    const active = require('../server/pi-launcher-activation').verifyActiveProgram(root, state.active);
+    if (active.supported && active.phase === 'committed') {
+        if (active.id !== activation?.id) throw Error('Active transaction changed');
+        const keyId = activation.release?.signedManifest?.signature?.keyId;
+        const oldKey = JSON.parse(current).keys.find(key => key.keyId === keyId);
+        const nextKey = next.keys.find(key => key.keyId === keyId);
+        const samePublic = oldKey && nextKey && createPublicKey(oldKey.publicKey).export({ type: 'spki', format: 'der' })
+            .equals(createPublicKey(nextKey.publicKey).export({ type: 'spki', format: 'der' }));
+        if (!samePublic) throw Object.assign(Error('Active signer required'), { code: 'ACTIVE_SIGNER_REQUIRED' });
+    }
+    currentBytes(stateFile, bytes, 4 * 1024 * 1024);
+}
 async function main(argv) {
     const { command, args } = options([...argv]);
     if (command === 'rotation-sign') {
@@ -147,7 +171,10 @@ async function main(argv) {
             // Final verification under the same OS installation lock binds the
             // current trust bytes; only this explicitly invoked command replaces it.
             const next = signatures.verifyTrustRotation(rotation, root);
-            assertKeyChange(readSafe(path.join(root, 'config/update-trust.json'), 64 * 1024), next);
+            const trustFile = path.join(root, 'config/update-trust.json'), current = readSafe(trustFile, 64 * 1024);
+            assertKeyChange(current, next);
+            assertActiveTrust(root, current, next);
+            currentBytes(trustFile, current, 64 * 1024);
             atomicJson(path.join(root, 'config/update-trust.json'), next);
         } finally { await lock.close(); }
         process.stdout.write('授权换钥已在安装锁保护下应用。\n');
@@ -190,7 +217,11 @@ async function main(argv) {
         process.stdout.write('已生成加密私钥及独立公钥信任文件。\n');
     }
 }
-if (require.main === module) main(process.argv.slice(2)).catch(() => {
+if (require.main === module) main(process.argv.slice(2)).catch(error => {
     // Never print OpenSSL errors, stack traces, input arguments, key material or passwords.
-    process.stderr.write('签名工具操作失败；请核对输入、口令、信任配置及输出文件状态。\n'); process.exitCode = 1;
+    const message = error?.code === 'ACTIVE_SIGNER_REQUIRED'
+        ? '当前已提交版本仍依赖原签名密钥；请先加入新密钥、完成新密钥版本升级，再移除旧密钥。'
+        : error?.code === 'ACTIVE_UPDATE_PENDING' ? '升级尚未完成；请先结束升级或进入独立恢复流程，再执行换钥。'
+            : '签名工具操作失败；请核对输入、口令、信任配置及输出文件状态。';
+    process.stderr.write(message + '\n'); process.exitCode = 1;
 });
