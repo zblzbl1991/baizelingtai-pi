@@ -6,6 +6,7 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
 const { once } = require('node:events');
+const { signer } = require('./update-signature-helper.cjs');
 const { portableEnvironment, inventory, download, updateOptions, updateManifest, relocateWithin,
     portableDirectoryName, createPortableArchive, createOfflineBundle, buildUpdateOptions, prepareBuild } = require('../scripts/package-windows-portable.cjs');
 
@@ -129,11 +130,13 @@ test('offline transfer ZIP matches the GitLab detection path and preserves the e
         fs.writeFileSync(path.join(base, '.baizelingtai-update-build.json'),
             JSON.stringify({ version: 1, gitlabProjectUrl: 'http://gitlab.example/team/baizelingtai' }));
         const options = buildUpdateOptions(base, '1.8.0');
-        const manifest = updateManifest({ archive, sha256, bytes: original.length,
-            appVersion: '1.8.0', piVersion: '1.2.0', options });
+        const sign = signer(base);
+        const manifest = sign(updateManifest({ archive, sha256, bytes: original.length,
+            appVersion: '1.8.0', piVersion: '1.2.0', options }));
+        const bundleOptions = { trustFile: path.join(base, 'config/update-trust.json'), feed: options.feed };
         fs.writeFileSync(archive + '.update.json', JSON.stringify(manifest));
         fs.writeFileSync(path.join(base, 'private.env'), 'must not be included');
-        createOfflineBundle(archive, bundle);
+        createOfflineBundle(archive, bundle, bundleOptions);
         const script = `$ErrorActionPreference='Stop'
             Add-Type -AssemblyName System.IO.Compression.FileSystem
             $zip=[IO.Compression.ZipFile]::OpenRead($env:PIVANE_TEST_ZIP)
@@ -151,7 +154,7 @@ test('offline transfer ZIP matches the GitLab detection path and preserves the e
         assert.deepEqual(JSON.parse(fs.readFileSync(path.join(extracted, 'updates/latest.json'), 'utf8')), manifest);
         const requests = [];
         const { UpdateService } = require('../server/pi-update-service');
-        const service = new UpdateService({ env: { BAIZELINGTAI_UPDATE_FEED_URL: options.feed },
+        const service = new UpdateService({ root: base, env: { BAIZELINGTAI_UPDATE_FEED_URL: options.feed },
             appVersion: '1.7.3', piVersion: '1.1.0', platform: 'win32', arch: 'x64',
             fetch: async url => {
                 requests.push(url);
@@ -169,11 +172,11 @@ test('offline transfer ZIP matches the GitLab detection path and preserves the e
         assert.equal(detected.pivane.sha256, sha256);
         assert.equal(detected.pivane.bytes, original.length);
         const before = fs.readFileSync(bundle);
-        assert.throws(() => createOfflineBundle(archive, bundle), /already exists/);
+        assert.throws(() => createOfflineBundle(archive, bundle, bundleOptions), /already exists/);
         assert.deepEqual(fs.readFileSync(bundle), before);
         assert.ok(!fs.readdirSync(base).some(name => name.startsWith('.baizelingtai-') && name.endsWith('.zip')));
         fs.unlinkSync(archive + '.sha256');
-        assert.throws(() => createOfflineBundle(archive, app + '-incomplete.zip'), /ENOENT/);
+        assert.throws(() => createOfflineBundle(archive, app + '-incomplete.zip', bundleOptions));
         assert.equal(fs.existsSync(app + '-incomplete.zip'), false);
     });
 

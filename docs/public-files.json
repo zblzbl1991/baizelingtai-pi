@@ -9,7 +9,6 @@
     "PRODUCT.md",
     "README.md",
     "README.zh-CN.md",
-    "THIRD_PARTY_NOTICES.md",
     "WAYFINDER.md",
     "docs/ACCESS_CONTROL.md",
     "docs/adr/0001-staffing-ledger-authority.md",
@@ -115,5 +114,8 @@
     "docs/agents/domain.md",
     "docs/development/LAUNCHER_UPDATE_WAYFINDER.md",
     "docs/development/design/launcher-auto-update.md"
+  ],
+  "repositoryOnly": [
+    "THIRD_PARTY_NOTICES.md"
   ]
 }

@@ -198,4 +198,4 @@ To set up a development environment, run `node scripts/install.cjs`, then check 
 
 ## License
 
-白泽灵台 is released under the [ISC License](LICENSE). Pi, Font Awesome, KaTeX, Mermaid and other bundled components keep their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).
+白泽灵台 is released under the [ISC License](LICENSE). Pi, Font Awesome, KaTeX, Mermaid and other bundled components keep their own licenses; see the repository's [Third-party notices](https://github.com/zblzbl1991/baizelingtai-pi/blob/HEAD/THIRD_PARTY_NOTICES.md).

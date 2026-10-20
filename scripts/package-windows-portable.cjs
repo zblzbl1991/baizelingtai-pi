@@ -8,6 +8,10 @@ const { tarInvocation } = require('./package-tar.cjs');
 const root = path.resolve(__dirname, '..');
 const assets = require('./windows-portable-assets.json');
 const { feedUrl, sourceLink, parseFeed } = require('../server/pi-update-feed');
+const { readSafe, hashFileSafe } = require('../server/pi-maintenance-files');
+const io = require('../server/pi-file-io');
+const { descriptorPathSync } = require('../server/pi-file-descriptor');
+const signatures = require('../server/pi-update-signatures');
 const hash = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const system = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
 const tar = path.join(system, 'tar.exe');
@@ -21,23 +25,48 @@ function createPortableArchive(app, archive) {
     createZip(path.dirname(app), [path.basename(app)], archive);
 }
 
-function createOfflineBundle(archive, bundle) {
+function createOfflineBundle(archive, bundle, { manifestFile = archive + '.update.json', trustFile, feed } = {}) {
     if (fs.existsSync(bundle)) throw Error('Portable archive already exists.');
-    const entries = [archive, archive + '.sha256', archive + '.update.json'];
-    for (const file of entries) {
-        if (!fs.lstatSync(file).isFile()) throw Error('Offline bundle requires regular package files.');
-    }
-    const names = [path.basename(archive), path.basename(archive) + '.sha256', 'updates/latest.json'];
-    const staging = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'baizelingtai-offline-bundle-')));
+    const trust = trustInput(trustFile);
+    let staging;
     try {
+        const source = feedUrl(feed), manifestBytes = readSafe(path.resolve(manifestFile), 64 * 1024);
+        let data;
+        try { data = JSON.parse(manifestBytes); } catch { throw Error('Invalid signed update manifest'); }
+        const candidate = parseFeed(data, { source, platform: 'win32', arch: 'x64', channel: 'preview', compareVersions: require('../server/pi-update-service').compareVersions });
+        if (!candidate) throw Error('No applicable Windows signed release');
+        signatures.verifyFeedSignatureWithTrust(data, trust.bytes);
+        const proof = hashFileSafe(archive, 1024 ** 3), checksum = readSafe(archive + '.sha256', 1024);
+        if (proof.bytes !== data.bytes || proof.sha256 !== data.sha256 || checksum.toString('utf8') !== `${proof.sha256}  ${path.basename(archive)}\n`) throw Error('Signed offline archive identity mismatch');
+        const names = [path.basename(archive), path.basename(archive) + '.sha256', 'updates/latest.json'];
+        staging = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'baizelingtai-offline-bundle-')));
         fs.mkdirSync(path.join(staging, 'updates'));
-        // Keep the ZIP bytes intact; publish the sidecar at the configured GitLab repository path.
-        for (let i = 0; i < entries.length; i++) fs.copyFileSync(entries[i], path.join(staging, names[i]), fs.constants.COPYFILE_EXCL);
-        // Only these three artifacts belong in the transfer bundle, never the dist directory.
+        fs.copyFileSync(archive, path.join(staging, names[0]), fs.constants.COPYFILE_EXCL);
+        fs.writeFileSync(path.join(staging, names[1]), checksum, { flag: 'wx' });
+        fs.writeFileSync(path.join(staging, names[2]), manifestBytes, { flag: 'wx' });
+        const copied = hashFileSafe(path.join(staging, names[0]), 1024 ** 3), after = hashFileSafe(archive, 1024 ** 3);
+        if (JSON.stringify(copied) !== JSON.stringify(proof) || JSON.stringify(after) !== JSON.stringify(proof)
+            || !readSafe(path.resolve(manifestFile), 64 * 1024).equals(manifestBytes) || !readSafe(archive + '.sha256', 1024).equals(checksum)) throw Error('Offline bundle inputs changed');
+        trust.check(); signatures.verifyFeedSignatureWithTrust(data, trust.bytes);
         createZip(staging, names, bundle);
+        const fd = io.openReadSync(bundle), identity = io.identity(fd), before = fs.fstatSync(fd, { bigint: true });
+        let failed = false;
+        try {
+            trust.check();
+            if (!readSafe(path.resolve(manifestFile), 64 * 1024).equals(manifestBytes)
+                || JSON.stringify(hashFileSafe(archive, 1024 ** 3)) !== JSON.stringify(proof)) throw Error('Offline bundle inputs changed during ZIP creation');
+            return { manifest: data, sha256: hash(bundle), bytes: Number(before.size) };
+        } catch (error) { failed = true; throw error; }
+        finally {
+            fs.closeSync(fd);
+            if (failed) {
+                const actual = fs.lstatSync(bundle, { bigint: true });
+                if (['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs'].every(key => actual[key] === before[key]) && io.sameIdentityAtPath(bundle, identity)) fs.unlinkSync(bundle);
+            }
+        }
     } finally {
-        // This exact canonical mkdtemp-created path is the only recursive cleanup target.
-        fs.rmSync(staging, { recursive: true, force: true });
+        trust.close();
+        if (staging) fs.rmSync(staging, { recursive: true, force: true });
     }
 }
 
@@ -186,22 +215,65 @@ async function download(asset, cache) {
     } finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
 }
 
+function trustInput(filename) {
+    if (!filename) throw Error('An explicit --update-trust public key file is required');
+    const file = path.resolve(filename), fd = io.openReadSync(file);
+    try {
+        const before = fs.fstatSync(fd, { bigint: true }), identity = io.identity(fd);
+        if (!before.isFile() || before.size > 64n * 1024n || descriptorPathSync(fd) !== file) throw Error('Unsafe update trust file');
+        const bytes = readSafe(file, 64 * 1024), document = signatures.readUpdateTrust(bytes);
+        const same = actual => ['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs'].every(key => actual[key] === before[key]);
+        const check = () => {
+            if (!same(fs.fstatSync(fd, { bigint: true })) || !same(fs.lstatSync(file, { bigint: true }))
+                || !io.sameIdentityAtPath(file, identity) || !readSafe(file, 64 * 1024).equals(bytes)) throw Error('Update trust file changed during build');
+        };
+        check(); let closed = false;
+        return { bytes, document, check, close() { if (!closed) { closed = true; fs.closeSync(fd); } } };
+    } catch (error) { fs.closeSync(fd); throw error; }
+}
+function buildArguments(args) {
+    const result = { urls: [] };
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        if (arg === '--dry-run') { if (result.dryRun) throw Error('Duplicate --dry-run'); result.dryRun = true; }
+        else if (['--update-trust', '--bundle-only', '--signed-manifest'].includes(arg)) {
+            const key = { '--update-trust': 'trust', '--bundle-only': 'bundleOnly', '--signed-manifest': 'signedManifest' }[arg];
+            if (result[key] || !args[i + 1] || args[i + 1].startsWith('--')) throw Error('Invalid portable build option');
+            result[key] = args[++i];
+        } else { result.urls.push(arg); if (args[i + 1]) result.urls.push(args[++i]); }
+    }
+    if (Boolean(result.bundleOnly) !== Boolean(result.signedManifest)) throw Error('Bundle-only requires a signed manifest and archive');
+    return result;
+}
 async function main() {
     if (process.platform !== 'win32' || process.arch !== 'x64') throw Error('Build this package on Windows x64 with Node.js 22.');
-    const args = process.argv.slice(2), dryRun = args.includes('--dry-run');
-    if (args.filter(arg => arg === '--dry-run').length > 1) throw Error('Duplicate --dry-run');
+    const args = buildArguments(process.argv.slice(2)), dryRun = args.dryRun;
+    const trust = trustInput(args.trust);
+    try {
+    if (args.bundleOnly) {
+        if (dryRun) throw Error('Bundle-only cannot be combined with --dry-run');
+        const options = updateOptions(args.urls);
+        if (!options.feed) throw Error('Bundle-only requires an explicit update feed URL');
+        const archive = path.resolve(args.bundleOnly);
+        if (!archive.toLowerCase().endsWith('.zip')) throw Error('Bundle-only requires an exact ZIP');
+        const bundle = archive.slice(0, -4) + '-offline.zip'; trust.check();
+        const result = createOfflineBundle(archive, bundle, { manifestFile: args.signedManifest, trustFile: args.trust, feed: options.feed });
+        console.log(JSON.stringify({ offlineBundle: bundle, offlineBundleSha256: result.sha256, offlineUpdateFeed: 'updates/latest.json',
+            archive, sha256: result.manifest.sha256, signedManifest: path.resolve(args.signedManifest), appVersion: result.manifest.version, bytes: result.manifest.bytes }, null, 2));
+        return;
+    }
     if (assets.version !== 1 || assets.platform !== 'win32' || assets.arch !== 'x64') throw Error('Invalid portable asset catalog.');
     const appVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
-    const updates = buildUpdateOptions(root, appVersion, args.filter(arg => arg !== '--dry-run'));
+    const updates = buildUpdateOptions(root, appVersion, args.urls);
     const appName = portableDirectoryName(appVersion);
     const archive = path.join(root, 'dist', `${appName}.zip`);
     const offlineBundle = path.join(root, 'dist', `${appName}-offline.zip`);
     if (dryRun) {
-        console.log(JSON.stringify({ dryRun: true, offlineBundle, offlineUpdateFeed: 'updates/latest.json', archive,
-            updateFeed: archive + '.update.json', updates }, null, 2));
+        console.log(JSON.stringify({ dryRun: true, launcherUpdateProtocol: 1, offlineBundle: null, archive,
+            unsignedManifest: archive + '.update.unsigned.json', signedManifest: null, updates }, null, 2));
         return;
     }
-    if ([archive, archive + '.sha256', archive + '.update.json', offlineBundle].some(file => fs.existsSync(file)))
+    if ([archive, archive + '.sha256', archive + '.update.unsigned.json', archive + '.update.json', offlineBundle].some(file => fs.existsSync(file)))
         throw Error('Portable output already exists; preserve or move the existing package before building.');
     prepareBuild(root);
     const cache = path.join(root, 'dist/portable-cache'); fs.mkdirSync(cache, { recursive: true });
@@ -239,7 +311,9 @@ async function main() {
         execFileSync(node, [path.join(app, 'scripts/install.cjs'), '--omit=dev'], { cwd: app, env, stdio: 'inherit', windowsHide: true });
         execFileSync(node, [path.join(app, 'scripts/install-office-preview.cjs'), '--require-available'], { cwd: app, env, stdio: 'inherit', windowsHide: true });
         // Retain installed dependency and tool licenses in full; do not prune packages.
-        fs.writeFileSync(path.join(app, 'baizelingtai-portable.json'), JSON.stringify({ version: 1, platform: 'win32', arch: 'x64',
+        trust.check();
+        fs.writeFileSync(path.join(app, 'config/update-trust.json'), JSON.stringify(trust.document, null, 2) + '\n', { flag: 'wx' });
+        fs.writeFileSync(path.join(app, 'baizelingtai-portable.json'), JSON.stringify({ version: 1, platform: 'win32', arch: 'x64', launcherUpdateProtocol: 1,
             ...(updates.feed ? { updateFeedUrl: updates.feed } : {}) }, null, 2) + '\n');
         fs.writeFileSync(path.join(app, '便携版使用说明.txt'), '\ufeff白泽灵台 Windows x64 便携版\r\n\r\n解压完整目录后，双击 白泽灵台.exe。无需安装 Node、Git 或 ripgrep。\r\n首次启动后在供应商与模型设置中配置自己的账户。\r\n数据默认保存在本目录 data 中；正常退出托盘后备份完整目录。\r\n已有 .env 或环境变量配置优先。移动目录不迁移已有会话中的项目路径。\r\n需要 Windows 10/11 x64、自带 Windows PowerShell 5.1、.NET Framework 4 和默认浏览器。\r\n便携包不会注册服务或开机启动。退出前保存草稿、结束任务并暂停预约。\r\n');
         fs.writeFileSync(path.join(app, 'PORTABLE_NOTICES.txt'), 'This package retains original dependency licenses in node_modules and tool distributions.\n' +
@@ -255,16 +329,18 @@ async function main() {
         createPortableArchive(app, archive);
         const sha256 = hash(archive);
         fs.writeFileSync(archive + '.sha256', `${sha256}  ${path.basename(archive)}\n`, { flag: 'wx' });
-        const bytes = fs.statSync(archive).size, updateFeed = archive + '.update.json';
+        trust.check();
+        const bytes = fs.statSync(archive).size, updateFeed = archive + '.update.unsigned.json';
         fs.writeFileSync(updateFeed, JSON.stringify(updateManifest({ archive, sha256, bytes, appVersion: snapshot.appVersion,
             piVersion: snapshot.piVersion, options: updates }), null, 2) + '\n', { flag: 'wx' });
-        createOfflineBundle(archive, offlineBundle);
-        console.log(JSON.stringify({ offlineBundle, offlineBundleSha256: hash(offlineBundle), offlineUpdateFeed: 'updates/latest.json', archive, sha256, updateFeed,
+        trust.check();
+        console.log(JSON.stringify({ offlineBundle: null, unsignedManifest: updateFeed, signedManifest: null, archive, sha256,
             appVersion: snapshot.appVersion, files: files.length, bytes }, null, 2));
     } finally {
         // This exact, canonical, mkdtemp-created path is the only recursive cleanup target.
         fs.rmSync(temporary, { recursive: true, force: true });
     }
+    } finally { trust.close(); }
 }
 module.exports = { portableEnvironment, inventory, download, updateOptions, updateManifest, relocateWithin,
     portableDirectoryName, createPortableArchive, createOfflineBundle, buildUpdateOptions, prepareBuild };
