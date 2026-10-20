@@ -52,6 +52,7 @@ class UpdateService {
         this.platform = options.platform || process.platform;
         this.arch = options.arch || process.arch;
         this.root = options.root || path.resolve(__dirname, '..');
+        this.installationRoot = options.installationRoot || (this.env.PI_MANAGED_LAUNCHER && this.env.PI_MANAGED_BASE) || this.root;
         this.feed = configuredFeed(this.root, this.env);
         this.releasesPage = this.feed ? sourceLink(this.env.BAIZELINGTAI_UPDATE_RELEASES_URL || this.feed, this.feed) : RELEASE_PAGE;
         this.feedPending = new Map();
@@ -123,8 +124,8 @@ class UpdateService {
             const data = await this.json(this.feed);
             const candidate = parseFeed(data, { source: this.feed, platform: this.platform, arch: this.arch, channel, compareVersions, releasesUrl: this.releasesPage });
             const signatures = require('./pi-update-signatures');
-            const verification = signatures.signatureRequired(this.root) || data.signature !== undefined
-                ? { status: 'verified', ...signatures.verifyFeedSignature(data, this.root) } : { status: 'unverified' };
+            const verification = signatures.signatureRequired(this.installationRoot) || data.signature !== undefined
+                ? { status: 'verified', ...signatures.verifyFeedSignature(data, this.installationRoot) } : { status: 'unverified' };
             return candidate && { ...candidate, verification };
         }).finally(() => this.feedPending.delete(channel));
         this.feedPending.set(channel, pending);
@@ -202,7 +203,7 @@ function mountUpdateRoutes(router, service = new UpdateService(), hooks = {}) {
                 if (service.feed) {
                     release = { format: 'windows-portable-zip', feed: service.feed, channel, version, piVersion: candidate.piVersion,
                         downloadUrl: candidate.downloadUrl, bytes: candidate.bytes, sha256: candidate.sha256, signedManifest: candidate.signedManifest };
-                    require('./pi-update-signatures').verifyReleaseSignature(release, service.root);
+                    require('./pi-update-signatures').verifyReleaseSignature(release, service.installationRoot);
                     if (!require('./pi-portable-installer').validPortable(release, service.feed)) throw Error('Invalid portable release');
                 } else {
                     const bytes = await require('./pi-application-installer').download(candidate.checksumUrl, { env: service.env, maxBytes: 1024 });

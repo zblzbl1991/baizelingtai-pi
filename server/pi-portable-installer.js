@@ -148,12 +148,12 @@ try {
     return manifest;
 }
 
-async function stagePortable({ root, directory, release, env, signal, progress = () => {}, onOutput = () => {} }) {
+async function stagePortable({ root, installationRoot = root, directory, release, env, signal, progress = () => {}, onOutput = () => {} }) {
     release = JSON.parse(JSON.stringify(release));
     const feed = configuredFeed(root, env);
     if (!supported(root) || !validPortable(release, feed)) throw Error('Portable update source or installation mismatch');
     const signatures = require('./pi-update-signatures');
-    signatures.verifyReleaseSignature(release, root);
+    signatures.verifyReleaseSignature(release, installationRoot);
     const sourceManifest = JSON.parse(readSafe(path.join(root, 'TRIAL_MANIFEST.json'), 16 * 1024 ** 2));
     const verifySource = async () => {
         if (!Array.isArray(sourceManifest.files) || sourceManifest.files.length > 20000) throw Error('Current source baseline unavailable');
@@ -166,8 +166,8 @@ async function stagePortable({ root, directory, release, env, signal, progress =
     };
     await verifySource();
     const verifyTarget = async () => {
-        signatures.verifyReleaseSignature(release, root);
-        const service = new (require('./pi-update-service').UpdateService)({ root, env });
+        signatures.verifyReleaseSignature(release, installationRoot);
+        const service = new (require('./pi-update-service').UpdateService)({ root, installationRoot, env });
         const candidate = await service.manifest(release.channel);
         if (!candidate || ['version', 'piVersion', 'downloadUrl', 'sha256', 'bytes'].some(key => candidate[key] !== release[key])
             || !candidate.signedManifest || !signatures.releaseSignaturePayload(candidate.signedManifest).equals(signatures.releaseSignaturePayload(release.signedManifest))

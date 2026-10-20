@@ -21,12 +21,12 @@ function releaseSignaturePayload(manifest) {
 function signedManifest(manifest) {
     // Snapshot only protocol fields. Remote key declarations have no authority.
     const result = Object.fromEntries(FIELDS.filter(field => manifest[field] !== undefined).map(field => [field, manifest[field]]));
-    if (manifest.signature !== undefined) result.signature = JSON.parse(JSON.stringify(manifest.signature));
-    return result;
+    if (manifest.signature !== undefined) result.signature = Object.freeze(JSON.parse(JSON.stringify(manifest.signature)));
+    return Object.freeze(result);
 }
-function trustedKeys(root) {
+function trustedKeys(root, bytes) {
     let trust;
-    try { trust = JSON.parse(readSafe(trustFile(root), 64 * 1024)); }
+    try { trust = JSON.parse(bytes || readSafe(trustFile(root), 64 * 1024)); }
     catch { throw Error('Trusted update keys unavailable'); }
     if (trust?.schemaVersion !== 1 || !Array.isArray(trust.keys) || !trust.keys.length || trust.keys.length > 16) throw Error('Invalid trusted update keys');
     const result = new Map();
@@ -40,23 +40,40 @@ function trustedKeys(root) {
     }
     return result;
 }
-function verifyFeedSignature(manifest, installationRoot) {
-    const keys = trustedKeys(installationRoot), signature = manifest?.signature;
+function verifySignature(signature, payload, keys) {
     if (!signature || signature.algorithm !== 'ed25519' || !keys.has(signature.keyId)
         || typeof signature.value !== 'string' || !/^[A-Za-z0-9+/]{86}==$/.test(signature.value)
         || Object.keys(signature).some(key => !['algorithm', 'keyId', 'value'].includes(key))) throw Error('Untrusted update signature');
-    const bytes = Buffer.from(signature.value, 'base64'), payload = releaseSignaturePayload(manifest);
+    const bytes = Buffer.from(signature.value, 'base64');
     if (bytes.length !== 64 || bytes.toString('base64') !== signature.value || !verify(null, payload, keys.get(signature.keyId), bytes)) throw Error('Invalid update signature');
     return { keyId: signature.keyId, payloadSha256: createHash('sha256').update(payload).digest('hex') };
+}
+function verifyFeedSignature(manifest, installationRoot) {
+    return verifySignature(manifest?.signature, releaseSignaturePayload(manifest), trustedKeys(installationRoot));
+}
+function trustRotationPayload(rotation) {
+    if (rotation?.schemaVersion !== 1 || !/^[a-f0-9]{64}$/.test(rotation.previousTrustSha256 || '')) throw Error('Invalid update key rotation');
+    const trust = { schemaVersion: 1, keys: rotation.keys };
+    trustedKeys('', Buffer.from(JSON.stringify(trust)));
+    const keys = [...rotation.keys].sort((a, b) => a.keyId < b.keyId ? -1 : a.keyId > b.keyId ? 1 : 0).map(key => [key.keyId, key.publicKey]);
+    return Buffer.from(JSON.stringify(['pivane-update-key-rotation-v1', 1, rotation.previousTrustSha256, keys]), 'utf8');
+}
+function verifyTrustRotation(rotation, installationRoot) {
+    // Read only: the caller must own the installation lock, obtain explicit local
+    // authorization and install atomically. Feeds never call this function.
+    const current = readSafe(trustFile(installationRoot), 64 * 1024);
+    if (createHash('sha256').update(current).digest('hex') !== rotation?.previousTrustSha256) throw Error('Update trust changed; rotation refused');
+    verifySignature(rotation.signature, trustRotationPayload(rotation), trustedKeys(installationRoot, current));
+    return { schemaVersion: 1, keys: rotation.keys.map(key => ({ keyId: key.keyId, publicKey: key.publicKey })) };
 }
 function verifyReleaseSignature(release, installationRoot) {
     const manifest = release?.signedManifest;
     const proof = verifyFeedSignature(manifest, installationRoot);
-    const { sourceLink } = require('./pi-update-feed');
-    if (release.format !== 'windows-portable-zip' || manifest.platform !== 'win32' || manifest.arch !== 'x64'
-        || !['stable', 'preview'].includes(release.channel) || release.channel === 'stable' && manifest.channel !== 'stable'
+    const { sourceLink, feedUrl } = require('./pi-update-feed');
+    if (feedUrl(release.feed) !== release.feed || release.format !== 'windows-portable-zip' || manifest.platform !== 'win32' || manifest.arch !== 'x64'
+        || !['stable', 'preview'].includes(manifest.channel) || !['stable', 'preview'].includes(release.channel) || release.channel === 'stable' && manifest.channel !== 'stable'
         || ['version', 'piVersion', 'bytes', 'sha256'].some(field => release[field] !== manifest[field])
-        || sourceLink(manifest.package, release.feed) !== release.downloadUrl) throw Error('Signed portable target mismatch');
+        || sourceLink(manifest.package, release.feed) !== release.downloadUrl || !new URL(release.downloadUrl).pathname.endsWith('.zip')) throw Error('Signed portable target mismatch');
     return proof;
 }
-module.exports = { releaseSignaturePayload, signedManifest, signatureRequired, verifyFeedSignature, verifyReleaseSignature };
+module.exports = { releaseSignaturePayload, signedManifest, signatureRequired, verifyFeedSignature, verifyReleaseSignature, trustRotationPayload, verifyTrustRotation };

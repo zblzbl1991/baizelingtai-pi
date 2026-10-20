@@ -24,9 +24,9 @@ function install(t) {
         { keyId: 'release-2026', publicKey: keys.publicKey.export({ type: 'spki', format: 'pem' }) } ] }));
     return { root, ...keys };
 }
-function service(root, data) {
+function service(root, data, options = {}) {
     return new UpdateService({ root, appVersion: '1.8.0', piVersion: '1.1.0', platform: 'win32', arch: 'x64',
-        env: { BAIZELINGTAI_UPDATE_FEED_URL: source }, fetch: async () => ({ ok: true, json: async () => data }) });
+        env: { BAIZELINGTAI_UPDATE_FEED_URL: source }, fetch: async () => ({ ok: true, json: async () => data }), ...options });
 }
 
 test('trusted installation rejects unsigned releases at the update-check boundary', async t => {
@@ -104,4 +104,48 @@ test('unsigned legacy read-only diagnostics are explicitly unverified and cannot
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api/pi/settings/updates/review`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'application' }) });
     assert.equal(response.status, 503); assert.equal(maintenance.tickets.size, 0);
+});
+
+test('reviewed signed payload cannot be mutated through the returned ticket before execution', t => {
+    const { root, privateKey } = install(t), data = signed(manifest(), privateKey), sent = [];
+    const client = new MaintenanceClient({ managed: true, nonce: 'sealed', send: message => sent.push(message) });
+    client.receive({ type: 'maintenance-status', nonce: 'sealed', status: { supported: true, appUpdateSupported: true } });
+    client.receive({ type: 'maintenance-activate', nonce: 'sealed' });
+    const release = { format: 'windows-portable-zip', feed: source, version: data.version, channel: 'stable', piVersion: data.piVersion,
+        bytes: data.bytes, sha256: data.sha256, downloadUrl: new URL(data.package, source).href, signedManifest: data };
+    const ticket = client.review({ action: 'application', version: data.version, release }, () => true);
+    ticket.release.signedManifest.signature.value = 'changed'; release.signedManifest.bytes = 9;
+    client.execute({ ticket: ticket.id, confirmed: true, draftsSaved: true, externalWritersStopped: true }, { idle: () => true, pause() {} });
+    assert.equal(sent[0].release.signedManifest.signature.value.length, 88);
+    assert.equal(sent[0].release.signedManifest.bytes, 5);
+});
+
+test('locally applied key rotation must be authorized by an existing key and bind the exact previous trust file', async t => {
+    const { root, privateKey } = install(t), next = generateKeyPairSync('ed25519');
+    const previousTrustSha256 = require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(root, 'config/update-trust.json'))).digest('hex');
+    const keys = [{ keyId: 'release-next', publicKey: next.publicKey.export({ type: 'spki', format: 'pem' }) }];
+    const payload = ['pivane-update-key-rotation-v1', 1, previousTrustSha256, keys.map(key => [key.keyId, key.publicKey])];
+    const rotation = { schemaVersion: 1, previousTrustSha256, keys, signature: { algorithm: 'ed25519', keyId: 'release-2026',
+        value: sign(null, Buffer.from(JSON.stringify(payload)), privateKey).toString('base64') } };
+    const { verifyTrustRotation } = require('../server/pi-update-signatures');
+    assert.throws(() => verifyTrustRotation({ ...rotation, previousTrustSha256: '0'.repeat(64) }, root));
+    assert.throws(() => verifyTrustRotation({ ...rotation, signature: { ...rotation.signature, keyId: 'release-next' } }, root));
+    const nextTrust = verifyTrustRotation(rotation, root);
+    // Simulate an independently authorized local installation, never remote self-authorization.
+    fs.writeFileSync(path.join(root, 'config/update-trust.json'), JSON.stringify(nextTrust));
+    assert.equal((await service(root, signed(manifest(), privateKey)).check()).pivane.status, 'error');
+    const data = signed(manifest(), next.privateKey); data.signature.keyId = 'release-next';
+    assert.equal((await service(root, data).check()).pivane.status, 'available');
+    assert.throws(() => verifyTrustRotation(rotation, root));
+});
+
+test('managed service verifies against stable installation keys rather than candidate-provided keys', async t => {
+    const stable = install(t), candidate = install(t);
+    const data = signed(manifest(), stable.privateKey);
+    const updates = new UpdateService({ root: candidate.root, appVersion: '1.8.0', platform: 'win32', arch: 'x64',
+        env: { BAIZELINGTAI_UPDATE_FEED_URL: source, PI_MANAGED_LAUNCHER: 'synthetic-nonce', PI_MANAGED_BASE: stable.root },
+        fetch: async () => ({ ok: true, json: async () => data }) });
+    assert.equal((await updates.check()).pivane.verification.status, 'verified');
+    const forged = service(candidate.root, signed(manifest(), candidate.privateKey), { installationRoot: stable.root });
+    assert.equal((await forged.check()).pivane.status, 'error');
 });

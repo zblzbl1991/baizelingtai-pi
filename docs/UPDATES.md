@@ -16,6 +16,22 @@ Windows 便携版可通过 `npm run pack:windows` 自动读取本机 `.baizeling
 
 清单 `schemaVersion:1` 包含 `version`、`piVersion`、`platform:"win32"`、`arch:"x64"`、`channel:"stable"或"preview"`、ISO `publishedAt`、`package`、小写 64 位 `sha256`、正整数 `bytes` 和可选 `releasesUrl`。版本必须为 SemVer；stable 不允许预发布应用版本。`package` 可为相对清单地址的 ZIP 路径或同源完整地址，发布页也须同源；不接受跨域、凭据 URL 或其他安装包格式。其他平台/架构或 stable 查询遇到 preview 清单显示暂无适用发布。当前清单只描述一个候选包，stable/preview 同时分发可使用各自清单地址。
 
+### 发布者签名与首次信任
+
+可信更新模式使用安装根的 `config/update-trust.json`，格式为 `{"schemaVersion":1,"keys":[{"keyId":"release-2026","publicKey":"PEM SPKI 公钥"}]}`，只支持 Ed25519 公钥，最多 16 个且标识不重复。公钥必须由独立可信渠道首次交付；清单里的公钥、陌生 keyId、公开 `trusted` 或 `verified` 布尔值都不能增加信任。私钥由发布者单独保管，不进入源码、更新仓库或发行包。
+
+清单仍使用 `schemaVersion:1`，增加 `signature:{algorithm:"ed25519",keyId,value}`，`value` 是 64 字节 Ed25519 签名的标准 Base64 编码。签名载荷为下面数组的 `JSON.stringify` UTF-8 字节，无末尾换行、无 Unicode 归一化，字段顺序固定；`releasesUrl` 缺省时使用 `null`：
+
+```text
+["pivane-release-v1",schemaVersion,version,piVersion,platform,arch,channel,publishedAt,package,sha256,bytes,releasesUrl或null]
+```
+
+`package` 和 `releasesUrl` 签署清单中的原始字符串；相对链接在执行时按已配置的 feed 解析，并继续遵守同源限制。版本检查保留完整 `signedManifest`，已验证候选返回 `verification:{status:"verified",keyId,payloadSha256}`。维护 review 把同一载荷深拷贝进一次性票据，execute 不接受浏览器覆盖；暂存前后重新验签、重新读取源，任何已签名字段或签名变化均要求重新检查与确认。ZIP 和逐文件完整性校验仍须通过。
+
+声明 `launcherUpdateProtocol:1` 的便携包或存在本地信任文件的安装，缺失公钥、无签名、签名无效或未知签名者均显示检查失败，不降级为可更新版本。没有信任文件和协议标识的源码/旧安装仅保留 `verification.status:"unverified"` 的只读诊断，不能生成便携版安装票据或执行暂存。旧解析器能忽略新增签名字段，但旧版本不会因此获得验签能力。
+
+普通远程更新不安装新信任根。密钥轮换验证使用 `verifyTrustRotation`：旧受信密钥签署域标识 `pivane-update-key-rotation-v1`、schemaVersion、当前信任文件准确 SHA256 和按 keyId 排序的下一组 `[keyId,publicKey]`，核验后只返回新信任文档，不自行写入。安装轮换须通过本机显式维护入口、持有安装锁并原子保存；当前信任文件已变化或轮换重放会拒绝。密钥丢失/泄露不从陌生远程密钥恢复，改走独立可信交付。
+
 推荐在公开 GitLab 项目保存 `updates/latest.json`，大 ZIP 放在该项目的 Generic Package Registry，或与清单一起放在仓库/内网静态站点。先上传验收通过的准确 ZIP，再发布其清单；不要只上传清单而把下载地址留在外网。同版本正式包不覆盖，版本号不变的重新构建不会提示升级。GitLab 项目的公开可见性不保证 Package Registry 已允许匿名下载，发布前须从用户网络确认清单和 ZIP 均无需登录。
 
 `npm run pack:windows` 的外层 `-offline.zip` 解压后提供应用 ZIP、同名 `.sha256` 和 `updates/latest.json`。将清单按该路径提交到内网 GitLab 仓库，将应用 ZIP 上传到清单 `package` 指定的 Generic Package Registry 地址；两处都就绪后自动检测和下载才可用。外层 ZIP 用于搬运，更新器下载内部应用 ZIP。
