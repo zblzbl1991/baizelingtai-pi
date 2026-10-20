@@ -48,6 +48,18 @@ function verifySignature(signature, payload, keys) {
     if (bytes.length !== 64 || bytes.toString('base64') !== signature.value || !verify(null, payload, keys.get(signature.keyId), bytes)) throw Error('Invalid update signature');
     return { keyId: signature.keyId, payloadSha256: createHash('sha256').update(payload).digest('hex') };
 }
+function readUpdateTrust(bytes) {
+    let trust;
+    try { trust = JSON.parse(bytes); } catch { throw Error('Invalid update public trust document'); }
+    if (!trust || Object.keys(trust).some(key => !['schemaVersion', 'keys'].includes(key))
+        || !Array.isArray(trust.keys) || trust.keys.some(key => !key || Object.keys(key).some(name => !['keyId', 'publicKey'].includes(name)))) throw Error('Invalid update public trust document');
+    const keys = trustedKeys('', bytes);
+    return { schemaVersion: 1, keys: [...keys].map(([keyId, key]) => ({ keyId, publicKey: key.export({ type: 'spki', format: 'pem' }) })) };
+}
+function verifyFeedSignatureWithTrust(manifest, trustBytes) {
+    readUpdateTrust(trustBytes);
+    return verifySignature(manifest?.signature, releaseSignaturePayload(manifest), trustedKeys('', trustBytes));
+}
 function verifyFeedSignature(manifest, installationRoot) {
     return verifySignature(manifest?.signature, releaseSignaturePayload(manifest), trustedKeys(installationRoot));
 }
@@ -76,4 +88,4 @@ function verifyReleaseSignature(release, installationRoot) {
         || sourceLink(manifest.package, release.feed) !== release.downloadUrl || !new URL(release.downloadUrl).pathname.endsWith('.zip')) throw Error('Signed portable target mismatch');
     return proof;
 }
-module.exports = { releaseSignaturePayload, signedManifest, signatureRequired, verifyFeedSignature, verifyReleaseSignature, trustRotationPayload, verifyTrustRotation };
+module.exports = { readUpdateTrust, verifyFeedSignatureWithTrust, releaseSignaturePayload, signedManifest, signatureRequired, verifyFeedSignature, verifyReleaseSignature, trustRotationPayload, verifyTrustRotation };

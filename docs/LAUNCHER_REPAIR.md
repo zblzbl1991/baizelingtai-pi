@@ -2,11 +2,11 @@
 
 独立修复程序用于主启动 EXE 不可用时检查同一次升级。它保持原安装身份，使用原安装锁、签名信任和完整文件证据；不根据窗口关闭、PID 消失或退出码 0 推断可以恢复数据。整包升级的产品边界见[设计记录](development/design/launcher-auto-update.md)。
 
-本文描述源码中的 CLI。便携包仍须完成独立闭包、公钥交付和准确包验收，不能仅凭源码工具存在就认定旧版迁移成功。打包验收边界见[发布流程](development/RELEASING.md)。
+本文描述源码中的 CLI 与便携构建布局。构建会交付独立闭包和显式提供的公钥；真实进程退出、原快捷方式和旧版迁移仍须准确包验收，不能仅凭源码或合成夹具通过认定成功。打包验收边界见[发布流程](development/RELEASING.md)。
 
 ## 从独立程序开始诊断
 
-完整便携交付将修复 Node 和全部代码放在原安装根的 `repair/`，不加载主 EXE、原程序的 Node 或 `node_modules`：
+便携构建把独立 Node、原始许可证和修复代码/native 闭包放在原安装根的 `repair/`，把经校验的公开信任文件放在 `config/update-trust.json`，并将这些文件纳入完整 PORTABLE 清单。根目录的 `修复白泽灵台.cmd` 使用该独立 Node 执行只读 `diagnose`，显示结果后等待按键；它不自动执行入口替换或数据回退。诊断不加载主 EXE、原程序的 Node 或 `node_modules`：
 
 ```powershell
 & '.\repair\runtime\node.exe' '.\repair\scripts\repair-launcher.cjs' diagnose 'D:\Apps\pivane'

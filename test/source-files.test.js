@@ -63,6 +63,9 @@ test('release inventory includes its own discovery and checking tools and exclud
     assert.equal(files.some(file => /^(?:backups|docs\/local|\.pivane-runtime|node_modules)\//.test(file)), false);
     assert.equal(files.some(file => /^public\/(?:images|audio|videos|downloads|legacy-workspace)\//.test(file)), false);
     assert.equal(files.includes('AGENTS.local.md'), false);
+    assert.equal(files.includes('THIRD_PARTY_NOTICES.md'), false);
+    for (const file of ['LICENSE', 'public/vendor/mermaid-LICENSE.txt', 'public/vendor/katex-0.18.7/LICENSE',
+        'public/brand/fontawesome-6.4.0/LICENSE.txt', 'native/officecli/LICENSE', 'native/officecli/NOTICE']) assert.ok(files.includes(file), file);
     assert.ok(files.includes('config/officecli.json'));
     assert.ok(files.includes(require('../server/officecli/inventory').inventory().relative));
     assert.ok(files.includes('pi-packages/officecli/skills/office-documents/SKILL.md'));

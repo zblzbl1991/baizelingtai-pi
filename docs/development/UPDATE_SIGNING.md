@@ -1,6 +1,6 @@
 # 更新清单签名工具
 
-本页描述维护者本机显式运行的离线工具 `scripts/update-signing.cjs`。它不联网、不读取环境变量中的密码、不会自行发布或操作业务数据。包构建与签名分开进行；此工具已经实现密钥生成、准确归档签名及授权换钥，但不表示便携包接线、整套启动器升级或实机发布验收已经完成。协议及首次信任见[版本与更新](../UPDATES.md#发布者签名与首次信任)。
+本页描述维护者本机显式运行的离线工具 `scripts/update-signing.cjs`。它不联网、不读取环境变量中的密码、不会自行发布或操作业务数据。包构建与签名分开进行；此工具已经实现密钥生成、准确归档签名及授权换钥，便携构建已接入显式公钥、独立修复闭包与签名后组装；源码专项不表示准确整包、真实托盘或实机发布验收已经完成。协议及首次信任见[版本与更新](../UPDATES.md#发布者签名与首次信任)。
 
 ## 生成密钥
 
@@ -27,6 +27,26 @@ node scripts/update-signing.cjs sign --private-key C:\ReleaseKeys\publisher.pem 
 清单字段沿用已有 `schemaVersion:1` 协议；`--feed` 必须是实际分发清单地址，相对 package/release 链接由该地址解析并遵守同源限制。工具在读取口令之前核对清单格式、ZIP 的准确字节数和 SHA256，签名前后使用安全读取重新核对归档及清单，验证所用私钥确实对应本地授权公钥，然后向新文件写入包含 `signature` 的完整清单。归档上限为 1 GiB，输入清单上限为 64 KiB。它核对整个 ZIP 的字节与哈希，不代替打包阶段的 ZIP 路径/逐文件清单验收或候选程序验收。
 
 已签名输入、字节数/哈希不符、源清单在等待口令时变化、不可信密钥、错误口令及已有输出都会失败；已有输出不覆盖。失败只显示固定诊断，不打印输入、密码、私钥、OpenSSL 错误或堆栈，不留下冒充成功的签名产物。输出写入及完整性复核失败时，仅清理仍可确认由本次创建的对象；身份不明则保留现场，不能据此认定发布成功。成功后仍需按发布流程验收并上传准确 ZIP 和清单，本工具不执行上传。
+
+## 构建草稿与正式离线分发
+
+`pack:windows` 只接受维护者显式提供的公钥文件。构建不读取私钥或口令，只生成准确 ZIP、同名 `.sha256` 及 `.update.unsigned.json` 草稿，不会生成正式 `.update.json` 或离线包。预览参数也需要公钥输入，预览不表示已经构建或验收：
+
+```powershell
+npm run pack:windows -- --dry-run --update-trust C:\ReleasePublic\update-trust.json
+npm run pack:windows -- --update-trust C:\ReleasePublic\update-trust.json
+```
+
+公钥在源码 TRIAL 清单冻结之后附加到便携包，随后进入完整 PORTABLE 清单和最终 ZIP；稳定安装根的这份公钥可经授权轮换，不属于不可变源码基线。包内的候选版本目录保持完整清单不可变；验签始终使用稳定安装根的公钥。
+
+以实际版本及输出文件名为准，先用本页 `sign` 命令签署 `.update.unsigned.json` 为一个新的 `.update.json`，再显式组装正式离线包：
+
+```powershell
+node scripts/update-signing.cjs sign --private-key C:\ReleaseKeys\publisher.pem --key-id release-2026 --trust-root C:\ReleaseTrust --manifest dist/baizelingtai-1.8.0.zip.update.unsigned.json --archive dist/baizelingtai-1.8.0.zip --feed https://updates.example/updates/latest.json --output dist/baizelingtai-1.8.0.zip.update.json
+npm run pack:windows -- --bundle-only dist/baizelingtai-1.8.0.zip --signed-manifest dist/baizelingtai-1.8.0.zip.update.json --update-trust C:\ReleasePublic\update-trust.json --update-feed-url https://updates.example/updates/latest.json
+```
+
+组装会重新校验显式公钥、已签清单、规范 ZIP 文件名与签名版本的对应、准确 ZIP 字节数/SHA256 和同名校验侧文件，前后核对输入身份/内容。无签名、陌生公钥、源变化、身份错位或已有输出都会拒绝。正式 `-offline.zip` 只包含准确应用 ZIP、校验侧文件和已签 `updates/latest.json`，不包含未签草稿、私钥或构建目录。`--bundle-only` 不重构应用，也不接受 `--dry-run`，避免误把预览当发布。此工具只写本机新产物，公开上传仍由维护者按发布门槛执行。
 
 ## 授权换钥
 
