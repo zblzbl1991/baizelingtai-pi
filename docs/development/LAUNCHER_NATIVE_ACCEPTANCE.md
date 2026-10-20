@@ -12,7 +12,7 @@ node test/release/native-launcher-update.cjs --previous-archive D:/qa/previous.z
 
 `--baseline-kind` 必填：`synthetic-qa` 表示另行准备的合成低版本，`published-new-protocol` 表示有对应发行证据的新协议准确旧包，`historical-legacy` 只允许 `legacy-refusal`。现有原生编译和托盘握手要求三段数字版本；例如另行构建的 `1.7.99 → 1.8.0` 可以作为 QA 基线，不能称为历史正式 1.7.3。源码提交与构建记录由验收者另外关联到准确包哈希；脚本不隐式 overlay 当前源码。
 
-成功自动链要求两个包都含本版严格 QA 续传与检查点代码、完整依赖、协议 1 和独立 repair 闭包。缺少能力记为 unsupported，不能用外部托盘 peer、直接构造 ManagedLauncher 或开发依赖 junction 补成准确包成功。外部验收器自身使用源码环境与显式 QA 浏览器依赖，应用、runner、SDK 和修复 Node 均来自已核验的准确包。
+成功自动链要求两个包都含本版严格 QA 续传与检查点代码、完整依赖、`launcherUpdateProtocol:1`、`desktopOwnerProtocol:1` 和独立 repair 闭包。缺少能力记为 unsupported，不能用外部托盘 peer、直接构造 ManagedLauncher 或开发依赖 junction 补成准确包成功。外部验收器自身使用源码环境与显式 QA 浏览器依赖，应用、runner、SDK 和修复 Node 均来自已核验的准确包。
 
 ## 真实链与隔离
 
@@ -37,6 +37,7 @@ node test/release/native-launcher-update.cjs --previous-archive D:/qa/previous.z
 | `validation-failure` / `validation-timeout` / `recovery-failure` | 有效签名完整库存候选和真实新托盘，检查点拒绝/等待原期限；真实退出后一次回退；或确定移走已知备份对象使恢复失败 |
 | `repair-entry` / `repair-changed-entry` | 真正提交与停机后删/改固定 EXE，隐藏原根主依赖；使用包内 repair 自身 Node 修复，核对保留原件字节、active 和最新数据 |
 | `postcommit-preservation` | 真正 commit 后新增数据，再请求独立回退，必须拒绝且保留最新字节 |
+| `committed-crash` | 真正 commit 后写入最新数据，先持原 service HANDLE，再通过精确 FILETIME/EXE 的同一 HANDLE 中断本轮 runner 与 tray；在实际 parent-disconnect 清理 gate 中从原快捷方式重开，须明确拒绝 `DESKTOP_OWNER_UNPROVEN`、无新 service-live/ready，且原 state/active/owner 与最新数据不变；实际绑定旧端口排除端口冲突，释放 gate 后见证旧 service 退出，独立 repair 仍拒绝而不清 owner |
 | `legacy-refusal` | 准确历史 ZIP 的只读计划与自动迁移拒绝；不启动旧进程，不宣称迁移或原生语义已验收 |
 
 检查点只读取严格授权私有 scope 的固定文件，命令一次消费，resume 绑定新回执 nonce；托盘命令同时绑定 runId、instance 和 generation。它们不提供公共 HTTP 控制、不跳验签/库存/锁/HANDLE，也不改变正常产品流程或产品时间预算。严格 QA 使用明确清理命令，不沿用旧 smoke 的 120 秒自动结束或无代次 stop 文件。
@@ -45,8 +46,8 @@ node test/release/native-launcher-update.cjs --previous-archive D:/qa/previous.z
 
 `result.json` 记录准确包/清单/公钥哈希、外部验收器闭包哈希、host Node/OS/架构、实际浏览器版本、各阶段与每代原生回执。未选场景为 not-run；只有本场景实际断言完成才 passed/退出 0，failed 退出 1，unsupported 退出 2。取消、无关网络/SDK 失败、未知故障原因不能记为预期场景成功。
 
-默认在真实清理及 held HANDLE 退出后删除两个大程序树，保留小数据、回执、状态证明与截图；`--retain-success yes` 保留程序树。所有递归删除前重新核对绝对目标仍位于本轮私有 scope。首次失败保留现场，未知结果不自动重试；若仍有未证实退出的子进程，保留并明确清理需求。期望缺失清理证明的用例单列 forced-fixture-teardown，不能将其当成产品清理证明。
+默认在真实清理及 held HANDLE 退出后删除两个大程序树，保留小数据、回执、状态证明与截图；`--retain-success yes` 保留程序树。`committed-crash` 即使断言通过也保留程序树及未证明的 owner，子进程实际退出不表示可以补造 cleanup ack 或清除记录。所有递归删除前重新核对绝对目标仍位于本轮私有 scope。首次失败保留现场，未知结果不自动重试；若仍有未证实退出的子进程，保留并明确清理需求。期望缺失清理证明的用例单列 forced-fixture-teardown，不能将其当成产品清理证明。
 
-目前场景不覆盖 committed 父 runner 与 tray 同时硬崩溃、旧 service 异步清理尚未结束时的新 owner 竞争风险；`service-cleanup-pending` 仅预留观察点。该风险仍须独立修复与真实验收，不能由正常停机或 postcommit-preservation 替代。中断后只运行实际独立 repair 诊断，未重新打开可能弹出 MessageBox 的错误 EXE，因此错误界面也不在本入口覆盖内。
+当前 22 个场景均有源码入口，准确包原生执行仍未完成。`committed-crash` 直接验证真实旧服务 HANDLE 存活期间的新服务所有者准入；它不创建或持有实际 RPC worker HANDLE，不能宣称已完成双 RPC 进程实机验收。其暂停只在真实 parent-disconnect、committed 和持久 owner 代次匹配时消费；正常停机仅观察。中断助手后的场景只运行实际独立 repair 诊断，未重新打开可能弹出 MessageBox 的错误 EXE，因此这些错误界面不在本入口覆盖内。
 
 执行前按[开发流程](WORKFLOW.md#验证矩阵)核对资源、空闲、准确输入和验收范围；一次只运行一个重型场景。源码通过不代替最终准确包整链和公开发布门槛。

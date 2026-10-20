@@ -50,14 +50,15 @@ async function committedCrash({ root, paths, env, observer, current, shortcut, r
         const rejectedGeneration = refusal.details.generation;
         const finalized = await observer.until(value => {
             const events = value.receipts.filter(receipt => receipt.point === 'tray-event' && receipt.event?.generation === rejectedGeneration);
-            const error = events.find(receipt => receipt.event.type === 'error' && receipt.event.code === 'DESKTOP_OWNER_UNPROVEN'
-                && /Previous desktop service cleanup is unproven/.test(receipt.event.message));
+            const error = events.find(receipt => receipt.event.type === 'error' && receipt.event.code === 'DESKTOP_OWNER_UNPROVEN');
             const exit = events.find(receipt => receipt.event.type === 'exited' && receipt.event.exitCode !== 0);
             const final = events.find(receipt => receipt.event.type === 'tray-finalized');
             return error && exit && final && { error, exit, final };
         }, 'new native tray reports the owner rejection and actually finalizes', 30000);
         observer.poll();
         assert.equal(observer.events(rejectedGeneration, 'ready').length, 0, 'rejected runner never admitted a business service');
+        assert.equal(observer.events(rejectedGeneration, 'stopped').some(receipt => receipt.event.clean === true), false,
+            'the refused runner cannot manufacture an old-service cleanup proof');
         assert.deepEqual([...observer.receipts.values()].filter(value => value.point === 'service-live').map(value => value.receiptId).sort(), serviceIds,
             'no additional actual service generation appeared while the old service remained live');
         assert.deepEqual(hashFileSafe(stateFile), beforeState); assert.deepEqual(observer.state(), state);
@@ -69,6 +70,8 @@ async function committedCrash({ root, paths, env, observer, current, shortcut, r
         const diagnosed = JSON.parse(diagnosis.stdout); assert.equal(diagnosed.status, 'manual-recovery');
         assert.equal(diagnosed.code, 'DESKTOP_OWNER_UNPROVEN');
         result.repairDiagnosis = diagnosed;
+        observer.poll();
+        assert.deepEqual([...observer.receipts.values()].filter(value => value.point === 'service-live').map(value => value.receiptId).sort(), serviceIds);
         assert.deepEqual(hashFileSafe(stateFile), beforeState, 'child absence and independent repair do not clear the unproven owner');
         assert.deepEqual(hashFileSafe(newest), newestProof, 'committed latest data never rolls back');
         assert.deepEqual(observer.state(), state);

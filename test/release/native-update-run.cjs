@@ -200,7 +200,7 @@ async function runAcceptance(options, inputs) {
             const metadata = jsonFile(require('../../server/pi-update-feed').portableMetadataFile(directory));
             if (metadata.launcherUpdateProtocol !== 1 || !fs.existsSync(path.join(directory, 'server/pi-launcher-qa-context.js'))
                 || !fs.existsSync(path.join(directory, 'server/pi-launcher-qa-checkpoints.js'))) unsupported('Accurate package lacks the guarded native QA continuation/checkpoint protocol; build a separate explicit QA artifact');
-            if (options.scenario === 'committed-crash' && metadata.desktopOwnerProtocol !== 1) unsupported('Committed crash requires accurate baseline and candidate desktopOwnerProtocol 1 metadata');
+            if (options.scenario !== 'legacy-refusal' && metadata.desktopOwnerProtocol !== 1) unsupported('Automatic exact-package acceptance requires baseline and candidate desktopOwnerProtocol 1 metadata');
             for (const file of ['repair/runtime/node.exe', 'repair/scripts/repair-launcher.cjs']) assert.ok(fs.lstatSync(path.join(directory, file)).isFile());
         }
         require('../../server/pi-update-signatures').readUpdateTrust(readSafe(path.join(candidateRoot, 'config/update-trust.json'), 64 * 1024));
@@ -248,7 +248,7 @@ async function runAcceptance(options, inputs) {
                 serviceWitness = await processes.witnessServiceExit(live, env);
             }
             const arm = (point, action) => observer.arm(point, action);
-            if (['normal', 'repair-entry', 'repair-changed-entry', 'postcommit-preservation'].includes(options.scenario)) arm('candidate-before-validation', 'pause');
+            if (['normal', 'repair-entry', 'repair-changed-entry', 'postcommit-preservation', 'committed-crash'].includes(options.scenario)) arm('candidate-before-validation', 'pause');
             if (options.scenario === 'staged-mutation') arm('candidate-staged', 'pause');
             if (options.scenario === 'occupied-entry' || options.scenario === 'interrupt-prepared') arm('helper-before-apply', 'pause');
             if (options.scenario === 'old-tray-held') arm('handoff-outer-exit', 'pause');

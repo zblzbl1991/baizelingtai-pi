@@ -81,6 +81,25 @@ test('authorized checkpoints consume once and only their fresh receipt nonce can
     await assert.rejects(checkpoint(root, 'candidate-before-validation', {}, { environment }), /already been consumed/);
     atomicJson(commandFile, { ...command, commandId: randomUUID(), runId: randomUUID() });
     await assert.rejects(checkpoint(root, 'candidate-before-validation', {}, { environment }), /not authorized/);
+
+    // This is the public checkpoint protocol with tiny authorized files. It
+    // does not simulate a real application shutdown or prove native behavior.
+    marker.scenario = 'committed-crash';
+    atomicJson(path.join(scope, '.pivane-native-qa.json'), marker);
+    atomicJson(path.join(root, '.pivane-launcher-test'), marker);
+    const cleanup = observer.arm('service-cleanup-pending', 'pause');
+    const cleanupFile = path.join(paths.PIVANE_NATIVE_QA_CHECKPOINTS, 'service-cleanup-pending.json');
+    const details = { trigger: 'shutdown', outcome: 'committed', ownerBound: true, generation: randomUUID(), httpListening: false };
+    assert.deepEqual(await checkpoint(root, 'service-cleanup-pending', details, { environment }), {});
+    assert.equal(fs.existsSync(cleanupFile), true, 'normal stop cannot consume the crash gate');
+    assert.deepEqual(await checkpoint(root, 'service-cleanup-pending', { ...details, trigger: 'parent-disconnect', ownerBound: false }, { environment }), {});
+    assert.equal(fs.existsSync(cleanupFile), true, 'missing actual owner binding cannot consume the crash gate');
+    const gated = checkpoint(root, 'service-cleanup-pending', { ...details, trigger: 'parent-disconnect' }, { environment });
+    gated.catch(() => {});
+    const paused = await observer.until(value => value.receipts.find(entry => entry.commandId === cleanup.commandId && entry.state === 'paused'), 'tiny crash-gate receipt', 15000);
+    assert.equal(paused.details.trigger, 'parent-disconnect'); assert.equal(paused.details.outcome, 'committed');
+    assert.equal(paused.details.generation, details.generation); assert.equal(paused.details.httpListening, false);
+    observer.resume(paused); await gated;
 });
 
 test('acceptance verifies the exact artifact and synthetic trust before creating any output', t => {
