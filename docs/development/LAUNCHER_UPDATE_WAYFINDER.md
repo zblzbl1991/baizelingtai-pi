@@ -66,11 +66,14 @@
 | 安装所有权与进程交接 | [安装锁](../../test/pi-installation-lock.test.js)、[桌面协议](../../test/pivane-desktop-protocol.test.js)、[受控停机集成](../../test/pivane-desktop-control.integration.test.js) | 服务/runner/托盘/助手交接、不同入口竞争、清理未知与交接中断，不能只模拟 PID 消失 |
 | 独立修复与旧包边界 | [修复专项](../../test/pi-launcher-repair.test.js)、[准确旧包只读检查](../../test/release/launcher-legacy-migration.cjs) | 已有拒绝未知 owner、同版入口修复、独立依赖和旧包缺协议检查；实际首次迁移仍须准确包维护验收 |
 | Windows 原生与恢复 | [原生桌面](../../test/pivane-desktop-native.test.js)、[桌面恢复](../../test/pivane-desktop-recovery.test.js)、[应用更新](../../test/pi-application-update.test.js) | 文件占用、固定 EXE 替换、原件变化、助手依赖独立性、真实入口损坏后的修复 |
+| 原生 QA 隔离环境续传 | [环境校验器](../../server/pi-launcher-qa-context.js)、[托盘启动前校验 CLI](../../scripts/launcher-qa.cjs)、[轻量契约测试](../../test/pi-launcher-qa-context.test.js) | 双标记绑定原安装根、run 和私有路径；runner→助手→固定 EXE 只传校验白名单；真实进程链仍需准确包验收 |
 | 打包与发现 | [Windows 打包](../../test/windows-portable-package.test.js)、[签名交付](../../test/portable-signed-delivery.test.js)、[小型布局夹具](../../test/portable-infrastructure.test.js)、[签名 CLI](../../test/update-signing-cli.test.js)、[源码发现](../../test/source-files.test.js)、[文档清单](../../test/public-documentation.test.js) | 助手/修复器/公钥完整入包，私钥及运行数据排除，源码与原生二进制清单一致 |
 | 桌面 UI | [版本页](../../test/browser/pi-updates.cjs)、[原生托盘](../../test/browser/pivane-desktop-tray.cjs)、[真实桌面启动](../../test/browser/pivane-desktop-launcher.cjs) | 退出前后进度、整套版本展示、重开原入口、失败与需人工恢复状态；网页替身不能代替原生替换验证 |
 | 准确包整链 | [便携包验收](../../test/release/windows-portable.cjs)、[网页一键更新](../../test/release/portable-auto-update.cjs)、[内网更新演练](../../test/release/gitlab-portable-update.cjs) | 签名新旧准确包、各持久状态中断、启用前失败回退、提交后保留新数据、旧包首次迁移与固定入口修复 |
 
 Node 专项使用 `npm test -- <文件...>`，浏览器专项使用 `npm run test:browser -- <脚本...>`；先按[开发流程](WORKFLOW.md)确认选择器、独立身份、平台与执行范围。准确包脚本的参数和环境按 [E2E 导航](E2E.md#手动服务实机与准确包入口)及脚本本身读取，不把普通源码测试当成最终包验收。本页导航变更只需文档检查，无需启动真实服务。
+
+原生 QA 必须显式提供 `PIVANE_NATIVE_QA=1`、canonical scope 和小写 UUID run ID，并预建相同 JSON 的 `scope/.pivane-native-qa.json` 与原安装根 `.pivane-launcher-test`。标记中的 14 条授权路径均须存在且位于私有 scope 内；不得包含凭据、任意 Node 选项或浏览器执行开关。Windows 还须预建私有 `HOME/AppData` 和固定 `scope/permission-tmp`；后者仅供只读 DACL 查询的临时文件使用，不属于应用路径白名单。校验器检查真实 DACL、内核路径和完整文件身份；初次托盘在 identity/start/browser 前验证，失败只向 stderr 报错，不授予 smoke 权限或写 smoke 回执。没有 QA opt-in 时，两个交接点继续使用原最小产品环境。
 
 旧版迁移材料的已核验身份见[设计记录的代码事实](design/launcher-auto-update.md#代码事实与现有边界)。本地 1.7.3 ZIP 的哈希匹配不代表它等同于用户当前部署，也不代表迁移已经通过；准确包路径与运行证据须在实施时重新核对。
 

@@ -6,6 +6,7 @@ const { acquireInstallationLock } = require('./pi-installation-lock');
 const { inspectBackupContents } = require('./pi-maintenance-backup');
 const io = require('./pi-file-io');
 const { replaceFileSync } = require('./pi-win32-native');
+const { continuationEnvironment } = require('./pi-launcher-qa-context');
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const exitWitness = Symbol('held process handles have signalled');
 const MAX_EVIDENCE = 64 * 1024 ** 2;
@@ -341,6 +342,7 @@ function verifyActiveProgram(root, releaseId) {
 async function runHandoff({ root, id, processes, onReady, mode = 'activate' }) {
     if (!['activate', 'rollback'].includes(mode)) throw Error('Invalid handoff operation');
     root = fs.realpathSync.native(root);
+    const continuation = continuationEnvironment(root, process.env);
     const before = inspectActivation(root, id);
     if (before.phase !== (mode === 'activate' ? 'prepared' : 'validating')) throw Error('Activation requires manual recovery');
     const expectedProcesses = mode === 'activate' ? before.handoffProcesses : before.failureHandoffProcesses;
@@ -350,7 +352,7 @@ async function runHandoff({ root, id, processes, onReady, mode = 'activate' }) {
         : await recoverActivation({ root, id, shutdownProof: inspectActivation(root, id).failureShutdownProof, witness: exitWitness, processProof: proof });
     const { spawn } = require('node:child_process');
     const entry = spawn(path.join(root, '白泽灵台.exe'), [], { cwd: root, windowsHide: true, detached: true, stdio: 'ignore',
-        env: { SystemRoot: process.env.SystemRoot, SystemDrive: process.env.SystemDrive, TEMP: process.env.TEMP, TMP: process.env.TMP,
+        env: { SystemRoot: process.env.SystemRoot, SystemDrive: process.env.SystemDrive, TEMP: process.env.TEMP, TMP: process.env.TMP, ...continuation,
             PIVANE_ACTIVATION_ID: activation.phase === 'validating' ? id : '', PIVANE_INSTALLATION_ROOT: root } });
     await new Promise((resolve, reject) => { entry.once('spawn', resolve); entry.once('error', reject); });
     entry.unref(); return activation;
