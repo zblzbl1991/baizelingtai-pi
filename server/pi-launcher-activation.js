@@ -8,6 +8,7 @@ const io = require('./pi-file-io');
 const { replaceFileSync } = require('./pi-win32-native');
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const exitWitness = Symbol('held process handles have signalled');
+const MAX_EVIDENCE = 64 * 1024 ** 2;
 const budget = () => ({ bytes: 0, files: 0, maxBytes: 4 * 1024 ** 3, maxFiles: 100000 });
 const stateFile = root => path.join(root, '.pivane-runtime/state.json');
 function readState(root) { return JSON.parse(readSafe(stateFile(root))); }
@@ -84,6 +85,22 @@ function activationDirectory(root, id) {
     if (!uuid.test(id || '')) throw Error('Invalid activation identity');
     return path.join(root, '.pivane-runtime/activation', id);
 }
+// File inventories are immutable evidence, not mutable installation state. Their
+// descriptor identity and digest bind this exact file to the sole state owner.
+function readEvidence(root, activation) {
+    const file = path.join(activationDirectory(root, activation.id), 'entries.json');
+    const expected = activation.evidence;
+    if (!expected || !Number.isSafeInteger(expected.bytes) || expected.bytes < 1 || expected.bytes > MAX_EVIDENCE) throw Error('Activation evidence is unavailable or exceeds budget');
+    const before = identity(file), bytes = readSafe(file, MAX_EVIDENCE), after = identity(file);
+    if (JSON.stringify(before) !== JSON.stringify(after) || JSON.stringify(after) !== JSON.stringify(expected.identity)
+        || bytes.length !== expected.bytes || hash(bytes) !== expected.sha256) throw Error('Activation evidence identity or hash changed');
+    const evidence = JSON.parse(bytes);
+    if (evidence.version !== 1 || evidence.id !== activation.id || evidence.root !== root
+        || !Array.isArray(evidence.original) || evidence.original.length > 20000
+        || !Array.isArray(evidence.candidate) || evidence.candidate.length > 100002
+        || !Array.isArray(evidence.closure) || evidence.closure.length > 128) throw Error('Invalid activation evidence');
+    return evidence;
+}
 
 function inspectActivation(root, id) {
     root = fs.realpathSync.native(root);
@@ -154,13 +171,17 @@ function prepareActivation({ root, state, releaseId, release, backupId, shutdown
     }
     const nodeFile = path.join(helper, 'runtime/node.exe'); privateDir(path.dirname(nodeFile));
     copySafe(fs.realpathSync.native(process.execPath), nodeFile, budget()); closure.push({ path: 'runtime/node.exe', ...snapshot(nodeFile) });
+    const evidenceFile = path.join(directory, 'entries.json');
+    const evidence = { version: 1, id, root, original, candidate: entries, closure };
+    if (Buffer.byteLength(JSON.stringify(evidence, null, 2)) + 1 > MAX_EVIDENCE) throw Error('Activation evidence exceeds budget');
+    atomicJson(evidenceFile, evidence);
     return { version: 1, id, root, phase: 'prepared', createdAt: new Date().toISOString(), releaseId, release, signature,
-        originalActive: state.active, originalPrevious: state.previous ?? null, original, originalEntry: entry, retainedEntry: snapshot(path.join(directory, 'original-entry.exe')),
-        candidate: entries, closure, backupId, backupComplete: snapshot(path.join(backupDirectory, 'complete.json')), shutdownProof, rollbackAttempts: 0 };
+        originalActive: state.active, originalPrevious: state.previous ?? null, originalEntry: entry, retainedEntry: snapshot(path.join(directory, 'original-entry.exe')),
+        evidence: snapshot(evidenceFile, MAX_EVIDENCE), backupId, backupComplete: snapshot(path.join(backupDirectory, 'complete.json')), shutdownProof, rollbackAttempts: 0 };
 }
 function helperCommand(root, id) {
     const activation = inspectActivation(root, id), directory = path.join(activationDirectory(activation.root, id), 'helper');
-    verifyEntries(directory, activation.closure);
+    verifyEntries(directory, readEvidence(activation.root, activation).closure);
     return { executable: path.join(directory, 'runtime/node.exe'), args: [path.join(directory, 'server/pi-launcher-update-helper.js'), 'handoff', activation.root, id] };
 }
 function verifyActivation(root, activation) {
@@ -168,15 +189,16 @@ function verifyActivation(root, activation) {
     requireCleanup(activation.shutdownProof);
     const signature = require('./pi-update-signatures').verifyReleaseSignature(activation.release, root);
     if (JSON.stringify(signature) !== JSON.stringify(activation.signature)) throw Error('Activation signer changed');
-    const candidate = releaseRoot(root, activation.releaseId);
+    const evidence = readEvidence(root, activation), candidate = releaseRoot(root, activation.releaseId);
     const current = inventory(candidate, activation.release.version);
-    if (JSON.stringify(current) !== JSON.stringify(activation.candidate)) throw Error('Activation candidate changed');
-    verifyEntries(releaseRoot(root, activation.originalActive), activation.original);
+    if (JSON.stringify(current) !== JSON.stringify(evidence.candidate)) throw Error('Activation candidate changed');
+    verifyEntries(releaseRoot(root, activation.originalActive), evidence.original);
     unchanged(path.join(root, '白泽灵台.exe'), activation.originalEntry);
     unchanged(path.join(activationDirectory(root, activation.id), 'original-entry.exe'), activation.retainedEntry);
     const backupDirectory = path.join(root, '.pivane-runtime/backups', activation.backupId);
     unchanged(path.join(backupDirectory, 'complete.json'), activation.backupComplete);
     inspectBackupContents(backupDirectory);
+    return evidence;
 }
 async function applyActivation(root, id, witness, processProof) {
     root = fs.realpathSync.native(root);
@@ -184,16 +206,16 @@ async function applyActivation(root, id, witness, processProof) {
     try {
         const state = readState(root), activation = inspectActivation(root, id);
         if (activation.phase !== 'prepared' || state.active !== activation.originalActive) throw Error('Activation requires manual recovery');
-        verifyActivation(root, activation);
+        const evidence = verifyActivation(root, activation);
         if (witness !== exitWitness) throw Error('Held process handles must prove outer exit');
         if (JSON.stringify(activation.handoffProcesses) !== JSON.stringify(processProof?.processes)) throw Error('Activation handoff process identities changed');
         activation.processProof = processProof;
         activation.phase = 'activating'; state.activation = activation; atomicJson(stateFile(root), state);
         const target = path.join(root, '白泽灵台.exe'), temp = path.join(root, '.' + id + '.entry');
-        const candidateEntry = activation.candidate.find(entry => entry.path === '白泽灵台.exe');
+        const candidateEntry = evidence.candidate.find(entry => entry.path === '白泽灵台.exe');
         const copied = copySafe(path.join(releaseRoot(root, activation.releaseId), '白泽灵台.exe'), temp, budget());
         if (!candidateEntry || copied.bytes !== candidateEntry.bytes || copied.sha256 !== candidateEntry.sha256) throw Error('Candidate entry changed during activation');
-        verifyEntries(releaseRoot(root, activation.releaseId), activation.candidate);
+        verifyEntries(releaseRoot(root, activation.releaseId), evidence.candidate);
         unchanged(target, activation.originalEntry);
         replaceFileSync(temp, target);
         activation.activeEntry = snapshot(target);
@@ -215,8 +237,9 @@ async function recoverActivation({ root, id, shutdownProof, witness, processProo
             || shutdownProof.generation === activation.shutdownProof.generation || JSON.stringify(shutdownProof) !== JSON.stringify(activation.failureShutdownProof)
             || JSON.stringify(activation.failureHandoffProcesses) !== JSON.stringify(processProof?.processes)) throw Error('Candidate cleanup and held exit proof required for recovery');
         require('./pi-update-signatures').verifyReleaseSignature(activation.release, root);
+        const evidence = readEvidence(root, activation);
         const originalRoot = releaseRoot(root, activation.originalActive), target = path.join(root, '白泽灵台.exe');
-        verifyEntries(originalRoot, activation.original.filter(entry => originalRoot !== root || entry.path !== '白泽灵台.exe'));
+        verifyEntries(originalRoot, evidence.original.filter(entry => originalRoot !== root || entry.path !== '白泽灵台.exe'));
         unchanged(target, activation.activeEntry);
         const originalEntry = path.join(activationDirectory(root, id), 'original-entry.exe'); unchanged(originalEntry, activation.retainedEntry);
         const backupDirectory = path.join(root, '.pivane-runtime/backups', activation.backupId);
@@ -252,6 +275,7 @@ async function recoverActivation({ root, id, shutdownProof, witness, processProo
         const retained = copySafe(originalEntry, temp, budget());
         if (retained.bytes !== activation.retainedEntry.bytes || retained.sha256 !== activation.retainedEntry.sha256) throw Error('Retained entry changed during recovery');
         unchanged(originalEntry, activation.retainedEntry); unchanged(target, activation.activeEntry); replaceFileSync(temp, target);
+        activation.restoredEntry = snapshot(target);
         state.active = activation.originalActive; state.previous = activation.originalPrevious;
         state.needsRecovery = false; activation.phase = 'rolled-back'; activation.rolledBackAt = new Date().toISOString();
         atomicJson(stateFile(root), state);
@@ -263,13 +287,49 @@ async function recoverActivation({ root, id, shutdownProof, witness, processProo
 function commitActivation(root, id, validation) {
     root = fs.realpathSync.native(root);
     const activation = inspectActivation(root, id), state = readState(root);
-    if (activation.phase === 'committed') return activation;
+    if (activation.phase === 'committed') { verifyActiveProgram(root, state.active); return activation; }
     if (activation.phase !== 'validating' || state.active !== activation.releaseId
         || ['control', 'versions', 'service', 'data', 'tray'].some(name => validation?.[name] !== true)
         || !Number.isSafeInteger(validation?.stableMs) || validation.stableMs < 15000) throw Error('Complete startup validation is required before commit');
+    verifyActiveProgram(root, state.active);
     activation.phase = 'committed'; activation.validation = validation; activation.committedAt = new Date().toISOString();
     state.activation = activation; atomicJson(stateFile(root), state);
     return activation;
+}
+// Called by the locked runner before forking any service. Legacy installations
+// without an activation transaction keep their existing source/marker contract.
+function verifyActiveProgram(root, releaseId) {
+    root = fs.realpathSync.native(root);
+    try { fs.lstatSync(stateFile(root)); }
+    catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        if (releaseId === null || releaseId === undefined) return { supported: false };
+        throw Error('Active release requires installation state');
+    }
+    const state = readState(root), activation = state.activation;
+    if (state.version !== 1 || state.needsRecovery || state.active !== releaseId) throw Error('Active installation identity or recovery state mismatch');
+    if (!activation) return { supported: false };
+    if (activation.root !== root) throw Error('Active installation root changed');
+    if (['activating', 'rolling-back'].includes(activation.phase)) throw Error('Active program requires manual recovery');
+    if (['validating', 'committed'].includes(activation.phase) && releaseId === activation.releaseId) {
+        const evidence = readEvidence(root, activation);
+        require('./pi-update-signatures').verifyReleaseSignature(activation.release, root);
+        const current = inventory(releaseRoot(root, releaseId), activation.release.version);
+        if (JSON.stringify(current) !== JSON.stringify(evidence.candidate)) throw Error('Active candidate changed before service start');
+        return { supported: true, phase: activation.phase, id: activation.id };
+    }
+    if (activation.phase === 'rolled-back' && releaseId === activation.originalActive) {
+        const evidence = readEvidence(root, activation), directory = releaseRoot(root, releaseId);
+        verifyEntries(directory, evidence.original.filter(entry => directory !== root || entry.path !== '白泽灵台.exe'));
+        unchanged(path.join(root, '白泽灵台.exe'), activation.restoredEntry);
+        if (activation.restoredEntry.bytes !== activation.originalEntry.bytes || activation.restoredEntry.sha256 !== activation.originalEntry.sha256) throw Error('Restored entry differs from authorized original');
+        return { supported: true, phase: activation.phase, id: activation.id };
+    }
+    if (activation.phase === 'prepared' && releaseId === activation.originalActive) { readEvidence(root, activation); return { supported: false }; }
+    // A later engine-only update can legitimately select another snapshot. It
+    // has its own installer baseline and does not inherit this record's proof.
+    if (activation.phase === 'committed' || activation.phase === 'rolled-back') return { supported: false };
+    throw Error('Active version is inconsistent with its activation transaction');
 }
 async function runHandoff({ root, id, processes, onReady, mode = 'activate' }) {
     if (!['activate', 'rollback'].includes(mode)) throw Error('Invalid handoff operation');
@@ -288,4 +348,4 @@ async function runHandoff({ root, id, processes, onReady, mode = 'activate' }) {
     await new Promise((resolve, reject) => { entry.once('spawn', resolve); entry.once('error', reject); });
     entry.unref(); return activation;
 }
-module.exports = { inspectActivation, prepareActivation, helperCommand, helperFiles, applyActivation, recoverActivation, commitActivation, runHandoff };
+module.exports = { inspectActivation, prepareActivation, helperCommand, helperFiles, applyActivation, recoverActivation, commitActivation, runHandoff, verifyActiveProgram };
