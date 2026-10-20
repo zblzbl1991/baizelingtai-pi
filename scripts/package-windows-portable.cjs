@@ -55,6 +55,7 @@ function createOfflineBundle(archive, bundle, { manifestFile = archive + '.updat
         try {
             trust.check();
             if (!readSafe(path.resolve(manifestFile), 64 * 1024).equals(manifestBytes)
+                || !readSafe(archive + '.sha256', 1024).equals(checksum)
                 || JSON.stringify(hashFileSafe(archive, 1024 ** 3)) !== JSON.stringify(proof)) throw Error('Offline bundle inputs changed during ZIP creation');
             return { manifest: data, sha256: hash(bundle), bytes: Number(before.size) };
         } catch (error) { failed = true; throw error; }
