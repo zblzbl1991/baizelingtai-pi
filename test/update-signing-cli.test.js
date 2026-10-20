@@ -107,3 +107,18 @@ test('invalid secrets and unauthorized rotation never leave a successful output 
         env: { SystemRoot: process.env.SystemRoot, PATH: process.env.PATH, TEMP: process.env.TEMP } });
     assert.equal(direct.status, 1); assert.ok(!direct.stderr.includes(password));
 });
+
+test('no-op trust changes cannot create a replayable successful rotation', t => {
+    const root = fixture(t); assert.equal(run(keygen(root)).status, 0);
+    const trustFile = path.join(root, 'config/update-trust.json'), before = fs.readFileSync(trustFile), output = path.join(root, 'no-op.json');
+    const args = ['rotation-sign', '--private-key', path.join(root, 'publisher.pem'), '--key-id', 'test-publisher', '--installation-root', root,
+        '--next-trust', trustFile, '--output', output];
+    assert.equal(run(args).status, 1); assert.equal(fs.existsSync(output), false);
+    const keys = JSON.parse(before).keys, previousTrustSha256 = createHash('sha256').update(before).digest('hex');
+    const payload = ['pivane-update-key-rotation-v1', 1, previousTrustSha256, keys.map(key => [key.keyId, key.publicKey])];
+    const key = createPrivateKey({ key: fs.readFileSync(path.join(root, 'publisher.pem')), passphrase: password });
+    fs.writeFileSync(output, JSON.stringify({ schemaVersion: 1, previousTrustSha256, keys,
+        signature: { algorithm: 'ed25519', keyId: 'test-publisher', value: require('node:crypto').sign(null, Buffer.from(JSON.stringify(payload)), key).toString('base64') } }));
+    assert.equal(run(['rotation-apply', '--installation-root', root, '--rotation', output]).status, 1);
+    assert.deepEqual(fs.readFileSync(trustFile), before);
+});

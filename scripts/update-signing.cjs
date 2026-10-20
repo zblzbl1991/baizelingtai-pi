@@ -1,6 +1,6 @@
 // Offline publisher tools. No network access, no ambient key/password variables.
 const fs = require('node:fs'), path = require('node:path');
-const { generateKeyPairSync, timingSafeEqual, createPrivateKey, sign, createHash } = require('node:crypto');
+const { generateKeyPairSync, timingSafeEqual, createPrivateKey, createPublicKey, sign, createHash } = require('node:crypto');
 const { Writable } = require('node:stream');
 const readline = require('node:readline');
 const { openPrivateFileSync } = require('../server/pi-private-files');
@@ -111,6 +111,12 @@ function manifestShape(data, source) {
     };
     return require('../server/pi-update-feed').parseFeed(data, { source, platform: 'win32', arch: 'x64', channel: 'preview', compareVersions: self });
 }
+function assertKeyChange(current, next) {
+    const keySet = trust => JSON.stringify(trust.keys.map(key => [key.keyId,
+        createPublicKey(key.publicKey).export({ type: 'spki', format: 'der' }).toString('base64')])
+        .sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    if (keySet(JSON.parse(current)) === keySet(next)) throw Error('No update trust change');
+}
 async function main(argv) {
     const { command, args } = options([...argv]);
     if (command === 'rotation-sign') {
@@ -119,7 +125,9 @@ async function main(argv) {
         if (next.schemaVersion !== 1) throw Error('Invalid next trust');
         const trustFile = path.join(root, 'config/update-trust.json'), current = readSafe(trustFile, 64 * 1024);
         const rotation = { schemaVersion: 1, previousTrustSha256: createHash('sha256').update(current).digest('hex'), keys: next.keys };
-        const payload = signatures.trustRotationPayload(rotation), password = await passphrase(args, false);
+        const payload = signatures.trustRotationPayload(rotation);
+        assertKeyChange(current, next);
+        const password = await passphrase(args, false);
         try {
             rotation.signature = envelope(args['key-id'], payload, loadKey(args['private-key'], password));
             signatures.verifyTrustRotation(rotation, root);
@@ -139,6 +147,7 @@ async function main(argv) {
             // Final verification under the same OS installation lock binds the
             // current trust bytes; only this explicitly invoked command replaces it.
             const next = signatures.verifyTrustRotation(rotation, root);
+            assertKeyChange(readSafe(path.join(root, 'config/update-trust.json'), 64 * 1024), next);
             atomicJson(path.join(root, 'config/update-trust.json'), next);
         } finally { await lock.close(); }
         process.stdout.write('授权换钥已在安装锁保护下应用。\n');

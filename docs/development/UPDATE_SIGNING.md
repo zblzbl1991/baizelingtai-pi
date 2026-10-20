@@ -36,7 +36,7 @@ node scripts/update-signing.cjs sign --private-key C:\ReleaseKeys\publisher.pem 
 node scripts/update-signing.cjs rotation-sign --private-key C:\ReleaseKeys\publisher.pem --key-id release-2026 --installation-root C:\BaizeInstall --next-trust C:\ReleasePublic\next-update-trust.json --output C:\ReleasePublic\rotation.json
 ```
 
-提案绑定当前信任文件的准确 SHA256、下一组 keyId/公钥和旧签名者。工具验证下一组信任格式、旧密钥授权以及签名前后的输入一致性；提案输出也拒绝覆盖。
+提案绑定当前信任文件的准确 SHA256、下一组 keyId/公钥和旧签名者。工具验证下一组信任格式、旧密钥授权以及签名前后的输入一致性；提案输出也拒绝覆盖。新旧 keyId/公钥集合相同时拒绝生成或应用，避免没有实际信任变化的成功操作可被反复重放。
 
 在独立维护窗口正常退出使用该安装的程序后，维护者显式应用提案：
 
