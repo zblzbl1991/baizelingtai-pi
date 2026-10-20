@@ -219,7 +219,10 @@ function mountUpdateRoutes(router, service = new UpdateService(), hooks = {}) {
             }
             leave(); leave = null;
             res.json({ ...maintenance.review({ action, version, release }, idle), currentVersion: action === 'application' ? service.appVersion : service.piVersion });
-        } catch (error) { res.status(error.status || 503).json({ error: error.status ? error.message : '无法核对更新版本，请稍后再试' }); }
+        } catch (error) {
+            try { require('./pi-launcher-qa-checkpoints').writeReceipt(service.installationRoot, 'review-refused', { outcome: error.message }, service.env); } catch { /* Private QA evidence cannot replace the public error. */ }
+            res.status(error.status || 503).json({ error: error.status ? error.message : '无法核对更新版本，请稍后再试' });
+        }
         finally { leave?.(); }
     });
     router.post('/settings/updates/execute', (req, res) => {

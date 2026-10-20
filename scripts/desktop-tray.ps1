@@ -15,12 +15,24 @@ $script:events = [Collections.Generic.List[object]]::new(); $script:smokeValidat
 $script:confirmationShown=$false; $script:uiScale=1; $script:recoverStop=$false; $script:readyAt = $null; $script:smokeStopSent = $false; $script:lastReport = ''; $script:startupStopReview=$false
 $script:versions=$null; $script:maintenanceHint=$false; $script:lastReviewId=''
 $ProgramRoot = if ($env:PIVANE_PROGRAM_ROOT) { [IO.Path]::GetFullPath($env:PIVANE_PROGRAM_ROOT) } else { [IO.Path]::GetFullPath((Split-Path $PSScriptRoot -Parent)) }
-$script:updatePhase=''; $script:nativeAssembly=$null
+$script:updatePhase=''; $script:nativeAssembly=$null; $script:qaComponents=$null
 $mutex = $null; $ownsMutex = $false; $openEvent = $null; $tray = $null; $timer = $null; $context = $null; $window = $null; $hoster = $null
+function Write-QAReceipt([string]$Point, $Payload) {
+    if (-not $script:smokeValidated -or $env:PIVANE_NATIVE_QA -cne '1') { return }
+    $id=[Guid]::NewGuid().ToString(); $currentProcess=[Diagnostics.Process]::GetCurrentProcess()
+    try {
+        $value=@{schemaVersion=1;runId=$env:PIVANE_NATIVE_QA_RUN_ID;root=$AppRoot;scenario=$env:PIVANE_NATIVE_QA_SCENARIO;point=$Point;receiptId=$id;
+            pid=$PID;creationTime=$currentProcess.StartTime.ToFileTimeUtc().ToString();execPath=$currentProcess.MainModule.FileName;at=[DateTime]::UtcNow.ToString('o');event=$Payload}
+        $temporary=Join-Path $env:PIVANE_NATIVE_QA_RECEIPTS ($id+'.tmp');$target=Join-Path $env:PIVANE_NATIVE_QA_RECEIPTS ('tray-'+$id+'.json')
+        [IO.File]::WriteAllText($temporary,(ConvertTo-Json -Depth 10 -Compress $value),[Text.UTF8Encoding]::new($false));[IO.File]::Move($temporary,$target)
+    } finally { $currentProcess.Dispose() }
+}
 function Record-Event($Value) {
+    if($SmokeTest){$Value.instance=$script:instance;$Value.runId=$env:PIVANE_NATIVE_QA_RUN_ID}
     if($script:events.Count -ge 256){$script:events.RemoveAt(0)}
     $script:events.Add($Value)
     if ($SmokeTest) {
+        Write-QAReceipt 'tray-event' $Value
         $dir = Join-Path $AppRoot '.pivane-runtime\desktop'; [IO.Directory]::CreateDirectory($dir) | Out-Null
         if ($Value.type -in @('waiting','ready')) { [IO.File]::WriteAllText((Join-Path $dir ('smoke-' + $Value.type + '.json')), (ConvertTo-Json -Compress $Value), [Text.UTF8Encoding]::new($false)) }
         if ($Value.type -eq 'browser-opened') { $count = @($script:events | Where-Object { $_.type -eq 'browser-opened' }).Count; [IO.File]::WriteAllText((Join-Path $dir ('smoke-open-' + $count + '.json')), (ConvertTo-Json -Compress $Value), [Text.UTF8Encoding]::new($false)) }
@@ -95,12 +107,15 @@ function Send-TrayEvidence([string]$Type, [string]$Challenge) {
     $request=@{type=$Type;generation=$script:generation;id=[Guid]::NewGuid().ToString();programRoot=$ProgramRoot;nativePath=$nativePath;nativeVersion=$script:nativeAssembly.GetName().Version.ToString();nativeSha256=$nativeHash;traySha256=$trayHash;nodePath=$NodePath;
         processes=@(@{pid=$script:service.Id;creationTime=$script:service.StartTime.ToFileTimeUtc().ToString()},@{pid=$PID;creationTime=[Diagnostics.Process]::GetCurrentProcess().StartTime.ToFileTimeUtc().ToString()})}
     if($Challenge){$request.challenge=$Challenge}
+    $script:qaComponents=@{programRoot=$ProgramRoot;nativePath=$nativePath;nativeVersion=$request.nativeVersion;nativeSha256=$nativeHash;traySha256=$trayHash;nodePath=$NodePath;processes=$request.processes}
     Write-PrivateFrame $request
+    if($Type -eq 'tray-attached'){Record-Event @{type='tray-components';generation=$script:generation;components=$script:qaComponents}}
 }
 function Start-Run {
     if ($script:service -or -not $script:clean -or $script:state -notin @('stopped','error')) { Show-Management; return }
     $script:recoverStop=$false; $script:generation = [Guid]::NewGuid().ToString(); $script:clean = $false; $script:exitIntent = $false; $script:pending = $null; $script:review = $null
     $script:lastError = ''; $script:logFile = $null; $script:url = $null; $script:readyAt = $null; $script:smokeStopSent = $false; $script:startupStopReview=$false; $script:versions=$null; $script:maintenanceHint=$false
+    $script:qaComponents=$null
     Set-State 'starting'
     try {
         $start = [Diagnostics.ProcessStartInfo]::new(); $start.FileName = $NodePath
@@ -243,9 +258,10 @@ function Update-Window {
 }
 function Report-Smoke {
     if (-not $SmokeTest) { return }
-    $value=@{state=$script:state;generation=$script:generation;instance=$script:instance;visible=$window.Visible;canStart=($mainButton.Enabled -and $mainButton.Text -eq '启动服务');pending=[bool]$script:pending;confirm=$confirmPanel.Visible;reviewId=$script:lastReviewId;blockers=$blockerText.Text;versions=$versionLabel.Text;detail=$detailLabel.Text;waitingUrl=$hoster.Url;pid=if($script:service){$script:service.Id}else{$null}}
-    $json=ConvertTo-Json -Compress $value
-    if ($json -ne $script:lastReport) { [IO.File]::WriteAllText((Join-Path $AppRoot '.pivane-runtime\desktop\smoke-state.json'),$json,[Text.UTF8Encoding]::new($false)); $script:lastReport=$json }
+    $value=@{state=$script:state;generation=$script:generation;instance=$script:instance;visible=$window.Visible;canStart=($mainButton.Enabled -and $mainButton.Text -eq '启动服务');pending=[bool]$script:pending;confirm=$confirmPanel.Visible;reviewId=$script:lastReviewId;blockers=$blockerText.Text;versions=$versionLabel.Text;detail=$detailLabel.Text;waitingUrl=$hoster.Url;url=$script:url;pid=if($script:service){$script:service.Id}else{$null};
+        runId=$env:PIVANE_NATIVE_QA_RUN_ID;root=$AppRoot;programRoot=$ProgramRoot;nodePath=$NodePath;trayPath=[Diagnostics.Process]::GetCurrentProcess().MainModule.FileName;componentVersions=$script:versions;components=$script:qaComponents}
+    $json=ConvertTo-Json -Compress -Depth 8 $value
+    if ($json -ne $script:lastReport) { [IO.File]::WriteAllText((Join-Path $AppRoot '.pivane-runtime\desktop\smoke-state.json'),$json,[Text.UTF8Encoding]::new($false));Write-QAReceipt 'tray-state' $value; $script:lastReport=$json }
 }
 function Make-Window {
     $script:window=[Windows.Forms.Form]::new(); $window.Text='白泽灵台 · 服务管理'; $window.Icon=$tray.Icon
@@ -409,13 +425,14 @@ try {
                     $commandFile=Join-Path $AppRoot '.pivane-launcher-command.json'
                     if(Test-Path -LiteralPath $commandFile){
                         $command=Get-Content -LiteralPath $commandFile -Raw | ConvertFrom-Json
-                        if($command.id -ne $script:smokeCommand){$script:smokeCommand=$command.id;switch($command.action){
+                        $matchingCommand=(-not $script:strictQaRequested) -or ($command.schemaVersion -eq 1 -and $command.runId -ceq $env:PIVANE_NATIVE_QA_RUN_ID -and $command.instance -ceq $script:instance -and $command.generation -ceq $script:generation -and $command.id -cmatch '^[a-f0-9-]{36}$')
+                        if($matchingCommand -and $command.id -ne $script:smokeCommand){$script:smokeCommand=$command.id;switch($command.action){
                             'finish'{$context.ExitThread()};'show'{Show-Management};'hide'{$window.Close()};'minimize'{$window.WindowState='Minimized'};'open'{Open-Workspace};'start'{Start-Run};'stop'{Request-Stop 'stop'};'exit'{Request-Stop 'exit'};'updates'{$maintenanceButton.PerformClick()}
                             'confirm'{$savedCheck.Checked=$true;$externalCheck.Checked=$true;Confirm-Stop}
                             'capture'{Show-Management;$bitmap=[Drawing.Bitmap]::new($window.Width,$window.Height);try{$window.DrawToBitmap($bitmap,[Drawing.Rectangle]::new(0,0,$window.Width,$window.Height));$capture=Join-Path $AppRoot '.pivane-runtime\desktop\management.png';$temporary=$capture+'.tmp';$bitmap.Save($temporary,[Drawing.Imaging.ImageFormat]::Png);if([IO.File]::Exists($capture)){[IO.File]::Replace($temporary,$capture,$null)}else{[IO.File]::Move($temporary,$capture)}}finally{$bitmap.Dispose()}}
                         }}
                     }
-                    if(-not $script:smokeStopSent -and $script:readyAt -and ((Test-Path -LiteralPath (Join-Path $AppRoot '.pivane-launcher-stop')) -or ([DateTime]::UtcNow-$script:readyAt).TotalSeconds -ge 120)){$script:smokeStopSent=$true;Request-Stop 'exit'}
+                    if(-not $script:strictQaRequested -and -not $script:smokeStopSent -and $script:readyAt -and ((Test-Path -LiteralPath (Join-Path $AppRoot '.pivane-launcher-stop')) -or ([DateTime]::UtcNow-$script:readyAt).TotalSeconds -ge 120)){$script:smokeStopSent=$true;Request-Stop 'exit'}
                     if($script:smokeStopSent -and $script:review){$savedCheck.Checked=$true;$externalCheck.Checked=$true;Confirm-Stop}
                     if($script:state -in @('error','unknown') -and -not $script:service -and -not (Test-Path -LiteralPath (Join-Path $AppRoot '.pivane-launcher-stay'))){$context.ExitThread()}
                     Report-Smoke
@@ -428,6 +445,7 @@ try {
 finally{
     if($timer){$timer.Stop();$timer.Dispose()}
     if($script:service){if(-not $script:service.HasExited){$script:service.StandardInput.Close();$script:service.WaitForExit()};$script:service.Dispose()}
+    if($script:smokeValidated -and ($ownsMutex -or -not $mutex)){Record-Event @{type='tray-finalized';generation=$script:generation;clean=$script:clean}}
     if($script:smokeValidated -and ($ownsMutex -or -not $mutex)){$report=Join-Path $AppRoot '.pivane-runtime\desktop\smoke-result.json';[IO.Directory]::CreateDirectory((Split-Path $report -Parent)) | Out-Null;[IO.File]::WriteAllText($report,(ConvertTo-Json -InputObject $script:events.ToArray() -Depth 6),[Text.UTF8Encoding]::new($false))}
     if($hoster){$hoster.Dispose()};if($window){$window.Dispose()};if($tray){$tray.Visible=$false;$tray.Icon.Dispose();$tray.Dispose()};if($context){$context.Dispose()};if($openEvent){$openEvent.Dispose()};if($ownsMutex){$mutex.ReleaseMutex()};if($mutex){$mutex.Dispose()}
 }

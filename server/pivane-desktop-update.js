@@ -86,6 +86,7 @@ async function handoffDesktop({ launcher, link, intent }) {
     });
     // The independent helper must not inherit or keep either old tray pipe alive.
     helper.stdout.destroy(); helper.unref();
+    await require('./pi-launcher-qa-checkpoints').checkpoint(launcher.root, 'handoff-outer-exit', { activationId: intent.id, mode: intent.mode }, { environment: launcher.env });
 }
 
 function validationBudget(environment) {
@@ -103,6 +104,8 @@ async function validateDesktop({ launcher, link, url, fetcher, deadline }) {
             .finally(() => clearTimeout(timer));
     };
     if (launcher.readyFacts?.control !== true || launcher.readyFacts?.service !== true) throw Error('Candidate lacks private validation and HTTP proofs');
+    await remaining(require('./pi-launcher-qa-checkpoints').checkpoint(launcher.root, 'candidate-before-validation',
+        { activationId: activation.id, releaseId: activation.releaseId, programRoot: launcher.programRoot, url, validationDeadline: deadline }, { environment: launcher.env, deadline }));
     const data = await remaining(launcher.desktopRequest('validate', { activationId: activation.id }, { timeoutMs: Math.max(1, deadline - Date.now()) }));
     const version = JSON.parse(readSafe(path.join(launcher.programRoot, 'package.json'))).version;
     const engine = JSON.parse(readSafe(fs.realpathSync.native(path.join(launcher.programRoot, 'node_modules/@earendil-works/pi-coding-agent/package.json')))).version;

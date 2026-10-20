@@ -1007,15 +1007,21 @@ const httpServer = app.listen(PORT, network.host, () => {
                 PI_MEDIA_DATA_DIR: mediaDataRoot, PI_MEDIA_CONFIG_DIR: mediaProfile.directory,
                 PI_WEB_DEFERRED_FILE: path.resolve(piAgentGateway.deferred.filePath), BAIZELINGTAI_UPDATE_FEED_URL: updateFeed || '',
                 BAIZELINGTAI_UPDATE_RELEASES_URL: process.env.BAIZELINGTAI_UPDATE_RELEASES_URL || updateFeed || '' } });
+        require('./server/pi-launcher-qa-checkpoints').writeReceipt(require('node:path').resolve(process.env.PI_MANAGED_BASE || __dirname), 'service-live', { programRoot: __dirname });
     }
 });
 piAgentGateway.attachWebSocket(httpServer);
 
 const shutdown = require('./server/pi-process-shutdown').registerProcessShutdown(async () => {
     const httpClosed = new Promise((resolve, reject) => httpServer.close(error => error ? reject(error) : resolve()));
+    if (maintenance.managed) await require('./server/pi-launcher-qa-checkpoints').checkpoint(require('node:path').resolve(process.env.PI_MANAGED_BASE || __dirname), 'service-cleanup-pending', { programRoot: __dirname });
     try { await piAgentGateway.dispose(); }
     finally { await require('./server/pi-rpc-client').shutdownRpcProcesses(); workspaceAccess.dispose(); }
     await httpClosed;
+    if (maintenance.managed && process.connected) {
+        const qa = await require('./server/pi-launcher-qa-checkpoints').checkpoint(require('node:path').resolve(process.env.PI_MANAGED_BASE || __dirname), 'service-before-cleanup-proof', { programRoot: __dirname });
+        if (qa.omitProof) return;
+    }
     if (maintenance.managed && process.connected) await new Promise((resolve, reject) => {
         process.send({ type: 'maintenance-shutdown-complete', nonce: maintenance.nonce }, error => error ? reject(error) : resolve());
     });

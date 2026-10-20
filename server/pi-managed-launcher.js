@@ -314,6 +314,7 @@ class ManagedLauncher {
                 if (message.release?.format === 'windows-portable-zip' && this.status().wholePackageUpdateSupported) {
                     const metadata = JSON.parse(readSafe(require('./pi-update-feed').portableMetadataFile(destination)));
                     if (metadata.launcherUpdateProtocol !== 1) throw Error('Candidate does not support whole-package launcher validation; use independent migration');
+                    await require('./pi-launcher-qa-checkpoints').checkpoint(this.root, 'candidate-staged', { candidateDirectory: destination, releaseId: message.id }, { environment: this.env });
                 }
                 next = message.id;
             }
