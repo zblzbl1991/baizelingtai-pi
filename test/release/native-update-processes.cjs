@@ -15,6 +15,7 @@ public sealed class ExactQaProcess : IDisposable {
     ||!QueryFullProcessImageName(h,0,name,ref size)||!String.Equals(name.ToString(),executable,StringComparison.OrdinalIgnoreCase)||WaitForSingleObject(h,0)!=258){h.Dispose();throw new Exception("Exact expected process identity/executable unavailable");}
  }
  public void Wait(uint timeout){if(WaitForSingleObject(h,timeout)!=0)throw new Exception("Exact process exit remains unknown");}
+ public bool Alive(){return WaitForSingleObject(h,0)==258;}
  public void Terminate(){if(!TerminateProcess(h,1))throw new Exception("Exact fixture termination failed");Wait(30000);}
  public void Dispose(){h.Dispose();}
 }
@@ -100,12 +101,13 @@ async function interruptHelper(receipt, env) {
     if (proof.exited !== true) throw Error('Synthetic helper interruption was not confirmed');
     return proof;
 }
-async function witnessExit(receipt, env) {
+async function witnessExit(receipt, env, { controlled = false } = {}) {
     if (!Number.isSafeInteger(receipt.pid) || !receipt.execPath.startsWith(receipt.root + path.sep) || !/^[0-9]{16,19}$/.test(receipt.creationTime || '')) throw Error('An actual isolated process receipt with original FILETIME is required');
-    const script = "$ErrorActionPreference='Stop';\n" + EXACT_HANDLE + "\n$held=[ExactQaProcess]::new([uint32]$env:PIVANE_QA_PID,$env:PIVANE_QA_STAMP,$env:PIVANE_QA_EXEC,$false);try{[Console]::WriteLine((@{event='held';pid=[int]$env:PIVANE_QA_PID;creationTime=$env:PIVANE_QA_STAMP}|ConvertTo-Json -Compress));[Console]::Out.Flush();$held.Wait(600000);[Console]::WriteLine('exited')}finally{$held.Dispose()}";
+    const controls = controlled ? "while($true){$command=[Console]::ReadLine();if($command -eq 'wait'){break};if($command -ne 'alive'){throw 'Unknown held HANDLE command'};[Console]::WriteLine((@{event='probe';alive=$held.Alive()}|ConvertTo-Json -Compress));[Console]::Out.Flush()}" : '';
+    const script = "$ErrorActionPreference='Stop';\n" + EXACT_HANDLE + "\n$held=[ExactQaProcess]::new([uint32]$env:PIVANE_QA_PID,$env:PIVANE_QA_STAMP,$env:PIVANE_QA_EXEC,$false);try{[Console]::WriteLine((@{event='held';pid=[int]$env:PIVANE_QA_PID;creationTime=$env:PIVANE_QA_STAMP}|ConvertTo-Json -Compress));[Console]::Out.Flush();" + controls + "$held.Wait(600000);[Console]::WriteLine('exited')}finally{$held.Dispose()}";
     const child = spawn(path.join(env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe'),
         ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
-        { env: { SystemRoot: env.SystemRoot, TEMP: env.TEMP, TMP: env.TMP, PIVANE_QA_PID: String(receipt.pid), PIVANE_QA_EXEC: receipt.execPath, PIVANE_QA_STAMP: receipt.creationTime }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        { env: { SystemRoot: env.SystemRoot, TEMP: env.TEMP, TMP: env.TMP, PIVANE_QA_PID: String(receipt.pid), PIVANE_QA_EXEC: receipt.execPath, PIVANE_QA_STAMP: receipt.creationTime }, windowsHide: true, stdio: [controlled ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     let output = '', error = '', held;
     child.stdout.on('data', bytes => { output += bytes; const line = output.split(/\r?\n/)[0]; try { const value = JSON.parse(line); if (value.event === 'held') held = value; } catch {} });
     child.stderr.on('data', bytes => { error = (error + bytes).slice(-1024); });
@@ -114,11 +116,29 @@ async function witnessExit(receipt, env) {
     closed.catch(() => {});
     const until = Date.now() + 15000;
     while (!held) { if (Date.now() >= until || child.exitCode !== null) throw Error('Could not hold the isolated service HANDLE'); await new Promise(resolve => setTimeout(resolve, 50)); }
-    return { held, exited: closed };
+    let probeCount = 0, waiting = false;
+    child.stdin?.on('error', () => {});
+    return { held, exited: closed, waitForExit() {
+        if (controlled && !waiting) { waiting = true; child.stdin.end('wait\n'); }
+        return closed;
+    }, async assertAlive() {
+        if (!controlled || waiting) throw Error('A held controllable service HANDLE is required');
+        const before = probeCount++, deadline = Date.now() + 15000;
+        child.stdin.write('alive\n');
+        do {
+            const probes = output.split(/\r?\n/).slice(0, -1).filter(line => line.startsWith('{')).map(line => JSON.parse(line)).filter(value => value.event === 'probe');
+            if (probes.length > before) {
+                if (probes[before].alive !== true) throw Error('The exact old service no longer remains live inside the cleanup gate');
+                return { ...held, alive: true, method: 'same-held-Windows-HANDLE' };
+            }
+            if (child.exitCode !== null || Date.now() >= deadline) throw Error('Exact held service liveness probe failed');
+            await new Promise(resolve => setTimeout(resolve, 50));
+        } while (true);
+    } };
 }
-function witnessServiceExit(receipt, env) {
+function witnessServiceExit(receipt, env, options) {
     if (receipt.point !== 'service-live') throw Error('An actual service-live receipt is required');
-    return witnessExit(receipt, env);
+    return witnessExit(receipt, env, options);
 }
 function witnessHelperExit(receipt, env) {
     if (receipt.state !== 'paused' || !receipt.execPath.endsWith(path.join('helper', 'runtime', 'node.exe'))) throw Error('An actual paused helper receipt is required');
@@ -133,4 +153,17 @@ async function teardownUnknownOwners(current, serviceProof, env) {
     }, { timeoutMs: 30000 });
     return JSON.parse(result.stdout);
 }
-module.exports = { launch, run, powershell, createShortcut, startFixedEntry, openShortcut, holdEntry, interruptHelper, witnessServiceExit, witnessHelperExit, teardownUnknownOwners };
+async function crashCommittedParents(current, env) {
+    const authority = require('../../server/pi-launcher-qa-context').continuationEnvironment(current.root, env);
+    if (authority.PIVANE_NATIVE_QA !== '1' || authority.PIVANE_NATIVE_QA_SCENARIO !== 'committed-crash'
+        || authority.PIVANE_NATIVE_QA_RUN_ID !== current.runId || current.state !== 'ready'
+        || current.components?.processes?.length !== 2) throw Error('A ready real synthetic runner/tray pair is required for this authorized crash scenario');
+    const identities = current.components.processes.map((value, index) => ({ ...value, executable: index === 0 ? current.components.nodePath : current.trayPath }));
+    if (identities.some(item => !/^[0-9]{16,19}$/.test(item.creationTime || '') || !Number.isSafeInteger(item.pid)
+        || typeof item.executable !== 'string' || !path.isAbsolute(item.executable))) throw Error('Original committed runner/tray FILETIME and executable paths are required');
+    const result = await powershell("$ErrorActionPreference='Stop';\n" + EXACT_HANDLE + "\n$items=ConvertFrom-Json $env:PIVANE_QA_IDENTITIES;$held=@();try{foreach($item in $items){$held+=,[ExactQaProcess]::new([uint32]$item.pid,[string]$item.creationTime,[string]$item.executable,$true)};for($i=$held.Count-1;$i -ge 0;$i--){$held[$i].Terminate()};@{status='synthetic-committed-parent-crash';productCleanProof=$false;method='same-held-terminable-HANDLE';identities=$items}|ConvertTo-Json -Compress -Depth 4}finally{foreach($p in $held){$p.Dispose()}}", {
+        SystemRoot: env.SystemRoot, TEMP: env.TEMP, TMP: env.TMP, PIVANE_QA_IDENTITIES: JSON.stringify(identities)
+    }, { timeoutMs: 60000 });
+    return JSON.parse(result.stdout);
+}
+module.exports = { launch, run, powershell, createShortcut, startFixedEntry, openShortcut, holdEntry, interruptHelper, witnessServiceExit, witnessHelperExit, teardownUnknownOwners, crashCommittedParents };

@@ -13,7 +13,7 @@ const JOB_REJECTION = new Set(['target-changed', 'corrupt-download', 'staged-mut
 const INTERRUPT = new Set(['interrupt-prepared', 'interrupt-activating', 'interrupt-rollback']);
 const ROLLBACK = new Set(['validation-failure', 'validation-timeout']);
 const EXPECTED = Object.freeze({ normal: 'committed', 'old-tray-held': 'committed', 'repair-entry': 'committed',
-    'repair-changed-entry': 'committed', 'postcommit-preservation': 'committed', 'target-changed': 'job-rejected',
+    'repair-changed-entry': 'committed', 'postcommit-preservation': 'committed', 'committed-crash': 'committed', 'target-changed': 'job-rejected',
     'corrupt-download': 'job-rejected', 'staged-mutation': 'job-rejected', 'unpublished-source': 'job-rejected',
     'unknown-cleanup': 'cleanup-unknown', 'interrupt-prepared': 'interrupted', 'interrupt-activating': 'interrupted',
     'interrupt-rollback': 'interrupted', 'occupied-entry': 'entry-occupied', 'recovery-failure': 'recovery-failed',
@@ -177,11 +177,11 @@ async function runAcceptance(options, inputs) {
             signedManifest: options.signedManifest, qaTrust: options.qaTrust }, harnessSourceSha256: hashFileSafe(__filename).sha256,
         host: { node: process.version, platform: process.platform, arch: process.arch, osRelease: require('node:os').release(), osVersion: require('node:os').version() },
         harnessClosure: Object.fromEntries(['native-launcher-update.cjs', 'native-update-inputs.cjs', 'native-update-run.cjs', 'native-update-observer.cjs',
-            'native-update-processes.cjs', 'native-update-session.cjs', '../../server/pi-launcher-qa-context.js', '../../server/pi-launcher-qa-checkpoints.js']
+            'native-update-processes.cjs', 'native-update-session.cjs', 'native-update-committed-crash.cjs', '../../server/pi-launcher-qa-context.js', '../../server/pi-launcher-qa-checkpoints.js']
             .map(name => [name, hashFileSafe(path.resolve(__dirname, name), 1024 * 1024)])),
         productBudgets: { activationMs: 120000, stableMs: 15000, ordinaryControlMs: 15000 },
         scenarios: Object.fromEntries(SCENARIOS.map(name => [name, { status: 'not-run' }])), layers: {}, limitations: [
-            'Committed runner+tray hard-crash while service/RPC cleanup is pending is not covered by these 21 scenarios; separate durable-owner work and acceptance remain required',
+            'Committed-crash verifies a real service HANDLE and owner admission; it does not create or hold an actual RPC worker HANDLE',
             'No real provider/model/background task dispatch; native initialization health plus HTTP/WS admission are the covered boundaries' ] };
     let feed, browser, observer, env, paths, current, holder, serviceWitness, helperWitness, failed = true, safeToRemove = false;
     let previousManifest, candidateManifest;
@@ -200,6 +200,7 @@ async function runAcceptance(options, inputs) {
             const metadata = jsonFile(require('../../server/pi-update-feed').portableMetadataFile(directory));
             if (metadata.launcherUpdateProtocol !== 1 || !fs.existsSync(path.join(directory, 'server/pi-launcher-qa-context.js'))
                 || !fs.existsSync(path.join(directory, 'server/pi-launcher-qa-checkpoints.js'))) unsupported('Accurate package lacks the guarded native QA continuation/checkpoint protocol; build a separate explicit QA artifact');
+            if (options.scenario === 'committed-crash' && metadata.desktopOwnerProtocol !== 1) unsupported('Committed crash requires accurate baseline and candidate desktopOwnerProtocol 1 metadata');
             for (const file of ['repair/runtime/node.exe', 'repair/scripts/repair-launcher.cjs']) assert.ok(fs.lstatSync(path.join(directory, file)).isFile());
         }
         require('../../server/pi-update-signatures').readUpdateTrust(readSafe(path.join(candidateRoot, 'config/update-trust.json'), 64 * 1024));
@@ -396,46 +397,51 @@ async function runAcceptance(options, inputs) {
                     report.committed = current; report.layers.realHandleHelperAutomaticNewTrayAndDurableCommit = true;
                     const business = await request(current.url, 'status'); assert.equal(business.status, 200);
                     assert.ok(Date.parse(business.observedAt) >= Date.parse(activation.committedAt)); report.firstBusinessAfterCommit = business;
-                    report.preShortcutStop = await observer.stop(current);
-                    const beforeGeneration = current.generation;
-                    await processes.openShortcut(root, shortcut, env);
-                    current = await observer.until(value => value.current?.state === 'ready' && value.current.generation !== beforeGeneration && value.current, 'original shortcut reopens the active target with a new real tray generation');
-                    assertComponents(current, active, inputs.manifest.version, inputs.manifest.piVersion, candidateManifest);
-                    const opens = observer.events(current.generation, 'browser-opened').length;
-                    await processes.openShortcut(root, shortcut, env);
-                    await observer.until(value => value.current?.generation === current.generation && observer.events(current.generation, 'browser-opened').length > opens, 'duplicate original shortcut reaches current real owner', 30000);
-                    report.reopened = current; report.layers.originalShortcutReopenAndDuplicateOwner = true;
-                    await page.goto(current.waitingUrl, { waitUntil: 'domcontentloaded' }); await page.waitForURL(current.url, { timeout: 30000 });
-                    await page.screenshot({ path: path.join(scope, 'evidence', 'after.png'), fullPage: true });
-                    if (['repair-entry', 'repair-changed-entry', 'postcommit-preservation'].includes(options.scenario)) {
-                        const newest = path.join(paths.PI_CODING_AGENT_DIR, 'newest-after-commit.txt'); privateFiles.writePrivateFileSync(newest, 'newest synthetic committed data\n', true);
-                        const newestProof = hashFileSafe(newest); report.preRepairStop = await observer.stop(current); current = null; safeToRemove = true;
-                        const denied = await repair(root, 'rollback-handoff', env, activation.id, '[]\n');
-                        assert.equal(denied.code, 1); assert.match(denied.stderr, /manual recovery|committed|Activation/i);
-                        report.postcommit = { newest, before: newestProof, recoveryRefused: denied };
-                        if (options.scenario !== 'postcommit-preservation') {
-                            const fixed = path.join(root, '白泽灵台.exe');
-                            if (options.scenario === 'repair-entry') fs.unlinkSync(fixed); else fs.writeFileSync(fixed, 'isolated changed entry');
-                            const changedEntry = options.scenario === 'repair-changed-entry' ? hashFileSafe(fixed) : null;
-                            const hidden = path.join(scope, 'hidden-main-node-modules'); fs.renameSync(path.join(root, 'node_modules'), hidden);
-                            try {
-                                const diagnosis = await repair(root, 'diagnose', env); assert.equal(diagnosis.code, 0); report.independentRepair = { diagnosis: JSON.parse(diagnosis.stdout), mainDependenciesHidden: true };
-                                if (options.scenario === 'repair-changed-entry') {
-                                    const rejected = await repair(root, 'restore-entry', env, activation.id); assert.equal(rejected.code, 1); report.independentRepair.defaultRefusal = rejected;
-                                    const restored = await processes.run(path.join(root, 'repair/runtime/node.exe'), [path.join(root, 'repair/scripts/repair-launcher.cjs'), 'restore-entry', root, activation.id, '--replace-changed'], env, { cwd: root });
-                                    report.independentRepair.restore = JSON.parse(restored.stdout);
-                                } else { const restored = await repair(root, 'restore-entry', env, activation.id); assert.equal(restored.code, 0); report.independentRepair.restore = JSON.parse(restored.stdout); }
-                                assert.equal(hashFileSafe(fixed).sha256, activation.activeEntry.sha256);
-                                if (changedEntry) {
-                                    const repairState = observer.state().activation.entryRepair;
-                                    const retained = path.join(root, '.pivane-runtime/activation', activation.id, 'entry-repair', repairState.id, 'previous-entry.exe');
-                                    assert.deepEqual(hashFileSafe(retained), changedEntry, 'explicit changed-entry repair retains the exact previous bytes');
-                                    report.independentRepair.retainedChangedEntry = { path: retained, proof: hashFileSafe(retained) };
-                                }
-                            } finally { fs.renameSync(hidden, path.join(root, 'node_modules')); }
-                            report.layers.shippedIndependentRepairNodeWithoutMainEntryOrDependencies = true;
+                    if (options.scenario === 'committed-crash') {
+                        await require('./native-update-committed-crash.cjs').committedCrash({ root, paths, env, observer, current, shortcut, report, persist, repair });
+                        current = null;
+                    } else {
+                        report.preShortcutStop = await observer.stop(current);
+                        const beforeGeneration = current.generation;
+                        await processes.openShortcut(root, shortcut, env);
+                        current = await observer.until(value => value.current?.state === 'ready' && value.current.generation !== beforeGeneration && value.current, 'original shortcut reopens the active target with a new real tray generation');
+                        assertComponents(current, active, inputs.manifest.version, inputs.manifest.piVersion, candidateManifest);
+                        const opens = observer.events(current.generation, 'browser-opened').length;
+                        await processes.openShortcut(root, shortcut, env);
+                        await observer.until(value => value.current?.generation === current.generation && observer.events(current.generation, 'browser-opened').length > opens, 'duplicate original shortcut reaches current real owner', 30000);
+                        report.reopened = current; report.layers.originalShortcutReopenAndDuplicateOwner = true;
+                        await page.goto(current.waitingUrl, { waitUntil: 'domcontentloaded' }); await page.waitForURL(current.url, { timeout: 30000 });
+                        await page.screenshot({ path: path.join(scope, 'evidence', 'after.png'), fullPage: true });
+                        if (['repair-entry', 'repair-changed-entry', 'postcommit-preservation'].includes(options.scenario)) {
+                            const newest = path.join(paths.PI_CODING_AGENT_DIR, 'newest-after-commit.txt'); privateFiles.writePrivateFileSync(newest, 'newest synthetic committed data\n', true);
+                            const newestProof = hashFileSafe(newest); report.preRepairStop = await observer.stop(current); current = null; safeToRemove = true;
+                            const denied = await repair(root, 'rollback-handoff', env, activation.id, '[]\n');
+                            assert.equal(denied.code, 1); assert.match(denied.stderr, /manual recovery|committed|Activation/i);
+                            report.postcommit = { newest, before: newestProof, recoveryRefused: denied };
+                            if (options.scenario !== 'postcommit-preservation') {
+                                const fixed = path.join(root, '白泽灵台.exe');
+                                if (options.scenario === 'repair-entry') fs.unlinkSync(fixed); else fs.writeFileSync(fixed, 'isolated changed entry');
+                                const changedEntry = options.scenario === 'repair-changed-entry' ? hashFileSafe(fixed) : null;
+                                const hidden = path.join(scope, 'hidden-main-node-modules'); fs.renameSync(path.join(root, 'node_modules'), hidden);
+                                try {
+                                    const diagnosis = await repair(root, 'diagnose', env); assert.equal(diagnosis.code, 0); report.independentRepair = { diagnosis: JSON.parse(diagnosis.stdout), mainDependenciesHidden: true };
+                                    if (options.scenario === 'repair-changed-entry') {
+                                        const rejected = await repair(root, 'restore-entry', env, activation.id); assert.equal(rejected.code, 1); report.independentRepair.defaultRefusal = rejected;
+                                        const restored = await processes.run(path.join(root, 'repair/runtime/node.exe'), [path.join(root, 'repair/scripts/repair-launcher.cjs'), 'restore-entry', root, activation.id, '--replace-changed'], env, { cwd: root });
+                                        report.independentRepair.restore = JSON.parse(restored.stdout);
+                                    } else { const restored = await repair(root, 'restore-entry', env, activation.id); assert.equal(restored.code, 0); report.independentRepair.restore = JSON.parse(restored.stdout); }
+                                    assert.equal(hashFileSafe(fixed).sha256, activation.activeEntry.sha256);
+                                    if (changedEntry) {
+                                        const repairState = observer.state().activation.entryRepair;
+                                        const retained = path.join(root, '.pivane-runtime/activation', activation.id, 'entry-repair', repairState.id, 'previous-entry.exe');
+                                        assert.deepEqual(hashFileSafe(retained), changedEntry, 'explicit changed-entry repair retains the exact previous bytes');
+                                        report.independentRepair.retainedChangedEntry = { path: retained, proof: hashFileSafe(retained) };
+                                    }
+                                } finally { fs.renameSync(hidden, path.join(root, 'node_modules')); }
+                                report.layers.shippedIndependentRepairNodeWithoutMainEntryOrDependencies = true;
+                            }
+                            assert.deepEqual(hashFileSafe(newest), newestProof); assert.equal(observer.state().active, state.active);
                         }
-                        assert.deepEqual(hashFileSafe(newest), newestProof); assert.equal(observer.state().active, state.active);
                     }
                 }
             }

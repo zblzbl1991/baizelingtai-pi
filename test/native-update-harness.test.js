@@ -24,6 +24,7 @@ test('exact native acceptance requires explicit bound inputs and a fresh output'
     assert.equal(selected.scenario, 'normal');
     assert.equal(selected.baselineKind, 'synthetic-qa');
     assert.equal(selected.previousVersion, '1.7.99');
+    assert.equal(parseOptions(args.map(value => value === 'normal' ? 'committed-crash' : value)).scenario, 'committed-crash');
     assert.throws(() => parseOptions([...args, '--scenario', 'repair-entry']), /duplicate/i);
     assert.throws(() => parseOptions([...args, '--routine']), /unknown/i);
     assert.throws(() => parseOptions(args.filter(value => value !== '--qa-trust' && value !== path.join(base, 'public.json'))), /qa-trust/i);

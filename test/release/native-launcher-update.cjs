@@ -6,7 +6,7 @@ const path = require('node:path');
 const SCENARIOS = Object.freeze(['normal', 'missing-signature', 'invalid-signature', 'foreign-key', 'target-changed',
     'corrupt-download', 'staged-mutation', 'unpublished-source', 'occupied-entry', 'unknown-cleanup', 'old-tray-held',
     'interrupt-prepared', 'interrupt-activating', 'interrupt-rollback', 'validation-failure', 'validation-timeout',
-    'recovery-failure', 'repair-entry', 'repair-changed-entry', 'postcommit-preservation', 'legacy-refusal']);
+    'recovery-failure', 'repair-entry', 'repair-changed-entry', 'postcommit-preservation', 'legacy-refusal', 'committed-crash']);
 const FLAGS = Object.freeze({ '--previous-archive': 'previousArchive', '--previous-sha256': 'previousSha256',
     '--previous-version': 'previousVersion', '--baseline-kind': 'baselineKind', '--archive': 'archive', '--sha256': 'sha256',
     '--signed-manifest': 'signedManifest', '--qa-trust': 'qaTrust', '--changed-manifest': 'changedManifest',
