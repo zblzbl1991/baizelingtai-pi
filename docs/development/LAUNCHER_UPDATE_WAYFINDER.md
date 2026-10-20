@@ -2,14 +2,14 @@
 
 本页用于接手 Windows x64 便携版的启动器整包自动升级开发，连接设计、状态所有者、实现与验证入口。13 项产品选择见[设计记录](design/launcher-auto-update.md)，本页不另存一份产品规范。
 
-当前签名信任、独立退出后激活及桌面交接已有源码；独立修复、旧版迁移和准确包整链验收仍按工单推进。旧外层的一键更新仍只切换服务；新协议的整套能力由维护状态明确声明，包内带新版 EXE 本身不表示原入口已更新。源码、实际运行版本和发行归档须分别核对。
+当前签名信任、独立退出后激活、桌面交接、独立修复和便携构建接线已有源码；旧版自动迁移对无法证明的清理明确拒绝，首次实际迁移与准确包整链验收仍须单独完成。旧外层的一键更新仍只切换服务；新协议的整套能力由维护状态明确声明，包内带新版 EXE 本身不表示原入口已更新。源码、实际运行版本和发行归档须分别核对。
 
 ## 先按任务定位
 
 | 接手任务 | 先读哪里 | 定位完成的条件 |
 |---|---|---|
 | 理解已确认范围 | [设计记录](design/launcher-auto-update.md)、[术语](../../GLOSSARY.md) | 知道整包范围、启用前验证与开放业务后的恢复边界 |
-| 核对当前用户行为 | [启动器指南](../DESKTOP_LAUNCHER.md)、[更新指南](../UPDATES.md) | 区分当前服务更新能力与待实现的外层升级能力 |
+| 核对当前用户行为 | [启动器指南](../DESKTOP_LAUNCHER.md)、[更新指南](../UPDATES.md) | 区分旧外层服务更新能力、新协议源码能力和准确包待验范围 |
 | 追维护协议与准入 | [API](../API.md#版本检查与-pi-受管维护)、[架构](ARCHITECTURE.md)、下表的维护入口 | 找到一次性票据、全局空闲、IPC 与业务准入的所有者 |
 | 实现或排查退出交接 | 下表的桌面链路、安装锁与正常停机 | 追到实际进程、可信清理证明、锁交接和未知结果处理 |
 | 实现激活与恢复 | 下表的候选、备份、原生文件与版本选择 | 明确原安装身份、候选文件证明、提交点和恢复条件 |
@@ -23,27 +23,28 @@
 |---|---|---|
 | 原入口、快捷方式与托盘 | [EXE](../../native/pivane-desktop-launcher.cs)、[托盘](../../scripts/desktop-tray.ps1)、[EXE 构建](../../scripts/build-desktop-launcher.cjs) | EXE 自身退出后托盘仍可持有其程序集；固定入口自身升级必须等实际释放 |
 | 桌面身份、runner 与控制协议 | [runner](../../scripts/start-desktop.cjs)、[桌面编排](../../server/pivane-desktop-launcher.js) | 原安装根、data 默认路径、generation、LF 分帧、进程退出与 clean 状态 |
-| 版本选择与受管维护执行 | [ManagedLauncher](../../server/pi-managed-launcher.js) | `.pivane-runtime/state.json` 的 active/previous、候选 boot、关闭与恢复；现有指针只覆盖服务，不证明外层已激活 |
+| 版本选择与受管维护执行 | [ManagedLauncher](../../server/pi-managed-launcher.js) | `.pivane-runtime/state.json` 的 active/previous、候选 boot、关闭与恢复；旧外层指针只证明服务切换；新协议还须核对同一 activation 的外层提交记录 |
 | 安装级互斥 | [安装锁](../../server/pi-installation-lock.js) | 锁绑定原安装 realpath；迁移、更新助手和正常启动必须服从同一所有权边界，托盘 mutex 不能代替它 |
-| 版本页、清单与票据 | [更新 UI](../../public/pi-updates.js)、[更新服务及路由](../../server/pi-update-service.js)、[清单解析](../../server/pi-update-feed.js)、[签名验证](../../server/pi-update-signatures.js)、[维护客户端](../../server/pi-maintenance-client.js) | review/execute/maintenance 查询、目标重查、票据绑定、能力声明与准入；新签名字段需贯穿这些边界 |
+| 版本页、清单与票据 | [更新 UI](../../public/pi-updates.js)、[更新服务及路由](../../server/pi-update-service.js)、[清单解析](../../server/pi-update-feed.js)、[签名验证](../../server/pi-update-signatures.js)、[维护客户端](../../server/pi-maintenance-client.js) | review/execute/maintenance 查询、目标重查、票据绑定、能力声明与准入；核对原始已签载荷在这些边界内是否保持绑定 |
 | 全局空闲与正常停机 | [停机事务](../../server/pivane-desktop-stop.js)、[网关装配与 dispose](../../server/pi-agent-routes.js)、[服务清理与证明](../../server.js) | 所有后台工作参与准入，实际清理完成才能交接；超时、退出码 0 或 PID 消失均不能单独替代证明 |
 | ZIP 校验、解压与候选验证 | [便携包安装器](../../server/pi-portable-installer.js)、[合成身份探针](../../server/pi-update-probe.js) | 固定目标、同源下载、字节数/哈希、逐文件清单、源码未发布修改保护；激活前还须重新核验 |
 | 备份证明、数据恢复与保留 | [维护文件](../../server/pi-maintenance-files.js)、[备份证明](../../server/pi-maintenance-backup.js)、[恢复](../../server/pi-maintenance-restore.js)、[保留策略](../../server/pi-managed-retention.js)、[离线恢复入口](../../scripts/restore-managed-backup.cjs) | 停机备份、失败数据快照、needsRecovery 与恢复范围；现有离线脚本不能修复固定 EXE |
-| Windows 文件身份与替换 | [JS 原生边界](../../server/pi-win32-native.js)、[原生源码](../../native/pi-win32-fd.c)、[原生组件说明](../../native/README.md) | 已有单文件替换能力依赖 Node/JS/原生模块，不等于独立恢复器；源码、二进制与 manifest 必须匹配 |
+| Windows 文件身份与替换 | [JS 原生边界](../../server/pi-win32-native.js)、[原生源码](../../native/pi-win32-fd.c)、[原生组件说明](../../native/README.md) | 单文件替换与独立修复闭包共用 native 身份边界；源码、二进制与 manifest 必须匹配 |
+| 独立修复与旧版维护 | [修复器](../../server/pi-launcher-repair.js)、[CLI](../../scripts/repair-launcher.cjs)、[旧版计划](../../server/pi-launcher-legacy.js)、[修复指南](../LAUNCHER_REPAIR.md) | 独立闭包、同版本入口修复与未提交数据回退分开；旧版只读计划不表示已自动迁移 |
 | 打包、运行时与发现规则 | [Windows 打包](../../scripts/package-windows-portable.cjs)、[源码发现](../../scripts/source-files.cjs)、[公开文档清单](../public-files.json) | 新助手与修复依赖纳入统一发现和准确包清单；私钥、身份、运行目录及备份不得进入发行包 |
 
-## 后续实施顺序
+## 实施与交付顺序
 
-以下均为待实现工作，不代表本次已经编码或验收。阶段的完成条件用于交接；不能把阶段完成等同于整包能力已可发布。
+以下按依赖列出已实现的源码边界及其完成条件。源码专项、准确包验收、部署和公开发布分别留证；不能把源码完成等同于整包能力已可发布。
 
 | 顺序 | 工作与依赖 | 完成条件 |
 |---|---|---|
-| 1 | 在现有维护边界明确能力协商、安装根与版本根、单次事务和业务提交点 | 旧外层能力不足能被识别；全链路绑定同一安装、操作、目标与恢复点，不建立竞争的状态所有者 |
-| 2 | 在清单、票据、暂存和激活链贯通签名；补发布侧显式签名 | schemaVersion:1 保留旧字段；新客户端拒绝无签名/无效签名，首次公钥由可信交付内置，未知密钥不自动信任 |
-| 3 | 实现固定入口、独立版本目录、退出后助手与锁交接 | 原安装身份和数据路径不变；服务有可信清理证明，旧托盘和 runner 确实退出后才激活，交接期间不会双启动 |
-| 4 | 实现整套激活、启用前验证、持久提交与一次回退，依赖前述事务、验签与交接 | 默认 120 秒、就绪后稳定 15 秒；提交前不开放业务，失败先确认退出再恢复；提交后不自动恢复旧数据 |
-| 5 | 完成中断恢复与独立“修复启动器”依赖闭包 | 主 EXE 不可用时仍能检查同一事务；只在证明可靠时恢复，未知结果与回退失败保留现场，不自动重放 |
-| 6 | 提供旧版一次迁移助手与签名源上线顺序，复用前述校验和恢复能力 | 旧版无法证明安全退出时转独立维护；先准备签名源再推广新客户端，不通过降级校验迁就旧源 |
+| 1 | 已有维护能力协商、原安装根与版本根、单次事务和业务提交点源码 | 旧外层能力不足能被识别；全链路绑定同一安装、操作、目标与恢复点，不建立竞争的状态所有者 |
+| 2 | 已在清单、票据、暂存和激活链贯通签名，提供发布侧显式签名 | schemaVersion:1 保留旧字段；新客户端拒绝无签名/无效签名，首次公钥由可信交付内置，未知密钥不自动信任 |
+| 3 | 已有固定入口、独立版本目录、退出后助手与锁交接源码 | 原安装身份和数据路径不变；服务有可信清理证明，旧托盘和 runner 确实退出后才激活，交接期间不会双启动 |
+| 4 | 已有整套激活、启用前验证、持久提交与一次回退源码，依赖前述事务、验签与交接 | 默认 120 秒、就绪后稳定 15 秒；提交前不开放业务，失败先确认退出再恢复；提交后不自动恢复旧数据 |
+| 5 | 已有中断恢复与独立“修复启动器”依赖闭包源码，便携构建交付独立 Node 和许可证 | 主 EXE 不可用时仍能检查同一事务；只在证明可靠时恢复，未知结果与回退失败保留现场，不自动重放 |
+| 6 | 已有旧版只读计划与自动迁移拒绝、签名源上线顺序；首次成功迁移待独立维护与准确包验证 | 旧版无法证明安全退出时转独立维护；先准备签名源再推广新客户端，不通过降级校验迁就旧源 |
 | 7 | 完成准确包 Windows 原生隔离验收，再按交付范围更新指南/API/发布说明 | 证明整套启动器实际更新、原快捷方式有效和数据不变；每项证据区分源码、准确包、部署和发布 |
 
 ## 不可绕开的边界
@@ -57,14 +58,15 @@
 
 ## 验证入口与尚缺的覆盖
 
-下表列出已有可复跑入口及其用途，具体断言与替身以代码为准。它们尚不能证明本页待实现的启动器整包升级已经通过。
+下表列出已有可复跑入口及其用途，具体断言与替身以代码为准。已有源码专项与合成夹具不能代替 Windows 准确包和真实托盘验收，具体结果须按当前源码、环境和日志核对。
 
 | 验证层 | 已有入口 | 本功能需要补齐的证明 |
 |---|---|---|
 | 清单、票据与候选 | [更新服务](../../test/pi-update-service.test.js)、[签名清单与票据](../../test/pi-update-signatures.test.js)、[维护](../../test/pi-maintenance.test.js)、[便携包更新](../../test/pi-portable-update.test.js) | 签名绑定与篡改拒绝、新旧清单兼容、准备后修改、能力不足拒绝外层激活 |
 | 安装所有权与进程交接 | [安装锁](../../test/pi-installation-lock.test.js)、[桌面协议](../../test/pivane-desktop-protocol.test.js)、[受控停机集成](../../test/pivane-desktop-control.integration.test.js) | 服务/runner/托盘/助手交接、不同入口竞争、清理未知与交接中断，不能只模拟 PID 消失 |
+| 独立修复与旧包边界 | [修复专项](../../test/pi-launcher-repair.test.js)、[准确旧包只读检查](../../test/release/launcher-legacy-migration.cjs) | 已有拒绝未知 owner、同版入口修复、独立依赖和旧包缺协议检查；实际首次迁移仍须准确包维护验收 |
 | Windows 原生与恢复 | [原生桌面](../../test/pivane-desktop-native.test.js)、[桌面恢复](../../test/pivane-desktop-recovery.test.js)、[应用更新](../../test/pi-application-update.test.js) | 文件占用、固定 EXE 替换、原件变化、助手依赖独立性、真实入口损坏后的修复 |
-| 打包与发现 | [Windows 打包](../../test/windows-portable-package.test.js)、[源码发现](../../test/source-files.test.js)、[文档清单](../../test/public-documentation.test.js) | 助手/修复器/公钥完整入包，私钥及运行数据排除，源码与原生二进制清单一致 |
+| 打包与发现 | [Windows 打包](../../test/windows-portable-package.test.js)、[签名交付](../../test/portable-signed-delivery.test.js)、[小型布局夹具](../../test/portable-infrastructure.test.js)、[签名 CLI](../../test/update-signing-cli.test.js)、[源码发现](../../test/source-files.test.js)、[文档清单](../../test/public-documentation.test.js) | 助手/修复器/公钥完整入包，私钥及运行数据排除，源码与原生二进制清单一致 |
 | 桌面 UI | [版本页](../../test/browser/pi-updates.cjs)、[原生托盘](../../test/browser/pivane-desktop-tray.cjs)、[真实桌面启动](../../test/browser/pivane-desktop-launcher.cjs) | 退出前后进度、整套版本展示、重开原入口、失败与需人工恢复状态；网页替身不能代替原生替换验证 |
 | 准确包整链 | [便携包验收](../../test/release/windows-portable.cjs)、[网页一键更新](../../test/release/portable-auto-update.cjs)、[内网更新演练](../../test/release/gitlab-portable-update.cjs) | 签名新旧准确包、各持久状态中断、启用前失败回退、提交后保留新数据、旧包首次迁移与固定入口修复 |
 

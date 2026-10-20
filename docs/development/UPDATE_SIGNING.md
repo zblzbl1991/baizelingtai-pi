@@ -1,6 +1,6 @@
 # 更新清单签名工具
 
-本页描述维护者本机显式运行的离线工具 `scripts/update-signing.cjs`。它不联网、不读取环境变量中的密码、不会自行发布或操作业务数据。包构建与签名分开进行；此工具已经实现密钥生成、准确归档签名及授权换钥，但不表示便携包接线、整套启动器升级或实机发布验收已经完成。协议及首次信任见[版本与更新](../UPDATES.md#发布者签名与首次信任)。
+本页描述维护者本机显式运行的离线工具 `scripts/update-signing.cjs`。它不联网、不读取环境变量中的密码、不会自行发布或操作业务数据。包构建与签名分开进行；此工具已经实现密钥生成、准确归档签名及授权换钥，便携构建已接入显式公钥、独立修复闭包与签名后组装；源码专项不表示准确整包、真实托盘或实机发布验收已经完成。协议及首次信任见[版本与更新](../UPDATES.md#发布者签名与首次信任)。
 
 ## 生成密钥
 
@@ -46,7 +46,7 @@ node scripts/update-signing.cjs sign --private-key C:\ReleaseKeys\publisher.pem 
 npm run pack:windows -- --bundle-only dist/baizelingtai-1.8.0.zip --signed-manifest dist/baizelingtai-1.8.0.zip.update.json --update-trust C:\ReleasePublic\update-trust.json --update-feed-url https://updates.example/updates/latest.json
 ```
 
-组装会重新校验显式公钥、已签清单、准确 ZIP 字节数/SHA256 和同名校验侧文件，前后核对输入身份/内容。无签名、陌生公钥、源变化、身份错位或已有输出都会拒绝。正式 `-offline.zip` 只包含准确应用 ZIP、校验侧文件和已签 `updates/latest.json`，不包含未签草稿、私钥或构建目录。`--bundle-only` 不重构应用，也不接受 `--dry-run`，避免误把预览当发布。此工具只写本机新产物，公开上传仍由维护者按发布门槛执行。
+组装会重新校验显式公钥、已签清单、规范 ZIP 文件名与签名版本的对应、准确 ZIP 字节数/SHA256 和同名校验侧文件，前后核对输入身份/内容。无签名、陌生公钥、源变化、身份错位或已有输出都会拒绝。正式 `-offline.zip` 只包含准确应用 ZIP、校验侧文件和已签 `updates/latest.json`，不包含未签草稿、私钥或构建目录。`--bundle-only` 不重构应用，也不接受 `--dry-run`，避免误把预览当发布。此工具只写本机新产物，公开上传仍由维护者按发布门槛执行。
 
 ## 授权换钥
 

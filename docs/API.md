@@ -387,7 +387,7 @@ DOC／XLS／PPT 扩展为原件上传、预览和下载格式，容器与内部�
 
 新 Windows 包使用 `baizelingtai-portable.json`，部署配置优先读取 `BAIZELINGTAI_UPDATE_FEED_URL`；以下旧环境变量与元数据文件名继续读取兼容，两个元数据文件同时存在时拒绝猜测。标准 `pack:windows` 读取本机发布配置，并以 `baizelingtai` 作为 GitLab Generic Package Registry 包名；详见[构建与分发](DESKTOP_LAUNCHER.md#内网更新源与-gitlab-分发)。既有 REST 响应字段保持兼容。
 
-Windows 便携包内元数据 `launcherUpdateProtocol:1` 表示候选理解整包启用前验证；新整包链路在停机前拒绝缺失此标识的候选。构建通过显式公钥输入附加信任文档，未签草稿不能成为正式更新源。分发与独立签名命令见[签名工具](development/UPDATE_SIGNING.md)。
+Windows 便携包内元数据 `launcherUpdateProtocol:1` 表示候选理解整包启用前验证；新整包链路在停机前拒绝缺失此标识的候选。构建在独立修复代码/native 闭包、自己的 Node 与许可证及显式公钥输入均写入后才声明该能力，随后纳入完整 PORTABLE 清单；能力字段本身不代替验签、完整库存与真实进程验收。未签草稿不能成为正式更新源。分发与独立签名命令见[签名工具](development/UPDATE_SIGNING.md)。
 
 可信清单模式的 `pivane.signedManifest` 保留已签名原始字段和签名；`verification` 为 `{status:"verified",keyId,payloadSha256}`，无信任配置的旧只读诊断为 `{status:"unverified"}`。新协议或配置了本地受信公钥时拒绝无签名/无效签名，卡片 `status:error`；便携维护 review 和暂存始终要求签名，不接受布尔值授权。`release.signedManifest` 随一次性票据及 IPC 贯通，暂存前后重新验签并重读清单。旧客户端忽略额外字段不等于具备验签能力。签名编码与信任轮换规则见[版本与更新](UPDATES.md#发布者签名与首次信任)。
 
