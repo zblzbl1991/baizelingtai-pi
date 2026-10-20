@@ -284,6 +284,11 @@ async function recoverActivation({ root, id, shutdownProof, witness, processProo
 }
 // The current runner already owns the installation lock. Persist before it opens
 // business admission; reading a committed result is idempotent after lost ack.
+function checkValidationDeadline(validation) {
+    if (validation.deadline === undefined) return;
+    if (!Number.isSafeInteger(validation.deadline) || validation.deadline <= 0) throw Error('Invalid startup validation deadline');
+    if (Date.now() > validation.deadline) throw Error('Startup validation deadline expired');
+}
 function commitActivation(root, id, validation) {
     root = fs.realpathSync.native(root);
     const activation = inspectActivation(root, id), state = readState(root);
@@ -291,7 +296,9 @@ function commitActivation(root, id, validation) {
     if (activation.phase !== 'validating' || state.active !== activation.releaseId
         || ['control', 'versions', 'service', 'data', 'tray'].some(name => validation?.[name] !== true)
         || !Number.isSafeInteger(validation?.stableMs) || validation.stableMs < 15000) throw Error('Complete startup validation is required before commit');
+    checkValidationDeadline(validation);
     verifyActiveProgram(root, state.active);
+    checkValidationDeadline(validation);
     activation.phase = 'committed'; activation.validation = validation; activation.committedAt = new Date().toISOString();
     state.activation = activation; atomicJson(stateFile(root), state);
     return activation;
