@@ -93,6 +93,10 @@ Windows 托盘以 `scripts/start-desktop.cjs --controlled --generation <UUID>` �
 
 runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,method:"snapshot"|"review"|"execute",input`），响应为 `desktop-response`（`id,result` 或 `error:{code,message}`）。检查不长期锁住工作台；最终接受后沿统一异步停机，桌面停止采用可逆内存派发闸门，不调用持久预约暂停。此私有协议不扩展现有公开维护 action 列表，不新增 HTTP 停机接口。
 
+整包协议增加 `tray-attached` 与挑战绑定的 `tray-validated` 私有帧，仍受继承通道、LF 与 generation 约束。证据含实际装载的原生版本／哈希、托盘脚本哈希、程序根、Node 路径及 runner／托盘的 PID 和完整 Windows FILETIME 创建时间。独立助手持有准确 HANDLE 并响应 ready 后，旧外层才沿统一清理退出；不以 PID 消失推断退出。事件 `update-progress.phase` 为 `waiting-exit`、`validating`、`rollback-waiting-exit` 或 `needs-recovery`；`update-handoff` 绑定 activationId 与 mode。安装根与程序根分别由 `PIVANE_INSTALLATION_ROOT` / `PIVANE_PROGRAM_ROOT` 传递并与唯一 state.active 复核。
+
+候选就绪须声明 `capabilities.validationProof:true`。私有 IPC 的 `desktop-request.method:"validate"` 仅在验证闸门关闭且 activationId 匹配时读取原生会话与预约初始化状态，返回该事务的 control/data 证明和实际应用／引擎版本，不启动模型 worker。维护状态增加 `wholePackageUpdateSupported`、实际 `launcherVersion` / `serviceVersion`、`programRoot` 与有界 `activation:{id,phase,releaseId}`。验证中 HTTP 只豁免 GET 更新快照、GET 维护状态和既有 access/status；通知偏好写入、版本联网检查、普通 HTTP/WS 与后台派发均关闭。只有匹配的持久 committed 状态后才能接受 maintenance-activate；迟到 release 不解除候选闸门。
+
 托盘的稳定只读 `GET /status` 返回 `state,instance,generation` 和可选 `url,message`，状态包括 `starting,ready,error,stopped,stopping,unknown`。页面的 `startup-instance` 标记必须与实例相符。入口仅监听本机 `127.0.0.1`、校验 Host/Origin 并限制请求，随托盘退出关闭；单次读取失败退避重试，读取本身不启动服务或重放操作。它不属于 `/api/pi`，不读取会话或凭据，不接受启动、停机或配置写入。旧单轮临时页保持原有精简状态；生命周期与用户操作见 [托盘启动器](DESKTOP_LAUNCHER.md)。
 
 ## 成果中心（artifacts）

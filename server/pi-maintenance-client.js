@@ -20,11 +20,16 @@ class MaintenanceClient {
     receive(message) {
         if (message?.nonce !== this.nonce) return;
         if (message.type === 'maintenance-status') {
+            if (!message.status || typeof message.status !== 'object' || Array.isArray(message.status)) return;
             if (this.pendingId && message.status?.job?.id !== this.pendingId) return;
             this.state = message.status;
         }
-        if (message.type === 'maintenance-activate' || message.type === 'maintenance-release' && message.id === this.state.job?.id) { this.locked = false; this.pendingId = null; }
-        if (message.type === 'maintenance-rejected' && message.id === this.state.job?.id) { this.locked = false; this.pendingId = null; this.state = { ...this.state, busy: false, job: { id: message.id, phase: 'failed', error: 'rejected' } }; }
+        const activation = this.state.activation;
+        const activationComplete = !activation || ['committed', 'rolled-back'].includes(activation.phase);
+        const ownsJob = typeof message.id === 'string' && message.id.length > 0 && message.id === this.state.job?.id;
+        if (activationComplete && (message.type === 'maintenance-activate' && (!activation || message.activationId === activation.id)
+            || message.type === 'maintenance-release' && ownsJob)) { this.locked = false; this.pendingId = null; }
+        if (activationComplete && message.type === 'maintenance-rejected' && ownsJob) { this.locked = false; this.pendingId = null; this.state = { ...this.state, busy: false, job: { id: message.id, phase: 'failed', error: 'rejected' } }; }
     }
     get locked() { return this.maintenanceLocked || this.desktopStopping; }
     set locked(value) { this.maintenanceLocked = Boolean(value); }
@@ -63,6 +68,8 @@ class MaintenanceClient {
         if (!pathname.startsWith('/api/') || req.method === 'GET' && pathname === '/api/access/status') return next();
         if (pathname.startsWith('/api/pi/settings/updates')) {
             if (this.desktopStopping) return res.status(503).json({ error: '实例正在维护，请等待完成' });
+            if (this.locked && !(req.method === 'GET' && ['/api/pi/settings/updates', '/api/pi/settings/updates/maintenance'].includes(pathname)))
+                return res.status(503).json({ error: '实例正在维护，请等待完成' });
             if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) this.touch();
             return next();
         }
