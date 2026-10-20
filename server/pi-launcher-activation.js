@@ -212,6 +212,7 @@ async function applyActivation(root, id, witness, processProof) {
         if (JSON.stringify(activation.handoffProcesses) !== JSON.stringify(processProof?.processes)) throw Error('Activation handoff process identities changed');
         activation.processProof = processProof;
         activation.phase = 'activating'; state.activation = activation; atomicJson(stateFile(root), state);
+        await require('./pi-launcher-qa-checkpoints').checkpoint(root, 'activation-replacing', { activationId: id, releaseId: activation.releaseId });
         const target = path.join(root, '白泽灵台.exe'), temp = path.join(root, '.' + id + '.entry');
         const candidateEntry = evidence.candidate.find(entry => entry.path === '白泽灵台.exe');
         const copied = copySafe(path.join(releaseRoot(root, activation.releaseId), '白泽灵台.exe'), temp, budget());
@@ -256,6 +257,7 @@ async function recoverActivation({ root, id, shutdownProof, witness, processProo
             package: JSON.parse(readSafe(path.join(releaseRoot(root, state.active), 'package.json'))),
             lock: JSON.parse(readSafe(path.join(releaseRoot(root, state.active), 'package-lock.json'), 16 * 1024 ** 2)) });
         activation.safetyBackup = safety; atomicJson(stateFile(root), state);
+        await require('./pi-launcher-qa-checkpoints').checkpoint(root, 'rollback-restoring', { activationId: id, releaseId: activation.releaseId, backupDirectory });
         const current = JSON.parse(readSafe(path.join(safetyDirectory, 'manifest.json'), 128 * 1024 ** 2));
         const parent = file => { if (fs.realpathSync.native(path.dirname(file)) !== path.dirname(file)) throw Error('Recovery destination parent changed'); };
         const wanted = new Set(plan.manifest.entries.map(entry => entry.path));
@@ -342,20 +344,26 @@ function verifyActiveProgram(root, releaseId) {
 async function runHandoff({ root, id, processes, onReady, mode = 'activate' }) {
     if (!['activate', 'rollback'].includes(mode)) throw Error('Invalid handoff operation');
     root = fs.realpathSync.native(root);
-    const continuation = continuationEnvironment(root, process.env);
-    const before = inspectActivation(root, id);
-    if (before.phase !== (mode === 'activate' ? 'prepared' : 'validating')) throw Error('Activation requires manual recovery');
-    const expectedProcesses = mode === 'activate' ? before.handoffProcesses : before.failureHandoffProcesses;
-    if (!Array.isArray(expectedProcesses) || JSON.stringify(expectedProcesses) !== JSON.stringify(processes)) throw Error('Handoff process identities do not match this transaction');
-    const proof = await require('./pi-launcher-processes').awaitExactProcesses(processes, onReady);
-    const activation = mode === 'activate' ? await applyActivation(root, id, exitWitness, proof)
-        : await recoverActivation({ root, id, shutdownProof: inspectActivation(root, id).failureShutdownProof, witness: exitWitness, processProof: proof });
-    const { spawn } = require('node:child_process');
-    const entry = spawn(path.join(root, '白泽灵台.exe'), [], { cwd: root, windowsHide: true, detached: true, stdio: 'ignore',
-        env: { SystemRoot: process.env.SystemRoot, SystemDrive: process.env.SystemDrive, TEMP: process.env.TEMP, TMP: process.env.TMP, ...continuation,
-            PIVANE_ACTIVATION_ID: activation.phase === 'validating' ? id : '', PIVANE_INSTALLATION_ROOT: root } });
-    await new Promise((resolve, reject) => { entry.once('spawn', resolve); entry.once('error', reject); });
-    entry.unref(); return activation;
+    try {
+        const continuation = continuationEnvironment(root, process.env);
+        const before = inspectActivation(root, id);
+        if (before.phase !== (mode === 'activate' ? 'prepared' : 'validating')) throw Error('Activation requires manual recovery');
+        const expectedProcesses = mode === 'activate' ? before.handoffProcesses : before.failureHandoffProcesses;
+        if (!Array.isArray(expectedProcesses) || JSON.stringify(expectedProcesses) !== JSON.stringify(processes)) throw Error('Handoff process identities do not match this transaction');
+        const proof = await require('./pi-launcher-processes').awaitExactProcesses(processes, onReady);
+        await require('./pi-launcher-qa-checkpoints').checkpoint(root, 'helper-before-apply', { activationId: id, mode });
+        const activation = mode === 'activate' ? await applyActivation(root, id, exitWitness, proof)
+            : await recoverActivation({ root, id, shutdownProof: inspectActivation(root, id).failureShutdownProof, witness: exitWitness, processProof: proof });
+        const { spawn } = require('node:child_process');
+        const entry = spawn(path.join(root, '白泽灵台.exe'), [], { cwd: root, windowsHide: true, detached: true, stdio: 'ignore',
+            env: { SystemRoot: process.env.SystemRoot, SystemDrive: process.env.SystemDrive, TEMP: process.env.TEMP, TMP: process.env.TMP, ...continuation,
+                PIVANE_ACTIVATION_ID: activation.phase === 'validating' ? id : '', PIVANE_INSTALLATION_ROOT: root } });
+        await new Promise((resolve, reject) => { entry.once('spawn', resolve); entry.once('error', reject); });
+        entry.unref(); return activation;
+    } catch (error) {
+        try { require('./pi-launcher-qa-checkpoints').writeReceipt(root, 'helper-failed', { activationId: id, mode, outcome: error.message }); } catch { /* Keep the original failure authoritative. */ }
+        throw error;
+    }
 }
 module.exports = { inspectActivation, prepareActivation, helperCommand, helperFiles, applyActivation, recoverActivation, commitActivation, runHandoff, verifyActiveProgram,
     activationFileProof: snapshot, verifyActivationFile: unchanged };
