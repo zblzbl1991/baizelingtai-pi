@@ -50,9 +50,10 @@ function transactionFixture(t) {
     write(root, 'TRIAL_MANIFEST.json', JSON.stringify({ files: source }));
     write(candidate, '白泽灵台.exe', 'new fixed entry');
     write(candidate, 'package.json', JSON.stringify({ name: 'pivane', version: '1.9.0' }));
+    write(candidate, 'server.js', '// synthetic service entry');
     write(candidate, 'package-lock.json', JSON.stringify({ version: '1.9.0' }));
     native(candidate, '1.9.0');
-    const files = ['白泽灵台.exe', 'package.json', 'package-lock.json', 'native/pivane-desktop-launcher.cs', 'native/pivane-desktop-launcher.manifest', 'public/brand/favicon.ico', 'native/pivane-desktop-launcher-build.json'].map(name => ({ path: name, bytes: fs.statSync(path.join(candidate, name)).size, sha256: sha(fs.readFileSync(path.join(candidate, name))) }));
+    const files = ['白泽灵台.exe', 'package.json', 'server.js', 'package-lock.json', 'native/pivane-desktop-launcher.cs', 'native/pivane-desktop-launcher.manifest', 'public/brand/favicon.ico', 'native/pivane-desktop-launcher-build.json'].map(name => ({ path: name, bytes: fs.statSync(path.join(candidate, name)).size, sha256: sha(fs.readFileSync(path.join(candidate, name))) }));
     write(candidate, 'PORTABLE_MANIFEST.json', JSON.stringify({ version: 1, appVersion: '1.9.0', platform: 'win32', arch: 'x64', files }));
     write(candidate, 'PI_INSTALL_COMPLETE.json', JSON.stringify({ version: '0.85.1', appVersion: '1.9.0', archiveSha256: 'a'.repeat(64), lockSha256: sha(fs.readFileSync(path.join(candidate, 'package-lock.json'))) }));
     const { publicKey, privateKey } = generateKeyPairSync('ed25519');
@@ -68,6 +69,28 @@ function transactionFixture(t) {
     atomicJson(path.join(root, '.pivane-runtime/state.json'), state);
     return { root, candidate, releaseId, backupId, release, state, shutdownProof: { complete: true, generation: 'old-generation' } };
 }
+
+test('realistic portable inventory keeps twenty thousand file proofs outside the bounded installation state', { timeout: 180000 }, t => {
+    const activation = require('../server/pi-launcher-activation'), input = transactionFixture(t);
+    const manifestFile = path.join(input.candidate, 'PORTABLE_MANIFEST.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestFile));
+    const directory = path.join(input.candidate, 'node_modules/synthetic-package');
+    fs.mkdirSync(directory, { recursive: true });
+    for (let i = 0; i < 20000; i++) {
+        const relative = `node_modules/synthetic-package/entry-${String(i).padStart(5, '0')}.js`;
+        fs.writeFileSync(path.join(input.candidate, relative), 'x');
+        manifest.files.push({ path: relative, bytes: 1, sha256: '2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881' });
+    }
+    fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+    input.state.activation = activation.prepareActivation(input);
+    const stateBytes = Buffer.byteLength(JSON.stringify(input.state, null, 2));
+    assert.ok(stateBytes < 64 * 1024, `installation state grew to ${stateBytes} bytes`);
+    assert.ok(input.state.activation.evidence.bytes > 4 * 1024 ** 2, 'actual large evidence exceeds the old state limit');
+    t.diagnostic(`20,000 file inventory: state ${stateBytes} bytes; immutable evidence ${input.state.activation.evidence.bytes} bytes`);
+    require('../server/pi-maintenance-files').atomicJson(path.join(input.root, '.pivane-runtime/state.json'), input.state);
+    const inspected = spawnSync(process.execPath, [cli, 'inspect', input.root, input.state.activation.id], { encoding: 'utf8' });
+    assert.equal(inspected.status, 0, inspected.stderr);
+});
 
 test('independent update entry rejects candidate changed after signed preparation', async t => {
     const activation = require('../server/pi-launcher-activation');
@@ -103,10 +126,12 @@ test('independent helper rejects a busy installation and unbound process handoff
 });
 
 test('commit requires complete startup validation and persists before business admission', t => {
-    const { commitActivation, inspectActivation } = require('../server/pi-launcher-activation');
-    const input = transactionFixture(t), id = randomUUID();
+    const { commitActivation, inspectActivation, prepareActivation } = require('../server/pi-launcher-activation');
+    const input = transactionFixture(t);
+    input.state.activation = prepareActivation(input);
+    const id = input.state.activation.id;
     input.state.active = input.releaseId;
-    input.state.activation = { id, root: input.root, phase: 'validating', releaseId: input.releaseId };
+    input.state.activation.phase = 'validating';
     const file = path.join(input.root, '.pivane-runtime/state.json');
     require('../server/pi-maintenance-files').atomicJson(file, input.state);
     assert.throws(() => commitActivation(input.root, id, { control: true }), /validation/);
@@ -114,6 +139,32 @@ test('commit requires complete startup validation and persists before business a
     assert.equal(inspectActivation(input.root, id).phase, 'committed');
     assert.equal(JSON.parse(fs.readFileSync(file)).runtimePaths.PI_CODING_AGENT_DIR, path.join(input.root, 'data'));
     commitActivation(input.root, id, { control: true, versions: true, service: true, data: true, tray: true, stableMs: 15000 });
+});
+
+test('service boot verifies the bound complete candidate inventory and refuses a deleted service entry', t => {
+    const activation = require('../server/pi-launcher-activation'), input = transactionFixture(t);
+    input.state.activation = activation.prepareActivation(input);
+    input.state.activation.phase = 'validating'; input.state.active = input.releaseId;
+    require('../server/pi-maintenance-files').atomicJson(path.join(input.root, '.pivane-runtime/state.json'), input.state);
+    assert.equal(activation.verifyActiveProgram(input.root, input.releaseId).supported, true);
+    fs.unlinkSync(path.join(input.candidate, 'server.js'));
+    assert.throws(() => activation.verifyActiveProgram(input.root, input.releaseId), /missing|changed/);
+    assert.throws(() => activation.commitActivation(input.root, input.state.activation.id, { control: true, versions: true, service: true, data: true, tray: true, stableMs: 15000 }), /missing|changed/);
+    assert.equal(activation.inspectActivation(input.root, input.state.activation.id).phase, 'validating');
+});
+
+test('independent operations reject replacement of their immutable inventory evidence', async t => {
+    const activation = require('../server/pi-launcher-activation'), input = transactionFixture(t);
+    input.state.activation = activation.prepareActivation(input);
+    const id = input.state.activation.id, file = path.join(input.root, '.pivane-runtime/state.json');
+    require('../server/pi-maintenance-files').atomicJson(file, input.state);
+    fs.appendFileSync(path.join(input.root, '.pivane-runtime/activation', id, 'entries.json'), ' ');
+    assert.throws(() => activation.helperCommand(input.root, id), /evidence/);
+    await assert.rejects(() => activation.applyActivation(input.root, id), /evidence/);
+    input.state.active = input.releaseId; input.state.activation.phase = 'validating';
+    require('../server/pi-maintenance-files').atomicJson(file, input.state);
+    assert.throws(() => activation.commitActivation(input.root, id, { control: true, versions: true, service: true, data: true, tray: true, stableMs: 15000 }), /evidence/);
+    assert.throws(() => activation.verifyActiveProgram(input.root, input.releaseId), /evidence/);
 });
 
 test('independent helper holds exact process handles, activates after exit and rolls back only once', { skip: process.platform !== 'win32', timeout: 30000 }, async t => {
@@ -166,6 +217,7 @@ test('independent helper holds exact process handles, activates after exit and r
     assert.equal(activation.inspectActivation(input.root, id).rollbackAttempts, 1);
     assert.equal(fs.readFileSync(path.join(input.root, 'data/value.txt'), 'utf8'), 'before update');
     assert.equal(fs.readFileSync(path.join(input.root, '白泽灵台.exe'), 'utf8'), 'old fixed entry');
+    assert.equal(activation.verifyActiveProgram(input.root, null).supported, true, 'authorized restoration uses the new entry identity');
     const result = spawnSync(commandExe(input.root, id), [activation.helperCommand(input.root, id).args[0], 'rollback-handoff', input.root, id], { encoding: 'utf8', input: '[]\n' });
     assert.equal(result.status, 1);
     assert.match(result.stderr, /manual recovery/);
