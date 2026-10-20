@@ -51,7 +51,9 @@ class UpdateService {
         this.bundledPiVersion = application.pivaneManaged?.baselinePi || application.dependencies['@earendil-works/pi-coding-agent'];
         this.platform = options.platform || process.platform;
         this.arch = options.arch || process.arch;
-        this.feed = configuredFeed(options.root || path.resolve(__dirname, '..'), this.env);
+        this.root = options.root || path.resolve(__dirname, '..');
+        this.installationRoot = options.installationRoot || (this.env.PI_MANAGED_LAUNCHER && this.env.PI_MANAGED_BASE) || this.root;
+        this.feed = configuredFeed(this.root, this.env);
         this.releasesPage = this.feed ? sourceLink(this.env.BAIZELINGTAI_UPDATE_RELEASES_URL || this.feed, this.feed) : RELEASE_PAGE;
         this.feedPending = new Map();
         this.cache = new Map();
@@ -118,9 +120,14 @@ class UpdateService {
     }
     manifest(channel = 'preview') {
         if (this.feedPending.has(channel)) return this.feedPending.get(channel);
-        const pending = Promise.resolve().then(async () => parseFeed(await this.json(this.feed), {
-            source: this.feed, platform: this.platform, arch: this.arch, channel, compareVersions, releasesUrl: this.releasesPage
-        })).finally(() => this.feedPending.delete(channel));
+        const pending = Promise.resolve().then(async () => {
+            const data = await this.json(this.feed);
+            const candidate = parseFeed(data, { source: this.feed, platform: this.platform, arch: this.arch, channel, compareVersions, releasesUrl: this.releasesPage });
+            const signatures = require('./pi-update-signatures');
+            const verification = signatures.signatureRequired(this.installationRoot) || data.signature !== undefined
+                ? { status: 'verified', ...signatures.verifyFeedSignature(data, this.installationRoot) } : { status: 'unverified' };
+            return candidate && { ...candidate, verification };
+        }).finally(() => this.feedPending.delete(channel));
         this.feedPending.set(channel, pending);
         return pending;
     }
@@ -195,7 +202,8 @@ function mountUpdateRoutes(router, service = new UpdateService(), hooks = {}) {
                 version = candidate.version;
                 if (service.feed) {
                     release = { format: 'windows-portable-zip', feed: service.feed, channel, version, piVersion: candidate.piVersion,
-                        downloadUrl: candidate.downloadUrl, bytes: candidate.bytes, sha256: candidate.sha256 };
+                        downloadUrl: candidate.downloadUrl, bytes: candidate.bytes, sha256: candidate.sha256, signedManifest: candidate.signedManifest };
+                    require('./pi-update-signatures').verifyReleaseSignature(release, service.installationRoot);
                     if (!require('./pi-portable-installer').validPortable(release, service.feed)) throw Error('Invalid portable release');
                 } else {
                     const bytes = await require('./pi-application-installer').download(candidate.checksumUrl, { env: service.env, maxBytes: 1024 });

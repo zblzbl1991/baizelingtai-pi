@@ -25,7 +25,7 @@
 | 桌面身份、runner 与控制协议 | [runner](../../scripts/start-desktop.cjs)、[桌面编排](../../server/pivane-desktop-launcher.js) | 原安装根、data 默认路径、generation、LF 分帧、进程退出与 clean 状态 |
 | 版本选择与受管维护执行 | [ManagedLauncher](../../server/pi-managed-launcher.js) | `.pivane-runtime/state.json` 的 active/previous、候选 boot、关闭与恢复；现有指针只覆盖服务，不证明外层已激活 |
 | 安装级互斥 | [安装锁](../../server/pi-installation-lock.js) | 锁绑定原安装 realpath；迁移、更新助手和正常启动必须服从同一所有权边界，托盘 mutex 不能代替它 |
-| 版本页、清单与票据 | [更新 UI](../../public/pi-updates.js)、[更新服务及路由](../../server/pi-update-service.js)、[清单解析](../../server/pi-update-feed.js)、[维护客户端](../../server/pi-maintenance-client.js) | review/execute/maintenance 查询、目标重查、票据绑定、能力声明与准入；新签名字段需贯穿这些边界 |
+| 版本页、清单与票据 | [更新 UI](../../public/pi-updates.js)、[更新服务及路由](../../server/pi-update-service.js)、[清单解析](../../server/pi-update-feed.js)、[签名验证](../../server/pi-update-signatures.js)、[维护客户端](../../server/pi-maintenance-client.js) | review/execute/maintenance 查询、目标重查、票据绑定、能力声明与准入；新签名字段需贯穿这些边界 |
 | 全局空闲与正常停机 | [停机事务](../../server/pivane-desktop-stop.js)、[网关装配与 dispose](../../server/pi-agent-routes.js)、[服务清理与证明](../../server.js) | 所有后台工作参与准入，实际清理完成才能交接；超时、退出码 0 或 PID 消失均不能单独替代证明 |
 | ZIP 校验、解压与候选验证 | [便携包安装器](../../server/pi-portable-installer.js)、[合成身份探针](../../server/pi-update-probe.js) | 固定目标、同源下载、字节数/哈希、逐文件清单、源码未发布修改保护；激活前还须重新核验 |
 | 备份证明、数据恢复与保留 | [维护文件](../../server/pi-maintenance-files.js)、[备份证明](../../server/pi-maintenance-backup.js)、[恢复](../../server/pi-maintenance-restore.js)、[保留策略](../../server/pi-managed-retention.js)、[离线恢复入口](../../scripts/restore-managed-backup.cjs) | 停机备份、失败数据快照、needsRecovery 与恢复范围；现有离线脚本不能修复固定 EXE |
@@ -61,7 +61,7 @@
 
 | 验证层 | 已有入口 | 本功能需要补齐的证明 |
 |---|---|---|
-| 清单、票据与候选 | [更新服务](../../test/pi-update-service.test.js)、[维护](../../test/pi-maintenance.test.js)、[便携包更新](../../test/pi-portable-update.test.js) | 签名绑定与篡改拒绝、新旧清单兼容、准备后修改、能力不足拒绝外层激活 |
+| 清单、票据与候选 | [更新服务](../../test/pi-update-service.test.js)、[签名清单与票据](../../test/pi-update-signatures.test.js)、[维护](../../test/pi-maintenance.test.js)、[便携包更新](../../test/pi-portable-update.test.js) | 签名绑定与篡改拒绝、新旧清单兼容、准备后修改、能力不足拒绝外层激活 |
 | 安装所有权与进程交接 | [安装锁](../../test/pi-installation-lock.test.js)、[桌面协议](../../test/pivane-desktop-protocol.test.js)、[受控停机集成](../../test/pivane-desktop-control.integration.test.js) | 服务/runner/托盘/助手交接、不同入口竞争、清理未知与交接中断，不能只模拟 PID 消失 |
 | Windows 原生与恢复 | [原生桌面](../../test/pivane-desktop-native.test.js)、[桌面恢复](../../test/pivane-desktop-recovery.test.js)、[应用更新](../../test/pi-application-update.test.js) | 文件占用、固定 EXE 替换、原件变化、助手依赖独立性、真实入口损坏后的修复 |
 | 打包与发现 | [Windows 打包](../../test/windows-portable-package.test.js)、[源码发现](../../test/source-files.test.js)、[文档清单](../../test/public-documentation.test.js) | 助手/修复器/公钥完整入包，私钥及运行数据排除，源码与原生二进制清单一致 |
