@@ -11,7 +11,7 @@
 | 协助用户安装、配置或排障的 Agent | [用户 Agent 操作指南](AGENT_GUIDE.md) |
 | 修改白泽灵台源码的开发者或 Agent | [开发文档](development/README.md) 与根目录 [AGENTS.md](../AGENTS.md) |
 
-当前正式版为 **1.8.0**（Pi 1.2.0），见 [1.8.0 版本说明](releases/1.8.0.md)；下载、校验和准确验收摘要以 [GitHub Releases](https://github.com/YogurtJ/pivane/releases) 为准。新增持久队列、附件管理、可靠分叉恢复、对话目录与压缩前回看，改进运行反馈和界面稳定性。三平台准确包验收见[平台验证范围](RELEASE_INSTALL_VALIDATION.md)。公开发布不自动切换已有实例；升级前按[安装与恢复](INSTALL_RECOVERY.md)保存草稿、停机备份并保留数据路径。完整变化见 [CHANGELOG](../CHANGELOG.md)。
+当前正式版为 **1.9.0**（Pi 1.3.0），见 [1.9.0 版本说明](releases/1.9.0.md)；下载、校验和准确验收摘要以 [GitHub Releases](https://github.com/YogurtJ/pivane/releases) 为准。新增助手身份五页工作区、可选微信消息渠道、扩展发现与显式更新检查、媒体自动执行偏好，改进加载、长会话、公式和慢连接体验。三平台原始结果与因果补验见[平台验证范围](RELEASE_INSTALL_VALIDATION.md)。公开发布不自动切换已有实例；升级前按[安装与恢复](INSTALL_RECOVERY.md)保存草稿、停机备份并保留数据路径。完整变化见 [CHANGELOG](../CHANGELOG.md)。
 
 下面按主题列出功能文档。每篇前半部分讲使用，后半部分可能包含接口字段和限额，供高级用户、集成者和用户 Agent 查询。模型能力来自实际配置与运行实例；文档中的示例不代表服务已经配置好。
 
@@ -34,6 +34,7 @@
 | 输入、命令模板、Shell | [命令与模板](COMPOSER_TOOLS.md) · [Shell](WEB_SHELL.md) |
 | 停止、重试、运行与配置恢复 | [运行控制](NATIVE_CONTROLS.md) · [运行与配置恢复](NATIVE_COMPLETION.md) |
 | 历史、分叉、导入导出 | [历史](HISTORY.md) · [工作流](SESSION_WORKFLOWS.md) · [导入导出](SESSION_TRANSFER.md) |
+| 将微信文字私聊绑定到原生线程 | [微信与消息渠道](MESSAGE_CHANNELS.md) |
 | 围绕当前任务的临时侧聊 | [侧聊](SIDE_CHAT.md) |
 | 让 Agent 新开线程交办任务、线程间直接沟通 | [Agent 任务线程与线程间消息](AGENT_THREADS.md) |
 | 周期执行、文字问候与身份主线程 | [定时任务](SCHEDULED_TASKS.md) |
@@ -70,7 +71,7 @@
 | 内容 | 文档 |
 |---|---|
 | REST/WebSocket 字段、错误与并发语义 | [API](API.md) |
-| 版本变化 | [CHANGELOG](../CHANGELOG.md) · [1.8.0](releases/1.8.0.md) · [1.7.0](releases/1.7.0.md) · [1.6.2](releases/1.6.2.md) · [1.6.1](releases/1.6.1.md) · [1.6.0](releases/1.6.0.md) · [1.5.0](releases/1.5.0.md) · [1.4.0](releases/1.4.0.md) · [1.3.0](releases/1.3.0.md) · [1.2.0](releases/1.2.0.md) · [1.1.0](releases/1.1.0.md) · [1.0.0](releases/1.0.0.md)；RC 版本说明保留在对应 Git 标签 |
+| 版本变化 | [CHANGELOG](../CHANGELOG.md) · [1.9.0](releases/1.9.0.md) · [1.8.0](releases/1.8.0.md) · [1.7.0](releases/1.7.0.md) · [1.6.2](releases/1.6.2.md) · [1.6.1](releases/1.6.1.md) · [1.6.0](releases/1.6.0.md) · [1.5.0](releases/1.5.0.md) · [1.4.0](releases/1.4.0.md) · [1.3.0](releases/1.3.0.md) · [1.2.0](releases/1.2.0.md) · [1.1.0](releases/1.1.0.md) · [1.0.0](releases/1.0.0.md)；RC 版本说明保留在对应 Git 标签 |
 | 各版本平台验收范围 | [平台验证范围](RELEASE_INSTALL_VALIDATION.md) |
 | 产品方向 | [路线图](ROADMAP.md) |
 

@@ -94,6 +94,21 @@ Windows 托盘以 `scripts/start-desktop.cjs --controlled --generation <UUID>` �
 runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,method:"snapshot"|"review"|"execute",input`），响应为 `desktop-response`（`id,result` 或 `error:{code,message}`）。检查不长期锁住工作台；最终接受后沿统一异步停机，桌面停止采用可逆内存派发闸门，不调用持久预约暂停。此私有协议不扩展现有公开维护 action 列表，不新增 HTTP 停机接口。
 
 托盘的稳定只读 `GET /status` 返回 `state,instance,generation` 和可选 `url,message`，状态包括 `starting,ready,error,stopped,stopping,unknown`。页面的 `startup-instance` 标记必须与实例相符。入口仅监听本机 `127.0.0.1`、校验 Host/Origin 并限制请求，随托盘退出关闭；单次读取失败退避重试，读取本身不启动服务或重放操作。它不属于 `/api/pi`，不读取会话或凭据，不接受启动、停机或配置写入。旧单轮临时页保持原有精简状态；生命周期与用户操作见 [托盘启动器](DESKTOP_LAUNCHER.md)。
+## 消息渠道（messageChannels）
+
+`GET /api/pi/status.messageChannels=true` 表示消息渠道接口可用，不表示微信组件已安装或账号已连接。以下接口沿用工作台身份、Origin/CSRF、维护准入与 no-store；worker 内部凭据不能管理渠道。
+
+- `GET /api/pi/channels`：返回配置 `revision`、组件 installed/version/availableVersion/sources、脱敏 accounts、bindings、已允许 peers、最近 60 条 jobs（含 `sentChunks`、`sentMedia`、`waiting`、`kind`、有界 `deliveryIssues:[{name,reason}]`）、当前登录的二维码布尔矩阵/status/expiresAt 和 capabilities（`text`、`images`、`files`、`slashCommands`、`typing`、`proactive`）。没有账号 token、微信 context token、登录验证码或消息正文。
+- `POST /api/pi/channels/weixin/actions`：共同字段 `{action, confirmed:true, expectedRevision}`。操作在 await 前预占互斥；冲突 409，其他失败 400，结果不确定不自动重放。当前支持 `install`、`uninstall`、`login`、`cancel-login`、`verify-login`、`account`、`bind`、`unbind`、`stop`、`recover`、`acknowledge`。
+- `cancel-login` 需要 loginId；`verify-login` 需要 loginId/code（1–12 位数字）；登录最多五分钟，通过 GET 查询进度，不由浏览器重复提交登录请求。
+- `account` 需要 accountId/enabled/allowedUsers（最多 100 个 1–256 字符 ID）；启用必须有非空允许列表。`bind` 需要 accountId/peerId/cwd 和 sessionId，或显式 newSession=true。`unbind` 需要 accountId/peerId。最多 10 个账号、200 条绑定、500 个已允许聊天；临时及管理助手线程不接受绑定。
+- `stop`、`recover`、`acknowledge` 需要 jobId。stop 仅请求中止所属微信运行；recover 仅在未开始微信发送且原生当前分支存在已完成结果时恢复发送；acknowledge 不重跑、不补发。
+
+`jobs.status=partial` 表示文字或部分文件已送达，但有附件因 `size`、`limit`、`unreadable`、`unavailable`、`pending` 或 `failed` 未发送；不会自动补发。`typing` 返回最多 100 个脱敏运行诊断 `{accountId,peerId,status,failures,reason}`，不包含票据或上游错误正文。修改指令在提交前持久化为 `dispatching`；重启或未知结果转 `uncertain`，Slash Command 不提供 `recover` 自动补运行入口。
+
+`GET /api/pi/cron` 新增 `channelNotifications:{pending,failed,lastError}`；`lastError` 仅为 `channel-admission-pending`、`channel-capture-failed` 或 null。运行记录的 `channelNotify.status` 为 `pending`、`accepted` 或 `skipped`；accepted 仅表示渠道持久入队，实际微信送达以渠道 jobs 为准。
+
+状态、队列预算、组件来源与存储见[消息渠道](MESSAGE_CHANNELS.md)。原生私有命令标记 `channels-v1` 不加入公开 RPC 命令白名单；`pivane-channel-message` 是唯一聊天正文，`pivane-channel-turn` 记录运行状态和回复条目 ID。浏览器只按真实回执显示送达，不以模型输出结束推断微信收到。
 
 ## 成果中心（artifacts）
 
@@ -103,7 +118,7 @@ runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,met
 
 媒体协议：GET `/api/pi/media/lab/connections` 新增 `providerTemplates`，协议模板含可选 `recommended/help`。HTTP response.type 增加仅图像可用的 `image-json`，path 指向含 `b64_json/url` 的对象；JSON 路径 `*` 查找数组内第一份匹配结果，不批量执行。GET lab 省略所有旧 zimage/flux2/minimax-video 项（包括configured=true），前端也过滤旧进程返回的这些项，内部兼容定义仍可被旧 API 使用。CRUD、Key、修订和票据确认契约保持；详见 [MEDIA_CONNECTIONS.md](MEDIA_CONNECTIONS.md)。
 
-运行能力包括 liveRecovery/extensionDrafts/sessionSearch/runtimeConfiguration 标记。主连接 get_messages.webLive 为有界partial/tool展示快照，广播增加webRuntimeId/webSequence；主WS新增 ack_extension_draft、get_runtime_configuration、restart_runtime（空闲持久线程，runtimeId/expectedRevision/confirmed）。GET /sessions/search?q&cwd?&offset?&searchId? 提供受保护、可取消、有界原生正文跨线程检索。完整字段、预算、实际信任、配置修订、重开互斥与接受ACK语义见 [NATIVE_COMPLETION.md](NATIVE_COMPLETION.md)。不添加裸导航/工具权限、不存持久聊天副本。
+运行能力包括 liveRecovery/extensionDrafts/sessionSearch/runtimeConfiguration 标记。主连接 get_messages.webLive 为有界partial/tool展示快照；Pi 1.3 最终工具参数解析失败时保留 argumentsError，恢复预览最多8192字符并计入原有预算，最终原生记录保持完整。网页只按文本展示错误，原生 validation 拒绝执行损坏参数。广播增加webRuntimeId/webSequence；主WS新增 ack_extension_draft、get_runtime_configuration、restart_runtime（空闲持久线程，runtimeId/expectedRevision/confirmed）。GET /sessions/search?q&cwd?&offset?&searchId? 提供受保护、可取消、有界原生正文跨线程检索。完整字段、预算、实际信任、配置修订、重开互斥与接受ACK语义见 [NATIVE_COMPLETION.md](NATIVE_COMPLETION.md)。不添加裸导航/工具权限、不存持久聊天副本。
 
 原生设置：GET `/api/pi/settings/native` schema 提供 `defaultTools`（type=tools、choices/defaults/platform、maxEntries=1024/maxNameLength=500）、`codemode.mode`（on/only）、`codemode.inlineBudget`（0–1000000）与 `defaultProjectTrust`（ask/always/never、globalOnly）。PUT 接受普通／自定义工具名和顺序 +/- 条目；普通名称替换，只有修饰符时修改继承选择，重复修饰符保留，重复普通名拒绝。null 删除本层覆盖，白泽灵台 [] 不默认启用内置工具，扩展工具可能仍自动激活；受信项目修饰符叠加全局 [] 不恢复默认。信任策略仅全局写入，项目范围即使 null 也拒绝。保存返回 requiresRuntimeRestart=true，不改变现有实例或逐项目信任决定；完整语义见 [NATIVE_SETTINGS.md](NATIVE_SETTINGS.md)。
 
@@ -261,7 +276,12 @@ DOC／XLS／PPT 扩展为原件上传、预览和下载格式，容器与内部�
 
 ### 可选助手档案
 
-`GET /status.agentProfiles=true` 表示可选助手档案接口可用。`GET /profiles?cwd` 返回档案、注册表修订、`profileRevisions`（档案ID到自身修订的映射）和所选项目默认身份；`PUT /profiles` 接受 `{expectedRevision,profile}` 创建或更新档案；`PUT /profiles/default` 接受 `{cwd,profileId,expectedRevision}`，`profileId:null` 清除项目默认身份。现有 `POST /sessions` 的可选 `profileId` 省略时使用项目默认，显式 null 创建无档案线程。
+`GET /status.agentProfiles=true` 表示可选助手档案接口可用。`GET /profiles?cwd` 返回 `profiles`（不含回收站身份）、按移入时间从新到旧的 `trash:[{id,name,description,avatar,trashedAt}]`、注册表修订、`profileRevisions`（含回收站的所有档案ID到自身修订的映射）和所选项目默认身份；`PUT /profiles` 接受 `{expectedRevision,profile}` 创建或更新档案，回收站身份拒绝更新（409），须先恢复；`PUT /profiles/default` 接受 `{cwd,profileId,expectedRevision}`，`profileId:null` 清除项目默认身份，仅接受已启用且不在回收站的身份。现有 `POST /sessions` 的可选 `profileId` 省略时使用项目默认，显式 null 创建无档案线程。
+
+- `POST /profiles/:id/trash`：`{expectedRevision}`，原子保存 `trashedAt`（ISO）、`trashedEnabled`（原启用状态）和 `enabled:false`，同时清除所有指向该身份的项目默认值；返回 `{ok:true,profile,revision}`。
+- `POST /profiles/:id/restore`：`{expectedRevision}`，移除回收站元数据并恢复原启用状态，原本停用的身份仍停用，不重设项目默认值；返回 `{ok:true,profile,revision}`。
+
+两接口沿用档案保存的访问／Origin校验、`Cache-Control: no-store`、注册表 CAS、设置互斥与维护／停机拒绝；未知身份404，修订冲突、重复移入或恢复未移入的身份409。回收站身份仍计入50个上限。没有永久删除，身份数据、头像、学习状态、会话和逻辑助手项目均保留；已有会话保留身份名称并显示 `available:false`，新建／重新加载与后台学习按停用身份处理。
 
 会话序列化字段 `agentProfile` 是保存的身份投影，不能据此推断 worker 已加载。`get_runtime_configuration.agentProfile` 分别返回 saved、savedProfileRevision、loadedProfileId、loadedProfileRevision、loadedConfirmed 与 matchesSavedProfile。旧会话不因新增项目默认身份而追认归属，网页分叉显式继承源身份，导入不会仅因复制旧会话标记而获得绑定。字段限制、保存与重开语义见[助手档案](AGENT_PROFILES.md)。
 
@@ -269,14 +289,15 @@ DOC／XLS／PPT 扩展为原件上传、预览和下载格式，容器与内部�
 
 `GET /status.profileLearning=true` 表示逐项知识管理与后台学习接口已装配（同一 `ProfileKnowledgeService` 实例供路由、后台学习和原生工具共用）。
 
-- `GET /profiles/:id/knowledge?kind=memory|skill&query=&offset=&sessionId=&state=present|deleted|draft|all`：state 可选，省略与 all 均保留全部状态；present 排除已删除条目。状态过滤在分页前进行，不改变写入 revision。每页最多 50 条（记忆预览 512 字符）、30 条近期回执、不透明 revision，以及 `capabilities`（`operations`、`memory`/`skill` 可写性、`projectWrites:false`、`skillNameMaxLength`、`maxContentLength`、`journal` 计数与上限）。记忆可用时另有 `usage:{memory:{chars,limit},user:{chars,limit},failure?:{chars,readOnly:true}}`，字数与写入时的上限判断一致。回执带 `origin`（`manual|agent|learning`，由服务端决定）、`learningReason`（仅 learning）、`preview`（记忆正文或技能名与描述，最多约 160 字符）、记忆的 `category`；同一条目之后又有回执时标 `superseded:true`。归档摘要不含 preview。`status` 为 `ready|pending|missing|disabled|unsupported|error`；pending 时 revision 为 null，禁止写入。
+- `GET /profiles/:id/knowledge?kind=memory|skill&query=&offset=&sessionId=&state=present|deleted|draft|all&target=user|memory|project&category=fact|preference|correction|failure|procedure`：state 可选，省略与 all 均保留全部状态；present 排除已删除条目。状态、target 与 category 过滤均在分页前进行，不改变写入 revision。target/category 均需明确 `kind=memory`，非法值返回 400；project 按项目 scope 选择，user/memory 仅选 profile scope，memory 包含只读旧 failure 条目且不改变其 target。ready 快照增加 `counts:{memory:{total,user,memory,project,deleted},skill:{total,active,draft,disabled,deleted}}`，统计所有未镜像条目，不受 kind/query/offset/state/target/category 影响；total 与子组排除已删除项，deleted 单列，记忆分组与 target 过滤一致。每页最多 50 条（记忆预览 512 字符）、30 条近期回执、不透明 revision，以及 `capabilities`（`operations`、`memory`/`skill` 可写性、`projectWrites:false`、`skillNameMaxLength`、`skillDescriptionMaxLength`（1024，与 Pi 技能描述上限一致）、`maxContentLength`、`journal` 计数与上限）。记忆可用时另有 `usage:{memory:{chars,limit},user:{chars,limit},failure?:{chars,readOnly:true}}`，字数与写入时的上限判断一致。回执带 `origin`（`manual|agent|learning`，由服务端决定）、`learningReason`（仅 learning）、`preview`（记忆正文或技能名与描述，最多约 160 字符）、记忆的 `category`；同一条目之后又有回执时标 `superseded:true`。归档摘要不含 preview。`status` 为 `ready|pending|missing|disabled|unsupported|error`；pending 时 revision 为 null，禁止写入。
 - `GET /profiles/:id/knowledge/injection?sessionId=`：只读的下一轮注入预览，用与注入相同的上游格式渲染：`{status,block,truncated?,chars,entries,profile:{chars,entries},project,lastRead}`；带 sessionId 时核实会话归属并加入该目录的项目块，`lastRead` 取会话最近一次 `pivane-profile-memory-read`（含 `chars`/`entries`）。block 最多 64 KiB。
 - `GET /profiles/:id/knowledge/items/:itemId`：受限正文（最多 65,536 字符）、条目 revision、`readOnly`/`truncated` 与服务端来源 `{sessionId,entryId}`。
+- 未删除的记忆条目被 `memory_search` 实际返回过时，快照列表与单条读取另带 `recall:{hits,lastHitAt}`（次数与 `YYYY-MM-DD`）；从未被检索到、已删除、技能或数据库尚无计数列时省略。它是只读参考数据，不进入 revision，计数变化不会使编辑 409，读取失败时省略而不影响页面；条目内容改动后对应计数从 0 开始。
 - `POST /profiles/:id/knowledge/mutations`：`{requestId,expectedRevision,operation,kind,...}`，operation 为 `create|update|delete|restore|enable|disable|undo|consolidate`；`consolidate` 只限手动：`{target:'memory'|'user',items:[{itemId,itemRevision}] (2–20),content,category}`，任一条目变化则整批 409，回执带 `consolidated` 原条目 ID，撤销一次恢复全部原条目（撤销回执本身不可再撤销）。项目记忆可带 `scope:'project',sessionId` 写入（create/update/delete/undo）：服务端按会话文件头的 ID 找到会话并核实归属与目录，客户端 `projectKey` 一律拒绝，`capabilities.projectWritesBySession` 表示可用；项目技能可按同样的 `scope:'project',sessionId` 核验执行 delete/undo（kind 为 skill），由 `capabilities.projectSkillDeletesBySession` 表示可用，不能借此创建或改写技能；记忆需 category `fact|preference|correction|failure|procedure`，undo 只带 `receiptId`。拒绝客户端提交的 `source`、`projectKey` 与草稿状态。确定拒绝为 4xx（409 版本冲突/身份不唯一，413 超出来源证明预算；写满为 409 `{error,code:'memory-full',details:{target,chars,limit,needed}}`），发布结果不确定为 503 并保持 pending，只能用同一 requestId 与同一输入修复。客户端 requestId 7 天内重放返回原回执，过期后拒绝且不重跑。
 - 知识服务对 `create/update/consolidate` 在原互斥内执行保守的精确查重，同一身份 USER/MEMORY 跨目标比较、项目目录保持隔离。重复返回 409 `{code:"knowledge-duplicate",details:{itemId,itemRevision,kind,scope,target?,name?,readOnly}}`；不隐式改写旧条目。原生工具将此确定拒绝表示为 `unchanged:true`，没有保存回执。记忆只归一 Unicode NFC、外部空白和原生尾部元数据，不折叠大小写、数值或标识符；技能实质流程比较详见[记忆适配](PROFILE_MEMORY.md#agent-write-time-comparison)。
 - 原生身份工具 `memory_add` 和 `skill_manage(create)` 新增可选 `comparisonToken`：第一次调用返回 `comparisonRequired:true,saved:false,candidates,comparisonToken`，只读不保存；模型比较后仅独立新内容以原参数提交 token。token 绑定 worker、身份、真实会话／目录、完整创建参数与知识修订，10 分钟失效；不能当用户授权、跨会话使用或让创建隐式变成更新。HTTP 知识 mutation 不接受这个工具内部字段。
 - 知识写入（`create`、`update`、`consolidate`，以及档案文档保存新增的条目）若含疑似密钥或提示词注入内容，返回 400 `{code:'content-blocked', details:{rule, kind}}`，`kind` 为 `secret` 或 `injection`，错误信息不回显原文。
-- `GET/PUT /profiles/:id/learning`：GET 返回 `{version:1,status,revision,settings,health,legacy,proposals,drafts,jobs,recentRuns,capabilities}`，revision 为整数；PUT `{expectedRevision,changes}` 只保存开关、额度和触发词，不启动作业；`settings.triggerPhrases` 为 `{correction,preference,temporary,ignore}`，每组最多 50 个、每个不超过 80 字符的普通短语，限制见 `capabilities.limits.triggerPhrases`。学习写入被内容检查拒绝时，作业记为 `skipped`，`error:'content-blocked'`。`health` 为 `{state:'off'|'unavailable'|'needs-model'|'quota-exhausted'|'failing'|'ok',missingModels,lastFailure,today:{runs,maxRuns,reservedTokens,maxTokens}}`，按此顺序取第一个成立的状态，`memory-full` 位于 needs-model 之后。`proposals` 为最多 3 个整理方案 `{id,target,createdAt,model,source?:{sessionId,entryId},groups:[{items:[{itemId,itemRevision,preview,category}],content,category}]}`；普通后台学习也可在原单次模型调用中提出同目标合并方案，保留原条目，source 指向经核实的原生用户消息；`drafts` 为 `{pending,capped?}` 待审草稿技能数。`legacy` 在身份原始配置 `memory.autoLearn=true` 且尚未迁移或忽略时为 `{autoLearn:true,reviewModel,reviewModelAvailable,purposes}`，否则为 null。作业 `error:'memory-full'`（status skipped）表示写满未保存。
+- `GET/PUT /profiles/:id/learning`：GET 返回 `{version:1,status,revision,settings,health,legacy,proposals,drafts,jobs,recentRuns,capabilities}`，revision 为整数；PUT `{expectedRevision,changes}` 只保存开关、额度和触发词，不启动作业；`maxRunsPerDay` 范围 1..500、默认 20，`maxTokensPerDay` 范围 6000..5000000、默认 200000，与 `capabilities.limits` 一致；`settings.triggerPhrases` 为 `{correction,preference,temporary,ignore}`，每组最多 50 个、每个不超过 80 字符的普通短语，限制见 `capabilities.limits.triggerPhrases`。学习写入被内容检查拒绝时，作业记为 `skipped`，`error:'content-blocked'`。`health` 为 `{state:'off'|'unavailable'|'needs-model'|'quota-exhausted'|'failing'|'ok',missingModels,lastFailure,today:{runs,maxRuns,reservedTokens,maxTokens,exhaustedBy,resetsAt,usedTokens}}`，按此顺序取第一个成立的状态，`memory-full` 位于 needs-model 之后。`exhaustedBy` 为 `runs|tokens|null`（次数已满优先，否则剩余预留量不足一次 6000 Token 则为 tokens）；`resetsAt` 为下一个 UTC 午夜 ISO 时间，`usedTokens` 合计今天计入额度的运行中供应商报告的 totalTokens，无报告为 null。紧凑当日汇总保留 64 条详细历史之外的额度／实际用量，跨 UTC 日归零；预占和退款规则不变。`proposals` 为最多 3 个整理方案 `{id,target,createdAt,model,source?:{sessionId,entryId},groups:[{items:[{itemId,itemRevision,preview,category}],content,category}]}`；普通后台学习也可在原单次模型调用中提出同目标合并方案，保留原条目，source 指向经核实的原生用户消息；`drafts` 为 `{pending,capped?}` 待审草稿技能数。`legacy` 在身份原始配置 `memory.autoLearn=true` 且尚未迁移或忽略时为 `{autoLearn:true,reviewModel,reviewModelAvailable,purposes}`，否则为 null。作业 `error:'memory-full'`（status skipped）表示写满未保存。
 - `POST /profiles/:id/learning/actions`：`{requestId,action,...}`，action 为 `review-now`、`cancel`（`jobId`）、`enable`（可选 `review`/`extraction` 布尔，只改开关不改模型）、`adopt-legacy`（可选 `model:{provider,modelId}`，只给未配置的学习用途补模型并开启纠错与复盘；模型不可用为 409 `legacy-model-unavailable`）、`dismiss-legacy`、`propose-consolidation`（`target`，只生成方案，不写知识，预留 `settings.consolidationInputChars`+6000 token）、`dismiss-proposal`（`proposalId`，可选 `groupIndex` 为当前数组位置）。按 `capabilities.actions` 调用，返回最新快照；同一 requestId 幂等，结果不确定时不自动重放。升级本身不开启任何学习。
 
 `GET /activity` 另含 `learningBusy`、`learningRuns`；维护空闲判断包含后台学习。辅助模型用途新增 `memory-correction`、`memory-review`、`memory-extraction`，未配置时等待配置，不回退主模型。字段语义、写入日志容量、限额与验证状态见[记忆适配](PROFILE_MEMORY.md)和[辅助模型](AUXILIARY_MODELS.md)。
@@ -347,7 +368,7 @@ DOC／XLS／PPT 扩展为原件上传、预览和下载格式，容器与内部�
 - 网页原生 OAuth 沿用待确认输入；`gateway_mcp_authorization` 只在当前管理槽投影 `{authorization:{server,url,runtimeId}|null}`，重连快照 `mcpAuthorization` 可恢复正在处理的链接，完成立即清除。不写新凭据存储；URL 是待授权输入，不用于日志。迟到／未知私有 `pivaneMcp` 响应全部截获。操作参与 worker 生命周期，浏览器超时／断线不取消，也不自动重放。
 - 配置及运行响应 no-store，错误只为 `MCP_*` 安全代码；修订覆盖两范围 MCP、设置、trust 与 cwd。已保存配置与实际加载独立核对，细节见[原生 MCP](MCP.md)。
 
-`nativeSettings`、`nativeResources`、`projectTrust`、`modelAdvanced` 标记原生配置增强。设置 `/settings/native`、`/settings/native/trust`、`/settings/native/resources`、`/settings/native/packages`、`/settings/native/skill` 和 `/settings/models/advanced` 的方法、修订、范围和限额见 [NATIVE_SETTINGS.md](NATIVE_SETTINGS.md)。`GET /settings/native/resources` 另返回 `featuredSkills: [{id:'guizang-ppt'|'ppt-master',scope:'user'|'project',enabled:boolean}]`（可能为空），另有 `featuredSkillNeedsReview:boolean` 指示候选技能声明无法核实；另返回 `skillhub:{registry,namespace,slug,guideUrl,detailUrl}`（实例配置，不发起远程请求）；guizang-ppt 核对官方 CLI 来源记录和 SKILL.md 哈希，旧 ppt-master 来源声明识别保留兼容。只代表原生目录已发现且本地来源记录匹配，不证明完整包、依赖或运行会话已加载。主连接新增 `get_native_resources` 返回当前 worker 的实际 trust/资源来源，不返回系统提示正文或工具 schema；最多3000项/512KiB，不扩展裸 RPC 白名单。`/activity.nativeSettingsBusy` 供空闲部署检查。受管扩展原生换会话或直接导航被取消，网页入口保持。
+`nativeSettings`、`nativeResources`、`projectTrust`、`modelAdvanced` 标记原生配置增强。设置 `/settings/native`、`/settings/native/trust`、`/settings/native/resources`、`/settings/native/packages`、`/settings/native/skill` 和 `/settings/models/advanced` 的方法、修订、范围和限额见 [NATIVE_SETTINGS.md](NATIVE_SETTINGS.md)。`GET /settings/native/resources` 另返回 `featuredSkills: [{id:'guizang-ppt'|'ppt-master',scope:'user'|'project',enabled:boolean}]`（可能为空），另有 `featuredSkillNeedsReview:boolean` 指示候选技能声明无法核实；另返回 `skillhub:{registry,namespace,slug,guideUrl,detailUrl}`（实例配置，不发起远程请求）；guizang-ppt 核对官方 CLI 来源记录和 SKILL.md 哈希，旧 ppt-master 来源声明识别保留兼容。只代表原生目录已发现且本地来源记录匹配，不证明完整包、依赖或运行会话已加载。featuredSkills、packages 和技能资源可带展示用 `version`，packages 带 `updateMode`，显式检查更新后带 `updates`，检查接口 `POST /settings/native/packages/updates` 见 NATIVE_SETTINGS。主连接新增 `get_native_resources` 返回当前 worker 的实际 trust/资源来源，不返回系统提示正文或工具 schema；最多3000项/512KiB，不扩展裸 RPC 白名单。`/activity.nativeSettingsBusy` 供空闲部署检查。受管扩展原生换会话或直接导航被取消，网页入口保持。
 
 `systemPrompts=true` 标记系统提示词管理：GET `/settings/system-prompts?cwd` 返回 global/project × append/base 原生文件正文、推导来源、整体 revision 和 64 KiB 单文件预算；PUT 接受 `{cwd,scope,kind,content,expectedRevision}`，content=null 恢复默认/继承，成功返回 `{ok:true,requiresReload:true}`。修订覆盖四文件内容/身份和原生配置/trust，冲突409不覆盖，保存不重载或中断 worker。主连接 `get_system_prompt` 通过当前 worker 私有资源管道读取正文、基础/追加输入、上下文文件、Skills、实际工具、时间与运行身份，1 MiB 超限整体失败；`configured` 为当前文件与实际信任推导来源，`matchesSavedFiles` 仅比较基础/追加与信任，无法核对为 null，不表示最终供应商请求一致。原 `get_native_resources` 继续不返回正文；读取不调用模型、不写历史、不广播私有结果。完整失败、草稿与生效语义见 [NATIVE_SETTINGS.md](NATIVE_SETTINGS.md#系统提示词查看与编辑)。
 
@@ -608,6 +629,10 @@ POST `/sessions/:id/title` 接受 `{cwd}`，使用请求开始时冻结的标题
 
 每条浏览器命令包含 request ID。第一条消息必须是 `open_session`、`open_ephemeral`，或持有已准备票据的独立侧聊 `open_side_chat`；认证失败使用 WebSocket close code `4401`。
 
+出站发送按每个连接的总 `bufferedAmount` 检查积压，新帧计 UTF-8 字节并预留 14 字节帧开销。普通发送余量为 8 MiB，`gateway_shell` 为 1 MiB；允许一个更大的合法单帧及有界额外积压，大快照保持完整，因此该数值不是单帧长度上限。超过预算时关闭当前连接（1013），本策略发起的关闭在 1 秒后仍未完成则强制终止；关闭帧无法送达时客户端可能观察到 1006。发送时身份失效优先 4401；删除 4004、移动 4005、分类变化 1012 和主动结束侧聊 1000 保留原含义。
+
+压力关闭不会取消已接受的操作或停止共享持久 worker，也不重发失败／结果未知的请求。持久线程客户端可重新 `open_session`，从原生快照及其 `webLive` 序号边界恢复；其他连接独立处理。临时线程和侧聊仍遵循各自原有断线清理规则。
+
 ### 3.1 打开持久 session
 
 ```json
@@ -740,7 +765,7 @@ gateway 当前白名单：
 - 图片最多 6 张。
 - MIME 仅 PNG/JPEG/WebP/GIF。
 - 图片 base64 字符串总长度最多 24 MB。
-- WebSocket `maxPayload` 32 MB。
+- 入站 WebSocket `maxPayload` 32 MB；出站积压与大快照策略见本节开头。
 
 浏览器附件入口：加号中的“添加附件”/粘贴真实文件/拖放共用客户端校验，主框最多 8 个附件，最多 6 张单张 6 MiB 的 PNG/JPEG/WebP/GIF，文本附件单个 1 MiB 且必须 UTF-8。添加与发送前检查上述 message/images 总量，不再等 gateway 拒绝后丢失草稿。文本文件名 XML 转义后包入 `<attached_file>` 并并入 message；图片仍是既有 base64 block。未新增服务器上传接口/存储、未改变上述 gateway 限额。PDF/Office/压缩包/HEIC 及文件夹不支持。
 
@@ -921,7 +946,7 @@ Shell仅空闲单项执行，期间消息/压缩/导航/重载及预约投递互
 
 ### 持久会话用量
 
-`/api/pi/status.usageStats=true` 启用 `GET /api/pi/settings/usage?from=YYYY-MM-DD&to=YYYY-MM-DD&timeZone=Asia%2FShanghai`。日期包含两端，最多366天，时区缺省UTC；非法或未知参数400、其他筛选扫描中429、线程失败503，复用Origin/Bearer与no-store。返回 total/daily/weekly/monthly/providers/models/projects/sessions、generatedAt、coverage及partial，不含聊天正文。`usageLedger=true` 标记持久账本能力，响应带 `ledger:true`、`scope:'persistent-sessions-and-side-chats'`；各汇总增加 recordedCost/estimatedRecords/unpricedRecords，coverage 增加 cachedFiles/syncedAt/appendedFiles/parsedBytes/verifiedBytes，区分未变文件、追加解析及前缀校验开销。新建 BTW 侧聊在内存原生边界之后的新用量单独入账，不继承主历史；此前已结束的侧聊及普通临时会话不补录。后台每 5 分钟同步，打开统计及删除前另行触发。事务保存精简用量事实与日汇总，删除会话前须确认入账。去重、官方目录价补算、周期与时区、15秒缓存及读取预算见 [USAGE.md](USAGE.md)。不创建RPC worker、不读客户端指定路径。
+`/api/pi/status.usageStats=true` 启用 `GET /api/pi/settings/usage?from=YYYY-MM-DD&to=YYYY-MM-DD&timeZone=Asia%2FShanghai`。日期包含两端，最多366天，时区缺省UTC；非法或未知参数400、其他筛选扫描中429、线程失败503，复用Origin/Bearer与no-store。返回 total/daily/weekly/monthly/providers/models/projects/sessions、generatedAt、coverage及partial，不含聊天正文。`usageLedger=true` 标记持久账本能力，响应带 `ledger:true`、`scope:'persistent-sessions-and-side-chats'`；各汇总增加 recordedCost/estimatedRecords/unpricedRecords，coverage 增加 cachedFiles/syncedAt/appendedFiles/parsedBytes/verifiedBytes/cachedVerifiedBytes，区分已核实完整内容的文件、追加解析、前缀校验及缓存字节校验开销；所有读取共用原有预算，受限批次按持久扫描位置继续推进。新建 BTW 侧聊在内存原生边界之后的新用量单独入账，不继承主历史；此前已结束的侧聊及普通临时会话不补录。后台每 5 分钟同步，打开统计及删除前另行触发。事务保存精简用量事实与日汇总，删除会话前须确认入账。去重、官方目录价补算、周期与时区、15秒缓存及读取预算见 [USAGE.md](USAGE.md)。不创建RPC worker、不读客户端指定路径。
 
 ### Provider 和模型
 

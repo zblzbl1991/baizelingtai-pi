@@ -132,7 +132,7 @@ class AgentWorker extends EventEmitter {
         return this.readyPromise;
     }
 
-    async request(type, payload = {}, timeoutMs, operationToken) {
+    async request(type, payload = {}, timeoutMs, operationToken, beforeSend) {
         if (this.isSuspended()) throw Object.assign(new Error('实例正在维护，请等待完成'), { code: 'SESSION_BUSY' });
         if (!type.startsWith('get_')) this.onActivity();
         if (this.disposed || this.restarting || this.exited) throw new Error('Pi runtime 已关闭或正在重新打开');
@@ -141,7 +141,7 @@ class AgentWorker extends EventEmitter {
         if (this.cronRun && (!this.operation || operationToken !== this.operation) && !type.startsWith('get_') && type !== 'abort') throw new Error('定时任务正在运行或恢复设置，请等待结束或在定时任务页核对');
         if (this.shell.busy && !type.startsWith('get_')) throw new Error('Shell 正在执行，请等待命令终态');
         if (this.controlPending && !type.startsWith('get_')) throw new Error('正在停止或取回队列，请等待状态确认');
-        if (this.operation && operationToken !== this.operation && !type.startsWith('get_')) throw new Error('会话操作进行中，请稍后重试');
+        if (this.operation && operationToken !== this.operation && !type.startsWith('get_') && !(type === 'abort' && (this.channelRun || this.channelCommandId))) throw new Error('会话操作进行中，请稍后重试');
         const controlGeneration = this.controlGeneration;
         const checkingUncertainControl = this.controlUncertain;
         this.lastUsedAt = Date.now();
@@ -175,6 +175,8 @@ class AgentWorker extends EventEmitter {
             // Map one get_entries response synchronously at its stdout boundary so
             // later events cannot be acknowledged by an older transcript snapshot.
             const transcriptSdk = type === 'get_messages' && this.managed ? await require('./pi-session-store').getSdk() : null;
+            // Channel controls revalidate authorization at the last synchronous boundary before RPC submission.
+            beforeSend?.();
             const data = await this.client.request(transcriptSdk ? 'get_entries' : type, transcriptSdk ? {} : payload, timeoutMs, undefined, value => {
                 if (transcriptSdk) {
                     // webAnchors maps each native message entry of the current context to the
@@ -400,7 +402,7 @@ class AgentWorker extends EventEmitter {
         }
         const token = Symbol('session-operation');
         this.operation = token;
-        const rpc = (type, payload = {}, timeout) => this.request(type, payload, timeout, token);
+        const rpc = (type, payload = {}, timeout, beforeSend) => this.request(type, payload, timeout, token, beforeSend);
         try {
             const runtime = await rpc('get_state');
             if (idle && (runtime.isStreaming || runtime.isCompacting || runtime.pendingMessageCount || this.pendingUi.size)) {
@@ -425,6 +427,32 @@ class AgentWorker extends EventEmitter {
         this.operation = token;
         try { return await callback(); }
         finally { if (this.operation === token) this.operation = null; }
+    }
+
+    // Keep the existing exclusive operation until the native turn settles or its
+    // process actually exits. Web prompts cannot change this reply's destination.
+    async channelTurn(input, { accepted = () => {}, waiting = () => {}, admit = () => true } = {}) {
+        return this.exclusive(async rpc => {
+            this.channelRun = input.id;
+            let finish, fail, unsubscribe;
+            const settled = new Promise((resolve, reject) => { finish = resolve; fail = reject; });
+            settled.catch(() => {});
+            const exited = () => fail(new Error('Channel runtime exited before completion'));
+            this.once('exit', exited); this.once('disposed', exited);
+            unsubscribe = this.subscribe(event => {
+                if (event.type === 'agent_settled') setImmediate(finish);
+                if (event.type === 'extension_ui_request' && ['confirm', 'select', 'input', 'editor'].includes(event.method)) waiting();
+            });
+            try {
+                const started = await this.navigate(rpc, { mode: 'channel', input: { ...input, action: 'start', sessionId: this.sessionId } }, { timeoutMs: 30000, beforeSend: admit });
+                if (started.cancelled || started.reused || started.status !== 'running') return started;
+                try { accepted(started); } catch (error) { await this.dispose(); throw error; }
+                await settled;
+                return await this.navigate(rpc, { mode: 'channel', input: { action: 'status', id: input.id, sessionId: this.sessionId } });
+            } finally {
+                unsubscribe?.(); this.removeListener('exit', exited); this.removeListener('disposed', exited); this.channelRun = null;
+            }
+        });
     }
 
     async cron(input) {
@@ -545,9 +573,10 @@ class AgentWorker extends EventEmitter {
         } finally { this.resourceResults.delete(id); }
     }
 
-    async reloadResources() {
+    async reloadResources({ rpc: reservedRpc } = {}) {
         if (this.contextCapture || this.resourceResults.size) throw new Error('正在读取侧聊背景或资源，请稍后重新加载资源');
-        return this.exclusive(async rpc => {
+        if (reservedRpc && !this.operation) throw new Error('Resource reload requires an active operation');
+        const reload = async rpc => {
             const extensionPath = path.join(__dirname, 'pi-web-session-extension.ts');
             const find = data => data.commands.find(item => item.source === 'extension'
                 && (item.sourceInfo?.path || item.path) === extensionPath
@@ -556,10 +585,11 @@ class AgentWorker extends EventEmitter {
             const before = find(await this.client.request('get_commands'));
             if (!before) throw new Error('当前 runtime 尚未加载重载接口，请在任务结束后退出并重新打开会话');
             try {
-                this.loadedAgentProfileConfirmed = false;
-                this.loadedStaffingEpoch = null;
-                this.loadedAssistantProjectConfirmed = false;
-                await rpc('prompt', { message: `/${before.name} ${JSON.stringify({ mode: 'reload', token: this.navigationToken })}` }, 120000);
+                await rpc('prompt', { message: `/${before.name} ${JSON.stringify({ mode: 'reload', token: this.navigationToken })}` }, 120000, () => {
+                    this.loadedStaffingEpoch = null;
+                    this.loadedAgentProfileConfirmed = false;
+                    this.loadedAssistantProjectConfirmed = false;
+                });
                 const raw = await this.client.request('get_commands');
                 const after = find(raw);
                 const commands = { ...raw, commands: raw.commands.filter(c => !isInternalCommand(c.name)) };
@@ -573,7 +603,8 @@ class AgentWorker extends EventEmitter {
                 }
                 throw error;
             }
-        });
+        };
+        return reservedRpc ? reload(reservedRpc) : this.exclusive(reload);
     }
 
     async subagentRequest(input) {
@@ -648,6 +679,7 @@ class AgentWorker extends EventEmitter {
                 && (item.sourceInfo?.path || item.path) === extensionPath
                 && isInternalCommand(item.name));
             if (!command) throw new Error('原生回退扩展未加载，请重新打开 runtime');
+            if (payload.mode === 'channel' && !command.description?.includes('channels-v1')) throw new Error('消息渠道接口尚未加载，请在线程空闲后重开运行实例');
             if (payload.mode === 'cron' && !command.description?.includes('cron-v1')) throw new Error('Scheduled task bridge is not loaded; reopen the idle thread');
             if (payload.mode === 'task-result' && !command.description?.includes('task-results-v1')) throw new Error('Task result bridge is not loaded');
             if (payload.mode === 'agent-message' && !command.description?.includes('agent-messages-v1')) throw new Error('Agent message bridge is not loaded; reopen the thread after it is idle');

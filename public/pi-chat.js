@@ -166,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
         assistantRevision: null,
         assistantEpoch: 0,
         navigationEpoch: 0,
-        routeKey: null,
+        routeKey: location.hash || '#/chat',
         creatingSession: false,
         deletedSessions: new Set(),
         projects: [],
@@ -850,7 +850,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => elements.tokenInput.focus(), 0);
     }
 
-    const cronPage = window.PiCron?.create({ api: apiFetch, currentCwd: () => state.cwd });
+    window.PiUpdateNotifications.start({ apiFetch });
+    window.PiFeatures.configureCron({ api: apiFetch, currentCwd: () => state.cwd });
     const cronAddButton = document.createElement('button');
     cronAddButton.id = 'pi-cron-add-button'; cronAddButton.type = 'button'; cronAddButton.hidden = true;
     cronAddButton.disabled = true; cronAddButton.tabIndex = -1; cronAddButton.setAttribute('role', 'menuitem');
@@ -861,7 +862,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('pi-schedule-button').after(cronAddButton);
     cronAddButton.addEventListener('click', () => {
         if (cronAddButton.disabled || !state.scheduledTasks || !state.session || state.session.ephemeral) return;
-        cronPage?.open({ cwd: state.cwd, sessionId: state.session.id });
+        window.PiWorkspaceRoute.navigate('cron', { cwd: state.cwd, sessionId: state.session.id });
     });
     const taskProgress = new window.PiTaskProgress(document.getElementById('pi-task-progress'));
     const taskResults = window.PiTaskResults?.create({ root: document.getElementById('pi-task-results'), fetch: apiFetch,
@@ -909,7 +910,8 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const status = await apiFetch('/api/pi/status');
             state.scheduledTasks = status.scheduledTasks === true;
-            cronAddButton.hidden = !cronPage || !state.scheduledTasks;
+            state.messageChannels = status.messageChannels === true;
+            cronAddButton.hidden = !state.scheduledTasks;
             accessBootstrapped = true;
             state.modelCatalogSupported = status.modelCatalog === true;
             taskResults?.setEnabled(status.agentTaskResults === true);
@@ -1664,13 +1666,21 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const profile of state.assistantProfiles) {
             const option = document.createElement('option'); option.value = profile.id; option.textContent = profile.name; selector.append(option);
         }
-        const chosen = [requested.profileId, state.assistantProfileId, localStorage.getItem('pi.web.assistantProfile')]
-            .find(id => state.assistantProfiles.some(profile => profile.id === id)) || state.assistantProfiles[0]?.id || null;
+        // A requested or currently shown identity never silently becomes another one; only a choice
+        // remembered from an earlier visit falls back to the first available identity.
+        const preferred = requested.profileId || state.assistantProfileId || state.assistantMissingProfileId || null;
+        const stored = localStorage.getItem('pi.web.assistantProfile');
+        const remembered = state.assistantProfiles.some(profile => profile.id === stored) ? stored : null;
+        const chosen = preferred ? state.assistantProfiles.find(profile => profile.id === preferred)?.id || null
+            : remembered || state.assistantProfiles[0]?.id || null;
+        state.assistantMissingProfileId = preferred && !chosen ? preferred : null;
         state.assistantProfileId = chosen;
         selector.value = chosen || '';
-        selector.disabled = !chosen;
+        selector.disabled = !state.assistantProfiles.length;
         if (!chosen) {
-            const option = document.createElement('option'); option.value = ''; option.textContent = translateUi('暂无可用助手'); selector.append(option);
+            const option = document.createElement('option'); option.value = '';
+            option.textContent = translateUi(state.assistantProfiles.length ? '选择助手身份' : '暂无可用助手');
+            option.selected = true; selector.prepend(option);
         }
         $('pi-assistant-manage-profiles').querySelector('span').textContent = translateUi(profiles.profiles.length ? '管理助手身份' : '添加助手身份');
         const profile = state.assistantProfiles.find(item => item.id === chosen);
@@ -1679,7 +1689,10 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.newSession.disabled = !chosen || !state.assistantSupported;
         if (!chosen || !state.assistantSupported) {
             state.assistantGroups = []; state.assistantSessions = new Map(); state.assistantProjectId = null;
-            status.replaceChildren(document.createTextNode(!state.assistantSupported ? translateUi('当前服务尚未启用助手项目') : translateUi('还没有已启用的助手身份')));
+            state.assistantListLoading = false;
+            status.replaceChildren(document.createTextNode(!state.assistantSupported ? translateUi('当前服务尚未启用助手项目')
+                : translateUi(preferred ? '当前身份不可用；不会自动改用其他身份' : '还没有已启用的助手身份')));
+            syncMobileHeader();
             renderAssistantSessions(); return;
         }
         localStorage.setItem('pi.web.assistantProfile', chosen);
@@ -2388,6 +2401,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function openSession(session) {
         if (!session || state.session?.id === session.id && state.connected) return;
+        if (state.session?.id !== session.id || state.session?.cwd !== session.cwd) mediaRequests?.reset();
         turnEdits.reset();
         filesPanel.reset();
         const draftKey = JSON.stringify([state.cwd, session.id]);
@@ -2895,15 +2909,33 @@ document.addEventListener('DOMContentLoaded', () => {
         if (role === 'custom' && message.display === false) return null;
         if (window.PiAgentCards?.handles(message)) return window.PiAgentCards.render(message, { link: appendAgentThreadLink, markdown: renderMarkdown });
 
+        const isChannelTurn = role === 'custom' && message.customType === 'pivane-channel-message';
+        const isUserTurn = role === 'user' || isChannelTurn;
+        const cleanChannelText = text => {
+            if (!isChannelTurn || typeof text !== 'string') return text || '';
+            const offset = message.details?.bodyOffset;
+            if (Number.isInteger(offset) && offset >= 0 && offset <= text.length) return text.slice(offset);
+            return text.replace(/^\[用户通过已绑定的微信私聊发来消息。[\s\S]*?\]\r?\n\r?\n/, '');
+        };
+
         const article = document.createElement('article');
-        article.className = `pi-message ${role}`;
+        article.className = isChannelTurn ? 'pi-message custom user pi-channel-message pi-agent-turn-start' : `pi-message ${role}`;
         if (role === 'user') article._piUserMessage = message;
         if (role === 'assistant') article._piAssistantMessage = message;
         const header = document.createElement('header');
+        if (isChannelTurn) {
+            const strong = document.createElement('strong'); strong.textContent = translateUi("你");
+            const badge = document.createElement('span'); badge.className = 'pi-channel-badge';
+            badge.innerHTML = `<i class="fa-solid fa-comments" aria-hidden="true"></i><span>${escapeHtml(translateUi("微信"))}</span>`;
+            const peerId = typeof message.details?.peerId === 'string' ? message.details.peerId : '';
+            badge.title = peerId ? `${translateUi("来自已绑定的微信私聊")} · ${peerId}` : translateUi("来自已绑定的微信私聊");
+            header.append(strong, badge);
+        } else {
         const title = role === 'user' ? translateUi("你") : role === 'assistant' ? assistantName() : translateUi("系统");
         const titleNode = document.createElement('strong'); titleNode.textContent = title; header.append(titleNode);
         if (role === 'assistant' && message.model) {
             const modelNode = document.createElement('span'); modelNode.textContent = message.model; header.append(modelNode);
+        }
         }
         if (role === 'assistant' && message.pivaneSpeed) {
             const speed = document.createElement('span'); speed.className = 'pi-message-speed';
@@ -2913,10 +2945,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (message.pivaneSpeed.costBasis === 'requested-tier-estimate') speed.title += ` · ${translateUi('费用按请求档位估算')}`;
             header.append(speed);
         }
-        const subagentNotice = role === 'custom' && Boolean(window.PiSubagentNotices?.decorate(article, header, message));
+        const subagentNotice = role === 'custom' && !isChannelTurn && Boolean(window.PiSubagentNotices?.decorate(article, header, message));
         const responseText = role === 'assistant' ? messageText(message.content).trim() : '';
         if (responseText && !options.archived) state.lastAssistantText = responseText;
-        if (role === 'user') {
+        if (isUserTurn) {
             if (typeof message.timestamp === 'number' || typeof message.timestamp === 'string') {
                 const sentAt = new Date(message.timestamp);
                 if (Number.isFinite(sentAt.getTime())) {
@@ -2930,7 +2962,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const actions = document.createElement('span');
             actions.className = 'pi-user-actions';
-            actions.appendChild(createMessageCopy(messageText(message.content), role));
+            const rawText = messageText(message.content);
+            actions.appendChild(createMessageCopy(isChannelTurn ? cleanChannelText(rawText) : rawText, 'user'));
             header.appendChild(actions);
         }
         article.appendChild(header);
@@ -2938,18 +2971,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const body = document.createElement('div');
         body.className = 'pi-message-body';
         const content = Array.isArray(message.content) ? message.content : [{ type: 'text', text: message.content || '' }];
+        let strippedChannelHeader = false;
         for (const block of content) {
             if (block.type === 'text') {
+                const blockText = isChannelTurn && !strippedChannelHeader ? (strippedChannelHeader = true, cleanChannelText(block.text)) : (block.text || '');
                 const text = document.createElement('div');
                 text.className = 'pi-markdown';
                 // pi-subagents notices are Markdown reports; renderMarkdown sanitizes them.
                 // Subagent notices start collapsed; their Markdown renders on first expansion.
-                if (subagentNotice) { text.dataset.pendingMarkdown = ''; text._piMarkdown = block.text || ''; }
-                else if (role === 'assistant') text.innerHTML = renderMarkdown(block.text);
-                else if (role === 'user') documentAttachments.render(text, block.text);
-                else window.PiQuotes.renderUser(text, block.text);
+                if (subagentNotice) { text.dataset.pendingMarkdown = ''; text._piMarkdown = blockText; }
+                else if (role === 'assistant') text.innerHTML = renderMarkdown(blockText);
+                else if (isUserTurn) documentAttachments.render(text, blockText);
+                else window.PiQuotes.renderUser(text, blockText);
                 body.appendChild(text);
-                if (role === 'user') foldLongUserText(text, block.text || '');
+                if (isUserTurn) foldLongUserText(text, blockText);
             } else if (block.type === 'thinking') {
                 body.appendChild(createThinkingBlock(block.thinking));
             } else if (block.type === 'toolCall') {
@@ -3029,6 +3064,7 @@ document.addEventListener('DOMContentLoaded', () => {
         row.dataset.toolId = toolCall.id || '';
         row.dataset.toolName = toolCall.name || '';
         row._piToolArgs = toolCall.arguments;
+        row._piArgsError = typeof toolCall.argumentsError === 'string' ? toolCall.argumentsError.slice(0, 8192) : '';
         row.innerHTML = `
             <summary>
                 <span class="pi-tool-icon"><i class="fa-solid fa-wrench"></i></span>
@@ -3106,7 +3142,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         row.dataset.state = message.isError ? 'error' : 'done';
         row.querySelector('.pi-tool-status').textContent = message.isError ? translateUi("失败") : translateUi("完成");
-        window.PiNestedTools?.persisted(row, message.nestedCalls);
+        if (!message.nestedCalls) window.PiNestedTools?.persisted(row, null);
         setToolOutput(row, message);
         return existing ? null : row;
     }
@@ -3147,7 +3183,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         // Commentary can be plain text too; only the last reply in a user segment gets actions.
         messages.forEach((message, index) => {
-            if (message.role === 'user') finish();
+            if (message.role === 'user' || (message.role === 'custom' && message.customType === 'pivane-channel-message')) finish();
             else if (message.role === 'assistant') {
                 const hasTools = Array.isArray(message.content) && message.content.some(block => block.type === 'toolCall');
                 candidate = !hasTools && !['toolUse', 'pending'].includes(message.stopReason) && messageText(message.content).trim() ? index : null;
@@ -3176,7 +3212,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const identity = anchors.has(key) ? anchors.get(key) : message.timestamp == null ? projection ? `projection:${index}:${message.role}` : null : key;
             if (!identity || identities.has(identity)) ambiguous = true;
             identities.add(identity);
-            return { identity, signature: JSON.stringify(message), role: message.role, actions: finalReplies.has(index), nodes: [] };
+            return { identity, signature: JSON.stringify(message), role: message.role, customType: message.customType, actions: finalReplies.has(index), nodes: [] };
         });
         let keep = 0;
         if (!ambiguous) while (keep < records.length && keep < previous.length
@@ -3190,9 +3226,9 @@ document.addEventListener('DOMContentLoaded', () => {
             for (const block of Array.isArray(message.content) ? message.content : []) if (block.type === 'toolCall') calls.set(block.id, index);
         });
         for (const message of messages.slice(keep)) if (message.role === 'toolResult' && calls.has(message.toolCallId)) keep = Math.min(keep, calls.get(message.toolCallId));
-        const boundary = role => ['user', 'compactionSummary', 'branchSummary'].includes(role);
+        const boundary = record => ['user', 'compactionSummary', 'branchSummary'].includes(record?.role) || (record?.role === 'custom' && record?.customType === 'pivane-channel-message');
         if (keep < records.length || keep < previous.length || state.liveMessage || state.dirtyTranscriptIndex < Infinity) {
-            while (keep > 0 && !boundary((records[keep] || previous[keep])?.role)) keep--;
+            while (keep > 0 && !boundary(records[keep] || previous[keep])) keep--;
         }
         if ([...records.slice(keep), ...previous.slice(keep)].some(record => ['compactionSummary', 'branchSummary'].includes(record.role))) keep = 0;
         let retained = null;
@@ -3223,6 +3259,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         state.renderedTranscript = { context, records };
+        if (removed.length) mediaRequests?.prune();
         state.dirtyTranscriptIndex = Infinity;
         state.lastAssistantText = '';
         for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === 'assistant' && messageText(messages[i].content).trim()) {
@@ -3324,6 +3361,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function clearSessionView() {
+        mediaRequests?.reset();
         state.recoveryNotice = null;
         transcriptActivity?.reset();
         renderRecoveryNotice();
@@ -3361,8 +3399,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setAgentState('idle', translateUi("未连接"), translateUi("等待会话"));
     }
 
-    function decorateCodeBlocks(root) {
-        root.querySelectorAll('.pi-markdown pre').forEach(pre => {
+    function decorateCodeBlocks(root, markdownFragment = false) {
+        root.querySelectorAll(markdownFragment ? 'pre' : '.pi-markdown pre').forEach(pre => {
             if (pre.querySelector('.pi-code-copy')) return;
             const button = document.createElement('button');
             button.className = 'pi-code-copy';
@@ -3630,8 +3668,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const [block, type] of live.pending) {
             if (type === 'text') {
                 block.dataset.raw = block._piLiveText;
-                block.innerHTML = renderMarkdown(block._piLiveText);
-                decorateCodeBlocks(block);
+                window.PiFileViewer.updateMarkdown(block, renderMarkdown(block._piLiveText), fragment => decorateCodeBlocks(fragment, true));
             } else {
                 block.querySelector(type === 'thinking' ? '.pi-thinking-content' : '.pi-tool-args').textContent = block._piLiveText;
             }
@@ -3667,6 +3704,7 @@ document.addEventListener('DOMContentLoaded', () => {
             block.dataset.toolId = delta.toolCall.id || '';
             block.dataset.toolName = delta.toolCall.name || 'tool';
             block._piToolArgs = delta.toolCall.arguments;
+            block._piArgsError = typeof delta.toolCall.argumentsError === 'string' ? delta.toolCall.argumentsError.slice(0, 8192) : '';
             window.PiToolLabels?.update(block);
             block._piLiveText = formatToolArgs(delta.toolCall.arguments);
             block.querySelector('.pi-tool-args').textContent = block._piLiveText;
@@ -4692,11 +4730,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // The message display switch lives in Settings; the thread menu is a shortcut to it.
     function openMessageViewSetting() {
-        window.dispatchEvent(new CustomEvent('workspace:open-settings', { detail: { tab: 'models' } }));
-        requestAnimationFrame(() => {
-            $('settings-message-view')?.scrollIntoView({ block: 'center' });
-            $('pi-transcript-modes')?.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
-        });
+        window.dispatchEvent(new CustomEvent('workspace:open-settings', { detail: { tab: 'models', focusTarget: 'message-view' } }));
     }
 
     function showThreadMenu(target, point, current = false) {
@@ -4730,6 +4764,9 @@ document.addEventListener('DOMContentLoaded', () => {
             items = [
                 ...(historyItems.length ? [{ label: translateUi('历史与记录'), icon: 'fa-clock-rotate-left', children: historyItems }] : []),
                 ...(current ? [command(translateUi("消息显示…"), 'fa-eye', openMessageViewSetting)] : []),
+                ...(state.messageChannels ? [command(translateUi('连接微信…'), 'fa-comments', () => {
+                    window.dispatchEvent(new CustomEvent('workspace:open-settings', { detail: { tab: 'channels', channelTarget: { cwd, sessionId: session.id } } }));
+                }, { disabled: session.ephemeral })] : []),
                 command(translateUi("重命名"), 'fa-pen', () => renameCurrent(session, cwd), { disabled: session.ephemeral }),
                 ...(titleEditor?.enabled ? [command(translateUi('重新生成标题'), 'fa-wand-magic-sparkles', () => titleEditor.open(session, cwd), { disabled: session.ephemeral })] : []),
                 ...(workflows.enabled ? [command(translateUi("复制为新线程"), 'fa-code-branch', async () => {

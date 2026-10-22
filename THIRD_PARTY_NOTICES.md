@@ -41,11 +41,17 @@ Windows 托盘启动器的交互设计参考 [dsh-tray-launcher](https://github.
 
 [gongwen-kit](https://github.com/imhuhe/gongwen-kit) 0.3.1，固定提交 `d8dfe6a24e20ecaa64c14f3a79159813ad92db70`，使用 MIT 许可证。完整原始源码、文档、样张与 [LICENSE](vendor/gongwen-kit/LICENSE) 保存于 `vendor/gongwen-kit/`，来源及逐文件哈希记录在 vendor manifest。白泽灵台在独立适配层生成和检查，不改写上游文件。根 lockfile 固定 docx 9.7.1（MIT）、jszip 3.10.2（MIT OR GPL-3.0-or-later，按 MIT 使用）和 sax 1.6.1（BlueOak-1.0.0）及实际传递依赖；许可证随依赖安装保留。字体只声明名称，不随应用分发，字体授权按各字体自身条款处理。
 
-[pi-subagents](https://github.com/nicobailon/pi-subagents) 0.74.0（Nico Bailon，MIT）官方 npm 发布内容原样保存于 `vendor/pi-subagents/`，包含 JavaScript、声明、source map、角色、技能、提示词和文档；原始 LICENSE 随包保留。Pivane 的安装与运行适配独立于上游文件，版本随应用更新。
+[pi-subagents](https://github.com/nicobailon/pi-subagents) 0.78.0（Nico Bailon，MIT）官方 npm 发布内容原样保存于 `vendor/pi-subagents/`，包含 JavaScript、声明、source map、角色、技能、提示词和文档；原始 LICENSE 随包保留。Pivane 的安装与运行适配独立于上游文件，版本随应用更新。
 
 ## 可选档案记忆组件
 
-[pi-hermes-memory](https://github.com/chandra447/pi-hermes-memory) 0.9.9 使用 MIT 许可证。官方 npm 发布源码原样保存于 `vendor/pi-hermes-memory/`，原始 LICENSE 随包保留；Pivane 从选定组件生成档案记忆 bundle，不加载其默认扩展。`vendor/manifest.json` 记录两个包的来源、版本和逐文件哈希；运行依赖的许可证由 npm 安装保留，版本图由根 lockfile 锁定。安装、SQLite 平台要求和维护边界见[内置能力包](docs/BUNDLED_CAPABILITIES.md)与[档案记忆适配](docs/PROFILE_MEMORY.md)。
+[pi-hermes-memory](https://github.com/chandra447/pi-hermes-memory) 0.9.10 使用 MIT 许可证。官方 npm 发布源码原样保存于 `vendor/pi-hermes-memory/`，原始 LICENSE 随包保留；Pivane 从选定组件生成档案记忆 bundle，不加载其默认扩展。`vendor/manifest.json` 记录两个包的来源、版本和逐文件哈希；运行依赖的许可证由 npm 安装保留，版本图由根 lockfile 锁定。安装、SQLite 平台要求和维护边界见[内置能力包](docs/BUNDLED_CAPABILITIES.md)与[档案记忆适配](docs/PROFILE_MEMORY.md)。
+
+## 按需下载的微信连接组件
+
+微信连接使用 [Tencent/openclaw-weixin](https://github.com/Tencent/openclaw-weixin) 官方 npm 包 `@tencent-weixin/openclaw-weixin` 2.4.10（Tencent，MIT），以及 `qrcode-terminal` 0.12.0 包（Apache-2.0）中的 QRCode for JavaScript（Copyright 2009 Kazuhiko Arase，MIT）。这些包不随默认 Pivane 归档分发；用户确认安装后才下载精确归档并核对 SHA256。
+
+私有组件回执保留上游选定文件原始字节、两个包的 LICENSE、二维码作者的版权与 MIT 条款，以及 Pivane 的适配说明。Pivane 仅替换模块装配中的账户、日志和网络边界，不执行上游 OpenClaw 插件入口或修改上游源文件；当前审查版本与安装方式见[消息渠道](docs/MESSAGE_CHANNELS.md)。
 
 ## 平台与外部服务
 

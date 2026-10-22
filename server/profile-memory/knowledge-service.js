@@ -5,7 +5,7 @@ const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const scope = require('./scope');
-const { safeFile, safeDir, projectRoots, listMemories, listSkills, listExtendedMemories, profileMemoryCapability } = require('./management');
+const { safeFile, safeDir, projectRoots, listMemories, listSkills, listExtendedMemories, memoryRecall, withRecall, profileMemoryCapability } = require('./management');
 const { createMutationLock } = require('./mutation-lock');
 const { documentIndex, pendingDocumentIndex, documentIndexSynced } = require('./document-index');
 const { location, publish } = require('../pi-profile-documents');
@@ -39,6 +39,8 @@ const CONSOLIDATE_MAX = 20;
 const MAX_INJECTION_BYTES = 64 * 1024;
 const MAX_LEDGER = 8 * 1024 * 1024;
 const MAX_CONTENT = 65536;
+// Pi and the upstream skill tool accept descriptions up to 1024 characters (Agent Skills spec).
+const MAX_SKILL_DESCRIPTION = 1024;
 // Version 2 journal bounds: the active receipt window is small and old receipts
 // are compacted to digests, while request and tombstone identities stay valid
 // far beyond the window so replay and anti-revival guarantees outlive it.
@@ -138,7 +140,7 @@ function skillPath(root, item) {
     return file;
 }
 function skillContent(name, description, content) {
-    if (typeof description !== 'string' || description.length > 1000 || /[\r\n\0]/.test(description)) throw fail('Invalid skill description');
+    if (typeof description !== 'string' || description.length > MAX_SKILL_DESCRIPTION || /[\r\n\0]/.test(description)) throw fail('Invalid skill description');
     if (typeof content !== 'string' || !content.trim() || content.length > MAX_CONTENT || /\0|\r/.test(content)) throw fail('Invalid skill content');
     const header = `---\nname: ${name}\ndescription: ${description}\n---\n`;
     const result = content.startsWith('---\n') ? content : `${header}${content.trim()}\n`;
@@ -241,6 +243,23 @@ function physical(root, data, bundle) {
     }
     return [...indexed.values()];
 }
+// These display groups also include read-only SQLite/legacy entries without
+// changing their stored target or scope.
+const memoryTarget = item => item.scope === 'project' ? 'project' : item.target === 'user' ? 'user' : 'memory';
+function knowledgeCounts(items) {
+    const counts = { memory: { total: 0, user: 0, memory: 0, project: 0, deleted: 0 },
+        skill: { total: 0, active: 0, draft: 0, disabled: 0, deleted: 0 } };
+    for (const item of items) {
+        if (item.mirrored) continue;
+        const count = counts[item.kind];
+        if (item.state === 'deleted') count.deleted++;
+        else {
+            count.total++;
+            count[item.kind === 'memory' ? memoryTarget(item) : item.state]++;
+        }
+    }
+    return counts;
+}
 function findSkillFile(root, projects, id) {
     for (const dir of [path.join(root, 'skills'), ...projects.map(p => path.join(p, 'skills'))]) {
         if (!safeDir(dir)) continue;
@@ -258,6 +277,10 @@ function publicRecord(record) {
 }
 // The monotonic sequence keeps revisions stable while receipts rotate through
 // the active window and the archive.
+// Recall counters are advisory display data: a read failure shows none rather than failing the page.
+function recallFor(root, bundle) {
+    try { return memoryRecall(root, bundle); } catch { return new Map(); }
+}
 function revision(root, generation, data, items) {
     return hash(JSON.stringify([generation, data.sequence, items.map(item => [item.id, item.revision, item.state]).sort()]));
 }
@@ -598,7 +621,9 @@ class ProfileKnowledgeService {
         return { profile, root, bundle, installed: profileMemoryCapability({ bundlePath: bundle }).installed };
     }
     async snapshot(profileId, options = {}) {
-        if (!options || !keys(options, ['kind', 'query', 'offset', 'sessionId', 'state']) || options.kind !== undefined && !['memory', 'skill'].includes(options.kind)
+        if (!options || !keys(options, ['kind', 'query', 'offset', 'sessionId', 'state', 'target', 'category']) || options.kind !== undefined && !['memory', 'skill'].includes(options.kind)
+            || options.target !== undefined && (options.kind !== 'memory' || !['user', 'memory', 'project'].includes(options.target))
+            || options.category !== undefined && (options.kind !== 'memory' || !CATEGORY.has(options.category))
             || options.state !== undefined && !['present', 'deleted', 'draft', 'all'].includes(options.state)
             || options.query !== undefined && (typeof options.query !== 'string' || options.query.length > 200)
             || options.sessionId !== undefined && (typeof options.sessionId !== 'string' || options.sessionId.length > 200)
@@ -606,7 +631,7 @@ class ProfileKnowledgeService {
         const ctx = await this.context(profileId);
         const base = { version: 1, profileId, status: 'missing', revision: null, items: [], receipts: [], hasMore: false,
             capabilities: { memory: false, skill: false, projectWrites: false, projectWritesBySession: false, projectSkillDeletesBySession: false, nativeProjectWrites: false,
-                installedSkillsWrite: false, operations: [], skillNameMaxLength: 64, maxContentLength: MAX_CONTENT } };
+                installedSkillsWrite: false, operations: [], skillNameMaxLength: 64, skillDescriptionMaxLength: MAX_SKILL_DESCRIPTION, maxContentLength: MAX_CONTENT } };
         if (!ctx.profile) return base;
         if (!ctx.profile.enabled) return { ...base, status: 'disabled' };
         const capabilities = { memory: Boolean(ctx.installed && ctx.profile.memory?.enabled),
@@ -616,8 +641,8 @@ class ProfileKnowledgeService {
             projectSkillDeletesBySession: Boolean(ctx.profile.skills?.learnedEnabled),
             nativeProjectWrites: Boolean(ctx.installed && ctx.profile.memory?.enabled || ctx.profile.skills?.learnedEnabled), installedSkillsWrite: false,
             operations: ctx.installed && ctx.profile.memory?.enabled || ctx.profile.skills?.learnedEnabled
-                ? [...OPERATIONS] : [], skillNameMaxLength: 64, maxContentLength: MAX_CONTENT };
-        if (!fs.existsSync(ctx.root)) return { ...base, status: 'ready', revision: hash(JSON.stringify([0, 0, []])), capabilities,
+                ? [...OPERATIONS] : [], skillNameMaxLength: 64, skillDescriptionMaxLength: MAX_SKILL_DESCRIPTION, maxContentLength: MAX_CONTENT };
+        if (!fs.existsSync(ctx.root)) return { ...base, status: 'ready', revision: hash(JSON.stringify([0, 0, []])), capabilities, counts: knowledgeCounts([]),
             ...(capabilities.memory ? { usage: memoryUsage(ctx.root, ctx.profile.memory) } : {}) };
         if (!ctx.installed && fs.existsSync(path.join(ctx.root, 'sessions.db')))
             return { ...base, status: 'unsupported', capabilities };
@@ -629,11 +654,13 @@ class ProfileKnowledgeService {
             // A search-index row that mirrors a listed Markdown entry is not a second memory; it
             // stays in the revision and remains readable by ID, but is not listed twice.
             const matches = items.filter(item => !item.mirrored && (!options.kind || item.kind === options.kind)
+                && (!options.target || memoryTarget(item) === options.target)
+                && (!options.category || item.category === options.category)
                 && (!options.state || options.state === 'all' || (options.state === 'present' ? item.state !== 'deleted' : item.state === options.state))
                 && (!query || `${item.name || ''} ${item.content || ''} ${item.description || ''}`.toLocaleLowerCase().includes(query)));
             const offset = options.offset || 0;
-            return { ...base, status: 'ready',
-                revision: revision(ctx.root, generation, data, items), items: matches.slice(offset, offset + 50).map(item => {
+            return { ...base, status: 'ready', counts: knowledgeCounts(items),
+                revision: revision(ctx.root, generation, data, items), items: withRecall(matches.slice(offset, offset + 50), recallFor(ctx.root, ctx.bundle)).map(item => {
                     const { content, ...listed } = item;
                     return item.kind === 'memory' ? { ...listed, content: content?.slice(0, 512) } : listed;
                 }), receipts: recent(data, options.sessionId), hasMore: matches.length > offset + 50,
@@ -653,7 +680,8 @@ class ProfileKnowledgeService {
             return { version: 1, status: 'unsupported' };
         return createMutationLock(ctx.root).inspect(() => {
             if (safeFile(pendingFile(ctx.root), MAX_LEDGER)) return { version: 1, status: 'pending' };
-            const item = physical(ctx.root, ledger(ctx.root), ctx.bundle).find(row => row.id === itemId);
+            const found = physical(ctx.root, ledger(ctx.root), ctx.bundle).find(row => row.id === itemId);
+            const item = found && withRecall([found], recallFor(ctx.root, ctx.bundle))[0];
             const content = item && body(ctx.root, item);
             return { version: 1, status: item ? 'ready' : 'missing', ...(item ? { item: {
                 ...item, content: content?.slice(0, MAX_CONTENT),

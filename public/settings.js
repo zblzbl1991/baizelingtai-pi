@@ -1,4 +1,8 @@
-document.addEventListener('DOMContentLoaded', () => {
+(() => {
+let initialized = false;
+function start() {
+    if (initialized) return;
+    initialized = true;
     const translateUi = globalThis.PiI18n?.t || ((text, ...values) => text.replace(/\{(\d+)\}/g, (_, index) => values[index] ?? `{${index}}`));
     const $ = id => document.getElementById(id);
     const elements = {
@@ -112,7 +116,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const titleSettings = window.PiTitleSettings?.create({ apiFetch, saved: settings => {
         if (state.modelSnapshot) state.modelSnapshot.preferences.sessionTitles = settings;
     } });
-    window.PiTranscriptionSettings?.create({ apiFetch });
     const usagePanel = window.PiUsage.create({ apiFetch });
     window.PiExtensions?.connect?.({ apiFetch, currentCwd, currentSession: () => window.PiNativeRuntime?.currentSession?.() || null });
     const nativeSettings = window.PiNativeSettings.create({ apiFetch, currentCwd, toast });
@@ -126,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let settingsViewEpoch = 0;
     let settingsOpen = false;
     let activeProfileMetadata = null;
-    const extensionTabs = new Set(['extensions', 'installed', 'mcp']);
+    const extensionTabs = new Set(['extensions', 'installed', 'mcp', 'channels']);
     function openSettings(tab = state.activeTab, metadata = {}) {
         settingsOpen = true;
         elements.dialog.classList.remove('hidden');
@@ -159,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('workspace-settings-title').textContent = translateUi(view === 'profiles' ? '助手身份'
             : view === 'extensions' ? '扩展' : '工作台设置');
         state.activeTab = tab;
-        if (tab === 'media') void subagentSettings.open();
+        if (tab === 'media') { void subagentSettings.open(); void loadMediaChatExecution(); }
         else subagentSettings.close();
         if (tab === 'builtins') void builtinCapabilities?.open();
         else builtinCapabilities?.close();
@@ -846,12 +849,9 @@ document.addEventListener('DOMContentLoaded', () => {
         state.editorReturnFocus = null;
     }
 
-    window.addEventListener('workspace:agent-profiles-status', event => agentProfiles.setEnabled(event.detail?.enabled === true, event.detail?.autoLearn === true));
-    elements.toggle.addEventListener('click', () => window.PiWorkspaceRoute?.navigate('settings', {
-        tab: extensionTabs.has(state.activeTab) || state.activeTab === 'profiles' ? 'providers' : state.activeTab
-    }));
-    window.addEventListener('workspace:open-settings', event => {
-        const detail = event.detail || {};
+    window.PiSettings.activeTab = () => extensionTabs.has(state.activeTab) || state.activeTab === 'profiles' ? 'providers' : state.activeTab;
+    window.PiSettings.focus = detail => {
+        if (detail.channelTarget) window.PiExtensions?.setChannelTarget(detail.channelTarget);
         if (detail.setting) nativeSettings.focusSetting(detail.setting);
         if (detail.promptKind) systemPrompts.focus(detail.promptKind, detail.promptScope);
         if (detail.providerSearch !== undefined) {
@@ -860,24 +860,34 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.modelAvailable.checked = false;
         }
         if (detail.showConfigured === false) elements.providerConfigured.checked = false;
-        const tab = detail.tab || state.activeTab;
-        const route = tab === 'profiles' ? 'profiles' : extensionTabs.has(tab) ? 'extensions' : 'settings';
-        const params = route === 'profiles' ? { profileId: detail.profileId, section: detail.section, authoringSession: detail.authoringSession?.id, authoringCwd: detail.authoringSession?.cwd }
-            : { tab, ...(detail.section ? { section: detail.section } : {}) };
-        window.PiWorkspaceRoute?.navigate(route, params);
-    });
-    window.addEventListener('workspace:settings-route', event => {
+    };
+    let profileLeaveEpoch = 0, profileLeavePending = null;
+    window.addEventListener('workspace:settings-route', async event => {
         const { tab, settingsTab, profileId, section, authoringSession, authoringCwd, resourceType } = event.detail;
+        const request = ++profileLeaveEpoch, revision = event.detail.revision ?? window.PiWorkspaceRoute.revision();
+        const current = () => request === profileLeaveEpoch && revision === window.PiWorkspaceRoute.revision();
+        if (profileLeavePending !== null) window.PiProfileDialog.cancel();
+        if (settingsOpen && state.activeTab === 'profiles' && tab !== 'profiles') {
+            elements.dialog.classList.remove('hidden');
+            const currentProfile = document.querySelector('#pi-profiles-list [data-profile-id][aria-current="true"]')?.dataset.profileId;
+            const currentSection = $('pi-profiles-content')?.dataset.section;
+            // Only an explicit refusal (unsaved edits kept, or a save in flight) keeps the profiles page.
+            profileLeavePending = request;
+            const closed = await agentProfiles.close({ current });
+            if (profileLeavePending === request) profileLeavePending = null;
+            if (!current()) return;
+            if (closed === false) {
+                window.PiWorkspaceRoute?.navigate('profiles', { profileId: currentProfile, section: currentSection }, true);
+                return;
+            }
+        }
         if (['profiles', 'extensions', 'settings'].includes(tab)) {
             const metadata = { profileId, section, authoringSession: authoringSession ? { id: authoringSession, cwd: authoringCwd } : undefined };
             if (resourceType) metadata.resourceType = resourceType;
             openSettings(settingsTab, metadata);
+            window.PiFeatures.settingsOpened(revision);
         } else if (settingsOpen || !elements.dialog.classList.contains('hidden')) closeSettings();
     });
-    const initialRoute = window.PiWorkspaceRoute?.current();
-    if (['profiles', 'extensions', 'settings'].includes(initialRoute?.tab)) {
-        window.PiWorkspaceRoute.navigate(initialRoute.tab, Object.fromEntries(initialRoute.params), true);
-    }
     elements.close.addEventListener('click', () => window.PiWorkspaceRoute?.returnToConversation());
     elements.editorClose.addEventListener('click', closeEditor);
     elements.editor.addEventListener('click', event => { if (event.target === elements.editor) closeEditor(); });
@@ -914,6 +924,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
     elements.modelSearch.addEventListener('input', renderModels);
     elements.modelProvider.addEventListener('change', renderModels);
+    let mediaChatExecutionRevision = 0;
+    let mediaChatExecutionBusy = false;
+    async function loadMediaChatExecution() {
+        const statusEl = $('settings-media-chat-execution-status');
+        try {
+            const data = await apiFetch('/api/pi/settings/media-chat-execution');
+            if (!data || typeof data !== 'object') return;
+            mediaChatExecutionRevision = Number.isSafeInteger(data.revision) ? data.revision : 0;
+            for (const kind of ['image', 'tts', 'video']) {
+                const input = $(`settings-media-auto-${kind}`);
+                if (input && typeof data[kind] === 'boolean') input.checked = data[kind];
+            }
+            if (statusEl) statusEl.textContent = '';
+        } catch {}
+    }
+    for (const kind of ['image', 'tts', 'video']) {
+        const input = $(`settings-media-auto-${kind}`);
+        if (!input) continue;
+        input.addEventListener('change', async () => {
+            if (mediaChatExecutionBusy) return;
+            mediaChatExecutionBusy = true;
+            const statusEl = $('settings-media-chat-execution-status');
+            if (statusEl) statusEl.textContent = translateUi('正在保存，请稍候');
+            try {
+                const data = await apiFetch('/api/pi/settings/media-chat-execution', {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ [kind]: input.checked, expectedRevision: mediaChatExecutionRevision })
+                });
+                mediaChatExecutionRevision = Number.isSafeInteger(data.revision) ? data.revision : mediaChatExecutionRevision;
+                for (const k of ['image', 'tts', 'video']) {
+                    const el = $(`settings-media-auto-${k}`);
+                    if (el && typeof data[k] === 'boolean') el.checked = data[k];
+                }
+                if (statusEl) statusEl.textContent = translateUi('对话媒体自动生成策略已保存');
+            } catch (error) {
+                input.checked = !input.checked;
+                if (statusEl) statusEl.textContent = error.message;
+                void loadMediaChatExecution();
+            } finally {
+                mediaChatExecutionBusy = false;
+            }
+        });
+    }
+
     elements.mediaAgentProvider.addEventListener('change', () => populateMediaAgentModelSelect());
     elements.mediaAgentForm.addEventListener('submit', event => {
         event.preventDefault();
@@ -980,4 +1034,8 @@ document.addEventListener('DOMContentLoaded', () => {
             toast(translateUi("Skill command 设置已保存；重新打开 runtime 后生效"), 'success');
         } catch (error) { elements.skillCommands.checked = !elements.skillCommands.checked; toast(error.message, 'error'); }
     });
-});
+}
+window.PiSettings = { start };
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+
+})();

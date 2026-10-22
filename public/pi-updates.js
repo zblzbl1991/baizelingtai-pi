@@ -30,7 +30,7 @@
     }
     function create({ apiFetch }) {
         const panel = document.getElementById('settings-updates-panel');
-        const notifications = window.PiUpdateNotifications.create({ apiFetch });
+        const notifications = window.PiUpdateNotifications.start({ apiFetch });
         let epoch = 0, snapshot, requested = false, ticket, reviewing = false, submitting = false, pendingId, timer, operationMessage = '';
         const terminal = phase => ['succeeded', 'failed', 'interrupted'].includes(phase);
         const phases = { preparing: '正在准备更新…', installing: '正在准备安装…', downloading: '正在下载并校验整包…', extracting: '正在解压并核验文件…',

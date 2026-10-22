@@ -14,7 +14,7 @@
         skipped: '已跳过', failed: '执行失败', error: '执行失败', stopped: '已停止', cancelled: '已取消', uncertain: '需要核对' };
     const date = (value, zone) => value ? new Intl.DateTimeFormat(globalThis.PiI18n?.locale || 'zh-CN',
         { timeZone: zone, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(value) : '—';
-    function create({ api, currentCwd }) {
+    function create({ api, currentCwd, activate = true }) {
         const root = document.getElementById('cron-tab'); if (!root) return;
         let snapshot = null, profiles = [], projects = [], selected = '', draft = null, dirty = false, busy = false, visible = false, epoch = 0, query = '', filterProfile = '';
         let runRequest = null, previewEpoch = 0, projectsRequested = false, projectsLoad;
@@ -85,7 +85,10 @@
                 if (version !== epoch || !visible) return;
                 snapshot = data; profiles = profileData.profiles;
                 if (data.schedulerError) message(data.schedulerError, true);
-                else message();
+                else if (data.channelNotifications?.pending || data.channelNotifications?.failed) {
+                    const notice = data.channelNotifications;
+                    message(`${t('微信通知待处理')} ${notice.pending || 0} · ${t('无法建立通知')} ${notice.failed || 0}`, Boolean(notice.lastError));
+                } else message();
                 renderList(); if (!draft) await renderDetail();
             } catch (error) {
                 if (version !== epoch || !visible) return;
@@ -139,7 +142,7 @@
             const card = node('div', 'cron-card'), grid = node('dl', 'cron-facts');
             const target = job.target.kind === 'profile' ? profiles.find(p => p.id === job.target.profileId)?.name || job.target.profileId : job.target.cwd;
             for (const [label, value] of [['调度', job.schedule.kind === 'cron' ? job.schedule.expression : date(job.schedule.at, job.schedule.timeZone)], ['目标', target],
-                ['执行方式', t(job.mode === 'text' ? '文字问候' : '执行工作')], ['模型', job.model ? `${job.model.provider}/${job.model.modelId} · ${job.model.thinkingLevel}` : t('跟随目标线程')],
+                ['执行方式', t(job.mode === 'text' ? '文字问候' : '执行工作')], ['微信通知', t(job.notifyWeixin ? '已启用（推送至已绑定微信）' : '未启用')], ['模型', job.model ? `${job.model.provider}/${job.model.modelId} · ${job.model.thinkingLevel}` : t('跟随目标线程')],
                 ['错过执行', t(job.misfire.policy === 'skip' ? '直接跳过' : '宽限期内补最近一次')], ['生效时间', job.startsAt ? date(job.startsAt, job.schedule.timeZone) : t('立即生效')], ['下次执行', date(job.enabled ? job.nextAt : null, job.schedule.timeZone)]]) {
                 grid.append(node('dt', '', t(label)), node('dd', '', value));
             }
@@ -161,6 +164,11 @@
                     const row = node('div', 'cron-run'), copy = node('div');
                     copy.append(node('strong', `cron-status ${run.status}`, t(statusNames[run.status] || run.status)), node('small', '', date(run.scheduledAt, job.schedule.timeZone)));
                     if (run.reason) copy.append(node('p', 'cron-muted', reason(run.reason)));
+                    if (run.channelNotify) {
+                        const names = { pending: '微信通知等待投递入队', accepted: '微信通知已进入投递队列', skipped: '微信通知已跳过' };
+                        const captureFailed = run.channelNotify.reason === 'capture-error';
+                        copy.append(node('p', 'cron-muted', t(captureFailed ? '无法建立微信通知，请检查渠道状态' : names[run.channelNotify.status] || '微信通知状态待核对')));
+                    }
                     if (run.usage) copy.append(node('small', '', `${run.usage.tokens?.toLocaleString() || '—'} tokens · ${run.usage.cost == null ? t('费用未知') : `$${run.usage.cost.toFixed(4)}`}`));
                     row.append(copy); const buttons = node('div', 'cron-actions');
                     if (run.target) buttons.append(button('查看线程', 'fa-arrow-up-right-from-square', () => openThread(run.target)));
@@ -303,13 +311,14 @@
             const money = field(grid, '每日估算美元预算', 'number', draft.budget.maxCostPerDay ?? '', { min: 0.01, max: 10000, step: 'any' });
             advanced.append(node('p', 'cron-muted', t('预算按 UTC 日累计。Token 在模型调用之间检查，已发出的请求可能超出预算；工具额外费用不包含在估算内。金额限制启用后，价格未知时不执行。')));
             const enabled = field(form, '保存后启用', 'checkbox', draft.enabled);
+            const notifyWeixin = field(form, '完成后推送至目标线程已绑定的微信私聊', 'checkbox', draft.notifyWeixin);
             const footer = node('div', 'cron-form-footer'); footer.append(node('span', 'cron-muted', t('启用后，服务将在计划时间自动执行。')));
             const save = button('保存任务', 'fa-check', () => {}, 'primary'); save.type = 'submit';
             footer.append(button('取消', null, async () => { if (!await leave()) return; draft = null; dirty = false; await renderDetail(); }), save); form.append(footer);
             form.oninput = () => { dirty = true; };
             form.onsubmit = async event => {
                 event.preventDefault();
-                const input = { ...draft, name: name.value, prompt: prompt.value, enabled: enabled.checked, mode: mode.value,
+                const input = { ...draft, name: name.value, prompt: prompt.value, enabled: enabled.checked, notifyWeixin: notifyWeixin.checked, mode: mode.value,
                     target: kind.value === 'profile' ? { kind: 'profile', profileId: profile.value } : { kind: 'thread', cwd: cwd.value, sessionId: sessions.value },
                     schedule: scheduleValue(), startsAt: startsAt.value ? new Date(startsAt.value).getTime() : null, model: modelMode.value === 'fixed' && modelSelect.value ? { provider: JSON.parse(modelSelect.value)[0], modelId: JSON.parse(modelSelect.value)[1], thinkingLevel: thinking.value } : null,
                     misfire: { policy: misfire.value, graceMinutes: Number(grace.value) }, condition: condition.value ? { kind: 'no-user-since', time: condition.value } : null,
@@ -388,7 +397,7 @@
             void load().then(() => { if (newTarget && visible && !draft) return edit(null, newTarget); });
         });
         setInterval(() => { if (visible && !document.hidden && !draft && !busy) void load(); }, 15000);
-        visible = window.PiWorkspaceRoute?.current().tab === 'cron'; if (visible) void load();
+        visible = activate && window.PiWorkspaceRoute?.current().tab === 'cron'; if (visible) void load();
         return { open: target => window.PiWorkspaceRoute.navigate('cron', target || {}) };
     }
     window.PiCron = { create };

@@ -22,7 +22,8 @@ test('vendor inventory is byte-identical upstream and excludes dependency trees'
     const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../vendor/manifest.json'), 'utf8'));
     assert.equal(files.length, 1 + manifest.packages.reduce((count, entry) => count + entry.files.length, 0));
     assert.equal(manifest.packages.find(entry => entry.name === 'pi-subagents').version, '0.78.0');
-    assert.equal(manifest.packages.find(entry => entry.name === 'pi-hermes-memory').version, '0.9.9');
+    assert.equal(manifest.packages.find(entry => entry.name === 'pi-hermes-memory').version, '0.9.10');
+    for (const entry of catalog) assert.equal(entry.version, manifest.packages.find(pkg => pkg.name === entry.name)?.version || entry.version);
     assert.equal(files.some(file => file.includes('/node_modules/')), false);
     for (const entry of manifest.packages) assert.ok(files.includes(`vendor/${entry.directory || entry.name}/LICENSE`));
     assert.ok(files.includes('vendor/pi-computer-use/prebuilt/windows/windows-bridge.exe'));

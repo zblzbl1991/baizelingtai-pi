@@ -165,7 +165,8 @@ async function main() {
                 assert.equal(snapshot.success, true, 'native initial snapshot succeeds');
                 assert.equal(snapshot.data.session.id, new URL(route.slice(1), base()).searchParams.get('sessionId'));
             }
-            await page.waitForFunction(() => window.PiWorkspaceRoute && window.PiAgentProfiles);
+            await page.waitForFunction(() => window.PiWorkspaceRoute && window.PiProfileSessionState);
+            if (route.startsWith('#/profiles')) await page.waitForFunction(() => window.PiAgentProfiles);
             if (requestedSession) {
                 // Keep the real cold worker in this flow. Session opening has the
                 // product's 180s RPC budget; the original 30s UI check starts after
@@ -190,7 +191,7 @@ async function main() {
         await page.locator('#pi-profile-form [name=name]').fill('Memory Fixture');
         await page.locator('#pi-profile-form [name=description]').fill('End-to-end learning rehearsal');
         await page.locator('#pi-profile-form [name=memoryEnabled]').check();
-        await page.locator('#pi-profile-form button[type=submit]').click();
+        await page.locator('[data-page=persona] .pi-id-savebar .pi-id-btn-primary').click();
         await page.waitForFunction(() => document.querySelectorAll('[data-profile-id]').length === 1);
         const profileId = (await api('GET', '/profiles')).profiles[0].id;
         assert.equal((await api('GET', '/status')).profileLearning, true);
@@ -367,7 +368,7 @@ async function main() {
 
         // 7c. "编辑" opens the profile's knowledge page on that entry.
         await learnedHint.locator('button').filter({ hasText: '编辑' }).click();
-        await chatView.page.locator('.pi-knowledge-detail pre').filter({ hasText: 'pnpm' }).waitFor({ timeout: 20000 });
+        await chatView.page.locator('.pi-id-entry.is-open .pi-id-entry-text').filter({ hasText: 'pnpm' }).waitFor({ timeout: 20000 });
         step('hint edit opens the entry');
         assert.deepEqual(chatView.errors, []);
         await chatView.context.close();
@@ -375,11 +376,10 @@ async function main() {
         // 8. Management page: edit the learned memory and undo it through the receipt.
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.locator(`[data-profile-id="${profileId}"]`).click();
-        await page.locator('[data-profile-section="skills"]').click();
-        await page.locator('.pi-profile-kinds button').first().click();
-        await page.locator('.pi-knowledge-row').filter({ hasText: 'pnpm' }).first().click();
-        await page.locator('.pi-knowledge-detail pre').waitFor();
-        await page.locator('.pi-knowledge-detail button').filter({ hasText: '编辑' }).click();
+        await page.locator('[data-profile-section="memory"]').click();
+        await page.locator('.pi-id-entry').filter({ hasText: 'pnpm' }).first().locator('.pi-id-entry-main').click();
+        await page.locator('.pi-id-entry.is-open .pi-id-entry-text').waitFor();
+        await page.locator('.pi-id-entry.is-open .pi-id-entry-body button').filter({ hasText: '编辑' }).click();
         await page.locator('.pi-knowledge-editor textarea').fill('安装依赖默认使用 pnpm 9。');
         await page.locator('.pi-knowledge-editor button[type=submit]').click();
         await page.locator('.pi-knowledge-receipt').waitFor();
@@ -402,8 +402,8 @@ async function main() {
         assert.equal(proposed.proposals[0].groups[0].items.length, 2);
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.locator(`[data-profile-id="${profileId}"]`).click();
-        await page.locator('[data-profile-section="skills"]').click();
-        const group = page.locator('.pi-proposal-group').first();
+        await page.locator('[data-profile-section="memory"]').click();
+        const group = page.locator('.pi-knowledge-proposal').first();
         await group.waitFor({ timeout: 20000 });
         await group.locator('button').filter({ hasText: '应用' }).click();
         const merged = await until('consolidation applied', async () => {
@@ -478,9 +478,8 @@ async function main() {
         const layoutWidth = browserTargetEnabled(393) ? 393 : 1440;
         const mobile = await open(layoutWidth, '#/profiles');
         await mobile.page.locator(`[data-profile-id="${profileId}"]`).click();
-        await mobile.page.locator('[data-profile-section="skills"]').click();
-        await mobile.page.locator('.pi-profile-kinds button').first().click();
-        await mobile.page.locator('.pi-knowledge-row').first().waitFor();
+        await mobile.page.locator('[data-profile-section="memory"]').click();
+        await mobile.page.locator('.pi-id-entry').first().waitFor();
         const geometry = await mobile.page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth,
             small: [...document.querySelectorAll('textarea,input,select')].filter(el => el.offsetParent && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => el.name || el.className) }));
         assert.ok(geometry.document <= geometry.viewport + 1, JSON.stringify(geometry));

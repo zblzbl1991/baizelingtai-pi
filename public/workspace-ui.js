@@ -115,12 +115,134 @@
         if (hostLabel) hostLabel.textContent = window.location.host;
         const routeTabs = new Set(['chat', 'assistant', 'cron', 'artifacts', 'staffing', 'media', 'profiles', 'extensions', 'settings']);
         const settingsTabs = new Set(['providers', 'media', 'builtins', 'models', 'system-prompts', 'native', 'access', 'usage', 'updates']);
-        const extensionTabs = new Set(['extensions', 'installed', 'mcp']);
+        const extensionTabs = new Set(['extensions', 'installed', 'mcp', 'channels']);
         const moreTabs = new Set(['cron', 'artifacts', 'staffing', 'media', 'profiles', 'extensions']);
         document.querySelectorAll('[data-cron-nav]').forEach(label => { label.textContent = translateUi('定时任务'); });
         const moreToggle = document.getElementById('workspace-more-toggle');
         const moreMenu = document.getElementById('workspace-more-menu');
         let lastConversation = '#/chat';
+        let routeRevision = 0;
+        const featureState = document.createElement('main');
+        featureState.id = 'workspace-feature-state';
+        featureState.className = 'content-area tab-content workspace-feature-state';
+        featureState.setAttribute('aria-live', 'polite');
+        app?.append(featureState);
+        const featureText = (zh, en) => window.PiI18n?.locale === 'en' ? en : zh;
+        function settingsLoadingPage(params) {
+            const tab = settingsTabs.has(params.get('tab')) ? params.get('tab') : 'providers';
+            const names = { providers: ['供应商与模型', 'Providers and models'], media: ['模型与能力', 'Models & capabilities'], models: ['使用偏好', 'Preferences'], 'system-prompts': ['系统提示词', 'System prompts'], native: ['Pi 配置', 'Pi configuration'], access: ['访问控制', 'Access control'], usage: ['用量统计', 'Usage'], updates: ['版本与更新', 'Versions and updates'] };
+            const page = document.createElement('div'); page.className = 'workspace-feature-settings'; page.dataset.loadingTab = tab;
+            const header = document.createElement('header'); header.className = 'workspace-settings-header';
+            const heading = document.createElement('div');
+            const kicker = document.createElement('span'); kicker.className = 'pi-pane-kicker'; kicker.textContent = 'PI WORKSPACE';
+            const title = document.createElement('h2'); title.textContent = featureText('工作台设置', 'Workspace settings');
+            heading.append(kicker, title);
+            const back = document.createElement('button'); back.type = 'button'; back.className = 'icon-btn subtle';
+            back.setAttribute('aria-label', featureText('返回对话', 'Back to conversation'));
+            back.innerHTML = '<i class="fa-solid fa-arrow-left" aria-hidden="true"></i>';
+            back.addEventListener('click', () => window.PiWorkspaceRoute.returnToConversation());
+            header.append(heading, back);
+            const body = document.createElement('div'); body.className = 'workspace-feature-settings-body';
+            const nav = document.createElement('div'); nav.className = 'workspace-feature-settings-nav pv-skeleton'; nav.setAttribute('aria-hidden', 'true');
+            nav.innerHTML = [...settingsTabs].map(key => `<span class="workspace-settings-placeholder-nav${key === tab ? ' is-current' : ''}"><span class="pv-skel-icon"></span><span class="pv-skel-line"></span></span>`).join('');
+            const content = document.createElement('div'); content.className = 'workspace-feature-settings-content';
+            const panel = document.createElement('div'); panel.className = 'workspace-feature-settings-panel';
+            const panelTitle = document.createElement('h3'); panelTitle.textContent = featureText(...names[tab]);
+            const status = document.createElement('p'); status.className = 'workspace-feature-page-status'; status.setAttribute('role', 'status');
+            const spinner = document.createElement('span'); spinner.className = 'pi-spinner'; spinner.setAttribute('aria-hidden', 'true');
+            status.append(spinner, document.createTextNode(featureText('正在加载设置…', 'Loading settings…')));
+            const panelHeader = document.createElement('div'); panelHeader.className = 'workspace-feature-settings-heading'; panelHeader.append(panelTitle, status);
+            const skeleton = document.createElement('div'); skeleton.className = 'workspace-settings-placeholder pv-skeleton'; skeleton.dataset.layout = tab; skeleton.setAttribute('aria-hidden', 'true');
+            const lines = rows => window.PiSkeleton.html('lines', { rows, decorative: true });
+            const section = rows => '<div class="workspace-settings-placeholder-section"><span class="pv-skel-line is-heading"></span>'
+                + Array.from({ length: rows }, () => '<span class="workspace-settings-placeholder-field"><span class="pv-skel-line"></span><span class="pv-skel-block"></span></span>').join('') + '</div>';
+            if (tab === 'providers') {
+                skeleton.innerHTML = '<div class="workspace-feature-page-toolbar"><span class="pv-skel-line"></span><span class="pv-skel-line"></span></div>'
+                    + '<div class="workspace-settings-placeholder-section">' + window.PiSkeleton.html('list', { rows: 6, decorative: true }) + '</div>';
+            } else if (tab === 'media') {
+                skeleton.innerHTML = window.PiSkeleton.html('cards', { rows: 3, decorative: true }) + section(3) + section(2);
+            } else if (tab === 'usage') {
+                skeleton.innerHTML = window.PiSkeleton.html('cards', { rows: 4, decorative: true })
+                    + '<div class="workspace-settings-placeholder-section"><span class="pv-skel-line is-heading"></span><span class="pv-skel-block is-chart"></span>' + lines(3) + '</div>';
+            } else if (tab === 'system-prompts') {
+                skeleton.innerHTML = '<div class="workspace-feature-page-toolbar"><span class="pv-skel-line"></span><span class="pv-skel-line"></span></div>'
+                    + '<div class="workspace-settings-placeholder-section is-editor"><span class="pv-skel-line is-heading"></span>' + lines(8) + '</div>';
+            } else {
+                skeleton.innerHTML = section(3) + section(3);
+            }
+            panel.append(panelHeader, skeleton); content.append(panel); body.append(nav, content); page.append(header, body);
+            return page;
+        }
+        function featureStatus(error, retry) {
+            featureState.replaceChildren();
+            const route = parseRoute();
+            const settingsLoading = !error && route.tab === 'settings';
+            const pageLoading = !error && route.tab === 'extensions';
+            featureState.classList.toggle('is-settings-loading', settingsLoading);
+            featureState.classList.toggle('is-page-loading', pageLoading);
+            featureState.setAttribute('aria-busy', String(!error));
+            if (settingsLoading) {
+                featureState.append(settingsLoadingPage(route.params));
+                return;
+            }
+            if (pageLoading) {
+                const page = document.createElement('div'); page.className = 'workspace-feature-page';
+                const header = document.createElement('header'); header.className = 'workspace-feature-page-header';
+                const title = document.createElement('h1'); title.textContent = featureText('扩展', 'Extensions');
+                const status = document.createElement('p'); status.className = 'workspace-feature-page-status'; status.setAttribute('role', 'status');
+                const spinner = document.createElement('span'); spinner.className = 'pi-spinner'; spinner.setAttribute('aria-hidden', 'true');
+                status.append(spinner, document.createTextNode(featureText('正在加载扩展…', 'Loading extensions…')));
+                header.append(title, status);
+                const skeleton = document.createElement('div'); skeleton.className = 'workspace-feature-page-skeleton pv-skeleton'; skeleton.setAttribute('aria-hidden', 'true');
+                skeleton.innerHTML = '<div class="workspace-feature-page-tabs"><span class="pv-skel-line"></span><span class="pv-skel-line"></span><span class="pv-skel-line"></span><span class="pv-skel-line"></span></div>'
+                    + '<div class="workspace-feature-page-banner"><span class="pv-skel-icon"></span>' + window.PiSkeleton.html('lines', { rows: 2, decorative: true }) + '</div>'
+                    + '<div class="workspace-feature-page-toolbar"><span class="pv-skel-line"></span><span class="pv-skel-line"></span></div>'
+                    + window.PiSkeleton.html('cards', { rows: 6, decorative: true });
+                page.append(header, skeleton); featureState.append(page);
+                return;
+            }
+            const card = document.createElement('div');
+            card.className = 'workspace-feature-card';
+            const badge = document.createElement('span');
+            badge.className = error ? 'workspace-feature-icon is-error' : 'workspace-feature-icon';
+            if (error) {
+                const icon = document.createElement('i'); icon.className = 'fa-solid fa-triangle-exclamation'; icon.setAttribute('aria-hidden', 'true');
+                badge.append(icon);
+            } else {
+                const spinner = document.createElement('span'); spinner.className = 'pi-spinner'; spinner.setAttribute('aria-hidden', 'true');
+                badge.append(spinner);
+            }
+            const message = document.createElement('p');
+            message.textContent = error ? featureText('页面加载失败，请重试。', 'Unable to load this page. Please retry.') : featureText('正在读取…', 'Loading…');
+            card.append(badge, message);
+            if (!error && window.PiSkeleton) {
+                const skeleton = document.createElement('div');
+                skeleton.className = 'workspace-feature-skeleton';
+                skeleton.innerHTML = window.PiSkeleton.html('lines', { rows: 3, decorative: true });
+                card.append(skeleton);
+            }
+            if (error) {
+                const button = document.createElement('button'); button.type = 'button';
+                button.className = 'settings-secondary-button'; button.textContent = featureText('重试', 'Retry');
+                button.addEventListener('click', retry, { once: true }); card.append(button);
+            }
+            featureState.append(card);
+            featureState.setAttribute('aria-busy', String(!error));
+        }
+        // Dialog entry failures retain the conversation and offer an explicit retry.
+        const featureError = document.createElement('dialog');
+        featureError.className = 'workspace-feature-error';
+        app?.append(featureError);
+        window.PiFeatureFeedback = { show(error, retry) {
+            featureError.replaceChildren();
+            const message = document.createElement('p'); message.textContent = featureText('页面加载失败，请重试。', 'Unable to load this page. Please retry.');
+            featureError.append(message);
+            for (const [label, action] of [[featureText('重试', 'Retry'), retry], [featureText('关闭', 'Close'), () => {}]]) {
+                const button = document.createElement('button'); button.type = 'button'; button.className = 'settings-secondary-button'; button.textContent = label;
+                button.addEventListener('click', () => { featureError.close(); action(); }); featureError.append(button);
+            }
+            if (!featureError.open) featureError.showModal();
+        } };
         function closeMoreMenu(restoreFocus = false) {
             if (!moreMenu) return;
             const wasOpen = !moreMenu.hidden;
@@ -141,15 +263,25 @@
             let target = '';
             if (inner === 'profiles') target = '#/profiles';
             else if (inner === 'packages' || inner === 'skills') target = `#/extensions?tab=installed&type=${inner}`;
-            else if (inner && extensionTabs.has(inner)) target = `#/extensions?tab=${inner}`;
-            if (!target) return;
+            else if (inner && extensionTabs.has(inner) && tab === 'settings') target = `#/extensions?${params}`;
+            else if (tab === 'settings' && !settingsTabs.has(inner)) {
+                params.set('tab', 'providers'); target = `#/settings?${params}`;
+            }
+            if (!target || target === location.hash) return;
             history.replaceState(null, '', target);
             window.dispatchEvent(new CustomEvent('workspace:settings-route-normalized', { detail: { from: tab, tab: inner } }));
         }
-        function showRoute() {
+        function showRoute(completedRevision) {
             normalizeLegacySettingsRoute();
             const { tab, params } = parseRoute();
+            const completion = typeof completedRevision === 'number';
+            const revision = completion ? completedRevision : ++routeRevision;
+            window.PiFeatures.routeChanged(revision);
+            const routeKey = location.hash;
+            const group = window.PiFeatures.routeGroup(tab);
+            const pending = group && !window.PiFeatures.ready(group);
             closeMoreMenu();
+            if (featureError.open) featureError.close();
             if (tab === 'chat' || tab === 'assistant') lastConversation = location.hash || '#/chat';
             moreToggle?.classList.toggle('active', moreTabs.has(tab));
             if (moreTabs.has(tab)) moreToggle?.setAttribute('aria-current', 'page'); else moreToggle?.removeAttribute('aria-current');
@@ -162,13 +294,28 @@
                 button.classList.toggle('active', active);
                 if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
             });
-            document.querySelectorAll('.tab-content').forEach(panel => panel.classList.toggle('active', panel.id === `${tab === 'assistant' ? 'chat' : tab}-tab`));
-            document.getElementById('workspace-settings-dialog')?.classList.toggle('hidden', !['profiles', 'extensions', 'settings'].includes(tab));
-            window.dispatchEvent(new CustomEvent('workspace:tabchanged', { detail: { tab, params } }));
+            document.querySelectorAll('.tab-content').forEach(panel => panel.classList.toggle('active', pending ? panel === featureState : panel.id === `${tab === 'assistant' ? 'chat' : tab}-tab`));
+            document.getElementById('workspace-settings-dialog')?.classList.toggle('hidden', pending || !['profiles', 'extensions', 'settings'].includes(tab));
             const settingsTab = tab === 'profiles' ? 'profiles'
                 : tab === 'extensions' ? (extensionTabs.has(params.get('tab')) ? params.get('tab') : 'extensions')
                     : settingsTabs.has(params.get('tab')) ? params.get('tab') : 'providers';
-            window.dispatchEvent(new CustomEvent('workspace:settings-route', { detail: { tab, settingsTab, profileId: params.get('profileId'), section: params.get('section'), authoringSession: params.get('authoringSession'), authoringCwd: params.get('authoringCwd'), resourceType: params.get('type') } }));
+            const settingsRoute = () => window.dispatchEvent(new CustomEvent('workspace:settings-route', { detail: { tab, settingsTab, revision, pending: Boolean(pending), profileId: params.get('profileId'), section: params.get('section'), authoringSession: params.get('authoringSession'), authoringCwd: params.get('authoringCwd'), resourceType: params.get('type') } }));
+            if (pending) {
+                featureStatus(null);
+                settingsRoute();
+                window.dispatchEvent(new CustomEvent('workspace:tabchanged', { detail: { tab: 'loading', params } }));
+                void window.PiFeatures.ensure(group).then(() => {
+                    if (revision === routeRevision && location.hash === routeKey) showRoute(revision);
+                }).catch(error => {
+                    if (revision === routeRevision && location.hash === routeKey) featureStatus(error, () => {
+                        if (revision === routeRevision && location.hash === routeKey) showRoute(revision);
+                    });
+                });
+                return;
+            }
+            if (group === 'settings') window.PiFeatures.applySettingsIntent(revision);
+            window.dispatchEvent(new CustomEvent('workspace:tabchanged', { detail: { tab, params } }));
+            if (!completion || group === 'settings') settingsRoute();
         }
         function routeHash(tab, params = {}) {
             if (!routeTabs.has(tab)) throw new Error('Unknown workspace route');
@@ -184,7 +331,7 @@
             else history.pushState(null, '', hash);
             showRoute();
         }
-        window.PiWorkspaceRoute = Object.freeze({ navigate, current: parseRoute,
+        window.PiWorkspaceRoute = Object.freeze({ navigate, current: parseRoute, revision: () => routeRevision,
             rememberConversation(tab, params) { if (tab === 'chat' || tab === 'assistant') lastConversation = routeHash(tab, params); },
             returnToConversation: () => {
             const url = ['chat', 'assistant'].includes(parseRoute().tab) ? location.hash : lastConversation;

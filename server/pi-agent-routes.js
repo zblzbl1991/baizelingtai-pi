@@ -4,7 +4,8 @@ const path = require('path');
 const { randomUUID } = require('node:crypto');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { version: PI_VERSION } = require('../node_modules/@earendil-works/pi-coding-agent/package.json');
-const { WebSocketServer, WebSocket } = require('ws');
+const { WebSocketServer } = require('ws');
+const { createWebSocketSender } = require('./pi-websocket-send');
 const { PiAgentSupervisor } = require('./pi-agent-supervisor');
 const { PiSessionStore } = require('./pi-session-store');
 const { PiSettingsService } = require('./pi-settings-service');
@@ -42,17 +43,7 @@ const ALLOWED_RPC_COMMANDS = new Set([
 
 const LONG_RUNNING_COMMANDS = new Set(['compact']);
 
-function safeSend(socket, payload) {
-    if (socket.workspaceAccess && !socket.workspaceAccess.validIdentity(socket.workspaceIdentity)) {
-        socket.close(4401, 'Access expired or revoked');
-        return;
-    }
-    if (payload.type === 'gateway_shell' && socket.bufferedAmount > 1024 * 1024) {
-        socket.close(1013, 'Shell output consumer too slow; reconnect for snapshot');
-        return;
-    }
-    if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
-}
+const safeSend = createWebSocketSender();
 
 function validateRpcPayload(command, payload) {
     if (['set_auto_compaction', 'set_auto_retry'].includes(command) && typeof payload.enabled !== 'boolean') {
@@ -157,7 +148,7 @@ function createPiAgentGateway(options = {}) {
     // need the same boundary. MaintenanceClient deduplicates the exact request.
     router.use((req, res, next) => maintenance.http(req, res, next));
     function workbenchIdle(documentOperations = 0) {
-        return !compliance.busy && !officePreviews.busy && !staffing.busy && !staffingExcel.busy && !artifacts.busy && !fileRoots.jobs.size && !projectDirectories.jobs.size && documents.active === documentOperations && !documents.writing
+        return !channels.busy && !compliance.busy && !officePreviews.busy && !staffing.busy && !staffingExcel.busy && !artifacts.busy && !fileRoots.jobs.size && !projectDirectories.jobs.size && documents.active === documentOperations && !documents.writing
             && !profiles.busy && !agentThreads.jobs.size && !agentThreads.catalogIndex.busy && !agentThreads.returns.busy && !agentThreads.messages.busy
             && !settingsService.mutating && !settingsService.loginService.busy && !nativeService.busy && !mcpSettingsService.busy
             && !sessionTransfer.running && !sessionMoves.running && !auxiliaryModels.busy
@@ -220,21 +211,20 @@ function createPiAgentGateway(options = {}) {
     notifications.mount(router);
     require('./pi-extension-assistant').mountExtensionAssistant(router, { store, supervisor, resourceService, settingsService, access });
     const assistantEnvironment = supervisor.workerEnvironment;
-    supervisor.workerEnvironment = async ({ cwd, sessionId, sessionPath }) => {
-        const env = assistantEnvironment ? await assistantEnvironment({ cwd, sessionId }) : {};
-        const session = await store.getSession(cwd, sessionId);
+    supervisor.workerEnvironment = ({ cwd, sessionId, sessionPath }) => store.withSessionRead(cwd, sessionId, async (session, read) => {
         if (session.path !== sessionPath) throw new Error('Session path changed before runtime startup');
-        const { SessionManager } = await require('./pi-session-store').getSdk();
-        const manager = SessionManager.open(session.path);
-        if (manager.getSessionId() !== sessionId) throw new Error('Native session identity changed');
-        const context = await profiles.context(manager, cwd);
-        const projectContext = await assistantProjects.context(manager, cwd);
+        const env = assistantEnvironment ? await assistantEnvironment({ cwd, sessionId }) : {};
+        const context = await profiles.context(read.manager(), cwd);
+        const projectContext = await assistantProjects.context(read.manager(), cwd);
+        read.validate();
+        const authoringEnvironment = await require('./pi-profile-authoring').profileAuthoringEnvironment({ store, cwd, sessionId, read });
+        read.validate();
+        const memoryEnvironment = await profileMemory.environment(context);
+        read.validate();
         return { ...env, PIVANE_AGENT_PROFILE_CONTEXT: context ? JSON.stringify(context) : undefined,
             PIVANE_ASSISTANT_PROJECT_CONTEXT: projectContext ? JSON.stringify(projectContext) : undefined,
-            PIVANE_PROFILE_AUTHORING_CONTEXT: undefined,
-            ...await require('./pi-profile-authoring').profileAuthoringEnvironment({ store, cwd, sessionId }),
-            ...await profileMemory.environment(context) };
-    };
+            PIVANE_PROFILE_AUTHORING_CONTEXT: undefined, ...authoringEnvironment, ...memoryEnvironment };
+    });
     const profileRoute = action => async (req, res) => {
         res.set('Cache-Control', 'no-store');
         try { res.json(await action(req)); }
@@ -243,6 +233,8 @@ function createPiAgentGateway(options = {}) {
     router.get('/profiles', profileRoute(req => profiles.list(req.query.cwd)));
     router.put('/profiles', profileRoute(req => profiles.save(req.body)));
     router.put('/profiles/default', profileRoute(req => profiles.saveDefault(req.body)));
+    router.post('/profiles/:id/trash', profileRoute(req => profiles.trash(req.params.id, req.body)));
+    router.post('/profiles/:id/restore', profileRoute(req => profiles.restore(req.params.id, req.body)));
     router.get('/assistant-projects', profileRoute(req => assistantProjects.list(req.query.profileId)));
     router.put('/assistant-projects', profileRoute(req => assistantProjects.save(req.body)));
     router.delete('/assistant-projects/:id', profileRoute(req => assistantProjects.remove(req.params.id, req.body)));
@@ -275,6 +267,15 @@ function createPiAgentGateway(options = {}) {
     const cron = new (require('./pi-cron-service').CronService)({ store, supervisor, profiles,
         catalog: cwd => agentThreads.catalog(cwd), isSuspended: () => maintenance.locked || maintenance.referenceLocked || Boolean(store.sessionMoves?.running), onActivity: () => maintenance.touch(), filename: options.cronFilePath });
     require('./pi-cron-service').mountCron(router, cron);
+    const channels = new (require('./channels/service').ChannelsService)({ store, supervisor,
+        mediaLabService: options.mediaLabService, mediaRoot: options.artifactMediaRoot,
+        isSuspended: () => maintenance.locked || maintenance.referenceLocked || Boolean(store.sessionMoves?.running),
+        ...options.channelsOptions });
+    cron.captureChannelNotify = event => channels.captureScheduledRecipients(event);
+    cron.onChannelNotify = event => channels.track(channels.notifyScheduledRun(event));
+    channels.canNotifyScheduled = id => { const job = cron.db?.job(id); return Boolean(job && !job.deleted && job.notifyWeixin); };
+    channels.scheduledAdmissionPending = id => cron.db?.run(id)?.channelNotify?.status === 'pending';
+    require('./channels/service').mountChannels(router, channels);
 
     router.get('/status', async (req, res) => {
         const memoryConfiguration = await profileMemory.snapshot();
@@ -296,6 +297,7 @@ function createPiAgentGateway(options = {}) {
             agentThreads: true,
             scheduledTasks: true,
             staffing: true,
+            messageChannels: true,
             agentProfiles: true,
             assistantProjects: true,
             sessionClassification: true,
@@ -395,6 +397,7 @@ function createPiAgentGateway(options = {}) {
     router.get('/settings/native/resources', nativeRoute(req => resourceService.snapshot(req.query.cwd, req.query.scope || 'project')));
     router.put('/settings/native/resources', nativeRoute(req => resourceService.toggle(req.body), true));
     router.post('/settings/native/packages', nativeRoute(req => resourceService.packageAction(req.body), true));
+    router.post('/settings/native/packages/updates', nativeRoute(req => resourceService.checkUpdates(req.body)));
     router.get('/settings/native/skill', nativeRoute(req => resourceService.readSkill(req.query)));
     router.put('/settings/native/skill', nativeRoute(req => resourceService.saveSkill(req.body), true));
     router.get('/settings/models/advanced', nativeRoute(req => settingsService.getModelAdvanced(req.query)));
@@ -520,7 +523,7 @@ function createPiAgentGateway(options = {}) {
 
     router.get('/activity', (req, res) => {
         res.set('Cache-Control', 'no-store');
-        res.json({ complianceBusy: compliance.busy, officePreviewBusy: officePreviews.busy, staffingBusy: staffing.busy || staffingExcel.busy, projectDirectoryOperations: projectDirectories.jobs.size, cronBusy: cron.busy, agentThreadLaunches: agentThreads.jobs.size, agentTaskIndexing: agentThreads.catalogIndex.busy, agentTaskReturns: agentThreads.returns.busy, agentMessages: agentThreads.messages.busy, learningBusy: learning.busy, learningRuns: learning.active.size, archives: archives(), titleRevision: titles.revisionId, titleGenerations: titles.jobs.size, transcriptionActive: transcription.active, documentOperations: documents.active, artifactOperations: artifacts.jobs.size, runtimes: supervisor.getActivity(), profilesBusy: profiles.busy, nativeSettingsBusy: nativeService.busy || settingsService.mutating || Boolean(titles.savingModel) || auxiliaryModels.busy, sessionTransfers: sessionTransfer.running, sessionMoves: sessionMoves.running, pinnedProjects: pinnedProjects(), hiddenProjects: hiddenProjects(), replyNotices: replyNotices(), deferred: deferred.summary() });
+        res.json({ channelBusy: channels.busy, complianceBusy: compliance.busy, officePreviewBusy: officePreviews.busy, staffingBusy: staffing.busy || staffingExcel.busy, projectDirectoryOperations: projectDirectories.jobs.size, cronBusy: cron.busy, agentThreadLaunches: agentThreads.jobs.size, agentTaskIndexing: agentThreads.catalogIndex.busy, agentTaskReturns: agentThreads.returns.busy, agentMessages: agentThreads.messages.busy, learningBusy: learning.busy, learningRuns: learning.active.size, archives: archives(), titleRevision: titles.revisionId, titleGenerations: titles.jobs.size, transcriptionActive: transcription.active, documentOperations: documents.active, artifactOperations: artifacts.jobs.size, runtimes: supervisor.getActivity(), profilesBusy: profiles.busy, nativeSettingsBusy: nativeService.busy || settingsService.mutating || Boolean(titles.savingModel) || auxiliaryModels.busy, sessionTransfers: sessionTransfer.running, sessionMoves: sessionMoves.running, pinnedProjects: pinnedProjects(), hiddenProjects: hiddenProjects(), replyNotices: replyNotices(), deferred: deferred.summary() });
     });
 
     router.patch('/projects/pin', (req, res) => {
@@ -638,7 +641,10 @@ function createPiAgentGateway(options = {}) {
     router.delete('/sessions/:id', async (req, res) => {
         try {
             const session = await store.getSession(req.query.cwd, req.params.id);
+            await channels.ready;
+            channels.assertUnbound(session.cwd, session.id);
             const deleted = await supervisor.withSessionRemoval(session.path, async worker => {
+                channels.assertUnbound(session.cwd, session.id);
                 deferred.cancelSession(session.cwd, session.id);
                 await sideChat.releaseSource(session.cwd, session.id, 'deleted');
                 worker?._broadcast({ type: 'gateway_session_removing' });
@@ -666,9 +672,9 @@ function createPiAgentGateway(options = {}) {
     require('./pi-session-classification').mountSessionClassification(router, { store, supervisor, profiles, projects: assistantProjects, sideChat });
     mountSessionWorkflows(router, { store, supervisor, deferred, preferences });
     const sessionTransfer = require('./pi-session-transfer').mountSessionTransfer(router, { store, supervisor, preferences });
-    const sessionMoves = require('./pi-session-moves').mountSessionMoves(router, { store, supervisor, preferences, usage, deferred, cron, sideChat,
+    const sessionMoves = require('./pi-session-moves').mountSessionMoves(router, { store, supervisor, preferences, usage, deferred, cron, sideChat, channels,
         isSuspended: () => maintenance.locked || maintenance.referenceLocked,
-        busy: () => Boolean(compliance.busy || officePreviews.busy || staffing.busy || staffingExcel.busy || artifacts.busy || documents.active || agentThreads.jobs.size || agentThreads.messages.busy || agentThreads.returns.busy
+        busy: () => Boolean(channels.busy || compliance.busy || officePreviews.busy || staffing.busy || staffingExcel.busy || artifacts.busy || documents.active || agentThreads.jobs.size || agentThreads.messages.busy || agentThreads.returns.busy
             || titles.jobs.size || cron.busy || deferred.running || profiles.busy || sessionTransfer.running
             || [...sideChat.parents.values()].some(parent => parent.preparing)) });
 
@@ -752,19 +758,21 @@ function createPiAgentGateway(options = {}) {
             let socketClosed = false;
             const sessionClassification = session => {
                 if (session.path !== workerSessionPath) return;
-                safeSend(socket, { type: 'gateway_session_classified', session });
+                safeSend(socket, { type: 'gateway_session_classified', session }, { code: 1012, reason: 'Session classification changed' });
                 socket.close(1012, 'Session classification changed');
             };
             sessionClassificationListeners.add(sessionClassification);
             const sessionRemoval = event => {
                 if (event.path !== workerSessionPath) return;
-                if (event.deleted) safeSend(socket, { type: 'gateway_session_deleted', cwd: event.cwd, sessionId: event.id, trashed: event.result.trashed });
+                if (event.deleted) safeSend(socket, { type: 'gateway_session_deleted', cwd: event.cwd, sessionId: event.id, trashed: event.result.trashed },
+                    { code: 4004, reason: 'Session deleted' });
                 socket.close(event.deleted ? 4004 : 1012, event.deleted ? 'Session deleted' : 'Session deletion failed');
             };
             sessionRemovalListeners.add(sessionRemoval);
             const sessionMove = event => {
                 if (event.source.path !== workerSessionPath) return;
-                if (!event.failed) safeSend(socket, { type: 'gateway_session_moved', sourceCwd: event.source.cwd, session: event.session });
+                if (!event.failed) safeSend(socket, { type: 'gateway_session_moved', sourceCwd: event.source.cwd, session: event.session },
+                    { code: 4005, reason: 'Session moved' });
                 socket.close(event.failed ? 1012 : 4005, event.failed ? 'Session move failed' : 'Session moved');
             };
             sessionMoveListeners.add(sessionMove);
@@ -875,8 +883,9 @@ function createPiAgentGateway(options = {}) {
                 if (sideSocket) {
                     if (!sideConnection) throw new Error('侧聊连接已失效，请重新打开');
                     const data = await sideConnection.handle(message);
-                    safeSend(socket, { type: 'response', id: message.id, command: message.type, success: true, data });
-                    if (['quit_side_chat', 'close_side_segment'].includes(message.type)) socket.close(1000, 'Side chat ended');
+                    const closing = ['quit_side_chat', 'close_side_segment'].includes(message.type) ? { code: 1000, reason: 'Side chat ended' } : undefined;
+                    safeSend(socket, { type: 'response', id: message.id, command: message.type, success: true, data }, closing);
+                    if (closing) socket.close(closing.code, closing.reason);
                     return;
                 }
                 if (message.type === 'get_side_model_options') {
@@ -919,8 +928,10 @@ function createPiAgentGateway(options = {}) {
                             ephemeral: true
                         };
                     } else {
-                        session = await store.getSession(message.cwd, message.sessionId);
-                        worker = await supervisor.getWorker({ cwd: session.cwd, sessionPath: session.path, sessionId: session.id });
+                        await store.withSessionRead(message.cwd, message.sessionId, async prepared => {
+                            session = prepared;
+                            worker = await supervisor.getWorker({ cwd: session.cwd, sessionPath: session.path, sessionId: session.id });
+                        });
                         workerSessionPath = session.path;
                     }
                     unsubscribe = worker.subscribe(event => {
@@ -1180,6 +1191,7 @@ function createPiAgentGateway(options = {}) {
             const stoppingSockets = Promise.all([...socketServers].map(closeSocketServer));
             void stoppingSockets.catch(() => {}); // Preserve rejection for the final await while other owners drain.
             documents.stopAdmission();
+            const stoppingChannels = channels.dispose();
             const stoppingCompliance = compliance.dispose();
             const stoppingStaffing = staffing.dispose();
             const stoppingExcel = staffingExcel.dispose();
@@ -1197,7 +1209,7 @@ function createPiAgentGateway(options = {}) {
             const stoppingMoves = sessionMoves.dispose();
             const stoppingThreads = agentThreads.dispose();
             const stoppingSide = sideChat.dispose();
-            await Promise.all([stoppingCompliance, stoppingStaffing, stoppingExcel, stoppingOfficePreviews]); // Drain admitted source consumers before their dependencies.
+            await Promise.all([stoppingChannels, stoppingCompliance, stoppingStaffing, stoppingExcel, stoppingOfficePreviews]); // Drain admitted source consumers before their dependencies.
             const stoppingDocuments = documents.dispose();
             const stoppingArtifacts = artifacts.dispose();
             await stoppingArtifacts; // Finish native source reads before shutting down their workers.
@@ -1214,7 +1226,7 @@ function createPiAgentGateway(options = {}) {
         });
         return disposal;
     }
-    return { mount, attachWebSocket, desktopStop, dispose, store, supervisor, cron, deferred, sideChat, titles, auxiliaryModels, learning, knowledgeService, agentThreads, sessionMoves, transcription, documents, artifacts, staffing, staffingExcel, officePreviews, compliance };
+    return { mount, attachWebSocket, desktopStop, dispose, store, supervisor, channels, cron, deferred, sideChat, titles, auxiliaryModels, learning, knowledgeService, agentThreads, sessionMoves, transcription, documents, artifacts, staffing, staffingExcel, officePreviews, compliance };
 }
 
 module.exports = { createPiAgentGateway };

@@ -1,7 +1,7 @@
 # Profile memory adapter
 
-The adapter uses selected components from **pi-hermes-memory 0.9.9** (MIT) with
-the application-pinned Pi 1.0.2. It never loads upstream's default factory: that factory scans the
+The adapter uses selected components from **pi-hermes-memory 0.9.10** (MIT) with
+the application-pinned Pi. It never loads upstream's default factory: that factory scans the
 shared Pi sessions root, migrates global state, and may spawn an unscoped Pi
 child. Native JSONL is the conversation authority. Profile-local `sessions.db`
 is a disposable derived search index, not a parallel chat transcript tree.
@@ -105,7 +105,7 @@ arbitrary path can be read through the route.
 ## Unified knowledge management
 
 `mountProfileKnowledgeRoutes(router, { service })` mounts same-origin GET
-`/profiles/:id/knowledge?kind=memory|skill&query=&offset=&sessionId=`, GET
+`/profiles/:id/knowledge?kind=memory|skill&query=&offset=&sessionId=&state=&target=&category=`, GET
 `/profiles/:id/knowledge/items/:itemId`, GET `/profiles/:id/knowledge/injection?sessionId=`, and POST
 `/profiles/:id/knowledge/mutations`. The service is
 `new ProfileKnowledgeService({ profiles, getAgentDir, bundlePath })` from
@@ -116,6 +116,20 @@ own a second store. GET pages contain at most 50 entries (memory previews up to
 bounded to 65,536 characters and marks truncated legacy entries read-only.
 `offset` is a canonical decimal integer from 0 to 100000 (no leading zeros).
 Optional `state=present|deleted|draft|all` filters before pagination; `present` excludes only deleted entries. Omission retains all states for existing callers. Filters do not change the authoritative write revision or remove tombstones. The identity page explicitly requests `present` by default and offers a separate deleted-items view.
+Optional `target=user|memory|project` and
+`category=fact|preference|correction|failure|procedure` both require explicit
+`kind=memory` and filter before pagination. Invalid options return 400 through
+the same query validation path. Target `project` selects project scope regardless
+of the stored target (including SQLite-only entries). Targets `user` and `memory`
+select profile scope only: `user` selects USER entries; `memory` selects MEMORY
+and read-only legacy `failure` entries, keeping their stored target unchanged.
+Every ready snapshot adds `counts: { memory: {total,user,memory,project,deleted},
+skill: {total,active,draft,disabled,deleted} }`, including an empty store. Counts
+cover all listed non-mirrored items, irrespective of kind, query, offset, state,
+target or category. Totals exclude deleted items; subgroup counts also exclude
+deleted items, whose count is separate. Memory subgroups use the same target
+definitions, so legacy profile failures contribute to `total` and `memory`,
+never `user`. Filters and counts do not change the write revision.
 `capabilities.operations` lists supported commands, and `memory`/`skill` flags
 specify which kind is writable. The additive `capabilities.journal` object
 reports live receipt/request/tombstone counts, their windows and real limits.
@@ -351,7 +365,7 @@ write methods, so they carry the equivalent check themselves.
 which covers manual web edits, background learning and Agent tool writes routed
 through the knowledge service, and on the entries a full-document editor save
 adds (existing entries never block an edit). It ports upstream 0.9.9
-`content-scanner.ts` (MIT): invisible Unicode, English injection/exfiltration
+`content-scanner.ts` (MIT; unchanged in 0.9.10): invisible Unicode, English injection/exfiltration
 phrases and credential shapes, plus Chinese injection phrases and newer key
 prefixes. Unlike upstream, a bare variable name such as `OPENAI_API_KEY` is
 allowed. A refusal is `400 {code:'content-blocked', details:{rule, kind}}` with
@@ -370,8 +384,8 @@ tool adapter.
 
 - **Settings** are per profile (`GET/PUT /profiles/:id/learning`), default off:
   `enabled`, `correctionEnabled`, `reviewEnabled`, `extractionEnabled`,
-  `periodicReviewMinutes` (0..10080), `maxRunsPerDay` (1..20, default 20),
-  `maxTokensPerDay` (6000..200000, default 200000),
+  `periodicReviewMinutes` (0..10080), `maxRunsPerDay` (1..500, default 20),
+  `maxTokensPerDay` (6000..5000000, default 200000),
   `consolidationInputChars` (4000..40000, default 12000; a consolidation reserves that plus 6000 tokens),
   and `triggerPhrases` `{correction,preference,temporary,ignore}` (each at most 50
   plain phrases of up to 80 characters, no control characters). Saving never runs a job.
@@ -427,6 +441,12 @@ tool adapter.
   characters reduced to a UTF-8-safe 1,800-byte model excerpt,
   prompt plus excerpt ≤ 5000 UTF-8 bytes, ≤ 320 output tokens, no tools, no
   CLI/subagent fallback, 20 s abort followed by waiting for real settlement.
+  Detailed run history retains 64 entries; a compact private UTC `dayCarry`
+  preserves the current day's counted runs, reserved tokens and provider-reported
+  total tokens as older details leave that window. It expires on the next UTC
+  day, so a budget above 64 runs still counts every reservation. Refunds still
+  require retained run details and native source proof; already-trimmed runs
+  remain ineligible for reconciliation, as before.
   Queue 64 jobs, 128 cursors; each cursor retains at most 2048 native pair
   references to avoid replay after historical edits or branch switches. Capacity
   exhaustion and unprovable legacy branch rewrites block rather than forget old
@@ -443,6 +463,18 @@ tool adapter.
   restart become `uncertain` and are never replayed. Deterministic trusted-write
   refusals (including the 413 source-proof limit) are `skipped/knowledge-rejected`;
   a learned entry refused by the content scan is `skipped/content-blocked`.
+
+Learning snapshots expose `capabilities.limits` with the same settings bounds.
+`health.today` is `{runs,maxRuns,reservedTokens,maxTokens,exhaustedBy,resetsAt,usedTokens}`.
+`exhaustedBy` is `runs` when the daily run count reaches its limit, otherwise
+`tokens` when the remaining reservation budget cannot fit another 6000-token
+turn attempt, otherwise null (runs wins if both limits bind). `resetsAt` is the
+ISO timestamp of the next UTC midnight used by admission. `usedTokens` sums
+only provider-reported `usage.totalTokens` on today's counted runs (including
+running jobs and the daily carry); it is null when no total was reported and 0
+when zero was explicitly reported. Queued/unstarted, other-day and refunded
+runs do not contribute. Actual usage never replaces reservation-based admission;
+refunds preserve each original run's recorded usage and cost.
 
 Each eligible `before_agent_start` re-reads profile and physical-cwd memory
 from disk and appends a native `pivane-profile-memory-read` entry, which also
@@ -468,8 +500,11 @@ snapshot cap. An active conversation exceeding that cap retains memory and
 skill tools, while its transcript is not indexed. A profile-local
 `pivane_sources` table binds each derived session row to the verified native
 path and content fingerprint. Replacing session rows, upstream messages/file
-metadata and provenance is one SQLite transaction, with a fresh source check
-inside it even when another worker supplied an older candidate. Legacy
+metadata and provenance is one immediate SQLite transaction: it reserves the
+writer before reading source rows, so another connection cannot invalidate a
+read snapshot before its write upgrade. The existing busy timeout remains;
+a fresh native source check still runs inside the transaction even when another
+worker supplied an older candidate. Legacy
 unproven derived rows are removed. Search
 reconciles all tracked sources before and after querying; deleted, edited,
 rebound or replaced sources cannot leak old snippets. A change detected after
@@ -478,9 +513,15 @@ index refresh and session search, including both source reconciliations; the Pi
 RPC event loop does not parse or index historical JSONL at startup or after a
 settled turn. Startup schedules a bounded refresh without awaiting it. Settled
 events coalesce into one running and one pending refresh, and a search waits for
-that work before verifying and querying. Shutdown drops the pending disposable
-refresh, waits for in-flight work, closes the index connection and joins the
-thread; it does not re-index the current session. A failed worker makes search
+that work before verifying and querying. A failed refresh still services an
+already-pending notification; failure alone does not enqueue an automatic retry.
+Notifications arriving during drain completion are retained. If the last refresh
+fails, search reports the failure (`PROFILE_INDEX_REFRESH_FAILED` internally)
+until an explicitly scheduled refresh succeeds, rather than returning an ordinary
+negative result. Successful but incomplete coverage retains its partial status.
+Shutdown drops the pending disposable refresh, waits for in-flight work, closes
+the index connection and joins the thread; repeated close calls share this
+completion promise. It does not re-index the current session. A failed worker makes search
 fail closed; no unchecked parent-side fallback is used. Active-session binding
 verification and memory document operations retain their existing checks.
 Indexing advances a
@@ -498,12 +539,12 @@ resolvable. Release and local activation states are recorded separately from thi
 
 ## Bundled installation
 
-The current source ships the upstream 0.9.9 npm contents in `vendor/pi-hermes-memory/`.
+The current source ships the upstream 0.9.10 npm contents in `vendor/pi-hermes-memory/`.
 `node scripts/install.cjs` prepares locked workspace dependencies and runs
 `scripts/install-bundled-capabilities.cjs`, which verifies vendor hashes, builds
 selected components and checks native SQLite. The resulting
-`server/profile-memory/upstream-bundle.mjs` retains the previously reviewed SHA256
-`0b2d8dae469077d615f46cb7d96d408663dc66980748718441d137293f9f9faa`.
+`server/profile-memory/upstream-bundle.mjs` must match the reviewed SHA256
+`c1e3dec1004829df2715cacb457990c6f2b1ce6c6fe1439428b92625ac8f7f75`.
 The configuration service selects this release-local bundle before the legacy
 `pivane-profiles/runtime.json` absolute path. It does not rewrite the old file or
 move profile data. `npm test` supplies the built-in bundle and Pi's Jiti loader,
@@ -511,18 +552,114 @@ so memory integration gates are no longer silently skipped by the normal suite.
 See [bundled capabilities](BUNDLED_CAPABILITIES.md) for installation, platform
 requirements, child-session loading and update procedures.
 
+<a id="upstream-0910-adaptation"></a>
+
+### Upstream 0.9.10 adaptation
+
+The selected exports are unchanged. Features that live only in upstream's
+default factory do not run here: chunked consolidation, consolidation usage
+signals, the `/memory-insights` usage section, scoped startup Markdown sync,
+`appendSystemPrompt` policy injection and the direct-review transport changes.
+Pivane already injects its block through the native `pivane_profile_memory`
+prompt section, and background learning keeps its own auxiliary-model path.
+
+The first 0.9.10 `DatabaseManager` open of a profile `sessions.db` (worker,
+index worker or document index) adds `memories.hit_count INTEGER NOT NULL
+DEFAULT 0` and `memories.last_hit_at DATE` with `ALTER TABLE ... ADD COLUMN`.
+Rows, IDs, Markdown and the knowledge listing revision (which hashes explicit
+columns) are unchanged; the previous bundle's explicit-column statements accept
+the extra columns, so reverting the application does not require a database
+rollback. If the previous bundle ever rebuilds a corrupt database, it recreates
+its own schema without the counters; only the advisory recall counts described
+below are lost (memories, Markdown and revisions are not), and the next 0.9.10
+open adds the columns again at zero. Keep the usual pre-activation backup
+regardless.
+
+Upstream takes its column snapshot outside a transaction, so two first opens of
+one database (for example the RPC worker and its index thread, or two sessions
+of the same profile) could both `ALTER` and one would fail with `duplicate column
+name`; a failed index thread would stay unavailable for that session.
+`server/profile-memory/schema-prep.js` therefore adds the same two columns under
+`BEGIN IMMEDIATE` before every Pivane-owned `DatabaseManager` opens the file:
+the index thread and document index before their open, the RPC worker lazily
+before its first memory tool call (never during extension registration). It
+only reads the schema once migrated and never creates a database. Missing,
+empty, symlinked or non-regular files and corrupt databases are left to the
+existing open paths and upstream recovery. Any other failure, such as a writer
+holding the lock past the 5 s busy timeout, fails closed: the tool call,
+document save (before publication) or index thread start reports the error
+instead of falling through to the unsynchronized upstream migration. Its column
+list must match upstream's on each upgrade; the upgrade test compares both.
+
+Upstream `memory_search` increments those counters inside the tool by default.
+The adapter registers it with `usageTrackingEnabled:false`, so the search keeps
+no SQLite write lock on the RPC event loop, and records recalls itself:
+
+- The tool receives an adapter view of the `DatabaseManager` whose connection
+  records the rows each statement's `.all()` returns, only while the upstream
+  `execute()` call is running synchronously. Upstream reads its stats first and
+  returns the final memory-row query, so the last recorded result is exactly the
+  row set the tool returned; there is no second read that could see a replaced
+  row. IDs are counted only after a successful search (`count` 1-20), the
+  existing post-search index check and a still-allowed binding, and only when
+  that row set's size equals the reported count and the returned text contains
+  each row's content. An upstream change that awaits before reading records
+  nothing and so counts nothing.
+- IDs go fire-and-forget to the session's index thread. Pending counts coalesce
+  per row ID (at most 200 IDs, 1000 per ID) and at most one `hits` batch waits
+  in the serial worker queue, so a long refresh or contention cannot pile up
+  writes ahead of `session_search` or shutdown. The worker applies a batch with
+  upstream `recordSearchHits` in one `IMMEDIATE` transaction under a temporary
+  100 ms busy timeout (restored afterwards); a busy, failed or closing thread
+  drops that batch and never retries it. The search result never depends on it.
+  Shutdown sends the last coalesced batch before closing the thread.
+- `management.memoryRecall` reads `hit_count > 0` rows read-only and sums them
+  per key [listed target, project key, content]. Each listing attaches its own
+  internal key as a non-serialized symbol: SQLite rows use their exact text;
+  Markdown MEMORY/USER entries use the text without upstream's trailing metadata
+  comment and their store's project key; Markdown failures use the project from
+  their own `project64` metadata, like the legacy failure rows. The knowledge
+  snapshot page and item detail attach `recall:{hits,lastHitAt}` to present
+  memory items. It is not part of `listExtendedMemories` or the revision, so a
+  recall never invalidates an open edit, and a read failure or a database
+  without the columns shows no counts instead of failing the page. An expanded
+  entry takes a refreshed count from the next list load without refetching its
+  body or touching a draft.
+- The count belongs to the index row. Saving a changed entry replaces only that
+  entry's row, so its count restarts while unchanged siblings keep theirs;
+  deleting an entry hides its count. The full USER/MEMORY documents are injected
+  every turn regardless, so the number measures explicit searches, not use.
+- The only other reader is the consolidation proposal (`propose-consolidation`):
+  each offered record carries an optional `recalled` count and the system prompt
+  treats it as a tie-breaker (keep the wording and key terms of frequently
+  recalled records; never drop a fact or merge unrelated records over a low or
+  missing count). Proposals still need review; turn-time background learning,
+  the injected memory block and writes do not read it.
+
+Pi discovers skills by frontmatter `description` alone. The upstream
+`skill_manage` guidance now says so and passes through the adapter. Knowledge
+writes accept descriptions up to 1024 characters (Pi's limit, advertised as
+`capabilities.skillDescriptionMaxLength`), the skill editor explains what to put
+there, and background-learning skill proposals ask for trigger phrasing in the
+description. `MemoryStore` capacity labels are unchanged for Pivane's enforced
+`legacy-inject` mode, and importing the bundle no longer spawns the lock
+incarnation probe until a lock is first used.
+
 ## Legacy isolated installation
 
 The following recipe remains available for legacy installations and compatibility
 testing; ordinary 白泽灵台 installation uses the bundled path above.
 
 Use the pinned upstream tarball; its SHA256 is
-`6a1b71dfa34f40bba6372a4f71dec54cce76be4ae55923d3b83ebfc1c5920c20`
+`821dc844ddd6f87a0747c195cf02d6a6db03f65d110ecd8fedb76f4ff8af20cb`
 (npm integrity
-`sha512-6EfhmlgBuMfN7bQwN+xHMDVwX/Tm0fKKi6X8lAIBZtcjqxS9Of0rboJzmxfO3r+rGMWb71ss4p+dY34aEsJ1dg==`).
+`sha512-1cZzVieL1H3o5ZNtgunwu7nD1+Cn/7GQv5SvPpWDoN+7iLHEy4dkY5D30g/gKdVhW2Pm+63wFwQ3mXxc7k2/OA==`).
 The reviewed isolated lock at `server/profile-memory/upstream-lock.json` has
-SHA256 `55729bb2926d489de04f4717b258a15ec8cb456af6fb8248687d39e70eac260f`.
-This source recipe pins Pi and the host TUI to 1.0.2 and verifies brace-expansion 5.0.12 / undici 8.11.2 through the shared installation boundary; earlier published archives keep their own historical locks.
+SHA256 `e1449da8edc62d79fd4d9b1c54f37d86663cafc6edfaac129d12bcb9ced92c2a`.
+Upstream 0.9.10 declares `@earendil-works/pi-tui` as a peer dependency; the
+recipe already installs the host TUI directly, so the lock contains one copy.
+This source recipe pins Pi and the host TUI to the reviewed host version in
+`server/pi-reviewed-host.js` and verifies brace-expansion 5.0.12 / undici 8.11.2 through the shared installation boundary; earlier published archives keep their own historical locks.
 The isolated installer retains the reviewed JSON lock and rejects a different lock, creates a
 fresh prefix, runs `npm ci
 --ignore-scripts` for that locked graph, then runs only pinned `better-sqlite3`
@@ -531,9 +668,9 @@ LICENSE and license metadata remain in the isolated prefix. It verifies the revi
 running service during this review.
 
 ```sh
-npm pack pi-hermes-memory@0.9.9 --pack-destination /private/evidence
+npm pack pi-hermes-memory@0.9.10 --pack-destination /private/evidence
 PIVANE_PROFILE_MEMORY_ESBUILD=/path/to/esbuild \
-  node scripts/profile-memory-build.cjs /private/evidence/pi-hermes-memory-0.9.9.tgz /private/fresh-prefix
+  node scripts/profile-memory-build.cjs /private/evidence/pi-hermes-memory-0.9.10.tgz /private/fresh-prefix
 HOME=/private/disposable-identity node scripts/profile-memory-install.cjs /private/fresh-prefix
 PIVANE_TEST_HERMES_BUNDLE=/private/fresh-prefix/package/profile-memory-bundle.mjs \
 PIVANE_TEST_PI_JITI=/private/fresh-prefix/node_modules/@earendil-works/pi-coding-agent/node_modules/jiti \

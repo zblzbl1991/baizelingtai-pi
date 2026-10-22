@@ -10,6 +10,7 @@ import backgroundIndexer from './background-index.js';
 import mutation from './mutation-lock.js';
 import documentIndex from './document-index.js';
 import toolMutations from './tool-mutations.js';
+import schemaPrep from './schema-prep.js';
 import { profileMemoryCapability, safeFile } from './management.js';
 
 function assertPrivateSkillTree(...roots: string[]) {
@@ -41,6 +42,9 @@ export async function registerProfileMemory(pi: ExtensionAPI): Promise<void> {
     if (fs.realpathSync.native(projectRoot) !== projectRoot) throw new Error('Profile project root is not canonical');
 
     let started = false;
+    // The main-thread DatabaseManager opens lazily inside memory tools; prepare its schema
+    // just before, so a busy database fails that call instead of extension registration.
+    let databasePrepared = false;
     let stopped = false;
     let sourceIndex: ReturnType<typeof backgroundIndexer.createBackgroundIndex> | null = null;
     let activeIdentity: any = null;
@@ -58,6 +62,44 @@ export async function registerProfileMemory(pi: ExtensionAPI): Promise<void> {
     const allowed = (ctx: any) => started && !stopped && ctx?.mode === 'rpc'
         && scope.eligibleManager(ctx.sessionManager, context, ctx.cwd)
         && scope.sameActiveFile(ctx.sessionManager.getSessionFile(), activeIdentity);
+    // The upstream tool reports only a count. Its search runs synchronously inside execute(),
+    // so the adapter's DatabaseManager view records the rows that statement actually returned
+    // during that call (the final memory-row read is the returned result; stats run first).
+    // Anything else, such as a future await before the read, records nothing and counts nothing.
+    let searchReads: any[][] | null = null;
+    const bound = (target: any, key: PropertyKey) => {
+        const value = Reflect.get(target, key, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+    };
+    const recordingConnection = (connection: any) => new Proxy(connection, { get(target, key) {
+        if (key !== 'prepare') return bound(target, key);
+        return (...sql: any[]) => new Proxy(target.prepare(...sql), { get(statement, name) {
+            if (name !== 'all') return bound(statement, name);
+            return (...params: any[]) => {
+                const rows = statement.all(...params);
+                if (searchReads && Array.isArray(rows)) searchReads.push(rows);
+                return rows;
+            };
+        } });
+    } });
+    const searchView = (manager: any) => new Proxy(manager, { get(target, key) {
+        if (key !== 'getDb') return bound(target, key);
+        return () => { const connection = target.getDb(); return searchReads ? recordingConnection(connection) : connection; };
+    } });
+    const runSearch = (tool: any, args: any[]) => {
+        searchReads = [];
+        let pending: any, reads: any[][];
+        try { pending = tool.execute(...args); } finally { reads = searchReads; searchReads = null; }
+        return Promise.resolve(pending).then((result: any) => ({ result, rows: reads.at(-1) || [] }));
+    };
+    const recalledIds = (rows: any[], result: any): number[] | null => {
+        const count = result?.details?.success ? result.details.count : 0;
+        const text = result?.content?.[0]?.text;
+        if (!Number.isSafeInteger(count) || count < 1 || count > 20 || rows.length !== count || typeof text !== 'string'
+            || !rows.every((row: any) => Number.isSafeInteger(row?.id) && row.id > 0 && typeof row.content === 'string' && text.includes(row.content)))
+            return null;
+        return rows.map((row: any) => row.id);
+    };
     const indexPending = (target?: string) => ['memory', 'user'].some(kind =>
         (!target || target === kind) && documentIndex.pendingDocumentIndex(root, kind));
     const indexUnavailable = async (target?: string) => {
@@ -97,6 +139,10 @@ export async function registerProfileMemory(pi: ExtensionAPI): Promise<void> {
                             'A memory_add without comparisonToken returns related old entries and saves nothing. Read them before choosing update or new; pass the returned token only with unchanged create arguments. Multiple overlapping records require a consolidation proposal, not separate new copies. Do not ask the user to approve this internal check.' ] : tool.promptGuidelines,
                     execute: async (...args: any[]) => {
                         if (!allowed(args[args.length - 1])) throw new Error('Profile memory session binding is unavailable');
+                        if (!databasePrepared && ['memory_search', 'memory_add', 'memory_replace', 'memory_remove'].includes(tool.name)) {
+                            schemaPrep.prepareProfileDatabase(root, bundle);
+                            databasePrepared = true;
+                        }
                         if ((tool.name === 'memory_search' || ['memory_add', 'memory_replace', 'memory_remove'].includes(tool.name))
                             && await indexUnavailable(args[1]?.target)) throw new Error('Profile document search index needs repair');
                         if (tool.name === 'session_search') {
@@ -106,7 +152,13 @@ export async function registerProfileMemory(pi: ExtensionAPI): Promise<void> {
                             return result;
                         }
                         if (tool.name === 'skill_manage') assertPrivateSkillTree(skillStore.getGlobalSkillsDir(), skillStore.getProjectSkillsDir());
-                        const execute = async () => tool.execute(...args);
+                        let searchRows: any[] = [];
+                        const execute = async () => {
+                            if (tool.name !== 'memory_search') return tool.execute(...args);
+                            const searched = await runSearch(tool, args);
+                            searchRows = searched.rows;
+                            return searched.result;
+                        };
                         const viaKnowledge = knowledgeTools && (['memory_add', 'memory_replace', 'memory_remove', 'skill_manage'].includes(tool.name))
                             ? await knowledgeTools(tool.name, args[1], args[2], () => allowed(args[args.length - 1]), args[args.length - 1]) : null;
                         if (knowledge && tool.name === 'skill_manage' && !viaKnowledge
@@ -120,8 +172,11 @@ export async function registerProfileMemory(pi: ExtensionAPI): Promise<void> {
                                 if (await indexUnavailable(args[1]?.target)) throw new Error('Profile document search index needs repair');
                                 return execute();
                             }) : await execute());
+                        const recalled = tool.name === 'memory_search' ? recalledIds(searchRows, result) : null;
                         if (tool.name === 'memory_search' && await indexUnavailable(args[1]?.target))
                             throw new Error('Profile document search index changed during search');
+                        // Count only results actually returned after verification; the index thread writes.
+                        if (recalled && allowed(args[args.length - 1])) sourceIndex?.recordHits(recalled);
                         return result;
                     },
                 };
@@ -154,7 +209,10 @@ export async function registerProfileMemory(pi: ExtensionAPI): Promise<void> {
     const db = context.memory.enabled ? new upstream.DatabaseManager(root) : null;
     if (db) {
         upstream.registerMemoryTool(guarded, store, () => projectStore, db, () => context.cwd);
-        upstream.registerMemorySearchTool(guarded, db);
+        // Upstream 0.9.10 records hit_count/last_hit_at inside memory_search. Pivane keeps the
+        // search itself read-only on the RPC loop and records the rows it returned through the
+        // index thread instead (see runSearch/recalledIds/recordHits above).
+        upstream.registerMemorySearchTool(guarded, searchView(db), { usageTrackingEnabled: false });
         upstream.registerSessionSearchTool(guarded, db, { variant: 'legacy' });
         pi.on('before_agent_start', async (event: any, ctx: any) => {
             if (!allowed(ctx)) return;
