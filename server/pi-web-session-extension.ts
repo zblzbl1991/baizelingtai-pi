@@ -27,6 +27,7 @@ import { registerAssistantProject } from './pi-assistant-project-runtime.js';
 import { registerProfileAuthoring } from './pi-profile-authoring-extension.ts';
 import { registerSubagentHost, subagentControl } from './pi-subagent-host.ts';
 import { requestRegisteredNativeMcpControl } from './pi-native-mcp-control.mjs';
+import { requestKnowledgeRuntime } from './pi-knowledge-runtime.mjs';
 import { deliverReport } from './pi-compliance-report-runtime.ts';
 
 // Pi 0.86 stores prompt/tool checkpoints as native system messages in the
@@ -84,7 +85,7 @@ export default async function (pi: ExtensionAPI) {
         }
     });
     pi.registerCommand(INTERNAL_COMMAND, {
-        description: `Pivane internal session navigation and context snapshot; managed-v1; channels-v1; cron-v1; task-v1; task-results-v1; agent-messages-v1; compliance-report-v1; title-v1; model-catalog-v1; speed-v1; resources-v1; history-v1; history-archive-v1; tree-v1; tree-presentation-v1; history-presentation-v1; history-body-v1; system-prompt-v1; subagents-v1; mcp-v1; reload-v1:${randomUUID()}`,
+        description: `Pivane internal session navigation and context snapshot; managed-v1; channels-v1; cron-v1; task-v1; task-results-v1; agent-messages-v1; compliance-report-v1; title-v1; model-catalog-v1; speed-v1; resources-v1; history-v1; history-archive-v1; tree-v1; tree-presentation-v1; history-presentation-v1; history-body-v1; system-prompt-v1; subagents-v1; mcp-v1; knowledge-v1; reload-v1:${randomUUID()}`,
         handler: async (args, ctx) => {
             const request = JSON.parse(args);
             if (ctx.mode !== 'rpc' || request.token !== process.env.PI_WEB_NAVIGATION_TOKEN) throw new Error('Invalid navigation request');
@@ -114,7 +115,9 @@ export default async function (pi: ExtensionAPI) {
                         return typeof value === 'function' ? value.bind(target) : value;
                     } });
                     const nativeCtx = new Proxy(ctx, { get(target, key) { return key === 'ui' ? ui : Reflect.get(target, key); } });
-                    const data = await requestRegisteredNativeMcpControl(nativeCtx, request.input);
+                    const data = request.input?.action?.startsWith('knowledge-')
+                        ? await requestKnowledgeRuntime(nativeCtx, request.input)
+                        : await requestRegisteredNativeMcpControl(nativeCtx, request.input);
                     response = { pivaneMcp: request.id, success: true, data };
                 } catch (error: any) {
                     response = { pivaneMcp: request.id, success: false, code: /^MCP_[A-Z_]+$/.test(error?.code || '') ? error.code : 'MCP_NATIVE_ACTION_FAILED' };

@@ -1,8 +1,29 @@
 # Pi 原生 MCP 与 Codemode
 
-当前源码绑定 Pi 1.2.0；已公开的 白泽灵台 1.6.2／Pi 1.0.2 范围见[版本说明](releases/1.6.2.md)。源码新增行为和实际运行实例分别核对，旧归档不改写。
+当前源码绑定 Pi 1.3.0；已公开的 白泽灵台 1.6.2／Pi 1.0.2 范围见[版本说明](releases/1.6.2.md)。源码新增行为和实际运行实例分别核对，旧归档不改写。
 
 ## 配置与使用
+
+### 内置 OCR 与 WeKnora stdio
+
+“扩展 → MCP”提供“添加内置 OCR”和“添加内置 WeKnora”，分别写入 `pivane-ocr`、`pivane-weknora` 配置。添加后默认停用，不覆盖已有同名全局或项目配置。刷新后点击编辑，将对应环境变量切换为“替换”，填写地址和 API Key，再启用并保存：
+
+| 能力 | 地址变量 | 密钥变量 | 地址含义 |
+|---|---|---|---|
+| OCR | `OCR_BASE_URL` | `OCR_API_KEY` | TextIn 兼容服务根地址，不含 `/api/contracts/...` |
+| WeKnora | `WEKNORA_BASE_URL` | `WEKNORA_API_KEY` | WeKnora 0.7 REST API 前缀，含 `/api/v1`；Key 需有 retrieve 权限 |
+
+启用后，新持久线程由 Pi 启动对应 Node stdio 子进程；已有线程需显式重载资源或重开。无需另外启动 MCP，也无需 Python、npm 全局安装或原 MCP 源码目录。进程按原生连接需要启动，多个线程可能各有进程；停用保存不强行中断已有连接。OCR 后端和 WeKnora 后端仍需独立运行，内置的是连接它们的桥接程序。更换安装路径时，应删除并重新添加预设以更新程序路径，先保留自己的环境配置。
+
+地址与密钥仍使用 Pi 原生 `mcp.json` 私密保存与脱敏编辑，内置桥接不加载 `.env` 或 `.env.weknora`，不提供实例默认地址。请求使用 Node 原生 HTTP(S)，不走环境代理、不跟随重定向、不自动重试。MCP 取消会中断在途 HTTP 请求，取消不撤销远端已创建的 OCR 任务。
+
+OCR 只接受当前线程项目内用户授权的绝对文件路径（非空普通文件，最多 50 MiB），沿用项目私密文件排除、描述符路径和完整文件身份校验；上传直接使用校验后的字节。网页附件 ID 不直接作为 OCR 输入，可将待处理文件准备到当前项目后提交。任务登记和导出存放在实际 Agent 私密目录 `pivane-mcp/ocr/<project-hash>/`，按项目隔离，不导入原 Python/独立 MCP 历史；升级不清除此目录。`artifact_path` 为私密本机路径，不是浏览器下载地址。需要交付时，让助手将已授权的结果复制到项目，再调用原生 `deliver_files`。
+
+OCR 的五个工具为 `ocr_health_check`、`ocr_parse_document`、`ocr_get_task`、`ocr_get_result`、`ocr_export`。提交消耗额度，返回全部 `task_ids`；`submission_uncertain=true` 时先核对后端页面，禁止自动重提。PDF 密码会进入原生工具参数和会话历史。显式匿名服务可另加环境变量 `OCR_ALLOW_ANONYMOUS=true`。单个桥接进程串行执行工具，HTTP 总时限 90 秒、连接时限 8 秒、空闲读取时限 60 秒；JSON 响应最多 32 MiB、导出最多 200 MiB、内联正文最多 12000 Unicode 字符。WeKnora 每次 HTTP 请求时限 30 秒、响应最多 8 MiB；分页与兼容限制见[知识库](KNOWLEDGE_BASE.md)。
+
+此批为源码接入，使用本地模拟服务验证；没有连接真实 OCR / WeKnora，也未部署或发布。用户提供的桥接源码尚无公开许可证，来源、依赖声明和重建方法保留在 vendor 快照说明中；公开分发前需明确其授权。
+
+### 原生通用配置
 
 内置 OfficeCLI 由独立资源扩展使用公开 `registerMcpServer` 在会话注册，不写用户 `mcp.json`。它沿用本文的原生连接、工具暴露与停机机制；附件副本、文本／视觉检查和程序安装见[Office 文档](OFFICE_DOCUMENTS.md)。OfficeCLI 的一个通用工具包含读写动作，逐工具 exposure 不能进一步按命令拆分权限。
 
@@ -34,6 +55,8 @@
 资源页列出 `builtin:mcp` 等内置扩展，可逐项关闭。受管单次 `--no-mcp` 也禁用该工厂，即使显式指定 `builtin:mcp`；仅运行时注册的服务器没有消费者时由原生报告错误，不另建客户端。`--no-extensions` 禁用内置扩展；侧聊保持无 MCP/Codemode 的严格隔离，媒体规划也不因升级取得外部工具或自动执行生成权限。
 
 ## 网页管理与工具设置
+
+WeKnora 的独立浏览、检索与聊天引用入口见[知识库](KNOWLEDGE_BASE.md)，复用下述唯一 worker 的连接与权限，不另建 MCP 客户端。
 
 “扩展 → MCP”分别管理**已保存配置**与**所选会话运行状态**。打开页面和刷新配置只读取原生文件，不连接服务器、不执行环境或 header 命令、不启动 worker。
 

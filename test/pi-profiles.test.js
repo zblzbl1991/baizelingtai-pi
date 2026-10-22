@@ -25,10 +25,16 @@ const { PiSessionTransfer } = require('../server/pi-session-transfer');
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
 test('revisioned HTTP, native immutable bindings, fork/import, and verified runtime context', { timeout: 30000 }, async t => {
+    const started = performance.now();
+    const phase = name => t.diagnostic(`profile integration ${name}: ${Math.round(performance.now() - started)} ms`);
     const legacyStore = new (require('../server/pi-session-store').PiSessionStore)();
     const old = await legacyStore.createSession(first, 'Before profiles');
     const access = new WorkspaceAccessService({ envToken: () => 'synthetic-test-token' });
-    const gateway = createPiAgentGateway({ accessService: access, deferredFilePath: process.env.PI_WEB_DEFERRED_FILE });
+    // This contract uses /status for profile capabilities, not Office conversion.
+    // Keep real native workers while avoiding the unrelated cold Office probe.
+    const gateway = createPiAgentGateway({ accessService: access, deferredFilePath: process.env.PI_WEB_DEFERRED_FILE,
+        officePreviewEngine: { generation: 'profile-fixture', status: async () => ({ available: false }),
+            convert: async () => { throw new Error('Unexpected Office conversion in profile fixture'); }, dispose: async () => {} } });
     const express = require('express'), app = express(); app.use(express.json()); gateway.mount(app);
     const server = http.createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening');
     t.after(async () => { await gateway.dispose(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
@@ -40,9 +46,30 @@ test('revisioned HTTP, native immutable bindings, fork/import, and verified runt
     const { SessionManager, getAgentDir } = await import('@earendil-works/pi-coding-agent');
     const sessionsRoot = path.join(fs.realpathSync.native(getAgentDir()), 'sessions');
     assert.equal(readProfileBinding(SessionManager.open(old.path)), null);
+    assert.equal((await fetch(base + '/profiles')).status, 401);
+    assert.equal(fs.existsSync(path.join(agentDir, 'pivane-profiles', 'profiles.json')), false,
+        'unauthenticated discovery must not initialize private state');
     const start = await call('GET', '/profiles');
     assert.equal(start.status, 200); assert.equal(start.data.cwd, null); assert.equal(start.data.defaultProfileId, null);
+    assert.equal(start.data.profiles.length, 1);
+    const initial = start.data.profiles[0];
+    assert.equal(initial.name, '小白');
+    assert.equal(initial.enabled, true);
+    assert.deepEqual(initial.memory, { enabled: true, autoLearn: false });
+    assert.equal(initial.soul, '');
+    const repeated = await call('GET', '/profiles');
+    assert.equal(repeated.data.revision, start.data.revision);
+    assert.deepEqual(repeated.data.profiles, start.data.profiles);
+    const initialThread = await call('POST', '/sessions', { cwd: first, profileId: initial.id });
+    assert.equal(initialThread.data.agentProfile.id, initial.id);
+    const initialEnvironment = await gateway.supervisor.workerEnvironment({ cwd: first,
+        sessionId: initialThread.data.id, sessionPath: initialThread.data.path });
+    assert.equal(JSON.parse(initialEnvironment.PIVANE_AGENT_PROFILE_CONTEXT).memory.enabled, true);
+    assert.ok(initialEnvironment.PIVANE_HERMES_BUNDLE);
+    assert.equal((await call('POST', '/sessions', { cwd: first })).data.agentProfile, null,
+        'initial assistant does not become a project default');
     assert.equal((await call('GET', '/status')).data.agentProfiles, true);
+    phase('initial HTTP and capability checks');
     const body = { expectedRevision: start.data.revision, profile: { name: 'Study', description: '', soul: 'Synthetic study guidance', enabled: true,
         memory: { enabled: false, autoLearn: false }, skills: { learnedEnabled: true } } };
     assert.equal((await call('PUT', '/profiles', body, { Origin: 'https://evil.invalid' })).status, 403);
@@ -102,7 +129,9 @@ test('revisioned HTTP, native immutable bindings, fork/import, and verified runt
     fs.writeFileSync(path.join(agentDir, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture', enableInstallTelemetry: false, defaultProjectTrust: 'never' }));
     fs.writeFileSync(path.join(agentDir, 'models.json'), JSON.stringify({ providers: { fixture: { baseUrl: `http://127.0.0.1:${provider.address().port}/v1`,
         api: 'openai-completions', apiKey: 'synthetic', models: [{ id: 'fixture', input: ['text'], contextWindow: 32000, maxTokens: 1000 }] } } }));
+    phase('starting first native worker');
     const worker = await gateway.supervisor.getWorker({ cwd: first, sessionId: selected.data.id, sessionPath: selected.data.path });
+    phase('first native worker ready');
     assert.equal(worker.loadedAgentProfileId, id);
     assert.equal(worker.loadedAgentProfileRevision, profileRevision(saved.data.profile));
     assert.equal(worker.loadedAgentProfileConfirmed, true);
@@ -112,6 +141,7 @@ test('revisioned HTTP, native immutable bindings, fork/import, and verified runt
     assert.match(JSON.stringify(requests[0]?.messages), /Synthetic study guidance/);
     assert.match(JSON.stringify(requests[0]?.messages), /Synthetic test only/);
     const originalWorker = await gateway.supervisor.getWorker({ cwd: first, sessionId: old.id, sessionPath: old.path });
+    phase('ordinary native worker ready');
     assert.equal(originalWorker.loadedAgentProfileId, null);
     assert.equal(originalWorker.loadedAgentProfileConfirmed, true);
     assert.equal(originalWorker.client.env.PIVANE_AGENT_PROFILE_CONTEXT, undefined);
@@ -120,6 +150,7 @@ test('revisioned HTTP, native immutable bindings, fork/import, and verified runt
     const secondSession = (await call('POST', '/sessions', { cwd: second, profileId: id })).data;
     assert.equal(secondSession.agentProfile.id, id, 'profile spans projects with identical basenames');
     const secondWorker = await gateway.supervisor.getWorker({ cwd: second, sessionId: secondSession.id, sessionPath: secondSession.path });
+    phase('second-project native worker ready');
     assert.equal(secondWorker.loadedAgentProfileId, id);
     assert.equal((await call('POST', '/sessions', { cwd: first, profileId: 'absent' })).status, 400);
     assert.equal((await call('PUT', '/profiles/default', { cwd: second, profileId: 'absent', expectedRevision: state.data.revision })).status, 400);
@@ -161,7 +192,7 @@ test('revisioned HTTP, native immutable bindings, fork/import, and verified runt
     assert.equal((await gateway.supervisor.workerEnvironment({ cwd: first, sessionId: fork.session.id, sessionPath: fork.session.path })).PIVANE_AGENT_PROFILE_CONTEXT, undefined);
     assert.equal(readProfileRuntime(forkManager, first, getAgentDir(), sessionsRoot, JSON.stringify({ ...context, sessionId: fork.session.id })), null);
     assert.equal((await call('POST', '/sessions', { cwd: first, profileId: id })).status, 400);
-    assert.equal((await call('GET', '/profiles')).data.profiles[0].soul, body.profile.soul, 'disabled profile data is retained');
+    assert.equal((await call('GET', '/profiles')).data.profiles.find(profile => profile.id === id).soul, body.profile.soul, 'disabled profile data is retained');
     const current = await call('GET', '/profiles');
     const minimal = { name: 'Development', description: '', soul: '', enabled: true };
     const writes = await Promise.all([call('PUT', '/profiles', { expectedRevision: current.data.revision, profile: minimal }),
@@ -170,7 +201,7 @@ test('revisioned HTTP, native immutable bindings, fork/import, and verified runt
     const created = writes.find(result => result.status === 200).data.profile;
     assert.deepEqual(created.memory, { enabled: false, autoLearn: false });
     assert.deepEqual(created.skills, { learnedEnabled: true });
-    assert.equal((await call('GET', '/profiles')).data.profiles.length, 2);
+    assert.equal((await call('GET', '/profiles')).data.profiles.length, 3);
     assert.equal((await gateway.store.profiles.getProfile(id)).enabled, false);
     assert.equal(await gateway.store.profiles.getProfile('not-an-id'), null);
     assert.equal(await gateway.store.profiles.getProfile('00000000-0000-0000-0000-000000000000'), null);
@@ -259,7 +290,7 @@ test('revisioned HTTP, native immutable bindings, fork/import, and verified runt
             fs.renameSync(movedDirectory, directory);
         }
         assert.equal(parentSwitched, true);
-        assert.equal((await registryService.state()).state.profiles.length, 3, 'parent replacement did not publish a fourth profile');
+        assert.equal((await registryService.state()).state.profiles.length, 4, 'parent replacement did not publish a fifth profile');
         const movedSession = empty.data.path + '.synthetic';
         fs.renameSync(empty.data.path, movedSession);
         fs.symlinkSync(movedSession, empty.data.path);

@@ -16,6 +16,8 @@ package.json的应用版本、Pi依赖版本和快照时间戳是不同概念。
 
 ## 候选包
 
+根目录 `THIRD_PARTY_NOTICES.md` 是仓库中的汇总说明，按 `docs/public-files.json` 的 `repositoryOnly` 分类不进入新归档。下文随包的第三方声明指依赖自身的许可证、版权声明和必要 NOTICE；这些原始文件、项目 LICENSE 与原生 manifest 继续保留。
+
 1. 从明确的源码提交准备候选，核对 Git 跟踪清单与未提交改动，冻结公开文档，列清上述完整门槛的执行位置并在发布前全部完成。源码阶段先做受影响专项和必要集成、尽早发现问题；剩余全量检查可安排在冻结包内，避免相同环境下源码与包内机械执行两轮。记录源码提交、实际运行版本和候选之间的差异。
 2. 运行npm run pack:release（开发快照仍用pack:trial）。相同版本包存在时拒绝覆盖；冻结包变化须重新验收，已公开版本不能悄悄替换。`scripts/source-files.cjs` 的发行集合与 docs/public-files.json 决定内容；LICENSE、依赖原始 LICENSE/NOTICE 和原生manifest随包；根 THIRD_PARTY_NOTICES.md 汇总说明仅在仓库保留；AGENTS.local.md、docs/local、身份、媒体和备份禁止纳入。构建前强制核对档案记忆 bundle 存在且与审查哈希一致，保证跳过安装脚本的旧版网页更新器仍能使用新包。构建后核对manifest/hash，不能仅检查.gitignore。归档显式使用 UTF-8 USTAR；[tar 调用策略](../../scripts/package-tar.cjs)统一生产器、准确包验收与便携打包的原生 tar 选择及字符集，Windows 固定调用 System32 tar 并显式按 UTF-8 读写，避免 PAX 扩展头或本地代码页乱码；不要以放宽解包器的文件类型、路径或完整性检查代替格式兼容验证。
 3. 从该包在独立目录执行 `node scripts/install.cjs`（旧归档没有此脚本时使用 `npm ci`），不继承维护者的node_modules、Provider环境或Pi身份；完成宣称支持平台的浏览器、安装、更新和恢复回归。开发专项、源码预检和冻结归档验收是不同层；最终结果必须证明准确包内运行。

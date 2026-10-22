@@ -24,6 +24,7 @@ async function run(browser, base, width, locale, noProject = false) {
         if (p === '/api/pi/projects') return route.fulfill({ json: { projects: noProject ? [] : [{ cwd, name: 'Fixture', sessionCount: sessions.length }], roots: ['/tmp'] } });
         if (p === '/api/pi/sessions') return route.fulfill({ json: { sessions } });
         if (p === '/api/pi/activity') return route.fulfill({ json: { runtimes: [], replyNotices: [] } });
+        if (p === '/api/pi/settings/mcp') return route.fulfill({ json: { cwd, servers: [], trust: { effective: false } } });
         if (p === '/api/pi/extension-assistant/sessions') {
             assert.equal(req.method(), 'POST'); const body = req.postDataJSON(); writes.push(body);
             if (hold) await new Promise(r => { release = r; });
@@ -92,7 +93,7 @@ async function run(browser, base, width, locale, noProject = false) {
     } else await page.locator('#workspace-extensions-toggle').click();
     await page.locator('.extensions-view').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#extensions-learned').count(), 0, 'learned skills belong to assistant profiles');
-    assert.equal(await page.locator('.extensions-card').count(), 8);
+    assert.equal(await page.locator('.extensions-card').count(), 7);
     assert.equal(await page.locator('#extension-pivane-weixin [data-installation="optional"]').count(), 1, 'messaging connectors use their dedicated optional installation flow');
     await page.locator('#extension-pi-subagents [data-installation="installed"]').waitFor();
     assert.match(await page.locator('#extension-pi-subagents [data-installation]').textContent(), /白泽灵台/);
@@ -114,7 +115,7 @@ async function run(browser, base, width, locale, noProject = false) {
     await page.locator('[data-extension-filter="installed"]').click();
     assert.ok((await page.locator('.extensions-card').evaluateAll(cards => cards.map(c => c.dataset.installation))).every(state => ['installed', 'configured'].includes(state)));
     await page.locator('[data-extension-filter="installed"]').click();
-    assert.equal(await page.locator('.extensions-card').count(), 8, 'pressing an active status filter clears it');
+    assert.equal(await page.locator('.extensions-card').count(), 7, 'pressing an active status filter clears it');
     updates = null; channelState = { component: { installed: false }, accounts: [] };
     await page.locator('#extensions-refresh').click();
     await page.locator('#extension-pivane-weixin [data-installation="optional"]').waitFor();
@@ -172,7 +173,27 @@ async function run(browser, base, width, locale, noProject = false) {
         assert.equal(await page.locator('#extension-pi-native-mcp [data-installation="installed"]').count(), 1, 'native built-in stays available in global scope');
         projectTrusted = false;
     }
-    assert.equal(await page.locator('#extensions-nav [data-extensions-tab]').count(), 4);
+    assert.equal(await page.locator('#extensions-nav [data-extensions-tab]').count(), 6);
+    await page.locator('#extensions-nav [data-extensions-tab="knowledge"]').click();
+    await page.locator('.knowledge-base.active').waitFor();
+    assert.equal(new URL(page.url()).hash, '#/extensions?tab=knowledge');
+    assert.equal(await page.locator('#extensions-nav [data-extensions-tab="knowledge"]').getAttribute('aria-current'), 'page');
+    assert.equal(await page.locator('#pi-input').inputValue(), noProject ? '' : 'Discovery draft');
+    await page.locator('#extensions-nav [data-extensions-tab="builtins"]').click();
+    await page.locator('#compliance-enabled').waitFor();
+    assert.equal(new URL(page.url()).hash, '#/extensions?tab=builtins');
+    assert.equal(await page.locator('#extensions-nav [data-extensions-tab="builtins"]').getAttribute('aria-current'), 'page');
+    assert.equal(await page.locator('#extensions-staffing-title').textContent(), locale === 'en' ? 'Project staffing' : '项目人员分配');
+    assert.equal(await page.locator('.compliance-settings h4').textContent(), locale === 'en' ? 'Contract review' : '合同审查');
+    assert.equal(await page.locator('#extensions-open-staffing').isEnabled(), true);
+    assert.equal(await page.locator('[data-settings-tab="builtins"], [data-more-tab="staffing"], #extension-pivane-staffing').count(), 0);
+    assert.deepEqual(await page.locator('#settings-builtins').evaluate(root => [...root.querySelectorAll('section, div, button, select')].filter(el => el.getClientRects().length && el.clientWidth && el.scrollWidth > el.clientWidth + 1).map(el => el.id || el.className)), []);
+    await page.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR || '/tmp', `business-tools-${locale}-${width}.png`) });
+    await page.locator('#extensions-open-staffing').click();
+    assert.equal(new URL(page.url()).hash, '#/staffing');
+    await page.goBack();
+    await page.locator('#compliance-enabled').waitFor();
+    await page.locator('#extensions-nav [data-extensions-tab="extensions"]').click();
     assert.equal(await page.locator('.workspace-settings-nav button:visible').count(), 0, 'settings tabs stay out of the extension centre');
     bundledCapabilities = true;
     await page.locator('#extensions-refresh').click();
@@ -235,7 +256,7 @@ async function run(browser, base, width, locale, noProject = false) {
     await page.locator('#workspace-settings-close').click();
     if (!noProject) assert.equal(await page.locator('#pi-input').inputValue(), 'Discovery draft');
     await page.locator('.extensions-explore-choices button').first().click();
-    assert.equal(await page.locator('.extensions-card').count(), 8, 'home shortcuts clear stale search');
+    assert.equal(await page.locator('.extensions-card').count(), 7, 'home shortcuts clear stale search');
     await page.locator('#extensions-nav [data-extensions-tab="installed"]').click();
     await page.locator('#native-installed .native-assistant-entry').waitFor({ state: 'visible' });
     await page.locator('#workspace-settings-close').click();
@@ -369,10 +390,11 @@ async function run(browser, base, width, locale, noProject = false) {
     await page.waitForFunction(() => document.getElementById('pi-extension-assistant-add')?.hidden === true);
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('workspace:open-settings', { detail: { tab: 'extensions' } })));
     await page.locator('.extensions-card').first().waitFor();
-    assert.equal(await page.locator('.extensions-card').count(), 8);
-    assert.equal(await page.locator('[data-extension-configure]:enabled').count(), 1, 'built-in staffing setup does not require an extension assistant');
-    assert.equal(await page.locator('#extension-pivane-staffing [data-extension-configure]').isEnabled(), true);
+    assert.equal(await page.locator('.extensions-card').count(), 7);
+    assert.equal(await page.locator('[data-extension-configure]:enabled').count(), 0);
     assert.equal(await page.locator('#extensions-assistant-unavailable').isVisible(), true);
+    await page.locator('#extensions-nav [data-extensions-tab="builtins"]').click();
+    assert.equal(await page.locator('#extensions-open-staffing').isEnabled(), true, 'staffing setup does not require an extension assistant');
     assert.deepEqual(errors, []);
     await ctx.close();
 }
@@ -383,7 +405,7 @@ async function run(browser, base, width, locale, noProject = false) {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     try {
         const base = `http://127.0.0.1:${server.address().port}`;
-        for (const [width, locale, empty] of selectBrowserTargets([[1440, 'zh-CN', false], [393, 'zh-CN', false], [320, 'en', false], [393, 'en', true]])) {
+        for (const [width, locale, empty] of selectBrowserTargets([[1440, 'zh-CN', false], [1280, 'en', true], [393, 'zh-CN', false], [320, 'en', false], [393, 'en', true]])) {
             await run(browser, base, width, locale, empty); console.log(`PASS extension assistant ${width} ${locale} empty=${empty}`);
         }
     } finally { await browser.close(); await new Promise(r => server.close(r)); }

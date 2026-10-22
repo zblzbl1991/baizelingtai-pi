@@ -72,7 +72,7 @@
                 button.disabled = this.delivery.disabled; button.setAttribute('aria-checked', String(button.dataset.deliveryMode === mode));
             });
         }
-        actionItems() { return [...this.addMenu.querySelectorAll('button')].filter(b => !b.closest('[hidden]') && !b.disabled); }
+        actionItems() { return [...this.addMenu.querySelectorAll('button')].filter(b => !b.closest('[hidden]') && !b.disabled && b.getClientRects().length); }
         openActions(last = false) {
             const top = this.addButton.closest('.pi-composer').getBoundingClientRect().top;
             this.addMenu.style.setProperty('--pi-composer-menu-height', `${Math.max(68, top - 22)}px`);

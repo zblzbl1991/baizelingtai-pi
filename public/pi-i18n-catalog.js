@@ -10439,6 +10439,14 @@
     );
     rows.push(['仅预览和下载', 'Preview and download only']);
     rows.push(
+        ['功能显示', 'Feature visibility'],
+        ['显示助手', 'Show assistants'],
+        ['显示定时任务', 'Show scheduled tasks'],
+        ['默认隐藏。开启后显示相关入口，保留已有数据；仅影响当前浏览器，可随时调整。', 'Hidden by default. Turn on to show related entry points and keep existing data. Applies only to this browser; you can change this at any time.'],
+        ['隐藏定时任务不会暂停已启用的任务。如需停止执行，请先在定时任务中停用。', 'Hiding scheduled tasks does not pause enabled tasks. Disable them in Scheduled tasks first to stop execution.'],
+        ['无法保存功能显示设置，请检查浏览器存储权限。', 'Could not save feature visibility. Check browser storage permissions.']
+    );
+    rows.push(
         ['Pi 默认', 'Pi default'],
         ['使用 Pi 默认基础提示，完整内容见提示正文。', 'Uses the Pi default base prompt. See the prompt body for the full content.'],
         ['此处为 Pi 当前提示快照。扩展可逐轮修改提示，供应商请求改写不包含在此视图中。', 'This is a snapshot of the current Pi prompt. Extensions can change it each turn; provider request rewrites are not included in this view.']

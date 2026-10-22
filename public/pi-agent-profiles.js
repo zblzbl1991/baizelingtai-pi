@@ -124,12 +124,13 @@
             const pending = learningHealth.get(selected)?.drafts?.pending;
             if (pending > 0) badges.set('skills', pending); else badges.delete('skills');
             const meta = el('div', { class: 'pi-id-header-meta' }, [chip(t(profile.enabled ? '已启用' : '已停用'), profile.enabled ? 'green' : 'off', { icon: profile.enabled ? 'circle-check' : 'circle-pause' })]);
+            if (profile.id === snapshot?.defaultAssistantId) meta.append(chip(t('默认助手，始终启用'), 'green'));
             if (health?.state && !['ok', 'off'].includes(health.state)) { const healthChip = chip(t(healthShort[health.state] || '不可用'), healthTone[health.state]); healthChip.title = t(healthLabel[health.state] || '学习当前不可用'); meta.append(healthChip); }
             header.replaceChildren(button({ label: t('返回身份列表'), icon: 'arrow-left', iconOnly: true, variant: 'ghost', className: 'pi-id-back', attrs: { id: 'pi-profile-list-back' }, onClick: () => { listView = true; renderList(); } }), avatar(profile, 'is-lg'),
                 el('div', { class: 'pi-id-header-copy' }, [el('h2', { text: profile.id ? profile.name : t('新建身份') }), el('p', { text: profile.description || t('从名称和协作方式开始') }), profile.id && meta]));
             if (profile.id) {
                 const menuItems = [{ label: t('与 Agent 起草'), icon: 'wand-magic-sparkles', disabled: !enabled || busy(), onSelect: () => void assist() }];
-                if (Array.isArray(snapshot?.trash)) menuItems.push({ label: t('移到回收站'), icon: 'trash-can', tone: 'danger', disabled: !enabled || busy() || Boolean(reconcile), onSelect: () => void trashAction(profile, 'trash') });
+                if (Array.isArray(snapshot?.trash) && profile.id !== snapshot?.defaultAssistantId) menuItems.push({ label: t('移到回收站'), icon: 'trash-can', tone: 'danger', disabled: !enabled || busy() || Boolean(reconcile), onSelect: () => void trashAction(profile, 'trash') });
                 header.append(el('div', { class: 'pi-id-header-actions' }, [button({ label: t('用此身份对话'), icon: 'comments', variant: 'primary', disabled: !enabled || !profile.enabled || busy(), title: !profile.enabled ? t('请先启用并保存此身份') : undefined, attrs: { 'data-profile-chat': '' }, onClick: () => void chat() }),
                     button({ label: t('与 Agent 起草'), icon: 'wand-magic-sparkles', className: 'pi-id-btn-collapsible', disabled: !enabled || busy(), attrs: { 'data-profile-assist': '' }, onClick: () => void assist() }), U.menu({ label: t('更多操作'), items: menuItems })]));
             }
@@ -262,6 +263,11 @@
             if (count && draft) { const bytes = U.bytes(draft.soul); count.textContent = `${U.number(Math.round(bytes / 102.4) / 10)} KiB / 32 KiB`; count.classList.toggle('is-over', bytes > 32768); }
             saveBar?.set({ dirty: profileDirty() || Boolean(draft && !draft.id), saving: Boolean(mutation), canSave: enabled && Boolean(snapshot) && !reconcile && U.bytes(draft?.soul || '') <= 32768 });
             for (const node of personaRoot.querySelectorAll('input,textarea,button')) if (!node.closest('.pi-id-savebar')) node.disabled = Boolean(mutation) || !enabled;
+            const identityToggle = personaRoot.querySelector('[name="enabled"]');
+            if (identityToggle && draft?.id === snapshot?.defaultAssistantId) {
+                identityToggle.disabled = true;
+                identityToggle.title = t('默认助手，始终启用');
+            }
             if (saveBar) saveBar.discardButton.disabled = Boolean(mutation);
         }
         async function saveProfile() {

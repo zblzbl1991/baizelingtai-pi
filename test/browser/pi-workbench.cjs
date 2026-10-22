@@ -22,6 +22,8 @@ async function run(browser, base, viewport, preferences = {}) {
     let socket, streaming = false, progress = null, sequence = 0;
     page.on('pageerror', error => { errors.push(error.message); console.error('pageerror:', error.stack); });
     await page.addInitScript(({ cwd, preferences }) => {
+        localStorage.setItem('pivane.workspace.showAssistant', 'true');
+        localStorage.setItem('pivane.workspace.showCron', 'true');
         localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem(`pi.web.session:${cwd}`, 'empty');
         for (const [key, value] of Object.entries(preferences)) localStorage.setItem(key, String(value));
     }, { cwd, preferences });

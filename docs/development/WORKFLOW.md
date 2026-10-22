@@ -111,7 +111,7 @@ PLAYWRIGHT_MODULE=/path/to/playwright npm run test:browser
 - `check-syntax.cjs` 使用相同发现规则检查应用、测试及受管 TypeScript 扩展的语法，不声称执行 TypeScript 类型检查。
 - `run-tests.cjs` 从统一发现的 `.test.js` 集合选择并串行执行，避免依赖平台 shell 展开；可选的 `test-timing-reporter.cjs` 只报告 Node 事件，不改变执行顺序或失败语义。`run-browser-tests.cjs` 使用同一发现规则选择浏览器脚本。
 - `package-trial.cjs` 和受管 Pi 更新的源码快照使用相同的 `distributionFiles()`，保留各自的字节、描述符、预算和哈希检查。
-- 新增独立资产或文件类型时更新明确清单；新增文档更新 `docs/public-files.json`。改变源码目录还要核对 require/import、HTML 脚本入口、静态访问清单和浏览器 fixture。
+- 新增独立资产或文件类型时更新明确清单；新增文档更新 `docs/public-files.json`。`files` 是随包文档，`repositoryOnly` 是仅保留在仓库的汇总说明：存在时仍检查路径、内容和链接，归档中允许缺省并拒绝意外纳入；随包文档不得用本地链接依赖已排除的文件。依赖自身的许可证与 NOTICE 仍由各资源清单保留。改变源码目录还要核对 require/import、HTML 脚本入口、静态访问清单和浏览器 fixture。
 - Office 引擎及生成 Worker／模型／声明由 [Office inventory](../../server/office-preview/inventory.js)提供统一资源清单，安装与受管更新、静态访问及发行复用；公开 fixture 的来源／许可证和哈希按[材料说明](../../test/fixtures/office/README.md)维护。预览解析和转换预算以配置为准，文档不另复制常量。
 
 ## 文档责任

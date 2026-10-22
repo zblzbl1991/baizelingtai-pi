@@ -508,7 +508,7 @@ async function runWave2(browser, base, width, locale) {
     await detail.getByRole('button', {name:say('编辑','Edit'),exact:true}).waitFor();
     await detail.locator('details[data-detail^=receipts] summary').click();
     await detail.getByRole('button', {name:say('撤销','Undo'),exact:true}).click();
-    await page.waitForFunction(() => window.calls.some(call => call.body?.operation === 'undo'));
+    await page.waitForFunction(() => window.calls.some(call => call.body?.operation === 'undo') && !window.manager.busy());
     const projectUndo = state.undos.at(-1);
     assert.deepEqual(Object.keys(projectUndo).sort(), ['expectedRevision', 'kind', 'operation', 'receiptId', 'requestId', 'scope', 'sessionId']);
     assert.equal(projectUndo.scope, 'project'); assert.equal(projectUndo.sessionId, 'thread-one');
@@ -516,7 +516,7 @@ async function runWave2(browser, base, width, locale) {
     await detail.getByRole('button', {name:say('编辑','Edit'),exact:true}).click();
     await page.locator('.pi-knowledge-editor textarea').fill('Project entry updated');
     await page.locator('.pi-knowledge-editor button[type=submit]').click();
-    await page.waitForFunction(() => window.calls.some(call => call.body?.operation === 'update'));
+    await page.waitForFunction(() => window.calls.some(call => call.body?.operation === 'update') && !window.manager.busy());
     const update = state.mutations.at(-1);
     assert.deepEqual(Object.keys(update).sort(), ['category', 'content', 'expectedRevision', 'itemId', 'itemRevision', 'kind', 'operation', 'requestId', 'scope', 'sessionId']);
     assert.equal(update.scope, 'project'); assert.equal(update.sessionId, 'thread-one'); assert.equal(update.projectKey, undefined);
@@ -524,7 +524,9 @@ async function runWave2(browser, base, width, locale) {
     await projectRow.locator('.pi-id-entry-main').click();
     await detail.getByRole('button', {name:say('删除','Delete'),exact:true}).click();
     await page.locator('.pi-profile-confirm .settings-primary-button').click();
-    await page.waitForFunction(() => window.calls.some(call => call.body?.operation === 'delete'));
+    // Seeing a request only proves dispatch. Switching views must wait for the
+    // receipt to settle, otherwise open() correctly preserves the pending view.
+    await page.waitForFunction(() => window.calls.some(call => call.body?.operation === 'delete') && !window.manager.busy());
     const removal = state.mutations.at(-1);
     assert.deepEqual(Object.keys(removal).sort(), ['expectedRevision', 'itemId', 'itemRevision', 'kind', 'operation', 'requestId', 'scope', 'sessionId']);
     assert.equal(removal.scope, 'project'); assert.equal(removal.sessionId, 'thread-one');

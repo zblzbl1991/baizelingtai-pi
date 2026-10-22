@@ -82,6 +82,11 @@ async function run(browser, origin, width, theme) {
     try {
         await page.goto(origin + '/#/settings?tab=builtins', { waitUntil: 'domcontentloaded', timeout: 120000 });
         await page.waitForFunction(() => document.querySelector('#compliance-enabled')?.getBoundingClientRect().width > 0, null, { timeout: 60000 });
+        assert.equal(new URL(page.url()).hash, '#/extensions?tab=builtins', 'legacy settings bookmarks open business tools');
+        assert.equal(await page.locator('#extensions-nav [data-extensions-tab="builtins"]').getAttribute('aria-current'), 'page');
+        await page.locator('#extensions-nav [data-extensions-tab="extensions"]').click();
+        await page.locator('#extensions-nav [data-extensions-tab="builtins"]').click();
+        await page.locator('#compliance-enabled').waitFor();
         assert.equal(await page.locator('html').getAttribute('data-theme'), theme);
         console.log(`compliance ${width}: settings ready`);
         await page.locator('#compliance-enabled').waitFor(); assert.equal(await page.locator('#compliance-enabled').isChecked(), false);

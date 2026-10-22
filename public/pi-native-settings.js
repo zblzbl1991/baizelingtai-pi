@@ -36,7 +36,7 @@
             const row = node('div', undefined, { class: 'native-assistant-entry' });
             if (!capabilities?.extensionAssistant) return row;
             const glyph = node('span', undefined, { class: 'native-assistant-icon' });
-            glyph.append(node('i', undefined, { class: 'fa-solid fa-wand-magic-sparkles', 'aria-hidden': 'true' }));
+            glyph.append(node('i', undefined, { class: 'fa-solid fa-comments', 'aria-hidden': 'true' }));
             const copy = node('div', undefined, { class: 'native-assistant-copy' });
             copy.append(node('strong', translateUi('不确定装什么、怎么配？')), node('small', translateUi('按需求查找、安装或排查扩展，在独立会话中完成。')));
             const start = button(translateUi('让助手帮我配置'), '', () =>

@@ -5,7 +5,8 @@ function mountMcpRuntimeRoutes(router, { store, supervisor, settingsService, nat
         res.set('Cache-Control', 'no-store');
         try {
             const source = read ? req.query : req.body;
-            if (!source || Object.keys(source).some(key => !['cwd', 'runtimeId', 'action', 'server', 'confirmed'].includes(key))) throw fail('MCP_INVALID_ACTION');
+            const allowed = ['cwd', 'runtimeId', 'action', 'server', 'confirmed', 'expectedRevision', 'operation', 'kbId', 'documentId', 'query', 'page', 'offset', 'contentOffset'];
+            if (!source || Object.keys(source).some(key => !allowed.includes(key))) throw fail('MCP_INVALID_ACTION');
             const session = await store.getSession(source.cwd, req.params.id);
             const worker = supervisor.getActiveWorker(session.path);
             if (!worker || worker.disposed || worker.restarting || worker.noSession || worker.cwd !== session.cwd

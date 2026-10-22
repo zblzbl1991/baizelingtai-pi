@@ -1,5 +1,6 @@
 const { selectBrowserTargets, browserTargetEnabled, target } = require('./targets.cjs');
-// Regression: media settings must be styled before the lazy connection dialog is requested.
+// The product keeps multimedia controls hidden. Exercise their retained component
+// explicitly in this isolated fixture, without exposing a product entry point.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -43,6 +44,10 @@ async function run(browser, width, language) {
         await page.locator('#settings-subagents form').waitFor({ state: 'visible' });
         assert.equal(f.requests.includes('/media-connections.css'), false, 'dialog styles remain lazy');
         assert.equal(f.requests.includes('/media-connections.js'), false, 'dialog scripts remain lazy');
+        assert.equal(await page.locator('#settings-multimodal').isVisible(), false, 'multimedia stays hidden for the current product scope');
+        assert.equal(await page.locator('[data-settings-panel="media"] .settings-panel-header p').isVisible(), false, 'hidden multimedia has no visible setup description');
+        assert.deepEqual(writes, [], 'opening Agent capabilities never changes media settings');
+        await page.locator('#settings-multimodal').evaluate(el => { el.hidden = false; });
         // Let the shell's sidebar width transition and local fonts settle before comparing exact pixels.
         await page.evaluate(async () => {
             await document.fonts.ready;
@@ -91,6 +96,7 @@ async function run(browser, width, language) {
         await overflow(page);
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.locator('[data-settings-panel="media"].active').waitFor({ state: 'visible' });
+        assert.equal(await page.locator('#settings-multimodal').isVisible(), false, 'fixture-only reveal never survives reload');
         await page.waitForFunction(() => document.getElementById('settings-media-auto-video').checked);
         assert.deepEqual(writes, [{ video: true }], 'reload reads saved state without writes');
         await clean(f, `${width} ${language}`);

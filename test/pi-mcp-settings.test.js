@@ -15,6 +15,29 @@ function fixture(t) {
     const save = async input => service.save({ cwd, scope: 'global', confirmed: true, expectedRevision: (await service.snapshot(cwd)).revision, ...input });
     return { root, agent, cwd, write, save, service, trust: () => { trusted = true; } };
 }
+
+test('built-in presets are disabled, independent, private and cannot overwrite existing configuration', async t => {
+    const f = fixture(t);
+    const { presets } = require('../server/pi-builtin-mcp');
+    assert.deepEqual((await f.service.snapshot(f.cwd)).builtinPresets, presets);
+    for (const builtin of ['ocr', 'weknora']) await f.save({ action: 'builtin', builtin });
+    const disk = JSON.parse(fs.readFileSync(path.join(f.agent, 'mcp.json')));
+    assert.deepEqual(Object.keys(disk.mcpServers), ['pivane-ocr', 'pivane-weknora']);
+    for (const [name, config] of Object.entries(disk.mcpServers)) {
+        assert.equal(config.type, 'stdio'); assert.equal(config.enabled, false); assert.equal(config.command, process.execPath);
+        assert.ok(fs.existsSync(config.args[0])); assert.equal(config.args[1], name.slice(7));
+        assert.ok(Object.values(config.env).every(value => value === ''));
+    }
+    await f.save({ action: 'patch', name: 'pivane-weknora', patch: { env: { WEKNORA_API_KEY: { op: 'replace', value: 'synthetic-secret' } }, enabled: true } });
+    const dto = await f.service.snapshot(f.cwd);
+    assert.ok(!JSON.stringify(dto).includes('synthetic-secret'));
+    assert.equal(dto.servers.find(s => s.name === 'pivane-ocr').enabled, false);
+    assert.equal(dto.servers.find(s => s.name === 'pivane-weknora').enabled, true);
+    await assert.rejects(f.save({ action: 'builtin', builtin: 'ocr' }), { code: 'MCP_BUILTIN_EXISTS' });
+    await assert.rejects(f.save({ action: 'builtin', builtin: 'shell' }), { code: 'MCP_UNKNOWN_BUILTIN' });
+    await assert.rejects(f.save({ action: 'builtin', builtin: 'ocr', config: {} }), { code: 'MCP_INVALID_EDIT' });
+    require('./private-file-helper.cjs').assertPrivateFile(path.join(f.agent, 'mcp.json'));
+});
 test('saved GET is redacted and never evaluates references; explicit secret edits retain unknown fields', async t => {
     const f = fixture(t), marker = path.join(f.root, 'executed');
     f.write('mcp.json', { future: { preserved: true }, mcpServers: { local: { command: `!touch ${marker}`, args: ['secret-token'], env: { KEY: 'literal' }, unknown: 'unknown-secret', exposure: 'direct' }, remote: { url: 'https://user:secret@example.invalid/mcp?token=secret', headers: { Authorization: 'secret' }, oauth: { clientSecret: 'secret' } } } });

@@ -73,23 +73,40 @@ test('native startup assets reject ancestor junctions, excess bytes and concurre
 
 function trayFixture(t, mode = 'ready') {
     const root = rootFixture(t); fs.mkdirSync(path.join(root, 'scripts'));
+    // The tray and runner must belong to the selected program tree, including
+    // synthetic installations. Keep the real production root validation intact.
+    fs.copyFileSync(path.join(source, 'scripts/desktop-tray.ps1'), path.join(root, 'scripts/desktop-tray.ps1'));
     fs.mkdirSync(path.join(root, '.pivane-runtime/desktop'), { recursive: true });
     fs.writeFileSync(path.join(root, '.pivane-launcher-test'), 'synthetic native instance');
     fs.writeFileSync(path.join(root, '.pivane-launcher-stay'), 'retain tray after injected failure');
     fs.writeFileSync(path.join(root, 'scripts/start-desktop.cjs'), `
         const emit = value => process.stdout.write(JSON.stringify(value) + '\\n');
-        if (process.argv.includes('--identity')) { emit({ root:${JSON.stringify(root)}, id:${JSON.stringify(path.basename(root))} }); }
+        if (process.argv.includes('--identity')) { emit({ root:${JSON.stringify(root)}, programRoot:${JSON.stringify(root)}, reservedPorts:[], id:${JSON.stringify(path.basename(root))} }); }
         else {
             const generation = process.argv[process.argv.indexOf('--generation')+1];
             const event = (type, rest={}) => emit({ type, generation, ...rest });
+            const releaseFile = ${JSON.stringify(path.join(root, '.pivane-release-snapshot'))};
+            const heldReply = reply => {
+                const timer = setInterval(() => {
+                    if (!require('node:fs').existsSync(releaseFile)) return;
+                    clearInterval(timer); require('node:fs').unlinkSync(releaseFile); reply();
+                }, 20);
+                timer.unref();
+            };
             event('starting', {logFile:${JSON.stringify(path.join(root, 'service.log'))}});
             setTimeout(() => { event('ready', {url:'http://127.0.0.1:12345/',versions:{appVersion:'9.8.7',engineVersion:'0.85.1'}}); ${mode === 'unknown' ? 'setTimeout(() => process.exit(0),400)' : ''} }, ${['slow','race'].includes(mode) ? 2000 : 200});
-            let uncertain=false;let executeCount=0; let buffer=''; process.stdin.on('data', chunk => {
+            let uncertain=false;let executeCount=0; let snapshotCount=0; let buffer=''; process.stdin.on('data', chunk => {
                 buffer += chunk; let at; while((at=buffer.indexOf('\\n'))>=0) {
                     const value=JSON.parse(buffer.slice(0,at));buffer=buffer.slice(at+1);
                     if(value.generation!==generation) continue;
+                    require('node:fs').appendFileSync(${JSON.stringify(path.join(root, 'commands.jsonl'))}, JSON.stringify({type:value.type,action:value.action})+'\\n');
                     if(value.type==='snapshot'&&uncertain){event('stop-accepted',{id:value.id,operationId:'synthetic-operation'});setTimeout(()=>{event('stopped',{clean:true});process.exit(0)},200);continue;}
-                    if(value.type==='snapshot') event('snapshot',{id:value.id,complete:true,revision:'one',blockers:[],scheduled:{futureCount:2,latestCount:1}});
+                    if(value.type==='snapshot') {
+                        snapshotCount++;
+                        const reply = () => event('snapshot',{id:value.id,complete:true,revision:'one',blockers:[],scheduled:{futureCount:2,latestCount:1}});
+                        if (${mode === 'snapshot-error'} && snapshotCount === 1) heldReply(() => event('error',{id:value.id,code:'DESKTOP_FAILED',message:'Synthetic snapshot failure'}));
+                        else if (${mode === 'snapshot-pending'}) heldReply(reply); else reply();
+                    }
                     if(value.type==='review-stop') event('stop-review',{id:value.id,complete:true,revision:'one',blockers:${mode === 'blocked' ? "[{type:'sidechat',count:1,label:'侧聊连接',cwd:'synthetic-project',sessionId:'synthetic-session'}]" : '[]'},scheduled:{futureCount:2,latestCount:1},${mode === 'blocked' ? '' : "ticket:'synthetic-ticket',"}expiresAt:Date.now()+30000});
                     if(value.type==='stop'&&${mode === 'race'}){event('ready',{url:'http://127.0.0.1:12345/'});event('error',{id:value.id,code:'DESKTOP_REVIEW_REQUIRED',message:'Review service blockers before stopping.'});continue;}
                     if(value.type==='execute-stop'||value.type==='stop') {
@@ -103,14 +120,18 @@ function trayFixture(t, mode = 'ready') {
             process.stdin.on('end',()=>{event('stopped',{clean:true});process.exit(0)});
         }
     `);
-    const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', path.join(source,'scripts/desktop-tray.ps1'), '-AppRoot', root, '-NodePath', process.execPath, '-NoOpen', '-SmokeTest'], {
+    const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', path.join(root,'scripts/desktop-tray.ps1'), '-AppRoot', root, '-NodePath', process.execPath, '-NoOpen', '-SmokeTest'], {
         env:{SystemRoot:process.env.SystemRoot,SystemDrive:process.env.SystemDrive,PATH:process.env.PATH,TEMP:process.env.TEMP,TMP:process.env.TMP,PI_CODING_AGENT_DIR:path.join(root,'agent'),PI_MEDIA_DATA_DIR:path.join(root,'media'),PI_WEB_DEFERRED_FILE:path.join(root,'deferred.json')},windowsHide:true,stdio:['ignore','pipe','pipe']});
     let output=''; child.stdout.on('data', chunk => output+=chunk);child.stderr.on('data',chunk=>output+=chunk);
     const exited=once(child,'close');
     const read=()=>{try{return JSON.parse(fs.readFileSync(path.join(root,'.pivane-runtime/desktop/smoke-state.json'),'utf8'))}catch{return null}};
     const command=action=>fs.writeFileSync(path.join(root,'.pivane-launcher-command.json'),JSON.stringify({id:randomUUID(),action}));
+    const releaseSnapshot=()=>fs.writeFileSync(path.join(root,'.pivane-release-snapshot'),'');
     t.nativeStop=async()=>{if(child.exitCode===null){command('finish');await exited}};
-    return {root,child,exited,command,read,wait: predicate=>waitFor(()=>{const state=read();return state&&predicate(state)&&state},child,()=>output),output:()=>output};
+    return {root,child,exited,command,releaseSnapshot,read,wait: async predicate=>{
+        try { return await waitFor(()=>{const state=read();return state&&predicate(state)&&state},child,()=>output); }
+        catch (error) { error.message += `; synthetic tray state: ${JSON.stringify(read())}`; throw error; }
+    },output:()=>output};
 }
 test('native compact management stays hidden, preserves tray through two runs, and requires a separate stop confirmation', {skip:process.platform!=='win32',timeout:30000},async t=>{
     const run=trayFixture(t), first=await run.wait(s=>s.state==='ready'&&!s.pending);
@@ -119,7 +140,7 @@ test('native compact management stays hidden, preserves tray through two runs, a
     run.command('show');await run.wait(s=>s.visible);
     run.command('updates');await run.wait(s=>s.detail.includes('设置 → 版本与更新'));
     const address=first.waitingUrl;
-    const duplicate=spawn('powershell.exe',['-NoLogo','-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(source,'scripts/desktop-tray.ps1'),'-AppRoot',run.root,'-NodePath',process.execPath,'-SmokeTest'],{env:{SystemRoot:process.env.SystemRoot,SystemDrive:process.env.SystemDrive,PATH:process.env.PATH,TEMP:process.env.TEMP,TMP:process.env.TMP,PI_CODING_AGENT_DIR:path.join(run.root,'agent'),PI_MEDIA_DATA_DIR:path.join(run.root,'media'),PI_WEB_DEFERRED_FILE:path.join(run.root,'deferred.json')},windowsHide:true,stdio:'ignore'});
+    const duplicate=spawn('powershell.exe',['-NoLogo','-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(run.root,'scripts/desktop-tray.ps1'),'-AppRoot',run.root,'-NodePath',process.execPath,'-SmokeTest'],{env:{SystemRoot:process.env.SystemRoot,SystemDrive:process.env.SystemDrive,PATH:process.env.PATH,TEMP:process.env.TEMP,TMP:process.env.TMP,PI_CODING_AGENT_DIR:path.join(run.root,'agent'),PI_MEDIA_DATA_DIR:path.join(run.root,'media'),PI_WEB_DEFERRED_FILE:path.join(run.root,'deferred.json')},windowsHide:true,stdio:'ignore'});
     assert.equal((await once(duplicate,'close'))[0],0);
     await waitFor(()=>fs.existsSync(path.join(run.root,'.pivane-runtime/desktop/smoke-open-1.json')),run.child,run.output);
     assert.equal(run.read().generation,first.generation,'duplicate entry uses current runner');
@@ -150,6 +171,58 @@ test('native stop blockers end the request without waiting or queuing shutdown',
     const blocked=await run.wait(s=>s.blockers.includes('synthetic-session')&&!s.pending);
     assert.equal(blocked.confirm,false);assert.equal(blocked.state,'ready');assert.match(blocked.blockers,/latest/);
     assert.match(blocked.blockers,/服务停止期间无法执行/);assert.match(blocked.blockers,/按原宽限补最近一次/);
+});
+
+for (const entry of ['tray-exit', 'window-exit']) {
+    test(`native ${entry} click opens confirmation and exits after clean shutdown`, {skip:process.platform!=='win32',timeout:15000}, async t => {
+        const run = trayFixture(t);
+        await run.wait(s => s.state === 'ready' && !s.pending);
+        if (entry === 'window-exit') { run.command('show'); await run.wait(s => s.visible); }
+        run.command(entry);
+        await run.wait(s => s.confirm && !s.pending);
+        run.command('confirm');
+        assert.equal((await run.exited)[0], 0, run.output());
+    });
+}
+
+for (const entry of ['tray-exit', 'window-exit']) {
+    test(`native ${entry} during a status query still reaches stop confirmation`, {skip:process.platform!=='win32',timeout:15000}, async t => {
+        const run = trayFixture(t, 'snapshot-pending');
+        await run.wait(s => s.state === 'ready' && s.pending);
+        if (entry === 'window-exit') { run.command('show'); await run.wait(s => s.visible && s.pending); }
+        run.command(entry);
+        await run.wait(s => s.detail.includes('完成后将检查停机条件'));
+        run.command(entry); // Repeated click cannot queue another review or execution.
+        run.releaseSnapshot();
+        await run.wait(s => s.confirm && !s.pending);
+        assert.equal(run.child.exitCode, null, 'query completion cannot execute shutdown without confirmation');
+        const commands = fs.readFileSync(path.join(run.root, 'commands.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+        assert.equal(commands.filter(command => command.type === 'review-stop').length, 1);
+        assert.equal(commands.filter(command => command.type === 'execute-stop').length, 0);
+        run.command('confirm');
+        assert.equal((await run.exited)[0], 0, run.output());
+    });
+}
+
+test('native failed status query discards the deferred exit review', {skip:process.platform!=='win32',timeout:15000}, async t => {
+    const run = trayFixture(t, 'snapshot-error');
+    await run.wait(s => s.state === 'ready' && s.pending);
+    run.command('tray-exit');
+    await run.wait(s => s.detail.includes('完成后将检查停机条件'));
+    run.releaseSnapshot();
+    await run.wait(s => s.blockers.includes('Synthetic snapshot failure') && !s.pending);
+    await run.wait(s => s.blockers.startsWith('当前没有阻碍事项。') && !s.pending);
+    assert.equal(run.read().confirm, false, 'later successful polling cannot resume a failed review intent');
+    const commands = fs.readFileSync(path.join(run.root, 'commands.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(commands.filter(command => command.type === 'review-stop' || command.type === 'execute-stop').length, 0);
+    run.command('window-exit');
+    await run.wait(s => s.confirm && !s.pending);
+    run.command('confirm');
+    assert.equal((await run.exited)[0], 0, 'a fresh explicit stop that completes cleanly exits successfully');
+    const report = JSON.parse(fs.readFileSync(path.join(run.root, '.pivane-runtime/desktop/smoke-result.json'), 'utf8'));
+    assert.ok(report.some(event => event.type === 'error' && event.message.includes('Synthetic snapshot failure')), 'the earlier failed query remains in diagnostics');
+    assert.equal(report.filter(event => event.type === 'stop-accepted').length, 1);
+    assert.ok(report.some(event => event.type === 'exited' && event.exitCode === 0));
 });
 test('native unexpected runner exit remains unknown and disables new starts', {skip:process.platform!=='win32',timeout:15000},async t=>{
     const run=trayFixture(t,'unknown');const unknown=await run.wait(s=>s.state==='unknown');

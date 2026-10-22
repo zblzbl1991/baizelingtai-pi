@@ -19,6 +19,8 @@ In **Open project**, browse to the parent directory and choose **New folder** be
 
 ## Workspace navigation
 
+Under **Settings → Preferences → Feature visibility**, turn on **Show assistants** or **Show scheduled tasks** to show assistant chat/identity entry points or scheduled-task navigation and creation controls. Both default to off, apply immediately, and persist in this browser across refreshes. You can change them at any time; explicitly saved choices remain in effect. Existing data, active conversations and bookmarked pages remain available. **Hiding scheduled tasks does not pause enabled tasks**; disable them on the Scheduled tasks page to stop execution.
+
 The workbench uses locally available fonts and does not download fonts during startup.
 
 白泽灵台 uses a dark green outlined mark with a muted green dot. The sidebar, start screen and login page use the transparent mark with light strokes in the dark theme; the startup waiting page uses the horizontal wordmark. Browser tabs, Windows desktop/tray and phone home screens use the background icon. The dot belongs to the brand and does not indicate online status.

@@ -129,7 +129,7 @@ function start() {
     let settingsViewEpoch = 0;
     let settingsOpen = false;
     let activeProfileMetadata = null;
-    const extensionTabs = new Set(['extensions', 'installed', 'mcp', 'channels']);
+    const extensionTabs = new Set(['extensions', 'installed', 'mcp', 'channels', 'knowledge', 'builtins']);
     function openSettings(tab = state.activeTab, metadata = {}) {
         settingsOpen = true;
         elements.dialog.classList.remove('hidden');

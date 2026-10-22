@@ -39,6 +39,7 @@
 | 让 Agent 新开线程交办任务、线程间直接沟通 | [Agent 任务线程与线程间消息](AGENT_THREADS.md) |
 | 周期执行、文字问候与身份主线程 | [定时任务](SCHEDULED_TASKS.md) |
 | 跨会话查看明确交付和媒体结果 | [成果中心](ARTIFACTS.md) |
+| 连接 WeKnora、浏览资料与聊天检索 | [知识库](KNOWLEDGE_BASE.md) |
 | 检查文档矛盾、聊天确认后按项修改 | [文档一致性审查](DOCUMENT_REVIEW.md) |
 | 编辑 Word／Excel／PPT 原件副本、原生 MCP 与文本／视觉检查 | [Office 文档](OFFICE_DOCUMENTS.md) |
 | 预览六种 Office 格式、只读表格、字体与原件下载 | [Office 预览](OFFICE_PREVIEW.md) |

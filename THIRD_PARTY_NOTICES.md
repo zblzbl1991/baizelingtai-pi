@@ -9,6 +9,7 @@ Pivane自身的代码使用[ISC许可证](LICENSE)。第三方软件、字体、
 | Mermaid | 11.17.2 | MIT；[许可证](public/vendor/mermaid-LICENSE.txt) |
 | KaTeX及字体 | 0.18.7 | MIT；[许可证](public/vendor/katex-0.18.7/LICENSE) |
 | Font Awesome Free | 6.4.0 | 图标CC BY 4.0、字体SIL OFL 1.1、代码MIT；[完整声明](public/brand/fontawesome-6.4.0/LICENSE.txt) |
+| 用户提供的 OCR / WeKnora Node 桥接 service/client | 0.1.0 | 私有源码尚无公开许可证，登记为 UNLICENSED；来源与重建、授权状态和依赖声明分别在 `vendor/ocr-weknora/README.md`、`LICENSE`、`THIRD-PARTY-LICENSES.txt`。宿主适配为本项目 ISC 实现 |
 
 保留库文件中的嵌入版权/许可注释。Pivane蓝色π星光品牌资源随本项目分发，不属于Font Awesome图标。
 

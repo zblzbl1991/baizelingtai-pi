@@ -13,6 +13,7 @@ import { installRunStartupAdapter } from './pi-run-startup-adapter.mjs';
 import { initializeNativeThemeValidation } from './pi-theme-validation.mjs';
 import { createAgentSessionWithSelectionPreflight } from './pi-model-selection-preflight.mjs';
 import staffing from './staffing/runtime-scope.js';
+import { installKnowledgeRuntime } from './pi-knowledge-runtime.mjs';
 
 let runtime;
 try {
@@ -66,6 +67,7 @@ try {
         installRunStartupAdapter(created.session, { token: process.env.PI_WEB_NAVIGATION_TOKEN,
             sessionId: sessionManager.getSessionId(), emit: record => writeRawStdout(JSON.stringify(record) + '\n') });
         await staffing.installRequestGuard(created.session, input, staffingScope);
+        installKnowledgeRuntime(created.session);
         if (model && (parsed.thinking !== undefined || selected.thinkingLevel !== undefined)) created.session.setThinkingLevel(created.session.thinkingLevel);
         for (const diagnostic of diagnostics) process.stderr.write(`${diagnostic.message}\n`);
         return { ...created, services, diagnostics };

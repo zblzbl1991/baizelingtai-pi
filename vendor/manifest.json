@@ -6871,6 +6871,60 @@
           "sha256": "9a03a049389f714c572dcf276af39668bdbafddb867ce287ed4c1a1af28abd20"
         }
       ]
+    },
+    {
+      "name": "textin-intranet-mcp-node",
+      "directory": "ocr-weknora",
+      "version": "0.1.0",
+      "source": "user-supplied Node MCP sources; see README.md",
+      "sha256": "1d44b1a710bf0fc5898dabde8f30e0e3a22613a7da80c4ccfa56db3a3e1dba13",
+      "license": "UNLICENSED",
+      "files": [
+        {
+          "path": "vendor/ocr-weknora/LICENSE",
+          "sha256": "00beca7ca0d85ccd4c7b55f52b3ff9975240c5d773fb63e8a813682e1095d9cb"
+        },
+        {
+          "path": "vendor/ocr-weknora/README.md",
+          "sha256": "3379908089b64d1d0f4c4ae4abc2c32eaa7f534fa46f95348dbd71febd64f9a3"
+        },
+        {
+          "path": "vendor/ocr-weknora/THIRD-PARTY-LICENSES.txt",
+          "sha256": "61a61d97875670e5f172422d0b8a073723c98dbef68bbcca2bed79933073b045"
+        },
+        {
+          "path": "vendor/ocr-weknora/client.ts",
+          "sha256": "4a4ee0bda509b3367db6aaf65b982ccb12050d2dea1adf46ba30a80be0280cba"
+        },
+        {
+          "path": "vendor/ocr-weknora/clients.mjs",
+          "sha256": "1d44b1a710bf0fc5898dabde8f30e0e3a22613a7da80c4ccfa56db3a3e1dba13"
+        },
+        {
+          "path": "vendor/ocr-weknora/package.json",
+          "sha256": "83fba201cfd1fa847d720e2e69fc6ef1ef4715a3c40a3aef6e4ebbc157f69a4a"
+        },
+        {
+          "path": "vendor/ocr-weknora/service.ts",
+          "sha256": "24949bbc02db9fb6df785db8a44e50ce4a5f6aa28f53f61f487df558892f3f37"
+        },
+        {
+          "path": "vendor/ocr-weknora/upstream-package-lock.json",
+          "sha256": "246ce89ec8e2c3ae82582537f1ec10bd15aa63f96f40b76e8d4274275580dc95"
+        },
+        {
+          "path": "vendor/ocr-weknora/upstream-package.json",
+          "sha256": "6584c96333d6692f2cef29d342060cea8a9ffb742865ab72501b7e5ef1158979"
+        },
+        {
+          "path": "vendor/ocr-weknora/weknora-client.ts",
+          "sha256": "d4514cb6262377efc7d10c0ab75481f7099222447f8edb62abf131973d033f9f"
+        },
+        {
+          "path": "vendor/ocr-weknora/weknora-service.ts",
+          "sha256": "a72f3b63acdf9b88572bba61fcfa3ac3ddb8a533ce6b77199e335ed104e00a2f"
+        }
+      ]
     }
   ]
 }

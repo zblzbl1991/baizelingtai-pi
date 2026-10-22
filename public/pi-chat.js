@@ -3283,10 +3283,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Starter prompts only fill the draft. The bracketed part is selected so it can be typed over.
     const STARTERS = [
-        ['fa-compass', '熟悉项目', '梳理结构、模块和入口', '请先了解这个项目，梳理主要模块、入口和运行方式，暂时不要修改文件。'],
-        ['fa-stethoscope', '排查问题', '描述现象，一起定位原因', '我遇到了一个问题：（在这里描述现象、报错或复现步骤）\n请先确认范围，再开始定位原因。'],
-        ['fa-lightbulb', '规划想法', '讨论可行性，整理成步骤', '我有一个想法：（在这里描述）\n请先和我讨论可行性，再整理成可执行的计划。'],
-        ['fa-pen-to-square', '撰写文档', '说明、报告或总结', '请帮我写一份文档：（类型、主题和读者）\n先给出提纲让我确认。']
+        ['熟悉项目', '梳理结构、模块和入口', '请先了解这个项目，梳理主要模块、入口和运行方式，暂时不要修改文件。'],
+        ['排查问题', '描述现象，一起定位原因', '我遇到了一个问题：（在这里描述现象、报错或复现步骤）\n请先确认范围，再开始定位原因。'],
+        ['规划想法', '讨论可行性，整理成步骤', '我有一个想法：（在这里描述）\n请先和我讨论可行性，再整理成可执行的计划。'],
+        ['撰写文档', '说明、报告或总结', '请帮我写一份文档：（类型、主题和读者）\n先给出提纲让我确认。']
     ];
     function applyStarter(prompt) {
         if (!state.connected || state.attachmentReads || state.submittingDrafts.has(state.composerSessionKey)) return toast(translateUi('请等待连接、附件读取或消息投递完成'), 'info');
@@ -3327,12 +3327,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!extension) {
             if (state.session) {
                 const cards = document.createElement('div'); cards.className = 'pi-start-cards';
-                for (const [icon, label, detail, prompt] of STARTERS) {
+                for (const [label, detail, prompt] of STARTERS) {
                     const card = document.createElement('button'); card.type = 'button'; card.className = 'pi-start-card';
-                    const glyph = document.createElement('i'); glyph.className = `fa-solid ${icon}`; glyph.setAttribute('aria-hidden', 'true');
                     const name = document.createElement('strong'); name.textContent = translateUi(label);
                     const note = document.createElement('span'); note.textContent = translateUi(detail);
-                    card.append(glyph, name, note); card.addEventListener('click', () => applyStarter(translateUi(prompt))); cards.append(card);
+                    card.append(name, note); card.addEventListener('click', () => applyStarter(translateUi(prompt))); cards.append(card);
                 }
                 root.append(cards);
             } else {

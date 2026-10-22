@@ -14,7 +14,7 @@
     const modelKey = ref => ref ? ref.provider + '/' + (ref.modelId || ref.id) : '';
     const send = (api, url, input, method = 'PUT') => api('/api/pi/compliance' + url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
     function createSettings({ apiFetch, currentCwd }) {
-        const root = document.getElementById('settings-builtins'); let epoch = 0, data, busy = false;
+        const root = document.getElementById('settings-compliance'); let epoch = 0, data, busy = false;
         async function open() {
             const generation = ++epoch; root.replaceChildren(node('p', '正在读取内置能力…', 'settings-help'));
             const results = await Promise.allSettled([apiFetch('/api/pi/compliance'), apiFetch('/api/pi/profiles'), apiFetch('/api/pi/settings/models')]);
@@ -28,9 +28,7 @@
         }
         function render(profiles, models) {
             root.replaceChildren();
-            const title = node('div', undefined, 'settings-panel-header'); title.append(node('h3', '内置能力'));
-            root.append(title, node('p', '按需启用。每项能力独立配置，停用后保留已有资料。', 'settings-help'));
-            const section = node('section', undefined, 'compliance-settings'), heading = node('h4', '合规审查');
+            const section = node('section', undefined, 'compliance-settings'), heading = node('h4', globalThis.PiI18n?.locale === 'en' ? 'Contract review' : '合同审查');
             const readiness = { 'configuration-insufficient': '配置不足', partial: '部分可用', available: '本地条件可用' }[data.availability?.status] || '可用条件待核对';
             const status = node('p', data.status === 'disabling' ? '停用中，等待当前步骤保存' : data.status === 'configuring' ? '配置待核对' : data.enabled ? '已启用，' + readiness : '已停用', 'compliance-status'); status.id = 'compliance-settings-status'; status.setAttribute('role', 'status');
             const form = node('form'), fields = node('fieldset'), enabled = node('input'); enabled.type = 'checkbox'; enabled.id = 'compliance-enabled'; enabled.checked = data.enabled;

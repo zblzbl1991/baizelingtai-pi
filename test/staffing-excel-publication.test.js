@@ -80,7 +80,7 @@ test('Excel root rejects a linked ancestor before changing outside permissions',
     const outside = path.join(temporary, 'outside'), exports = path.join(outside, 'exports'), alias = path.join(agent, 'pivane-staffing');
     fs.mkdirSync(exports, { recursive: true, mode: 0o755 }); fs.symlinkSync(outside, alias, process.platform === 'win32' ? 'junction' : 'dir');
     const permissions = () => process.platform === 'win32'
-        ? require('node:crypto').createHash('sha256').update(require('node:child_process').execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "(Get-Acl -LiteralPath '" + exports.replace(/'/g, "''") + "').Sddl"], { encoding: 'utf8', timeout: 10000, windowsHide: true }).trim()).digest('hex')
+        ? require('node:crypto').createHash('sha256').update(require('node:child_process').execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "[System.IO.Directory]::GetAccessControl('" + exports.replace(/'/g, "''") + "').GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::All)"], { encoding: 'utf8', timeout: 10000, windowsHide: true }).trim()).digest('hex')
         : String(fs.statSync(exports).mode);
     const { StaffingExcelService } = require('../server/staffing/excel-service'), excel = new StaffingExcelService();
     try {

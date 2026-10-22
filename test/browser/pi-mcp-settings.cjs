@@ -129,6 +129,23 @@ const server = http.createServer((req, res) => {
             await page.getByRole('button', { name: 'Save server', exact: true }).click();
             await page.getByRole('status').filter({ hasText: 'Configuration saved' }).waitFor();
             assert.deepEqual(await page.evaluate(() => writes.at(-1).body.config), { enabled: false, exposure: 'hidden', toolExposure: null });
+            await page.evaluate(() => {
+                const prior = window.panel;
+                prior.close(); document.querySelector('.workspace-settings-content').replaceChildren();
+                const panel = PiMcpSettings.create({ currentCwd: () => '/mock/project', apiFetch: async (url, options) => {
+                    if (options) { writes.push({ body: JSON.parse(options.body) }); return { ok: true }; }
+                    return { cwd: '/mock/project', scope: 'global', revision: 'builtin-revision', trust: { effective: true }, servers: [], builtinPresets: [{ id: 'ocr', name: 'pivane-ocr', title: 'OCR' }, { id: 'weknora', name: 'pivane-weknora', title: 'WeKnora' }] };
+                } });
+                window.panel = panel; document.querySelector('.workspace-settings-content').append(panel.root); panel.open();
+            });
+            await page.getByRole('button', { name: 'Add built-in WeKnora' }).click();
+            await page.getByRole('status').filter({ hasText: 'Configuration saved' }).waitFor();
+            assert.deepEqual(await page.evaluate(() => writes.at(-1).body), { cwd: '/mock/project', scope: 'global', expectedRevision: 'builtin-revision', confirmed: true, action: 'builtin', builtin: 'weknora' });
+            assert.equal(await page.getByRole('button', { name: 'Add built-in OCR' }).isDisabled(), true);
+            await page.getByRole('button', { name: 'Refresh saved configuration' }).click();
+            await page.getByRole('button', { name: 'Add built-in OCR' }).click();
+            await page.getByRole('status').filter({ hasText: 'Configuration saved' }).waitFor();
+            assert.equal(await page.evaluate(() => writes.at(-1).body.builtin), 'ocr');
             assert.ok(await page.evaluate(() => [...document.querySelectorAll('.mcp-settings input,.mcp-settings select,.mcp-settings textarea')].every(n => parseFloat(getComputedStyle(n).fontSize) >= 16)));
             const sizes = await page.evaluate(() => [...document.querySelectorAll('body,.mcp-settings,.mcp-settings section,.mcp-settings article,input,textarea,select')].filter(n => n.getClientRects().length).map(n => ({ w: n.clientWidth, s: n.scrollWidth })));
             assert.ok(sizes.every(n => n.s <= n.w + 1), JSON.stringify(sizes));

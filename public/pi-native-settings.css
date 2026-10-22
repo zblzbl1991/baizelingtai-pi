@@ -140,7 +140,7 @@
 .native-resource-origin summary { cursor: pointer; }
 .native-resource-origin code { display: block; white-space: normal; overflow-wrap: anywhere; margin-top: 8px; font-size: .72rem; }
 .native-resource-empty { margin-top: 12px; }
-#native-installed .native-package-notice { padding: 14px; margin-bottom: 16px; background: var(--amber-soft, var(--surface-2)); border-left: 3px solid var(--amber); border-radius: 8px; font-size: .78rem; }
+#native-installed .native-package-notice { padding: 14px; margin-bottom: 16px; background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius); font-size: var(--ui-font-label); line-height: var(--ui-line-height); }
 #native-installed .native-package-notice button { margin-top: 10px; }
 #native-resource-status:not(:empty) { padding: 12px 14px; margin-top: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-1); }
 @media (max-width: 680px) {
@@ -201,18 +201,17 @@
 #native-tools-entries { box-sizing: border-box; width: 100%; min-width: 0; font-size: 16px; overflow-wrap: anywhere; }
 
 /* Installed page: prominent assistant entry, per-type sections and distinct enable/stop actions. */
-#native-installed .native-assistant-entry { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 14px; margin: 0 0 22px; padding: 16px 18px; border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--line)); border-radius: 14px; background: linear-gradient(120deg, var(--green-soft), color-mix(in srgb, var(--green-soft) 30%, var(--surface-1))); }
+#native-installed .native-assistant-entry { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: var(--ui-space-3); margin: 0 0 var(--ui-space-6); padding: var(--ui-space-4) 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
 #native-installed .native-assistant-entry:empty { display: none; }
-.native-assistant-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: var(--accent); color: var(--surface-1); font-size: 18px; }
+.native-assistant-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--radius); background: transparent; color: var(--text-muted); font-size: 18px; }
 .native-assistant-copy { display: grid; gap: 3px; min-width: 0; }
 .native-assistant-copy strong { font-size: .9rem; font-weight: 650; color: var(--text-main); }
-#native-installed .native-assistant-copy small { color: var(--text-muted); font-size: .78rem; line-height: 1.55; }
-#native-installed .native-assistant-start { min-height: 40px; padding: 9px 16px; border-color: #4d9a76; background: #347c5b; color: #fff; font-weight: 600; white-space: nowrap; }
-#native-installed .native-assistant-start:hover:not(:disabled) { border-color: #4d9a76; background: #3d8d69; }
-#native-installed .native-assistant-start i { font-size: .78rem; transition: transform .15s ease; }
-#native-installed .native-assistant-start:hover i { transform: translateX(2px); }
+#native-installed .native-assistant-copy small { color: var(--text-muted); font-size: var(--ui-font-label); line-height: var(--ui-line-height); }
+#native-installed .native-assistant-start { min-height: var(--ui-control-height); padding: var(--ui-space-2) var(--ui-space-4); border-color: var(--primary); background: var(--primary); color: var(--primary-contrast); font-weight: 600; white-space: nowrap; }
+#native-installed .native-assistant-start:hover:not(:disabled) { border-color: var(--primary-hover); background: var(--primary-hover); }
+#native-installed .native-assistant-start i { font-size: var(--ui-font-meta); }
 #native-installed > .native-installed-search { display: grid; grid-template-columns: auto minmax(0, 1fr); flex-direction: row; align-items: center; gap: 0; margin-bottom: 8px; padding: 0 0 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-1); color: var(--text-muted); }
-#native-installed > .native-installed-search:focus-within { border-color: var(--accent); }
+#native-installed > .native-installed-search:focus-within { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
 #native-installed > .native-installed-search input { border: 0; background: transparent; }
 #native-installed > .native-installed-search input:focus-visible { outline: none; }
 .native-installed-filters button .native-filter-count { min-width: 1.6em; padding: 0 6px; border-radius: 999px; background: var(--surface-2); color: var(--text-muted); font-size: .7rem; font-variant-numeric: tabular-nums; line-height: 1.6; }

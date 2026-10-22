@@ -89,6 +89,7 @@ async function main() {
             let holdProfile = false, releaseProfile;
             page.on('pageerror', error => errors.push(error.message));
             await page.addInitScript(data => {
+                localStorage.setItem('pivane.workspace.showAssistant', 'true');
                 localStorage.setItem('pi.web.cwd', data.cwd);
                 if (!localStorage.getItem(`pi.web.session:${data.cwd}`)) localStorage.setItem(`pi.web.session:${data.cwd}`, 'agent-original');
             }, { cwd });

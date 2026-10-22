@@ -1,0 +1,33 @@
+{
+  "name": "textin-intranet-mcp-node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node dist/ocr-mcp.mjs",
+    "start:weknora": "node dist/weknora-mcp.mjs",
+    "dev": "tsx node/server.ts",
+    "dev:weknora": "tsx node/weknora-server.ts",
+    "check": "tsc --noEmit",
+    "pretest": "npm run build",
+    "test": "tsx --test tests-node/*.test.ts",
+    "package:offline": "npm run build && node scripts/package.mjs",
+    "package:weknora": "npm run build && node scripts/package-weknora.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0",
+    "dotenv": "^17.2.0",
+    "yauzl": "^3.2.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/yauzl": "^2.10.3",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "yazl": "^3.3.1"
+  }
+}

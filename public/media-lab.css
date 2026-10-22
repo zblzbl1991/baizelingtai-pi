@@ -121,7 +121,7 @@
 .lab-running, .lab-error, .lab-warnings { padding: 12px; margin: 10px 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .lab-running { background: var(--green-soft); color: var(--green); }
 .lab-error { background: var(--danger-soft); color: var(--danger); }
-.lab-warnings { border-left: 3px solid var(--amber); color: var(--text-muted); }
+.lab-warnings { border: 1px solid var(--line-strong); border-radius: var(--radius); color: var(--text-main); font-size: var(--ui-font-label); }
 .lab-warnings:empty { display: none; }
 .lab-dialog { margin: auto; width: min(700px, calc(100% - 36px)); max-height: min(90dvh, 960px); padding: 0; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--text-main); background: var(--surface-2); box-shadow: var(--shadow-float); }
 .lab-dialog[open] { display: flex; flex-direction: column; }

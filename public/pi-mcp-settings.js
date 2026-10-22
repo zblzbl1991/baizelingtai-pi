@@ -151,6 +151,14 @@
         function renderSaved() {
             saved.replaceChildren(heading('fa-server', t('已保存配置', 'Saved configuration'), t('mcp.json 中的服务器。保存不会自动连接或重载会话。', 'Servers in mcp.json. Saving does not connect or reload sessions.'),
                 writeButton(t('添加服务器', 'Add server'), () => edit(), { glyph: 'fa-plus', variant: 'primary' })));
+            const builtins = el('div', null, { class: 'mcp-actions' });
+            for (const preset of snapshot.builtinPresets || []) {
+                if (snapshot.servers.some(server => server.name === preset.name)) continue;
+                builtins.append(writeButton(t(`添加内置 ${preset.title}`, `Add built-in ${preset.title}`), () => void save({ action: 'builtin', builtin: preset.id }), { glyph: 'fa-box' }));
+            }
+            if (builtins.childElementCount) {
+                saved.append(builtins, el('p', t('内置服务添加后默认停用。刷新后编辑地址、API Key 并启用；新会话由工作台自动启动 stdio 进程。', 'Built-ins start disabled. Refresh, edit the URL and API key, then enable. The workspace launches their stdio processes in new sessions.')));
+            }
             const pref = snapshot.autoEnableCodemode || {};
             const auto = select([['inherit', t('默认 / 继承', 'Default / inherit')], ['true', t('自动启用', 'Auto-enable')], ['false', t('不自动启用', 'Do not auto-enable')]], pref[scope.value] == null ? 'inherit' : String(pref[scope.value]));
             auto.dataset.mcpWrite = '';

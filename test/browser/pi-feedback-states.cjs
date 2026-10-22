@@ -322,7 +322,8 @@ async function composerLayout(browser, width, language, theme) {
     reply(pendingPrompt); runtime.isStreaming = false; runtime.isCompacting = false;
     send({ type: 'compaction_end', reason: 'threshold', aborted: true }); send({ type: 'agent_settled' });
     await page.waitForFunction(() => document.querySelector('#pi-input').value === '' && document.querySelector('.pi-composer').dataset.running === 'false');
-    // Long retained states and visible identity/attachment metadata must fit the same reserved row.
+    // Long retained states wrap completely. The composer may grow upward while
+    // keeping its bottom anchored; ordinary transient states stay stable above.
     if (!baseline) {
         const identity = await geometry();
         await page.evaluate(() => {
@@ -330,7 +331,15 @@ async function composerLayout(browser, width, language, theme) {
             document.querySelector('#pi-attachment-limit').style.display = 'block';
             document.querySelector('#pi-composer-status').textContent = 'Shell 正在执行，可继续编辑草稿；停止请使用命令卡片';
         });
-        await stable(identity, 'identity-and-retained-state');
+        const retained = await geometry();
+        assert.ok(Math.abs(retained.composer.top + retained.composer.height - identity.composer.top - identity.composer.height) <= 1,
+            `${width}/${language}/${theme}: expanding retained status keeps the composer bottom anchored`);
+        const fullStatus = await status.evaluate(node => {
+            const r = node.getBoundingClientRect(), parent = node.parentElement.getBoundingClientRect();
+            return node.scrollHeight <= node.clientHeight + 1 && node.scrollWidth <= node.clientWidth + 1
+                && r.bottom <= parent.bottom + 1 && r.right <= parent.right + 1;
+        });
+        assert.equal(fullStatus, true, `${width}/${language}/${theme}: retained status is fully visible without clipping`);
     }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${width}/${language}/${theme}: no page overflow`);
     assert.deepEqual(errors, []);

@@ -16,6 +16,7 @@ $script:confirmationShown=$false; $script:uiScale=1; $script:recoverStop=$false;
 $script:versions=$null; $script:maintenanceHint=$false; $script:lastReviewId=''
 $ProgramRoot = if ($env:PIVANE_PROGRAM_ROOT) { [IO.Path]::GetFullPath($env:PIVANE_PROGRAM_ROOT) } else { [IO.Path]::GetFullPath((Split-Path $PSScriptRoot -Parent)) }
 $script:updatePhase=''; $script:nativeAssembly=$null; $script:qaComponents=$null; $script:ownerRefused=$false
+$script:queuedStopAction=$null
 $mutex = $null; $ownsMutex = $false; $openEvent = $null; $tray = $null; $timer = $null; $context = $null; $window = $null; $hoster = $null
 function Write-QAReceipt([string]$Point, $Payload) {
     if (-not $script:smokeValidated -or $env:PIVANE_NATIVE_QA -cne '1') { return }
@@ -49,6 +50,7 @@ function Show-Failure([string]$Message, [string]$Code = '') {
 }
 function Set-State([string]$State) {
     $script:state = $State
+    if ($State -ne 'ready') { $script:queuedStopAction=$null }
     if ($hoster) {
         $value = @{state=$State; instance=$script:instance; generation=$script:generation}
         if ($State -eq 'ready') { $value.url = $script:url }
@@ -134,6 +136,12 @@ function Start-Run {
 }
 function Request-Stop([string]$Action) {
     if ($script:ownerRefused -and -not $script:service) { if ($Action -eq 'exit') { $context.ExitThread() }; return }
+    # A periodic read must not swallow a user click. Only defer the read-only
+    # stop review; execution still requires a fresh ticket and confirmation.
+    if ($script:state -eq 'ready' -and $script:pending -and $script:pending.type -eq 'snapshot') {
+        if (-not $script:queuedStopAction) { $script:queuedStopAction=$Action }
+        Show-Management; Update-Window; return
+    }
     if ($script:state -in @('stopping','unknown') -or $script:pending) { Show-Management; return }
     if ($script:state -in @('stopped','error') -and $script:clean -and -not $script:service) { if ($Action -eq 'exit') { $context.ExitThread() }; return }
     if ($script:review) { Show-Management; return }
@@ -184,7 +192,12 @@ function Handle-Message([string]$Line, $Owner, [string]$Generation) {
             Set-State 'ready'; Record-Event @{type='ready';url=$script:url;generation=$Generation;pid=$Owner.Id}
             if ($script:startupStopReview) { $script:startupStopReview=$false; Show-Management; Send-Request 'review-stop' @{action=$script:stopAction} | Out-Null }
         }
-        'snapshot' { Show-Blockers $message }
+        'snapshot' {
+            Show-Blockers $message
+            if ($script:queuedStopAction -and $script:state -eq 'ready') {
+                $action=$script:queuedStopAction; $script:queuedStopAction=$null; Request-Stop $action
+            }
+        }
         'stop-review' {
             $script:lastReviewId=$message.id
             Show-Blockers $message
@@ -197,6 +210,7 @@ function Handle-Message([string]$Line, $Owner, [string]$Generation) {
         'stopping' { Set-State 'stopping' }
         'stopped' { if ($message.clean -eq $true) { $script:clean=$true }; Record-Event @{type='stopped';generation=$Generation;clean=$script:clean} }
         'error' {
+            $script:queuedStopAction=$null
             if ($pendingType -eq 'stop' -and $message.code -eq 'DESKTOP_REVIEW_REQUIRED') {
                 # The service became ready before the queued startup stop arrived.
                 # Keep the same user intent, but require the normal review and confirmation.
@@ -253,8 +267,10 @@ function Update-Window {
     $canStart=($script:state -in @('stopped','error') -and $script:clean -and -not $script:service)
     $mainButton.Text=if ($canStart) {'启动服务'} else {'打开工作台'}
     $mainButton.Enabled=($canStart -or $script:state -in @('ready','starting')) -and -not $script:pending
-    $stopButton.Enabled=$script:state -in @('ready','starting') -and -not $script:pending -and -not $script:review
-    $exitButton.Enabled=($script:state -ne 'unknown' -and $script:state -ne 'stopping' -and -not $script:pending)
+    $canReview= -not $script:pending -or ($script:state -eq 'ready' -and $script:pending.type -eq 'snapshot')
+    $stopButton.Enabled=$script:state -in @('ready','starting') -and $canReview -and -not $script:review -and -not $script:queuedStopAction
+    $exitButton.Enabled=($script:state -ne 'unknown' -and $script:state -ne 'stopping' -and $canReview -and -not $script:queuedStopAction)
+    if ($script:queuedStopAction) { $detailLabel.Text='正在查询服务状态，完成后将检查停机条件；仍需确认后才会停止。' }
     $miOpen.Enabled=$mainButton.Enabled; $miStop.Enabled=$stopButton.Enabled; $miExit.Enabled=$exitButton.Enabled
     $miLog.Enabled=[bool]$script:logFile; $logButton.Enabled=[bool]$script:logFile
     $confirmButton.Enabled=$savedCheck.Checked -and $externalCheck.Checked -and -not $script:pending
@@ -433,6 +449,7 @@ try {
                         $matchingCommand=(-not $script:strictQaRequested) -or ($command.schemaVersion -eq 1 -and $command.runId -ceq $env:PIVANE_NATIVE_QA_RUN_ID -and $command.instance -ceq $script:instance -and $command.generation -ceq $script:generation -and $command.id -cmatch '^[a-f0-9-]{36}$')
                         if($matchingCommand -and $command.id -ne $script:smokeCommand){$script:smokeCommand=$command.id;switch($command.action){
                             'finish'{$context.ExitThread()};'show'{Show-Management};'hide'{$window.Close()};'minimize'{$window.WindowState='Minimized'};'open'{Open-Workspace};'start'{Start-Run};'stop'{Request-Stop 'stop'};'exit'{Request-Stop 'exit'};'updates'{$maintenanceButton.PerformClick()}
+                            'tray-exit'{$miExit.PerformClick()};'window-exit'{$exitButton.PerformClick()}
                             'confirm'{$savedCheck.Checked=$true;$externalCheck.Checked=$true;Confirm-Stop}
                             'capture'{Show-Management;$bitmap=[Drawing.Bitmap]::new($window.Width,$window.Height);try{$window.DrawToBitmap($bitmap,[Drawing.Rectangle]::new(0,0,$window.Width,$window.Height));$capture=Join-Path $AppRoot '.pivane-runtime\desktop\management.png';$temporary=$capture+'.tmp';$bitmap.Save($temporary,[Drawing.Imaging.ImageFormat]::Png);if([IO.File]::Exists($capture)){[IO.File]::Replace($temporary,$capture,$null)}else{[IO.File]::Move($temporary,$capture)}}finally{$bitmap.Dispose()}}
                         }}

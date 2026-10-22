@@ -8,9 +8,6 @@
         return el;
     };
     const entries = [
-        { id: 'pivane-staffing', type: 'package', name: 'pivane-staffing', author: '白泽灵台', kind: ['内置 · 按需启用', 'Built-in · Optional'], icon: 'fa-people-group', url: '',
-            title: ['人员调配', 'Personnel staffing'], description: ['建立人员台账，核对当前和未来占用，再开始调配。', 'Build a personnel ledger and review current and future occupancy before staffing.'],
-            requirement: ['首次启用需核对人员与占用。停用保留数据。', 'Review people and occupancy at first setup. Disabling retains data.'], example: ['先启用能力，再导入初始台账。', 'Enable the capability, then import the initial ledger.'] },
         { id: 'pivane-weixin', type: 'channel', name: 'WeChat ClawBot', author: 'Tencent · Pivane', kind: ['可选组件 · 消息渠道', 'Optional · Messaging'], icon: 'fa-comments',
             url: 'https://github.com/Tencent/openclaw-weixin',
             title: ['在微信继续对话', 'Continue in WeChat'],
@@ -59,7 +56,7 @@
         const el = node('button', label, { type: 'button', ...attrs });
         el.addEventListener('click', action); return el;
     };
-    let mcpPanel, channelsPanel;
+    let mcpPanel, channelsPanel, knowledgePanel;
     let enabled = false, host, generation = 0, view = '', inventory = null, inventoryState = 'unknown', channelsInfo = null, piVersion = '', renderCards = () => {}, resetDiscovery = () => {}, subnav = null;
     const repositories = { 'ppt-master': 'hugohe3/ppt-master', 'pi-web-access': 'nicobailon/pi-web-access', 'pi-computer-use': 'injaneity/pi-computer-use', 'pi-subagents': 'nicobailon/pi-subagents', 'pi-hermes-memory': 'chandra447/pi-hermes-memory' };
     function skillHubSource() {
@@ -95,7 +92,6 @@
         return { state: 'configured', label: text('已安装 · 未连接', 'Installed · not connected'), version, action: text('扫码连接', 'Connect') };
     }
     function installation(entry) {
-        if (entry.id === 'pivane-staffing') return { state: 'builtin', label: text('内置 · 按需启用', 'Built-in · Optional') };
         if (entry.id === 'pivane-weixin') return weixinState();
         if (inventoryState !== 'ready') return { state: inventoryState, label: inventoryState === 'loading' ? text('正在核对…', 'Checking…') : text('状态待核对', 'Status unknown') };
         if (entry.id === 'pi-native-mcp') {
@@ -208,7 +204,9 @@
     const extensionTabLabels = {
         extensions: ['发现', 'Discover'],
         installed: ['已安装', 'Installed'],
-        mcp: ['MCP', 'MCP'],
+        mcp: ['原生 MCP', 'Native MCP'],
+        knowledge: ['知识库', 'Knowledge base'],
+        builtins: ['业务功能', 'Business tools'],
         channels: ['消息渠道', 'Messaging']
     };
     function mountSubnav() {
@@ -245,16 +243,21 @@
                 document.querySelector('.workspace-settings-content')?.append(channelsPanel.root);
             }
             mcpPanel?.close(); mcpPanel?.root.remove();
+            knowledgePanel?.close(); knowledgePanel?.root.remove();
             if (window.PiMcpSettings) {
                 mcpPanel = window.PiMcpSettings.create(value);
                 document.querySelector('.workspace-settings-content')?.append(mcpPanel.root);
+            }
+            if (window.PiKnowledgeBase) {
+                knowledgePanel = window.PiKnowledgeBase.create(value);
+                document.querySelector('.workspace-settings-content')?.append(knowledgePanel.root);
             }
         },
         mountExplore,
         setChannelTarget(value) { channelsPanel?.setTarget(value); },
         setAssistantEnabled(value) {
             enabled = Boolean(value);
-            document.querySelectorAll('[data-extension-configure]').forEach(el => { el.disabled = el.closest('#extension-pivane-staffing') ? false : !enabled; });
+            document.querySelectorAll('[data-extension-configure]').forEach(el => { el.disabled = !enabled; });
             renderCards();
             const hint = document.getElementById('extensions-assistant-unavailable'); if (hint) hint.hidden = enabled;
         },
@@ -281,6 +284,10 @@
                 document.querySelectorAll('[data-settings-panel]').forEach(panel => panel.classList.remove('active'));
                 mcpPanel?.open();
             } else mcpPanel?.close();
+            if (view === 'knowledge') {
+                document.querySelectorAll('[data-settings-panel]').forEach(panel => panel.classList.remove('active'));
+                knowledgePanel?.open();
+            } else knowledgePanel?.close();
             if (view === 'extensions') void refreshInventory();
             const close = document.getElementById('workspace-settings-close');
             if (close) close.title = close.ariaLabel = extensionView ? text('关闭扩展', 'Close extensions') : text('关闭设置', 'Close settings');
@@ -289,6 +296,19 @@
     };
     document.addEventListener('DOMContentLoaded', () => {
         mountSubnav();
+        const business = document.getElementById('settings-builtins');
+        if (business) {
+            const heading = node('div', null, { class: 'settings-panel-header' });
+            const title = node('div');
+            title.append(node('h3', text('业务功能', 'Business tools')));
+            heading.append(node('i', '', { class: 'fa-solid fa-briefcase', 'aria-hidden': 'true' }), title);
+            const staffing = node('section', null, { class: 'extensions-business-entry', 'aria-labelledby': 'extensions-staffing-title' });
+            const details = node('div');
+            details.append(node('h4', text('项目人员分配', 'Project staffing'), { id: 'extensions-staffing-title' }),
+                node('p', text('建立人员台账，核对当前和未来占用，再安排项目人员。首次启用需核对初始台账。', 'Build a personnel ledger and review current and future occupancy before assigning project staff. Review the initial ledger at first setup.')));
+            staffing.append(details, button(text('打开人员调配', 'Open staffing'), () => window.PiWorkspaceRoute?.navigate('staffing'), { id: 'extensions-open-staffing', class: 'settings-secondary-button' }));
+            business.prepend(heading, node('p', text('按需启用。每项功能独立配置，停用后保留已有资料。', 'Enable tools as needed. Each tool has its own configuration; disabling retains existing data.'), { class: 'settings-help' }), staffing);
+        }
         const panel = node('section', null, { class: 'workspace-settings-panel', 'data-settings-panel': 'extensions' });
         const featured = node('section', null, { id: 'extensions-featured' });
         const intro = node('header', null, { class: 'extensions-head' });

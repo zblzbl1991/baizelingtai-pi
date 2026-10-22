@@ -2,8 +2,20 @@ const { randomUUID } = require('node:crypto');
 const path = require('node:path');
 const { isInternalCommand } = require('./pivane-compat');
 const fail = code => Object.assign(new Error(code), { code, statusCode: 409 });
-const actions = new Set(['snapshot', 'reconnect', 'login', 'logout']);
+const actions = new Set(['snapshot', 'reconnect', 'login', 'logout', 'knowledge-catalog', 'knowledge-read']);
 function validateRequest(input) {
+    if (input?.action === 'knowledge-catalog' || input?.action === 'knowledge-read') {
+        const keys = input.action === 'knowledge-catalog' ? ['action', 'runtimeId']
+            : ['action', 'runtimeId', 'server', 'confirmed', 'expectedRevision', 'operation', 'kbId', 'documentId', 'query', 'page', 'offset', 'contentOffset'];
+        if (Object.keys(input).some(key => !keys.includes(key)) || typeof input.runtimeId !== 'string' || !input.runtimeId || input.runtimeId.length > 128
+            || input.action === 'knowledge-read' && (input.confirmed !== true || !/^[A-Za-z0-9_-]{1,256}$/.test(input.server || '')
+                || !/^[a-f0-9]{64}$/.test(input.expectedRevision || '') || !['bases', 'documents', 'search', 'read', 'chunks'].includes(input.operation)
+                || ['kbId', 'documentId', 'query'].some(key => input[key] !== undefined && (typeof input[key] !== 'string' || input[key].length > (key === 'query' ? 4000 : 512)))
+                || input.page !== undefined && (!Number.isInteger(input.page) || input.page < 1 || input.page > 10000)
+                || input.offset !== undefined && (!Number.isInteger(input.offset) || input.offset < 0 || input.offset > 1000000)
+                || input.contentOffset !== undefined && (!Number.isInteger(input.contentOffset) || input.contentOffset < 0 || input.contentOffset > 100000000))) throw fail('MCP_INVALID_ACTION');
+        return input;
+    }
     if (!input || typeof input !== 'object' || Array.isArray(input)
         || Object.keys(input).some(key => !['action', 'server', 'confirmed', 'runtimeId'].includes(key))
         || !actions.has(input.action) || typeof input.runtimeId !== 'string' || input.runtimeId.length > 128
@@ -48,12 +60,13 @@ class PiMcpRuntimeControl {
                 const raw = await w.client.request('get_commands');
                 const command = raw.commands?.find(item => item.source === 'extension'
                     && (item.sourceInfo?.path || item.path) === path.join(__dirname, 'pi-web-session-extension.ts')
-                    && isInternalCommand(item.name) && item.description?.includes('mcp-v1'));
+                    && isInternalCommand(item.name) && item.description?.includes('mcp-v1')
+                    && (!input.action.startsWith('knowledge-') || item.description.includes('knowledge-v1')));
                 if (!command) throw fail('MCP_NATIVE_HANDLER_UNAVAILABLE');
                 if (w.disposed || input.runtimeId !== w.shell.runtimeId) throw fail('MCP_RUNTIME_CHANGED');
                 // No timeout: browser disconnect is not native cancellation or permission to replay.
                 await w.client.request('prompt', { message: `/${command.name} ${JSON.stringify({ mode: 'mcp', id,
-                    token: w.navigationToken, input: { action: input.action, server: input.server, confirmed: input.confirmed } })}` }, null);
+                    token: w.navigationToken, input: (({ runtimeId, ...request }) => request)(input) })}` }, null);
                 if (!slot.result?.success) throw fail(/^MCP_[A-Z_]+$/.test(slot.result?.code || '') ? slot.result.code : 'MCP_NATIVE_ACTION_FAILED');
                 if (w.disposed || input.runtimeId !== w.shell.runtimeId) throw fail('MCP_RUNTIME_CHANGED');
                 return { ...slot.result.data, runtimeId: w.shell.runtimeId };

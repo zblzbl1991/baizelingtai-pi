@@ -68,6 +68,8 @@ Pi 0.87 的 `context_edit` 只改变模型上下文。主聊天快照从唯一 w
 
 ## 辅助工作与扩展
 
+WeKnora 知识库页面经既有 MCP 管理槽调用 `pi-knowledge-runtime`，后者只在同一受管 Session 上登记可丢弃的进程内入口。目录来自原生可调用工具与 MCP 来源，操作固定为只读白名单；执行通过公开 `runToolCall`、`wrapRegisteredTool` 和会话自身工具 hooks，保留 schema／权限／结果检查。注册随 Session dispose 释放，资源重载时重读新目录。页面操作不发送模型请求、不建立原生消息或另一份知识存储；聊天检索通过已有安全草稿入口转入普通原生对话。见[知识库](../KNOWLEDGE_BASE.md)。
+
 Pi 1.2.0 原生 MCP/Codemode 经 `pi-native-mcp.mjs` 和受管 ResourceLoader 显式装配，官方扩展拥有连接、OAuth、调用、工具发现与清理。旧适配器在资源解析前过滤。`pi-subagent-native-loader.mjs` 仅对经过版本与哈希核对的 vendor MCP resolver 做精确 import 映射，不改上游字节；旧 host alias 与 Codemode 输出适配已移除。`pi-codemode-policy.mjs` 为官方 Codemode execute 提供每次新建的冻结模型注册表外观，保留目录与分类，只拒绝未经过媒体确认的图像生成入口；主／子工厂均装配此边界。输出限制、文本与图片顺序、截断、私有完整输出文件、取消、store 与用量由 Pi 官方 executor／sandbox 拥有。父会话注册的原生工具名称通过有界、无凭据的进程环境快照交给 detached runner，并绑定 cwd 与当前服务器配置 hash；显式主线程白名单在 MCP 注册时隐藏未授权工具，子会话工具 gate 和原生注册过滤同时防止 Codemode 绕过授权，不继承名单外间接 MCP 工具的默认行为。取消结算的 `agent_settled.aborted` 不触发成功通知或任务成功回执。快照是可丢弃的授权输入，不是会话事实或工具结果副本；缺失／变化均失败关闭。侧聊与媒体规划不加载该能力，迁移只在显式停机入口执行。见[原生 MCP](../MCP.md)和[依赖与上游适配](DEPENDENCIES.md)。
 
 - 原生 MCP 网页配置由 `PiMcpSettingsService` 做不求值的脱敏文件投影，保存保留未知字段及显式秘密编辑操作，与原生设置共享保存互斥。运行管理不另建客户端：版本审查过的官方 `/mcp` handler 通过按 sessionId/cwd 登记的跨 ESM/Jiti 进程 Symbol seam 调用，配置／工具名／状态只做有界安全投影。`PiMcpRuntimeControl` 预占唯一 worker 的管理槽并等待原生完成，OAuth 沿用原生 UI；超时／断线不是取消，迟到私有响应仍截获。管理槽参加生命周期与维护投影，不建立持久 MCP 状态库。

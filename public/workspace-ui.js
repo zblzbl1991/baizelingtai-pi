@@ -84,6 +84,7 @@
 
     const THEME_KEY = 'pi.workspace.theme';
     const SIDEBAR_KEY = 'pi.workspace.sidebarCollapsed';
+    const FEATURE_KEYS = Object.freeze({ workChat: 'pivane.workspace.showWorkChat', cron: 'pivane.workspace.showCron' });
     const SPLIT_PREFIX = 'pi.workspace.split:';
     const THEMES = new Set(['system', 'daylight', 'mint', 'slate', 'violet', 'dark']);
     const FONT_SIZE_KEY = 'pi.workspace.fontSize';
@@ -113,14 +114,48 @@
         if (app && managementPage) app.append(managementPage);
         const hostLabel = document.getElementById('workspace-host');
         if (hostLabel) hostLabel.textContent = window.location.host;
-        const routeTabs = new Set(['chat', 'assistant', 'cron', 'artifacts', 'staffing', 'media', 'profiles', 'extensions', 'settings']);
+        const routeTabs = new Set(['chat', 'assistant', 'setup', 'cron', 'artifacts', 'staffing', 'media', 'profiles', 'extensions', 'settings']);
         const settingsTabs = new Set(['providers', 'media', 'builtins', 'models', 'system-prompts', 'native', 'access', 'usage', 'updates']);
-        const extensionTabs = new Set(['extensions', 'installed', 'mcp', 'channels']);
+        const extensionTabs = new Set(['extensions', 'installed', 'mcp', 'channels', 'knowledge', 'builtins']);
         const moreTabs = new Set(['cron', 'artifacts', 'staffing', 'media', 'profiles', 'extensions']);
         document.querySelectorAll('[data-cron-nav]').forEach(label => { label.textContent = translateUi('定时任务'); });
         const moreToggle = document.getElementById('workspace-more-toggle');
         const moreMenu = document.getElementById('workspace-more-menu');
-        let lastConversation = '#/chat';
+        // Display preferences only. Keep routes, sessions and server scheduling intact.
+        function syncFeatureVisibility() {
+            for (const [feature, key] of Object.entries(FEATURE_KEYS)) {
+                let visible = false;
+                try { visible = localStorage.getItem(key) === 'true'; } catch { /* Keep optional entry points hidden when storage is unavailable. */ }
+                document.documentElement.dataset[feature === 'workChat' ? 'hideWorkChat' : 'hideCron'] = String(!visible);
+                const control = document.getElementById(`workspace-show-${feature}`);
+                if (control) control.checked = visible;
+            }
+        }
+        syncFeatureVisibility();
+        for (const [id, text] of Object.entries({
+            'workspace-feature-title': '功能显示',
+            'workspace-show-workChat-label': '显示工作对话',
+            'workspace-show-cron-label': '显示定时任务',
+            'workspace-feature-hint': '默认隐藏。开启后显示相关入口，保留已有数据；仅影响当前浏览器，可随时调整。',
+            'workspace-cron-visibility-hint': '隐藏定时任务不会暂停已启用的任务。如需停止执行，请先在定时任务中停用。'
+        })) {
+            const label = document.getElementById(id);
+            if (label) label.textContent = translateUi(text);
+        }
+        document.querySelectorAll('[data-feature-visibility]').forEach(control => {
+            control.addEventListener('change', () => {
+                const status = document.getElementById('workspace-feature-status');
+                try {
+                    localStorage.setItem(FEATURE_KEYS[control.dataset.featureVisibility], String(control.checked));
+                    if (status) status.textContent = '';
+                } catch {
+                    if (status) status.textContent = translateUi('无法保存功能显示设置，请检查浏览器存储权限。');
+                }
+                syncFeatureVisibility();
+            });
+        });
+        const visibleMoreItems = () => [...(moreMenu?.querySelectorAll('[data-more-tab]:not([hidden])') || [])].filter(item => item.getClientRects().length);
+        let lastConversation = '#/assistant';
         let routeRevision = 0;
         const featureState = document.createElement('main');
         featureState.id = 'workspace-feature-state';
@@ -251,8 +286,8 @@
             if (restoreFocus && wasOpen) moreToggle?.focus({ preventScroll: true });
         }
         function parseRoute() {
-            const match = /^#\/(chat|assistant|cron|artifacts|staffing|media|profiles|extensions|settings)(?:\?(.*))?$/.exec(location.hash);
-            if (!match) return { tab: 'chat', params: new URLSearchParams() };
+            const match = /^#\/(chat|assistant|setup|cron|artifacts|staffing|media|profiles|extensions|settings)(?:\?(.*))?$/.exec(location.hash);
+            if (!match) return { tab: 'assistant', params: new URLSearchParams() };
             return { tab: match[1], params: new URLSearchParams(match[2] || '') };
         }
         // Bookmarks written before installed packages and skills merged into one page keep working.
@@ -282,7 +317,7 @@
             const pending = group && !window.PiFeatures.ready(group);
             closeMoreMenu();
             if (featureError.open) featureError.close();
-            if (tab === 'chat' || tab === 'assistant') lastConversation = location.hash || '#/chat';
+            if (tab === 'chat' || tab === 'assistant') lastConversation = location.hash || '#/assistant';
             moreToggle?.classList.toggle('active', moreTabs.has(tab));
             if (moreTabs.has(tab)) moreToggle?.setAttribute('aria-current', 'page'); else moreToggle?.removeAttribute('aria-current');
             moreMenu?.querySelectorAll('[data-more-tab]').forEach(button => {
@@ -347,7 +382,7 @@
             closeThemeMenu();
             moreMenu.hidden = !opening;
             moreToggle.setAttribute('aria-expanded', String(opening));
-            if (opening) moreMenu.querySelector('[data-more-tab]:not([hidden])')?.focus({ preventScroll: true });
+            if (opening) visibleMoreItems()[0]?.focus({ preventScroll: true });
         });
         moreMenu?.addEventListener('click', event => {
             const button = event.target.closest('[data-more-tab]');
@@ -357,7 +392,8 @@
             }
         });
         moreMenu?.addEventListener('keydown', event => {
-            const items = [...moreMenu.querySelectorAll('[data-more-tab]:not([hidden])')];
+            const items = visibleMoreItems();
+            if (!items.length) return;
             const index = items.indexOf(document.activeElement);
             const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
                 : event.key === 'ArrowDown' ? (index + 1) % items.length
@@ -445,6 +481,7 @@
             if (button) setFontSize(button.dataset.fontSize);
         });
         window.addEventListener('storage', event => {
+            if (Object.values(FEATURE_KEYS).includes(event.key) || event.key === null) syncFeatureVisibility();
             if (event.key === THEME_KEY || event.key === null) setTheme(localStorage.getItem(THEME_KEY) || 'system', false);
             if (event.key === FONT_SIZE_KEY || event.key === null) setFontSize(localStorage.getItem(FONT_SIZE_KEY), false);
         });

@@ -184,6 +184,15 @@ locator 字段沿用各来源接口的含义与检查。`expectedRevision` 可�
 
 原生转换当前仅声明 Windows x64。未声明平台的底层引擎／安装预检诊断为 `office_unsupported`，含 `platform:"<platform>-<arch>"`，不解析 Windows 引擎或要求 VC++ 运行库，且不因这一可选能力阻断工作台候选安装。公开 `/status.officePreview` 仍投影 `available:false,code:"OFFICE_UNAVAILABLE"` 并保留平台，预览 POST 仍返回 503 `OFFICE_UNAVAILABLE`；不新增 HTTP 平台覆盖参数。已声明平台的严格候选预检必须通过完整性与实际转换探针，组件缺失或损坏不降成未支持平台。
 
+## 知识库读取
+
+复用 POST `/api/pi/sessions/:id/mcp`，仅操作当前已打开的唯一持久 worker，不启动新 worker。请求带 `cwd`、`runtimeId`：
+
+- `action:knowledge-catalog` 返回 `{runtimeId,revision,servers:[{name,searchRequiresBase,operations:{bases,documents,search,read,chunks}}]}`。操作值为实际可调用的原生工具名或 null；只列出原生 MCP 中已识别的 WeKnora 只读工具，不连接服务、不发送模型请求。
+- `action:knowledge-read` 额外要求 `confirmed:true`、`server`、`expectedRevision` 与 `operation`，可带 `kbId`、`documentId`、`query`、`page`、`offset`、`contentOffset`。query 上限 4000 字符，标识上限 512 字符，page 为 1–10000，offset 为 0–1000000，contentOffset 为 0–100000000（Unicode 字符偏移）。服务与工具范围、参数 schema 和原生权限在执行前重新校验，禁止传任意工具名或自由参数。返回 `{runtimeId,revision,server,operation,tool,value}`，value 为服务结构化结果或文本，最大 320 KiB。文档页固定 20 项，搜索最多请求 10 个片段。
+
+两类请求沿用 MCP 管理互斥槽、维护投影与 no-store；读取期间不能并发运行聊天或重载。通过 Pi `runToolCall` 与原生会话 hooks 校验和执行实际 MCP 定义，不新建连接或写聊天记录；结果仅供本次页面读取。超时／断线不释放原生占用，不自动重试。`MCP_KNOWLEDGE_CHANGED` 表示工具目录变化，`MCP_KNOWLEDGE_UNAVAILABLE` 表示操作不可用，`MCP_KNOWLEDGE_INPUT_REQUIRED` 表示缺少参数，`MCP_KNOWLEDGE_READ_FAILED` 为安全的失败摘要；原始认证／传输错误不回显。操作与兼容性见[知识库](KNOWLEDGE_BASE.md)。
+
 ## Office 工作副本与 MCP
 
 内置 `pivane-officecli` 扩展在启用 Pi 原生 MCP 的持久受管 RPC 会话注册 `prepare_office_document {id,requestId}`。id 为当前分支已发送 DOCX/XLSX/PPTX 附件标识，原件最大 16 MiB；requestId 沿用 1–160 字符请求标识格式。不接受原件路径。工具 details.pivaneOffice 为 `{version:1,id,sessionId,requestId,source,path,revision,size,reused}`；source 是原附件元数据，path 是项目工作副本实际路径，revision/size 是本次读取时副本的状态，不是之后所有编辑的预期版本。
@@ -280,6 +289,8 @@ DOC／XLS／PPT 扩展为原件上传、预览和下载格式，容器与内部�
 
 ### 可选助手档案
 
+首次 `GET /profiles` 在注册表没有任何助手记录（含回收站）时，通过现有设置互斥、注册表锁与 CAS 原子保存初始助手“小白”，并返回保存后的修订。初始助手启用身份、记忆和已学习技能，关闭后台学习，SOUL 为空；不设置项目默认身份或修改会话归属。并发读取复用同一次初始化，既有助手、停用或回收站记录阻止补建；维护或停机不允许初始化，保存结果不确定时返回原有 503，后续须重新读取核对。
+
 `GET /status.agentProfiles=true` 表示可选助手档案接口可用。`GET /profiles?cwd` 返回 `profiles`（不含回收站身份）、按移入时间从新到旧的 `trash:[{id,name,description,avatar,trashedAt}]`、注册表修订、`profileRevisions`（含回收站的所有档案ID到自身修订的映射）和所选项目默认身份；`PUT /profiles` 接受 `{expectedRevision,profile}` 创建或更新档案，回收站身份拒绝更新（409），须先恢复；`PUT /profiles/default` 接受 `{cwd,profileId,expectedRevision}`，`profileId:null` 清除项目默认身份，仅接受已启用且不在回收站的身份。现有 `POST /sessions` 的可选 `profileId` 省略时使用项目默认，显式 null 创建无档案线程。
 
 - `POST /profiles/:id/trash`：`{expectedRevision}`，原子保存 `trashedAt`（ISO）、`trashedEnabled`（原启用状态）和 `enabled:false`，同时清除所有指向该身份的项目默认值；返回 `{ok:true,profile,revision}`。
@@ -365,9 +376,10 @@ DOC／XLS／PPT 扩展为原件上传、预览和下载格式，容器与内部�
 
 `nativeMcpManagement=true` 标记 MCP 网页接口：
 
-- GET `/settings/mcp?cwd&scope=global|project` 返回 `{cwd,scope,revision,trust,autoEnableCodemode:{global,project,value},servers,capabilities}`，只读取配置。服务器含 name/scope/valid/enabled/exposure/timeout/transport 与脱敏 config、secretFields；私密值为 null，`secretFields[字段路径]={present:true}`。四种 exposure 为 codemode/deferred/direct/hidden；输入兼容别名 codemode-deferred 在 DTO 中规范为 codemode。toolExposure 保持原始工具名／模式顺序。损坏 JSON 整体失败，无效服务器只返回安全状态。Pi 规范化命名冲突的后续条目返回 valid=false/error=MCP_NAMESPACE_CONFLICT；PUT 对新增的同范围或当前受信跨范围冲突返回同一错误码，保留完全同名的项目覆盖。
+- GET `/settings/mcp?cwd&scope=global|project` 返回 `{cwd,scope,revision,trust,autoEnableCodemode:{global,project,value},servers,builtinPresets,capabilities}`，只读取配置。服务器含 name/scope/valid/enabled/exposure/timeout/transport 与脱敏 config、secretFields；私密值为 null，`secretFields[字段路径]={present:true}`。四种 exposure 为 codemode/deferred/direct/hidden；输入兼容别名 codemode-deferred 在 DTO 中规范为 codemode。toolExposure 保持原始工具名／模式顺序。损坏 JSON 整体失败，无效服务器只返回安全状态。Pi 规范化命名冲突的后续条目返回 valid=false/error=MCP_NAMESPACE_CONFLICT；PUT 对新增的同范围或当前受信跨范围冲突返回同一错误码，保留完全同名的项目覆盖。
 - Pi 1.0.2 的已有项目部分覆盖返回 `override:true`，enabled/exposure/timeout/transport 描述合并后的值，config 只投影项目自身字段，不返回继承的全局连接／凭据。无 command/url/type 的项目 entry 仅可含 enabled/exposure/toolExposure，须有有效同名全局基础；null 移除本层键恢复继承，逐工具 map 整体替换。完整项目配置与全局配置保持原语义。
-- PUT `/settings/mcp` 接受 `{cwd,scope,expectedRevision,confirmed:true,action:'upsert'|'patch'|'remove'|'preferences',name?,config?,patch?,autoEnableCodemode?}`。普通控制字段直接提交、null 移除；command/args/cwd/url 和 env/headers/OAuth 字符串用 `{op:'keep'|'replace'|'remove',value?}`，maps 按字段提交，oauth.callbackPort 为整数／null；新增 oauth.clientName 与 oauth.authServerMetadataUrl 沿用私密操作和 presence-only DTO。description 为普通文本（编辑上限 4096 JS 字符），null 移除。auth.provider 为非秘密字符串，按字段更新并保留未知 auth 成员，provider:null 移除该字段、auth:null 移除整个块；仅全局 HTTP、HTTPS／原生 loopback 地址可用。URL／OAuth 回调由原生 validator 校验。新增或改变 provider 时如仍有不区分大小写的 Authorization header，返回 MCP_AUTH_HEADER_CONFLICT；无关修改不删除既有凭据。省略保留现值与未知字段；不能直接把 GET 脱敏 config 回传。偏好 null 恢复默认／继承。项目写入须受信，成功 requiresRuntimeRestart=true，保存不连接或重载。
+- PUT `/settings/mcp` 接受 `{cwd,scope,expectedRevision,confirmed:true,action:'upsert'|'patch'|'remove'|'preferences'|'builtin',builtin?,name?,config?,patch?,autoEnableCodemode?}`。普通控制字段直接提交、null 移除；command/args/cwd/url 和 env/headers/OAuth 字符串用 `{op:'keep'|'replace'|'remove',value?}`，maps 按字段提交，oauth.callbackPort 为整数／null；新增 oauth.clientName 与 oauth.authServerMetadataUrl 沿用私密操作和 presence-only DTO。description 为普通文本（编辑上限 4096 JS 字符），null 移除。auth.provider 为非秘密字符串，按字段更新并保留未知 auth 成员，provider:null 移除该字段、auth:null 移除整个块；仅全局 HTTP、HTTPS／原生 loopback 地址可用。URL／OAuth 回调由原生 validator 校验。新增或改变 provider 时如仍有不区分大小写的 Authorization header，返回 MCP_AUTH_HEADER_CONFLICT；无关修改不删除既有凭据。省略保留现值与未知字段；不能直接把 GET 脱敏 config 回传。偏好 null 恢复默认／继承。项目写入须受信，成功 requiresRuntimeRestart=true，保存不连接或重载。
+- `builtinPresets` 为 `{id,name,title,env:[变量名]}` 数组，不含地址／密钥。PUT `action:builtin,builtin:"ocr"|"weknora"` 由服务器生成固定 Node 命令与宿主参数、空环境占位和 `enabled:false`；不接受 name/config/patch，不覆盖任一范围已有同名项（MCP_BUILTIN_EXISTS）。沿用 revision、项目信任、命名冲突、原子私密保存，配置保存不连接服务。工具与限制见[MCP 内置预设](MCP.md#内置-ocr-与-weknora-stdio)。
 - GET `/sessions/:id/mcp?cwd&runtimeId` 或 POST 同路径 `{cwd,runtimeId,action:'snapshot'|'reconnect'|'login'|'logout',server?,confirmed:true}` 操作已有唯一持久 worker，不自动打开关闭的会话。非 snapshot 须明确 server／确认；旧 runtime、忙碌、后台工作或跨线程拒绝。返回 `{runtimeId,servers,tools,notices,outcome}`，outcome 为 completed/failed/cancelled/unknown；native handler 缺失时未知，不按工具注册推断健康。运行 scope 不由当前磁盘追认。
 - 网页原生 OAuth 沿用待确认输入；`gateway_mcp_authorization` 只在当前管理槽投影 `{authorization:{server,url,runtimeId}|null}`，重连快照 `mcpAuthorization` 可恢复正在处理的链接，完成立即清除。不写新凭据存储；URL 是待授权输入，不用于日志。迟到／未知私有 `pivaneMcp` 响应全部截获。操作参与 worker 生命周期，浏览器超时／断线不取消，也不自动重放。
 - 配置及运行响应 no-store，错误只为 `MCP_*` 安全代码；修订覆盖两范围 MCP、设置、trust 与 cwd。已保存配置与实际加载独立核对，细节见[原生 MCP](MCP.md)。

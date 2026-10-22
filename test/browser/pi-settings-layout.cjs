@@ -1,5 +1,7 @@
 const { selectBrowserTargets, browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const fs = require('node:fs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const base = process.env.PI_SETTINGS_LAYOUT_URL || 'http://127.0.0.1:3001';
 const provider = `fixture-${'long-provider-'.repeat(8)}`;
@@ -41,6 +43,50 @@ async function run(browser, width) {
     await page.goto(base, { waitUntil: 'domcontentloaded' });
     await page.locator('#workspace-settings-toggle').click();
     await page.locator('[data-settings-tab="models"]').click();
+    const assistantToggle = page.locator('#workspace-show-assistant'), cronToggle = page.locator('#workspace-show-cron');
+    const assistantNav = page.locator('[data-tab="assistant"]'), profilesNav = page.locator('[data-tab="profiles"]'), cronNav = page.locator('[data-tab="cron"]');
+    assert.equal(await assistantToggle.isChecked(), false); assert.equal(await cronToggle.isChecked(), false);
+    assert.equal(await assistantNav.isVisible(), false); assert.equal(await profilesNav.isVisible(), false); assert.equal(await cronNav.isVisible(), false);
+    await assistantToggle.check();
+    assert.equal(await cronToggle.isChecked(), false, 'enabling assistants must not enable scheduled tasks');
+    await cronToggle.check();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await assistantToggle.waitFor();
+    assert.ok(await assistantToggle.isChecked()); assert.ok(await cronToggle.isChecked(), 'explicitly saved choices survive reload');
+    await assistantToggle.uncheck();
+    assert.equal(await assistantNav.isVisible(), false); assert.equal(await profilesNav.isVisible(), false);
+    assert.ok(await cronToggle.isChecked(), 'assistant preference must not affect scheduled tasks');
+    await cronToggle.uncheck();
+    assert.equal(await cronNav.isVisible(), false);
+    assert.equal(await page.locator('[data-more-tab="cron"]').evaluate(el => getComputedStyle(el).display), 'none');
+    assert.equal(await page.locator('[data-more-tab="profiles"]').evaluate(el => getComputedStyle(el).display), 'none');
+    // Preferences survive reload without sending writes or opening a session.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.locator('#workspace-show-cron').waitFor();
+    assert.equal(await assistantToggle.isChecked(), false); assert.equal(await cronToggle.isChecked(), false);
+    assert.equal(await assistantNav.isVisible(), false); assert.equal(await cronNav.isVisible(), false);
+    // A second tab's saved preference updates this tab without changing its route.
+    const peer = await context.newPage();
+    await peer.route('**/*', route => route.fulfill({ body: '<!doctype html><title>Storage peer</title>', contentType: 'text/html' }));
+    await peer.goto(base);
+    await peer.evaluate(() => localStorage.setItem('pivane.workspace.showAssistant', 'true'));
+    await page.waitForFunction(() => document.getElementById('workspace-show-assistant').checked);
+    assert.ok(page.url().includes('#/settings?tab=models')); assert.equal(await cronToggle.isChecked(), false);
+    await peer.close();
+    await cronToggle.check();
+    if (width > 900) { assert.ok(await assistantNav.isVisible()); assert.ok(await profilesNav.isVisible()); assert.ok(await cronNav.isVisible()); }
+    // Storage failures retain the saved selection and give actionable feedback.
+    await page.evaluate(() => {
+        window.featureStorageSetItem = Storage.prototype.setItem;
+        Storage.prototype.setItem = function(key, value) {
+            if (key === 'pivane.workspace.showCron') throw new DOMException('fixture denied', 'SecurityError');
+            return window.featureStorageSetItem.call(this, key, value);
+        };
+    });
+    await cronToggle.click();
+    assert.ok(await cronToggle.isChecked()); assert.match(await page.locator('#workspace-feature-status').textContent(), /存储权限/);
+    await page.evaluate(() => { Storage.prototype.setItem = window.featureStorageSetItem; delete window.featureStorageSetItem; });
+    await cronToggle.uncheck(); await cronToggle.check();
     await page.waitForFunction(id => document.getElementById('settings-media-agent-current').textContent.includes(id), model.id);
     assert.match(await page.locator('#settings-media-agent-description').textContent(), /多媒体实验室.*生成方案/);
     assert.equal(await page.locator('#settings-media-agent-provider').inputValue(), provider);
@@ -53,7 +99,19 @@ async function run(browser, width) {
         return dimensions;
     };
     const shared = ['.workspace-settings-dialog', '.workspace-settings-body', '.workspace-settings-content', '.workspace-settings-nav', '.workspace-settings-panel.active'];
-    const preferences = await check([...shared, '#settings-media-agent-form', '.settings-feature-controls', '#settings-media-agent-current', '.pi-notification-card'], 'preferences');
+    const preferences = await check([...shared, '#settings-feature-visibility', '#settings-media-agent-form', '.settings-feature-controls', '#settings-media-agent-current', '.pi-notification-card'], 'preferences');
+    const featureRows = await page.locator('#settings-feature-visibility .settings-toggle-line').evaluateAll(rows => rows.map(row => {
+        const r = row.getBoundingClientRect(), p = row.parentElement.getBoundingClientRect();
+        return { width: r.width, parentWidth: p.width, top: r.top, bottom: r.bottom };
+    }));
+    assert.ok(featureRows.every(row => row.width >= row.parentWidth - 30), 'feature toggles each occupy a full row');
+    assert.ok(featureRows[1].top >= featureRows[0].bottom, 'feature toggles are stacked');
+    const evidence = process.env.PIVANE_TEST_SCREENSHOT_DIR;
+    if (evidence) {
+        fs.mkdirSync(evidence, { recursive: true });
+        await page.locator('#settings-feature-visibility').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(evidence, `feature-visibility-${width}.png`) });
+    }
     if (width <= 680) {
         const p = await page.locator('#settings-media-agent-provider').boundingBox();
         const m = await page.locator('#settings-media-agent-model').boundingBox();

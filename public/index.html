@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#f7f9fc">
     <title>白泽灵台</title>
-    <link rel="icon" href="brand/favicon.ico" sizes="16x16 32x32 48x48">
-    <link rel="icon" type="image/png" href="brand/logo-192.png" sizes="192x192">
+    <link rel="icon" href="brand/favicon.ico?v=baize-2" sizes="16x16 32x32 48x48">
+    <link rel="icon" type="image/png" href="brand/logo-192.png?v=baize-2" sizes="192x192">
+    <link rel="icon" type="image/svg+xml" href="brand/logo-app.svg" sizes="any">
     <link rel="apple-touch-icon" href="brand/apple-touch-icon.png" sizes="180x180">
     <link rel="manifest" href="site.webmanifest">
     <script>
@@ -25,6 +26,7 @@
     <link rel="stylesheet" href="pi-model-picker.css">
     <link rel="stylesheet" href="pi-identity-ui.css">
     <link rel="stylesheet" href="pi-agent-profiles.css">
+    <link rel="stylesheet" href="pi-setup.css">
     <link rel="stylesheet" href="pi-compliance.css">
     <link rel="stylesheet" href="pi-native-settings.css">
     <link rel="stylesheet" href="pi-updates.css">
@@ -78,16 +80,15 @@
 
             <nav class="nav-menu" aria-label="工作区" data-i18n-aria-label="s1317">
                 <span class="workspace-nav-heading"><!--i18n:s2546-->工作</span>
-                <button class="nav-btn active" data-tab="chat" title="工作对话" data-i18n-title="s3867" data-work-chat-nav>
+                <button class="nav-btn active" id="workspace-assistant-toggle" data-tab="assistant" type="button" title="助手对话" data-i18n-title="s2547"><i class="fa-solid fa-comments" aria-hidden="true"></i><span><!--i18n:s2547-->助手对话</span></button>
+                <button class="nav-btn" data-tab="chat" title="工作对话" data-i18n-title="s3867" data-work-chat-nav>
                     <i class="fa-solid fa-comment" aria-hidden="true"></i><span data-work-chat-label><!--i18n:s3867-->工作对话</span>
                 </button>
-                <button class="nav-btn" id="workspace-assistant-toggle" data-tab="assistant" type="button" title="助手对话" data-i18n-title="s2547"><i class="fa-solid fa-comments" aria-hidden="true"></i><span><!--i18n:s2547-->助手对话</span></button>
                 <button class="nav-btn" data-tab="cron" type="button"><i class="fa-regular fa-calendar-check" aria-hidden="true"></i><span data-cron-nav>定时任务</span></button>
                 <button class="nav-btn workspace-more-toggle" id="workspace-more-toggle" type="button" title="更多功能" aria-label="更多功能" aria-haspopup="menu" aria-expanded="false" aria-controls="workspace-more-menu" data-i18n-title="s2651" data-i18n-aria-label="s2651"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><span><!--i18n:s2651-->更多功能</span></button>
                 <div id="workspace-more-menu" class="workspace-more-menu" role="menu" aria-label="更多功能" data-i18n-aria-label="s2651" hidden>
                     <button type="button" role="menuitem" data-more-tab="cron"><i class="fa-regular fa-calendar-check" aria-hidden="true"></i><span data-cron-nav>定时任务</span></button>
                     <button type="button" role="menuitem" data-more-tab="artifacts"><i class="fa-solid fa-box-archive" aria-hidden="true"></i><span data-artifacts-label>成果中心</span></button>
-                    <button type="button" role="menuitem" data-more-tab="staffing" data-staffing-nav hidden><i class="fa-solid fa-people-group" aria-hidden="true"></i><span data-staffing-label></span></button>
                     <button type="button" role="menuitem" data-more-tab="profiles"><i class="fa-solid fa-user-gear" aria-hidden="true"></i><span><!--i18n:s2468-->助手身份</span></button>
                     <button type="button" role="menuitem" data-more-tab="extensions"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i><span><!--i18n:s530-->扩展</span></button>
                 </div>
@@ -97,6 +98,7 @@
                 <button class="nav-btn" id="workspace-extensions-toggle" data-tab="extensions" type="button" title="扩展" data-i18n-title="s530"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i><span><!--i18n:s530-->扩展</span></button>
             </nav>
             <div class="sidebar-footer">
+                <button class="nav-btn sidebar-tool-button" data-tab="setup" type="button" data-setup-entry><i class="fa-solid fa-compass" aria-hidden="true"></i><span>首次设置</span></button>
                 <div class="theme-picker">
                     <button id="workspace-theme-toggle" class="sidebar-tool-button" type="button" title="选择主题" aria-label="选择主题" aria-haspopup="menu" aria-expanded="false" data-i18n-title="s1319" data-i18n-aria-label="s1319">
                         <i class="fa-solid fa-palette"></i><span><!--i18n:s1320-->主题</span>
@@ -132,6 +134,7 @@
             </div>
         </aside>
 
+        <main class="content-area tab-content pi-setup-page" id="setup-tab" aria-labelledby="pi-setup-title"></main>
         <!-- Pi Coding Agent -->
         <main class="content-area tab-content active pi-agent-page" id="chat-tab">
             <header class="pi-command-bar">
@@ -285,6 +288,7 @@
                         <p id="pi-shell-hint" hidden></p>
                         <div id="pi-attachment-status" class="pi-attachment-status" role="status" hidden></div>
                         <div id="pi-command-menu" class="pi-command-menu hidden"></div>
+                        <label class="pi-input-label" for="pi-input"><!--i18n:s1370-->发送消息</label>
                         <div class="pi-composer">
                             <button id="pi-mobile-composer-summary" class="pi-mobile-composer-summary" type="button" aria-haspopup="dialog" aria-controls="pi-mobile-session-dialog">
                                 <strong id="pi-mobile-composer-model"></strong><span id="pi-mobile-composer-thinking"></span><span id="pi-mobile-composer-usage"></span>
@@ -303,7 +307,7 @@
                                     <button id="pi-schedule-button" type="button" role="menuitem" tabindex="-1" title="延迟发送" hidden data-i18n-title="s992"><i class="fa-regular fa-clock" aria-hidden="true"></i><span><!--i18n:s992-->延迟发送<small><!--i18n:s1369-->指定时间发送消息</small></span></button>
                                 </div>
                             </div>
-                            <textarea id="pi-input" rows="1" placeholder="发送消息" disabled data-i18n-placeholder="s1370"></textarea>
+                            <textarea id="pi-input" aria-describedby="pi-composer-status" rows="1" placeholder="发送消息" disabled data-i18n-placeholder="s1370"></textarea>
                             <div class="pi-composer-actions right">
                                 <button id="pi-mobile-context-trigger" class="pi-mobile-context-trigger" type="button" aria-haspopup="dialog" aria-controls="pi-mobile-session-dialog" aria-label="上下文用量暂无统计"><span id="pi-mobile-context-percent">--</span></button>
                                 <button id="pi-transcribe-button" class="icon-btn subtle" type="button" disabled hidden><i class="fa-solid fa-microphone" aria-hidden="true"></i></button>
@@ -659,7 +663,6 @@
                 <nav class="workspace-settings-nav" aria-label="设置分类" data-i18n-aria-label="s1507">
                     <button type="button" class="active" data-settings-tab="providers"><i class="fa-solid fa-key"></i><span><!--i18n:s1508-->供应商与模型</span></button>
                     <button type="button" data-settings-tab="media"><i class="fa-solid fa-photo-film"></i><span>模型与能力</span></button>
-                    <button type="button" data-settings-tab="builtins"><i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i><span>内置能力</span></button>
                     <button type="button" data-settings-tab="models"><i class="fa-solid fa-sliders"></i><span><!--i18n:s1509-->使用偏好</span></button>
                     <button type="button" id="system-prompts-nav" data-settings-tab="system-prompts" hidden><i class="fa-solid fa-file-lines"></i><span data-system-prompts-label></span></button>
                     <button type="button" id="native-settings-nav" data-settings-tab="native" hidden><i class="fa-solid fa-gear"></i><span><!--i18n:s726-->运行配置</span></button>
@@ -689,8 +692,8 @@
                     </section>
 
                     <section class="workspace-settings-panel" data-settings-panel="media">
-                        <div class="settings-panel-header"><i class="fa-solid fa-photo-film" aria-hidden="true"></i><div><h3 id="settings-capabilities-title">模型与能力</h3><p><!--i18n:s4425-->配置媒体服务与 Agent 能力。</p></div></div>
-                        <section class="settings-media-section" aria-labelledby="settings-multimodal-title">
+                        <div class="settings-panel-header"><i class="fa-solid fa-photo-film" aria-hidden="true"></i><div><h3 id="settings-capabilities-title">模型与能力</h3><p hidden><!--i18n:s4425-->配置媒体服务与 Agent 能力。</p></div></div>
+                        <section class="settings-media-section" id="settings-multimodal" hidden aria-labelledby="settings-multimodal-title">
                             <header class="settings-media-heading"><h4 id="settings-multimodal-title"><!--i18n:s4426-->媒体服务</h4><p><!--i18n:s4427-->选择类型，管理服务与模型。</p></header>
                             <div class="mc-settings-kinds">
                                 <button type="button" data-media-settings-kind="image"><i class="fa-regular fa-image settings-media-kind-icon" aria-hidden="true"></i><span class="settings-media-kind-copy"><strong><!--i18n:s109-->图像</strong><span><!--i18n:s4428-->图像生成与编辑</span></span><i class="fa-solid fa-chevron-right settings-media-chevron" aria-hidden="true"></i></button>
@@ -712,7 +715,7 @@
                         </section>
                         <section id="settings-subagents"></section>
                     </section>
-                    <section class="workspace-settings-panel" data-settings-panel="builtins" id="settings-builtins"></section>
+                    <section class="workspace-settings-panel" data-settings-panel="builtins" id="settings-builtins"><div id="settings-compliance"></div></section>
                     <section class="workspace-settings-panel" data-settings-panel="profiles" id="pi-profiles-panel">
                         <div class="settings-panel-header"><i class="fa-solid fa-user-gear" aria-hidden="true"></i><div><h3>助手身份</h3><p>身份仅在新建线程时确定。已打开的线程不会因保存设置而重新加载。</p></div></div>
                         <div id="pi-profiles-content"></div>
@@ -755,6 +758,14 @@
                                     <button type="button" data-font-size="xlarge" aria-pressed="false"><span aria-hidden="true">Aa</span><span><!--i18n:s3269-->超大</span></button>
                                 </div>
                             </div>
+                        </section>
+                        <section id="settings-feature-visibility" class="settings-feature-card" aria-labelledby="workspace-feature-title">
+                            <h4 id="workspace-feature-title"></h4>
+                            <label class="settings-toggle-line" for="workspace-show-workChat"><strong id="workspace-show-workChat-label"></strong><input id="workspace-show-workChat" data-feature-visibility="workChat" type="checkbox" aria-describedby="workspace-feature-hint"></label>
+                            <label class="settings-toggle-line" for="workspace-show-cron"><strong id="workspace-show-cron-label"></strong><input id="workspace-show-cron" data-feature-visibility="cron" type="checkbox" aria-describedby="workspace-feature-hint workspace-cron-visibility-hint"></label>
+                            <p id="workspace-feature-hint" class="settings-feature-description"></p>
+                            <p id="workspace-cron-visibility-hint" class="settings-feature-description"></p>
+                            <p id="workspace-feature-status" role="status" aria-live="polite"></p>
                         </section>
                         <section id="settings-message-view" class="settings-feature-card pi-message-view-card" aria-labelledby="settings-message-view-title">
                             <div class="pi-message-view-head"><strong id="settings-message-view-title"><!--i18n:s2891-->消息显示</strong><span><!--i18n:s1535-->当前浏览器</span></div>
@@ -970,9 +981,12 @@
     <script src="pi-update-notifications.js"></script>
     <script src="pi-subagent-settings.js"></script>
     <link rel="stylesheet" href="pi-subagent-settings.css">
+    <script src="pi-knowledge-base.js"></script>
+    <link rel="stylesheet" href="pi-knowledge-base.css">
     <script src="pi-extensions.js"></script>
     <link rel="stylesheet" href="pi-extensions.css">
     <script src="pi-assistant-projects.js"></script>
+    <script src="pi-setup.js"></script>
     <script src="pi-profile-dialog.js"></script>
     <script src="pi-identity-ui.js"></script>
     <script src="pi-chat-knowledge.js"></script>

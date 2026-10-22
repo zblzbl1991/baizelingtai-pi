@@ -45,6 +45,8 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File scripts/desktop-tra
 
 管理窗口和托盘提供两个操作：**停止服务**完成后保留托盘与管理窗口，可再次点击启动；**退出白泽灵台**在同样的有序停机完成后关闭托盘。
 
+后台正在刷新服务状态时，也可点击停止或退出。管理窗口会显示等待提示，当前查询完成后进入停机条件检查；检查通过后仍须勾选并确认。查询失败或状态未知时不会继续停机。
+
 操作先检查服务端的任务、Shell、侧聊、子任务后台保留、媒体、预约派发和配置等状态。有阻碍时列出类型、数量及可用的定位信息，本次请求结束；在工作台手动处理后重新检查。仍然打开的空闲侧聊也会阻碍停机。状态读取不完整时不能确认停机。窗口不会替你取消任务，也不会等空闲后自动执行。
 
 检查通过后，保存浏览器草稿和未提交编辑，停止使用同一身份数据的外部进程，再勾选确认。确认期间工作台仍可使用；提交时服务端重新检查，期间发生过工作变化就需要重新确认。接受前可取消；接受后关闭窗口只隐藏，不取消收尾。重复点击只显示同一次操作的状态。只有服务、worker 和本轮启动进程实际退出且清理已核实，才显示停止完成；超时、断线和端口空闲都不等于停止成功。
@@ -92,6 +94,8 @@ npm run pack:windows -- --update-trust C:\ReleasePublic\update-trust.json
 脚本使用统一公开源码清单生成快照，从官方地址下载固定版本运行环境并核对 SHA256，再用包内 Node/npm 在独立目录锁定安装生产依赖。不会复制当前 node_modules、.env、身份或运行数据。`dist/portable-cache` 只缓存已核验下载，不进入交付包。构建需要网络及 Windows tar.exe/curl.exe，无须预装 7-Zip。构建先生成应用 ZIP、同名 `.sha256` 和 `.update.unsigned.json` 草稿；维护者使用加密私钥显式签署新 `.update.json`，再以 `--bundle-only` 组装正式 `-offline.zip`，步骤见[签名与离线分发](development/UPDATE_SIGNING.md#构建草稿与正式离线分发)。未签名草稿不能作为正式更新源。正式外层只含准确应用 ZIP、校验文件和已签 `updates/latest.json`，中文文件名保持 ZIP UTF-8 标记，任一同名产物均拒绝覆盖。
 
 `scripts/windows-portable-assets.json` 是运行环境版本、地址和哈希的唯一清单。更换版本须重新验证。包内 PORTABLE_MANIFEST 记录源码归档及全部程序、依赖、工具文件哈希。根目录 THIRD_PARTY_NOTICES.md 汇总说明仅保留在仓库，不纳入源码或 Windows 包；依赖和工具原始 LICENSE/NOTICE 与 PORTABLE_NOTICES.txt 继续完整保留。构建在源码冻结后添加稳定根公开信任文件和独立 `repair/` 闭包（含自己的 Node 与许可证），最后写入协议能力标记并生成完整 PORTABLE 清单。根目录 `修复白泽灵台.cmd` 只做独立诊断，具体修复须按[修复指南](LAUNCHER_REPAIR.md)显式执行。
+
+新包不包含根目录 `THIRD_PARTY_NOTICES.md` 汇总说明，该文件保留在源码仓库；依赖自己的许可证、版权声明和必要 NOTICE 继续随包保留。
 
 ### 内网更新源与 GitLab 分发
 

@@ -24,7 +24,7 @@ async function run(browser, viewport) {
     const reply = (ws, cmd, data = {}, error) => ws.send(JSON.stringify({ type: 'response', id: cmd.id, command: cmd.type, success: !error, data, error }));
     const emit = event => socket.send(JSON.stringify(event));
     page.on('pageerror', error => errors.push(error.message));
-    await page.addInitScript(({ cwd }) => { localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem(`pi.web.session:${cwd}`, 'a'); }, { cwd });
+    await page.addInitScript(({ cwd }) => { localStorage.setItem('pivane.workspace.showCron', 'true'); localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem(`pi.web.session:${cwd}`, 'a'); }, { cwd });
     await page.route('**/api/**', async route => {
         const req = route.request(), url = new URL(req.url()), endpoint = url.pathname;
         if (endpoint === '/api/pi/status') return route.fulfill({ json: { ok: true, composerTools: true, sessionWorkflows: true, runtimeControls: true, scheduledTasks: true, projectRoots: ['/srv'] } });
@@ -97,10 +97,10 @@ async function run(browser, viewport) {
                 return { width: button.getBoundingClientRect().width, titleLines: titleRange.getClientRects().length, subtitleLines: subtitleRange.getClientRects().length };
             })
         }));
-        assert.equal(geometry.clipped, false, 'the four actions fit without vertical clipping');
+        assert.equal(geometry.clipped, false, 'the five actions fit without vertical clipping');
         assert.ok(Math.abs(geometry.menuWidth - geometry.composerWidth) <= 2, 'the panel follows the composer width');
-        assert.ok(geometry.height >= 4 * 68, 'the panel gives each action a generous pointer target');
-        assert.equal(geometry.rows.length, 4);
+        assert.ok(geometry.height >= 5 * 68, 'the panel gives each action a generous pointer target');
+        assert.equal(geometry.rows.length, 5);
         for (const row of geometry.rows) {
             assert.ok(row.width >= geometry.width - 22, 'each item fills the menu instead of retaining icon-button width');
             assert.equal(row.titleLines, 1, 'menu title stays on one line');
@@ -154,8 +154,13 @@ async function run(browser, viewport) {
     assert.doesNotMatch(await page.locator('.pi-thread-menu').textContent(), /创建定时任务/, 'task creation moved out of the current thread menu');
     await page.keyboard.press('Escape');
     await plus.click(); await page.keyboard.press('End');
-    assert.equal(await page.locator('#pi-cron-add-button').evaluate(n => n === document.activeElement), true);
+    assert.equal(await page.locator('#pi-knowledge-base-add').evaluate(n => n === document.activeElement), true);
     await page.keyboard.press('Enter');
+    await page.locator('.knowledge-base.active').waitFor();
+    assert.equal(await input.inputValue(), 'Keep this draft', 'the knowledge page preserves the message draft');
+    assert.equal(await addMenu.isVisible(), false, 'plus closes before entering the knowledge page');
+    await page.evaluate(() => window.PiWorkspaceRoute.navigate('chat'));
+    await plus.click(); await page.locator('#pi-cron-add-button').focus(); await page.keyboard.press('Enter');
     await page.getByLabel('目标线程', { exact: true }).waitFor();
     await page.waitForFunction(() => document.querySelector('[aria-label="目标线程"]').value === 'a');
     assert.equal(await page.getByLabel('工作目录', { exact: false }).inputValue(), cwd);
@@ -163,6 +168,22 @@ async function run(browser, viewport) {
     assert.equal(mutations.length, 0, 'opening the task form creates no task');
     await page.evaluate(() => window.PiWorkspaceRoute.navigate('chat'));
     assert.equal(await input.inputValue(), 'Keep this draft', 'the task form preserves the message draft');
+    await page.locator('#workspace-settings-toggle').click();
+    await page.locator('[data-settings-tab="models"]').click();
+    await page.locator('#workspace-show-cron').uncheck();
+    await page.evaluate(() => window.PiWorkspaceRoute.navigate('chat'));
+    assert.equal(await input.inputValue(), 'Keep this draft', 'hiding task entry points preserves the active conversation draft');
+    await plus.click();
+    assert.equal(await page.locator('#pi-cron-add-button').isVisible(), false);
+    assert.ok(await page.locator('#pi-attach-button').isVisible(), 'attachments remain available');
+    await page.keyboard.press('End');
+    assert.equal(await page.locator('#pi-cron-add-button').evaluate(n => n === document.activeElement), false, 'keyboard navigation skips the hidden task action');
+    await page.keyboard.press('Escape');
+    await page.locator('#workspace-settings-toggle').click();
+    await page.locator('[data-settings-tab="models"]').click();
+    await page.locator('#workspace-show-cron').check();
+    await page.evaluate(() => window.PiWorkspaceRoute.navigate('chat'));
+    assert.equal(mutations.length, 0, 'visibility preferences do not mutate server state');
     await input.fill(''); await plus.click();
     assert.equal(await page.locator('#pi-cron-add-button').isEnabled(), true, 'task creation does not require a message draft');
     await page.locator('#pi-delivery-toggle').click();

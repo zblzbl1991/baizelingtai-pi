@@ -63,7 +63,9 @@ function readRegistry(file) {
         const raw = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size));
         const state = JSON.parse(raw);
         if (!object(state) || state.version !== 1 || !Array.isArray(state.profiles) || state.profiles.length > 50
-            || !object(state.defaults) || state.managedProfiles !== undefined && (!object(state.managedProfiles)
+            || !object(state.defaults) || state.defaultAssistantId !== undefined && (!ID.test(state.defaultAssistantId)
+                || !state.profiles.some(profile => profile.id === state.defaultAssistantId && profile.enabled === true && profile.trashedAt === undefined))
+            || state.managedProfiles !== undefined && (!object(state.managedProfiles)
                 || Object.entries(state.managedProfiles).some(([key, id]) => key !== 'pivane-staffing:v1' || !ID.test(id)
                     || !state.profiles.some(profile => profile.id === id)))
             || new Set(state.profiles.map(p => p?.id)).size !== state.profiles.length
@@ -154,13 +156,48 @@ class PiProfileRegistry {
 
     async list(cwdInput) {
         const cwd = cwdInput === undefined ? null : this.store.resolveProject(cwdInput);
-        const { state, revision } = await this.state();
+        let current = await this.state();
+        if (!current.state.defaultAssistantId) {
+            await this.ensureInitialProfile();
+            current = await this.state();
+        }
+        const { state, revision } = current;
         return { version: 1, revision, profiles: state.profiles.filter(profile => profile.trashedAt === undefined),
             trash: state.profiles.filter(profile => profile.trashedAt !== undefined)
                 .sort((a, b) => Date.parse(b.trashedAt) - Date.parse(a.trashedAt))
                 .map(({ id, name, description, avatar, trashedAt }) => ({ id, name, description, avatar: avatar ?? null, trashedAt })),
             profileRevisions: Object.fromEntries(state.profiles.map(profile => [profile.id, profileRevision(profile)])),
-            cwd, defaultProfileId: cwd ? state.defaults[cwd] ?? null : null };
+            cwd, defaultAssistantId: state.defaultAssistantId, defaultProfileId: cwd ? state.defaults[cwd] ?? null : null };
+    }
+
+    // The default assistant has a durable binding independent of editable names.
+    // No existing profile is adopted by name or re-enabled during initialization.
+    ensureInitialProfile() {
+        if (this.initialProfilePending) return this.initialProfilePending;
+        const pending = this.reserve(async () => {
+            const current = await this.state();
+            if (current.state.defaultAssistantId) return;
+            if (this.maintenance?.referenceLocked) throw fail('Workspace references are locked', 409);
+            try {
+                await this.mutate(current.revision, state => {
+                    if (state.profiles.length >= 50) throw fail('Profile limit reached');
+                    const now = new Date().toISOString();
+                    state.profiles.push({ ...validateProfile({ name: '小白', description: '', soul: '', enabled: true,
+                        memory: { enabled: true, autoLearn: false }, skills: { learnedEnabled: true } }),
+                        id: randomUUID(), createdAt: now, updatedAt: now });
+                    state.defaultAssistantId = state.profiles.at(-1).id;
+                    return { ok: true };
+                });
+            } catch (error) {
+                // Another registry owner may have initialized first. Read the
+                // winner after a CAS conflict; never replay an uncertain save.
+                if (error.status !== 409 || !(await this.state()).state.defaultAssistantId) throw error;
+            }
+        });
+        this.initialProfilePending = pending;
+        const clear = () => { if (this.initialProfilePending === pending) this.initialProfilePending = null; };
+        pending.then(clear, clear);
+        return pending;
     }
 
     // Acquire crash-released OS ownership before comparing the revision. The
@@ -229,6 +266,9 @@ class PiProfileRegistry {
             const previous = state.profiles[index];
             if (previous?.trashedAt !== undefined) throw fail('Profile is in trash; restore it before saving', 409);
             const profile = validateProfile(input.profile, previous);
+            if (existingId === state.defaultAssistantId && !profile.enabled) throw Object.assign(new Error('Default assistant must remain enabled'), {
+                status: 409, code: 'DEFAULT_ASSISTANT_PROTECTED'
+            });
             // Image references can only retain an asset already owned by this record.
             if (profile.avatar?.kind === 'image' && (previous?.avatar?.kind !== 'image'
                 || previous.avatar.version !== profile.avatar.version)) throw fail('Image avatar must be uploaded');
@@ -264,6 +304,9 @@ class PiProfileRegistry {
         return this.reserve(() => this.mutate(input?.expectedRevision, state => {
             const profile = state.profiles.find(record => record.id === id);
             if (!profile) throw fail('Profile not found', 404);
+            if (id === state.defaultAssistantId) throw Object.assign(new Error('Default assistant cannot be moved to trash'), {
+                status: 409, code: 'DEFAULT_ASSISTANT_PROTECTED'
+            });
             if (profile.trashedAt !== undefined) throw fail('Profile is already in trash', 409);
             const now = new Date().toISOString();
             profile.trashedAt = now;

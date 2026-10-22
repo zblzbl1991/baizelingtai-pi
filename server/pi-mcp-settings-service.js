@@ -11,6 +11,7 @@ const { getSdk } = require('./pi-session-store');
 const record = value => !!value && typeof value === 'object' && !Array.isArray(value);
 const httpConfig = config => typeof config.url === 'string' && [undefined, 'http', 'streamable-http'].includes(config.type);
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+const { presets, builtinConfig } = require('./pi-builtin-mcp');
 const fail = (code, status = 400) => Object.assign(new Error(code), { code, statusCode: status });
 const controlKeys = new Set(['type', 'enabled', 'exposure', 'timeout', 'toolExposure', 'description']);
 const privateKeys = new Set(['command', 'args', 'cwd', 'url', 'env', 'headers', 'oauth']);
@@ -145,18 +146,25 @@ class PiMcpSettingsService {
             return { name, scope, valid: true, ...(override ? { override: true } : {}), enabled: valid.enabled !== false, exposure: valid.exposure || 'codemode', timeout: valid.timeout ?? 60, transport: typeof valid.url === 'string' && valid.type !== 'stdio' ? 'http' : 'stdio', ...editable({ ...config, ...(valid.exposure && (!override || own(config, 'exposure')) ? { exposure: valid.exposure } : {}), ...(valid.toolExposure && (!override || own(config, 'toolExposure')) ? { toolExposure: valid.toolExposure } : {}) }) };
         });
         const global = ctx.data[0].autoEnableCodemode ?? null, project = ctx.data[1].autoEnableCodemode ?? null;
-        return { cwd: ctx.cwd, scope, revision: ctx.revision, trust: ctx.trust, autoEnableCodemode: { global, project, value: (ctx.trust.effective ? project : null) ?? global ?? true }, servers, capabilities: { native: true, runtimeManagement: true } };
+        return { cwd: ctx.cwd, scope, revision: ctx.revision, trust: ctx.trust, autoEnableCodemode: { global, project, value: (ctx.trust.effective ? project : null) ?? global ?? true }, servers, builtinPresets: presets, capabilities: { native: true, runtimeManagement: true } };
     }
     async save(input) {
         if (this.busy || this.native?.busy) throw fail('MCP_BUSY', 409);
         this.busy = true; // Reserve before the first await, including SDK loading.
         if (this.native) this.native.busy = true;
         try {
-            if (!record(input) || Object.keys(input).some(key => !['cwd', 'scope', 'expectedRevision', 'confirmed', 'action', 'name', 'config', 'patch', 'autoEnableCodemode'].includes(key)) || input.confirmed !== true || !['global', 'project'].includes(input.scope) || !['upsert', 'remove', 'patch', 'preferences'].includes(input.action)) throw fail('MCP_CONFIRMATION_REQUIRED');
+            if (!record(input) || Object.keys(input).some(key => !['cwd', 'scope', 'expectedRevision', 'confirmed', 'action', 'builtin', 'name', 'config', 'patch', 'autoEnableCodemode'].includes(key)) || input.confirmed !== true || !['global', 'project'].includes(input.scope) || !['upsert', 'remove', 'patch', 'preferences', 'builtin'].includes(input.action)) throw fail('MCP_CONFIRMATION_REQUIRED');
             const ctx = await this.context(input.cwd), { validateMcpServerConfig: validate, mcpNamespace } = await nativeApi();
             if (ctx.revision !== input.expectedRevision) throw fail('MCP_CHANGED', 409);
             if (input.scope === 'project' && !ctx.trust.effective) throw fail('MCP_PROJECT_UNTRUSTED', 403);
             const index = input.scope === 'global' ? 0 : 1, data = structuredClone(ctx.data[index]);
+            if (input.action === 'builtin') {
+                if (['name', 'config', 'patch', 'autoEnableCodemode'].some(key => own(input, key))) throw fail('MCP_INVALID_EDIT');
+                const config = builtinConfig(input.builtin), preset = presets.find(item => item.id === input.builtin);
+                // Never replace either an inherited or a local configuration.
+                if (ctx.data.slice(0, 2).some(scope => own(scope.mcpServers || {}, preset.name))) throw fail('MCP_BUILTIN_EXISTS', 409);
+                input = { ...input, action: 'upsert', name: preset.name, config: Object.fromEntries(Object.entries(config).map(([key, value]) => [key, privateKeys.has(key) ? { op: 'replace', value } : value])) };
+            }
             if (input.action === 'preferences') {
                 if (input.autoEnableCodemode === null) delete data.autoEnableCodemode;
                 else if (typeof input.autoEnableCodemode === 'boolean') data.autoEnableCodemode = input.autoEnableCodemode;

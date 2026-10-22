@@ -64,7 +64,9 @@ async function run(browser, base, width, locale) {
  const height=await row('named').evaluate(n=>n.getBoundingClientRect().height);
  const fallbackHeight=await row('fallback').evaluate(n=>n.getBoundingClientRect().height);
  assert.ok(height>=58&&height<=66,`named card has comfortable compact spacing: ${height}`);
- assert.ok(fallbackHeight>height&&fallbackHeight<=height+22,`fallback uses at most two title lines: ${fallbackHeight}`);
+ const fallbackTitle = await row('fallback').locator('.pi-session-title').evaluate(n => ({height:n.getBoundingClientRect().height,lineHeight:parseFloat(getComputedStyle(n).lineHeight)}));
+ assert.ok(fallbackTitle.height<=2*fallbackTitle.lineHeight+1,`fallback uses at most two title lines: ${JSON.stringify(fallbackTitle)}`);
+ assert.ok(fallbackHeight>height&&fallbackHeight<=height+fallbackTitle.lineHeight+1,`fallback adds at most one title line: ${fallbackHeight}`);
  const checkLayout=async()=>{
   assert.equal(await page.locator('#pi-session-pane, #pi-session-list, .pi-session-item, .pi-session-main, .pi-session-foot').evaluateAll(ns=>ns.some(n=>n.scrollWidth>n.clientWidth+1)),false,'actual card children stay inside sidebar');
   const geometry=await row('named').evaluate(n=>{const r=e=>e.getBoundingClientRect();return {title:r(n.querySelector('.pi-session-title')).toJSON(),action:r(n.querySelector('[data-action="menu"]')).toJSON(),metadata:r(n.querySelector('.pi-session-foot')).toJSON()}});
