@@ -148,9 +148,12 @@ try {
     return manifest;
 }
 
-async function stagePortable({ root, directory, release, env, signal, progress = () => {}, onOutput = () => {} }) {
+async function stagePortable({ root, installationRoot = root, directory, release, env, signal, progress = () => {}, onOutput = () => {} }) {
+    release = JSON.parse(JSON.stringify(release));
     const feed = configuredFeed(root, env);
     if (!supported(root) || !validPortable(release, feed)) throw Error('Portable update source or installation mismatch');
+    const signatures = require('./pi-update-signatures');
+    signatures.verifyReleaseSignature(release, installationRoot);
     const sourceManifest = JSON.parse(readSafe(path.join(root, 'TRIAL_MANIFEST.json'), 16 * 1024 ** 2));
     const verifySource = async () => {
         if (!Array.isArray(sourceManifest.files) || sourceManifest.files.length > 20000) throw Error('Current source baseline unavailable');
@@ -162,9 +165,15 @@ async function stagePortable({ root, directory, release, env, signal, progress =
         }
     };
     await verifySource();
-    const service = new (require('./pi-update-service').UpdateService)({ root, env });
-    const candidate = await service.manifest(release.channel);
-    if (!candidate || ['version', 'piVersion', 'downloadUrl', 'sha256', 'bytes'].some(key => candidate[key] !== release[key])) throw Error('Portable target changed; check and confirm again');
+    const verifyTarget = async () => {
+        signatures.verifyReleaseSignature(release, installationRoot);
+        const service = new (require('./pi-update-service').UpdateService)({ root, installationRoot, env });
+        const candidate = await service.manifest(release.channel);
+        if (!candidate || ['version', 'piVersion', 'downloadUrl', 'sha256', 'bytes'].some(key => candidate[key] !== release[key])
+            || !candidate.signedManifest || !signatures.releaseSignaturePayload(candidate.signedManifest).equals(signatures.releaseSignaturePayload(release.signedManifest))
+            || JSON.stringify(candidate.signedManifest.signature) !== JSON.stringify(release.signedManifest.signature)) throw Error('Portable target changed; check and confirm again');
+    };
+    await verifyTarget();
     if (require('./pi-update-service').compareVersions(release.version, JSON.parse(readSafe(path.join(root, 'package.json'))).version) !== 1) throw Error('Portable version must increase');
     progress('downloading');
     const archive = path.join(privateDir(path.dirname(directory)), path.basename(directory) + '.zip');
@@ -186,7 +195,8 @@ async function stagePortable({ root, directory, release, env, signal, progress =
         PI_OFFLINE: '1', PI_TELEMETRY: '0', PI_SKIP_VERSION_CHECK: '1', PI_WORKSPACE_BASE_URL: 'http://127.0.0.1:1' });
     await require('./pi-update-installer').runNode([path.join(directory, 'server/pi-update-probe.js')], { cwd: probe, env: probeEnv, signal, timeout: 90000, onOutput, secretEnv: env });
     await verifySource();
+    await verifyTarget();
     atomicJson(path.join(directory, 'PI_INSTALL_COMPLETE.json'), { version: pi, appVersion: pkg.version, format: release.format,
-        archiveSha256: release.sha256, completedAt: new Date().toISOString(), lockSha256: hash(lockBytes) });
+        archiveSha256: release.sha256, signedRelease: release, completedAt: new Date().toISOString(), lockSha256: hash(lockBytes) });
 }
 module.exports = { supported, validPortable, downloadPortable, unpackPortable, stagePortable };

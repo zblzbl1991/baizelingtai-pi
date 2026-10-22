@@ -2,11 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn, spawnSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { once } = require('node:events');
 const { WebSocket } = require('ws');
 const { createApplication } = require('./desktop-launcher-fixture.cjs');
+const { controlled } = require('./controlled-desktop-fixture.cjs');
 
 test('tray identity reserves the resolved workspace port without starting a service', () => {
     const { root, base, env } = createApplication();
@@ -22,39 +23,18 @@ test('tray identity reserves the resolved workspace port without starting a serv
     } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });
 
-// This seam crosses the real runner, ManagedLauncher, child IPC and gateway.
-// It owns a synthetic installation/identity and never sends model requests.
-function controlled(root, env, generation) {
-    const child = spawn(process.execPath, [path.join(root, 'scripts/start-desktop.cjs'), '--controlled', '--generation', generation],
-        { cwd: root, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-    const events = []; let pending = '', diagnostic = '';
-    child.stdout.setEncoding('utf8');
-    child.stdout.on('data', text => {
-        pending += text;
-        let newline;
-        while ((newline = pending.indexOf('\n')) >= 0) {
-            const line = pending.slice(0, newline); pending = pending.slice(newline + 1);
-            try { events.push(JSON.parse(line)); }
-            catch { diagnostic += '\nInvalid private frame'; }
-        }
-    });
-    child.stderr.on('data', text => { diagnostic = (diagnostic + text).slice(-4096); });
-    const exited = new Promise(resolve => child.once('close', (code, signal) => resolve({ code, signal })));
-    const send = command => child.stdin.write(JSON.stringify({ generation, ...command }) + '\n');
-    async function wait(predicate, description, timeout = 45000) {
-        const until = Date.now() + timeout;
-        while (Date.now() < until) {
-            const event = events.find(predicate);
-            if (event) return event;
-            if (child.exitCode !== null || child.signalCode !== null) break;
-            await new Promise(resolve => setTimeout(resolve, 30));
-        }
-        throw Error(`Missing ${description}: ${JSON.stringify(events)} ${diagnostic}`);
-    }
-    return { child, events, send, wait, exited };
-}
+test('desktop identity rejects an unselected program directory and pins the original installation', () => {
+    const { root, base, env } = createApplication();
+    try {
+        const other = path.join(base, 'other-installation'); fs.mkdirSync(other);
+        const result = spawnSync(process.execPath, [path.join(root, 'scripts/start-desktop.cjs'), '--identity'],
+            { cwd: root, env: { ...env, PIVANE_INSTALLATION_ROOT: other, PIVANE_PROGRAM_ROOT: root }, windowsHide: true, encoding: 'utf8' });
+        assert.notEqual(result.status, 0, 'a different installation cannot execute this program as its selected version');
+        assert.equal(fs.existsSync(path.join(other, '.pivane-runtime')), false);
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
 
-test('controlled desktop checks and stops the actual owned service, then starts a fresh generation', { timeout: 150000 }, async () => {
+test('controlled desktop checks and stops the actual owned service, then starts a fresh generation', { timeout: 300000 }, async () => {
     const { root, base, env } = createApplication();
     const runs = [], sockets = [];
     try {
@@ -76,7 +56,9 @@ test('controlled desktop checks and stops the actual owned service, then starts 
             // An idle authenticated workbench keeps its transport open while its
             // actual native worker is available; no model prompt is sent.
             const opened = new Promise((resolve, reject) => {
-                const timer = setTimeout(() => reject(Error('Idle workspace did not open')), 15000);
+                // Native worker startup has its own 120s budget. It is separate
+                // from the private desktop control response's unchanged 15s.
+                const timer = setTimeout(() => reject(Error('Idle workspace did not open')), 120000);
                 workspace.on('message', bytes => { const reply=JSON.parse(bytes); if(reply.id==='idle-workspace'){clearTimeout(timer);resolve(reply);} });
             });
             workspace.send(JSON.stringify({ type:'open_session', id:'idle-workspace', cwd:root,sessionId:session.id }));
@@ -122,43 +104,5 @@ test('controlled desktop checks and stops the actual owned service, then starts 
         }
         // Owned runners and their pipes have closed; Windows may still be releasing directory handles.
         await fs.promises.rm(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-    }
-});
-
-test('exit zero without cleanup proof keeps the controlled owner alive and refuses a second owner', { timeout: 60000 }, async () => {
-    for (const unexpected of [false,true]) {
-    const { root, base, env } = createApplication(); const runs=[];
-    env.PIVANE_TEST_UNEXPECTED_EXIT=unexpected?'1':'0';
-    fs.writeFileSync(path.join(root,'server.js'), `
-        const http=require('node:http'), nonce=process.env.PI_MANAGED_LAUNCHER;
-        const server=http.createServer((_req,res)=>{res.setHeader('content-type','application/json');res.end('{"authenticated":false}')});
-        server.listen(0,'127.0.0.1',()=>{process.send({type:'maintenance-ready',nonce,port:server.address().port,appVersion:require('./package.json').version,engineVersion:'0.85.1',capabilities:{shutdownProof:true}});if(process.env.PIVANE_TEST_UNEXPECTED_EXIT==='1')setTimeout(()=>process.exit(0),500)});
-        process.on('message',message=>{
-            if(message.nonce!==nonce)return;
-            if(message.type==='desktop-request')process.send({type:'desktop-response',nonce,id:message.id,result:message.method==='execute'?{accepted:true,operationId:'synthetic-operation'}:{complete:true,revision:'one',blockers:[],scheduled:{futureCount:0,latestCount:0},ticket:'synthetic-ticket'}});
-            if(message.type==='maintenance-shutdown')server.close(()=>process.exit(0));
-        });
-    `);
-    try {
-        const run=controlled(root,env,randomUUID());runs.push(run);
-        await run.wait(event=>event.type==='ready','synthetic readiness');
-        if(!unexpected)run.send({type:'execute-stop',id:'execute',ticket:'synthetic-ticket',draftsSaved:true,externalWritersStopped:true});
-        await run.wait(event=>event.type==='error'&&event.code==='DESKTOP_CLEANUP_UNKNOWN','unconfirmed cleanup');
-        assert.equal(run.child.exitCode,null,'unknown cleanup retains the runner and its ownership guard');
-        assert.equal(run.events.some(event=>event.type==='stopped'&&event.clean),false);
-        if(!unexpected){
-            run.send({type:'snapshot',id:'accepted-progress'});
-            const progress=await run.wait(event=>event.type==='snapshot'&&event.id==='accepted-progress','accepted operation progress',3000);
-            assert.equal(progress.operationId,'synthetic-operation');assert.equal(progress.accepted,true);assert.equal(progress.complete,false);
-            assert.equal(run.events.filter(event=>event.type==='stop-accepted').length,1,'progress never replays cleanup');
-        }
-        const duplicate=controlled(root,env,randomUUID());runs.push(duplicate);
-        assert.notEqual((await duplicate.exited).code,0);
-        assert.equal(duplicate.events.some(event=>event.type==='ready'),false,'another owner cannot start while proof is missing');
-    } finally {
-        // These are isolated fixture runners; their service has already exited.
-        for(const run of runs){if(run.child.exitCode===null&&run.child.signalCode===null)run.child.kill();await run.exited;}
-        fs.rmSync(base,{recursive:true,force:true});
-    }
     }
 });

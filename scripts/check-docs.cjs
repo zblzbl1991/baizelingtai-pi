@@ -11,25 +11,33 @@ function assertPublicPath(file) {
         throw new Error(`Private or invalid distribution path: ${file}`);
     }
 }
-function publicDocumentation(root) {
+function documentationRegistry(root) {
     const registry = JSON.parse(fs.readFileSync(path.join(root, 'docs/public-files.json'), 'utf8'));
-    if (registry.version !== 1 || !Array.isArray(registry.files) || new Set(registry.files).size !== registry.files.length) {
+    const repositoryOnly = registry.repositoryOnly === undefined ? [] : registry.repositoryOnly;
+    if (registry.version !== 1 || !Array.isArray(registry.files) || !Array.isArray(repositoryOnly)
+        || new Set([...registry.files, ...repositoryOnly]).size !== registry.files.length + repositoryOnly.length) {
         throw new Error('Invalid public documentation registry');
     }
-    for (const file of registry.files) {
+    for (const file of [...registry.files, ...repositoryOnly]) {
         assertPublicPath(file);
         if (!file.endsWith('.md')) throw new Error(`Expected Markdown documentation: ${file}`);
     }
-    return registry.files;
+    return { files: registry.files, repositoryOnly };
+}
+function publicDocumentation(root) {
+    return documentationRegistry(root).files;
 }
 function checkDocumentation(root, distributionFiles) {
     root = fs.realpathSync(root);
-    const files = publicDocumentation(root), declared = new Set(files);
+    const registry = documentationRegistry(root), required = new Set(registry.files), repositoryOnly = new Set(registry.repositoryOnly);
+    const files = [...registry.files, ...registry.repositoryOnly.filter(file => fs.existsSync(path.join(root, file)))];
+    const declared = new Set([...registry.files, ...registry.repositoryOnly]);
     const included = distributionFiles ? new Set([...distributionFiles, 'TRIAL_MANIFEST.json']) : null;
     if (included) for (const file of distributionFiles) assertPublicPath(file);
     const errors = [];
     const upstream = fs.existsSync(path.join(root, 'vendor/manifest.json')) ? new Set(require('./vendor-files.cjs').vendorFiles(root)) : new Set();
     if (included) for (const file of included) {
+        if (repositoryOnly.has(file)) errors.push(`Repository-only document included in package: ${file}`);
         if (file.endsWith('.md') && !declared.has(file) && !upstream.has(file)) errors.push(`Distribution Markdown is not declared public: ${file}`);
     }
     function regular(file) {
@@ -51,7 +59,7 @@ function checkDocumentation(root, distributionFiles) {
     const instanceMarker = /\/srv\/(?:Pi5_GUI|pivane(?:-maintenance)?)(?:\/|\b)|\/home\/pi(?:\/|["`])|(?:pi5|pivane)-[a-z-]+-deploy-\d{8}|\/tmp\/pi-[a-z0-9-]*deploy-result\.json|backups\/[a-z0-9-]+-2026\d{4}/i;
     for (const file of files) {
         if (!regular(file)) { errors.push(`Not a regular public file: ${file}`); continue; }
-        if (included && !included.has(file)) errors.push(`Public document omitted from package: ${file}`);
+        if (included && required.has(file) && !included.has(file)) errors.push(`Public document omitted from package: ${file}`);
         const text = fs.readFileSync(path.join(root, file), 'utf8');
         if (instanceMarker.test(text)) errors.push(`Maintainer instance record in public document: ${file}`);
         walkTokens(lexer(text), token => {
@@ -68,7 +76,7 @@ function checkDocumentation(root, distributionFiles) {
                 assertPublicPath(resolved);
                 if (!regular(resolved)) throw new Error('not a regular file');
                 if (resolved.endsWith('.md') && !declared.has(resolved)) throw new Error('Markdown target is not public');
-                if (included && !included.has(resolved)) throw new Error('target is omitted from package');
+                if (included && required.has(file) && !included.has(resolved)) throw new Error('target is omitted from package');
             } catch (error) { errors.push(`Broken/private link in ${file}: ${href} (${error.message})`); }
         });
     }

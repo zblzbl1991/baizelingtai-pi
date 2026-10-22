@@ -2,6 +2,8 @@
 
 启动器适用于 Windows 上手动启动的白泽灵台实例：双击后先打开默认浏览器显示启动页，服务就绪后同一标签页自动进入工作台，关闭浏览器后服务仍在托盘运行。
 
+新版源码会在启动服务前持久登记本代所有权，确认服务清理完成且实际正常退出后才解除。如果启动器和托盘异常退出，重开可能提示“上次服务清理结果未知，请通过独立维护流程处理”；此时不会再启动服务，也不会回退已提交版本或最新数据。不要手工删除状态记录、按端口空闲判断已经清理，或反复点击启动。先保留现场，按[独立维护指南](LAUNCHER_REPAIR.md)核对；修复固定 EXE 的命令不会自动解除此状态。真实崩溃和准确包升级仍需单独验收，源码实现不代表已经部署。
+
 ## 首次使用
 
 1. 按 [Windows 安装指南](WINDOWS.md) 准备 Node.js 22、Git Bash 和 ripgrep，在程序目录执行一次 `node scripts/install.cjs`。已有安装成功的目录不用重复安装。
@@ -53,6 +55,16 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File scripts/desktop-tra
 
 日志位于原安装目录的 `.pivane-runtime/desktop/service-<运行标识>.log`，使用项目已有的私密文件权限与输出脱敏机制。每次启动新建日志，不覆盖旧日志；分享前仍须检查私人内容，按自己的保留策略管理日志。
 
+## 启动器整包更新
+
+支持新协议的 Windows 便携托盘在“版本与更新”页分别显示实际启动器和后台服务版本。整包更新先校验发布签名、ZIP 与文件清单，正常停机并备份后，由独立助手持有本轮 runner、托盘的准确 Windows 进程 HANDLE。助手确认两者实际退出后才取得原安装锁、替换固定 EXE 并切换版本；原快捷方式继续指向原入口。新版托盘、Node、脚本及服务来自同一版本目录，数据、配置、信任根、运行锁和日志仍归原安装目录。
+
+首次打开候选时工作台业务保持关闭，默认在 120 秒内核对私有控制通道、实际组件版本、HTTP 就绪、原生会话／预约／延迟消息读取和托盘实际装载证明，就绪后稳定观察至少 15 秒，再持久提交并开放业务。可在 `.env` 设置 `PIVANE_ACTIVATION_TIMEOUT_MS`，范围 15000—900000 毫秒；该预算包括启动与验证。验证不会给真实会话发送测试消息。页面和托盘显示等待退出、验证、回退或需要人工恢复的状态。
+
+提交前失败，仅在候选清理获证、runner 与托盘均退出后尝试一次恢复，先保留失败数据现场。结果不明、退出无法证明或恢复失败时保留所有权并停止自动操作；提交成功并开放工作后，不自动恢复旧备份。中断的旧式候选启动若已可能写入数据，也不直接启动旧版覆盖现场。
+
+没有新协议的旧外层仍只具备原服务更新能力，页面会明确提示；带新版 EXE 的更新包本身不会给旧外层补上交接能力。独立修复入口和旧版人工维护范围见[修复指南](LAUNCHER_REPAIR.md)；1.7.3 的自动迁移仍会明确拒绝无法证明的清理。本节描述源码行为，不表示准确 Windows 包已验收、实例已部署或版本已发布。
+
 ## 与后台服务的关系
 
 托盘和 [后台服务](BACKGROUND_SERVICE.md) 是两种启动方式。同一目录已有后台服务安装记录时，托盘拒绝启动，避免建立第二个服务所有者。继续使用原后台服务的桌面入口；需要切换时，先按后台服务指南正常停止并卸载，保留全部用户数据。
@@ -72,18 +84,18 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File scripts/desktop-tra
 维护者在 Windows x64 源码目录执行：
 
 ```powershell
-npm run pack:windows
+npm run pack:windows -- --update-trust C:\ReleasePublic\update-trust.json
 ```
 
 这一条命令会先按 lockfile 准备构建依赖和内置能力，再核对 Windows 启动器；版本、源码或构建清单不匹配时自动重建并复核，无需另外执行安装或 EXE 构建命令。应用版本仍取自 `package.json`，不会自动升版本。
 
-脚本使用统一公开源码清单生成快照，从官方地址下载固定版本的运行环境并核对 SHA256，随后用包内 Node/npm 在独立目录锁定安装生产依赖。不会复制当前 `node_modules`、`.env`、身份或运行数据。`dist/portable-cache` 缓存经校验的下载；缓存不进入交付包。构建需要网络和 Windows 自带 `tar.exe` / `curl.exe`，无须预装 7-Zip。最终生成 `dist/baizelingtai-<版本>-offline.zip`，拷贝这一个文件到内网即可。外层 ZIP 包含应用包 `baizelingtai-<版本>.zip`、校验文件 `baizelingtai-<版本>.zip.sha256` 和更新清单 `updates/latest.json`；清单路径与默认 GitLab 自动检测地址一致。`dist` 另外保留应用 ZIP 及同名 `.sha256`、`.update.json`，外层包中的 `updates/latest.json` 与该 `.update.json` 内容相同。先解压外层 ZIP，再解压应用 ZIP 即可使用；应用包顶层目录为 `baizelingtai-<版本>`，中文文件名使用明确的 ZIP UTF-8 编码标记。任一同名产物存在时构建拒绝覆盖，应先保存或移动旧包再构建。
+脚本使用统一公开源码清单生成快照，从官方地址下载固定版本运行环境并核对 SHA256，再用包内 Node/npm 在独立目录锁定安装生产依赖。不会复制当前 node_modules、.env、身份或运行数据。`dist/portable-cache` 只缓存已核验下载，不进入交付包。构建需要网络及 Windows tar.exe/curl.exe，无须预装 7-Zip。构建先生成应用 ZIP、同名 `.sha256` 和 `.update.unsigned.json` 草稿；维护者使用加密私钥显式签署新 `.update.json`，再以 `--bundle-only` 组装正式 `-offline.zip`，步骤见[签名与离线分发](development/UPDATE_SIGNING.md#构建草稿与正式离线分发)。未签名草稿不能作为正式更新源。正式外层只含准确应用 ZIP、校验文件和已签 `updates/latest.json`，中文文件名保持 ZIP UTF-8 标记，任一同名产物均拒绝覆盖。
 
-`scripts/windows-portable-assets.json` 是运行环境版本、下载地址和哈希的唯一清单。更换运行环境版本须重新验证。包内 `PORTABLE_MANIFEST.json` 记录源码归档哈希和全部应用、依赖、工具文件哈希；原始第三方许可证保留，来源见 `PORTABLE_NOTICES.txt`。
+`scripts/windows-portable-assets.json` 是运行环境版本、地址和哈希的唯一清单。更换版本须重新验证。包内 PORTABLE_MANIFEST 记录源码归档及全部程序、依赖、工具文件哈希。根目录 THIRD_PARTY_NOTICES.md 汇总说明仅保留在仓库，不纳入源码或 Windows 包；依赖和工具原始 LICENSE/NOTICE 与 PORTABLE_NOTICES.txt 继续完整保留。构建在源码冻结后添加稳定根公开信任文件和独立 `repair/` 闭包（含自己的 Node 与许可证），最后写入协议能力标记并生成完整 PORTABLE 清单。根目录 `修复白泽灵台.cmd` 只做独立诊断，具体修复须按[修复指南](LAUNCHER_REPAIR.md)显式执行。
 
 ### 内网更新源与 GitLab 分发
 
-`npm run pack:windows` 自动读取源码根目录的 `.baizelingtai-update-build.json`，存在时把该项目的公开 GitLab 清单地址写入包内 `baizelingtai-portable.json`，无需额外运行构建脚本或每个用户配置 `.env`。本机发布配置只包含项目地址，同时被 Git 和发行规则排除：
+构建显式使用 `--update-trust <本地公钥文件>`，不读取私钥或远程公钥；公钥通过独立可信交付内置，缺失、非法或带私密字段时拒绝构建。包内声明 launcherUpdateProtocol:1，公钥在源码 TRIAL 冻结后附加并进入完整 PORTABLE 清单；稳定安装根的公钥后续可授权轮换。`pack:windows` 同时自动读取源码根目录 `.baizelingtai-update-build.json` 中的公开 GitLab 项目地址，写入包内 updateFeedUrl；该本机发布配置被 Git 与发行规则排除：
 
 ```json
 {
@@ -92,17 +104,17 @@ npm run pack:windows
 }
 ```
 
-清单通过 GitLab API 的 `updates/latest.json` 和 `ref=HEAD` 跟随默认分支；ZIP 下载地址使用该项目的 Generic Package Registry，包名固定为 `baizelingtai`，包版本自动跟随应用版本。构建生成 `baizelingtai-<版本>.zip`、同名 `.sha256` 和 `.update.json`，清单绑定准确 ZIP 的版本、配套 Pi、字节数和 SHA256。`npm run pack:windows -- --dry-run` 只展示构建路径和更新源，不下载、打包或覆盖已有文件。没有本机发布配置时保持官方检查方式；配置损坏时明确失败。
+清单通过 GitLab API 的 `updates/latest.json` 和 `ref=HEAD` 跟随默认分支；ZIP 使用该项目 Generic Package Registry，包名固定为 baizelingtai，版本随应用版本。构建产生 `.update.unsigned.json` 草稿，绑定准确 ZIP 的版本、配套 Pi、字节数和 SHA256；正式签名步骤不进入构建。`npm run pack:windows -- --dry-run --update-trust C:\ReleasePublic\update-trust.json` 只展示计划，不下载、打包或覆盖。没有本机发布配置时保持官方检查源；配置损坏明确失败。
 
 显式 URL 参数仍可整体覆盖本机发布配置。以下域名、项目路径、项目数字 ID、版本均须替换为实际值；`{filename}` 由构建脚本替换为最终 ZIP 文件名：
 
 ```powershell
-npm run pack:windows -- --update-feed-url 'http://gitlab.example/team/baizelingtai/-/raw/main/updates/latest.json' --package-url 'http://gitlab.example/api/v4/projects/20/packages/generic/baizelingtai/1.8.0/{filename}' --release-url 'http://gitlab.example/team/baizelingtai/-/releases/v1.8.0'
+npm run pack:windows -- --update-trust C:\ReleasePublic\update-trust.json --update-feed-url 'http://gitlab.example/team/baizelingtai/-/raw/main/updates/latest.json' --package-url 'http://gitlab.example/api/v4/projects/20/packages/generic/baizelingtai/1.8.0/{filename}' --release-url 'http://gitlab.example/team/baizelingtai/-/releases/v1.8.0'
 ```
 
 所有链接须与清单同源。`--package-url` 和 `--release-url` 可省略：包地址默认是相对清单的 ZIP 文件名，“查看更新来源”默认打开清单。只给源域名不够，必须给出能返回 JSON 的完整清单地址。也支持 GitLab repository files API 的 `.../repository/files/updates%2Flatest.json/raw?ref=main`，或 `ref=HEAD` 跟随默认分支；API 清单地址应同时显式指定 `--package-url`，避免把 ZIP 相对地址解析到 API 目录。
 
-将 `-offline.zip` 拷贝到内网并解压后，使用其中的应用 ZIP 分发更新；SHA256 和更新清单始终绑定这个应用 ZIP。构建成功不等于发布：先按准确 ZIP 的验收流程验证，再把应用 ZIP 上传到公开 Generic Package Registry；随后将解压所得的 `updates/latest.json` 按原路径提交到 GitLab 项目，无需手动改名。发布操作由维护者完成，构建脚本不登录 GitLab、不上传。Package Registry 须允许匿名下载。若用仓库原始文件或静态站点分发 ZIP，须在构建时指定相对 `updates/latest.json` 的包地址（例如 `../baizelingtai-<版本>.zip`）或同源完整地址，避免默认相对文件名解析到 `updates` 子目录。完整检测规则及失败边界见[内网更新源](UPDATES.md#gitlab-与内网-windows-更新源)。
+按[签名与组装步骤](development/UPDATE_SIGNING.md#构建草稿与正式离线分发)生成正式 `-offline.zip` 后，拷贝到内网并解压。先完成准确 ZIP 验收，再上传应用 ZIP 到允许匿名下载的 Generic Package Registry，并将已签 `updates/latest.json` 按该路径提交到 GitLab。发布操作由维护者执行，构建脚本不登录或上传。先准备好签名清单和准确 ZIP，再推广强制验签客户端；旧解析器不会因新增签名字段获得验签能力。若使用仓库原始文件或静态站点分发 ZIP，构建时指定相对清单的包地址（例如 ../baizelingtai-<版本>.zip）或同源完整地址，避免解析到错误子目录。完整规则见[内网更新源](UPDATES.md#gitlab-与内网-windows-更新源)。
 
 原来的包不会自动知道新增源；首次需要发放包含源地址的新包，或在已有实例 `.env` 中设置 `BAIZELINGTAI_UPDATE_FEED_URL`。地址由本机发布配置、构建参数或部署配置决定，不使用运行机器上维护者的凭据。旧 `pivane-portable.json` 和 `PIVANE_UPDATE_FEED_URL` 保留读取兼容，不复制或迁移既有数据。
 

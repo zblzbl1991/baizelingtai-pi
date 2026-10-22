@@ -35,6 +35,8 @@
         const terminal = phase => ['succeeded', 'failed', 'interrupted'].includes(phase);
         const phases = { preparing: '正在准备更新…', installing: '正在准备安装…', downloading: '正在下载并校验整包…', extracting: '正在解压并核验文件…',
             verifying: '正在验证候选程序…', stopping: '正在停止旧服务…', 'backing-up': '正在备份数据…', starting: '正在启动新版…',
+            'waiting-exit': '正在退出旧托盘，随后自动打开新版…', validating: '正在验证整套程序与原数据，工作台暂未开放…',
+            'rollback-waiting-exit': '新版验证失败，正在退出后恢复旧版…', 'needs-recovery': '升级结果需要人工恢复；已保留现场，请勿重复更新。',
             succeeded: '更新完成，新版已启动。', failed: '更新失败，已保留旧程序与备份。请查看结果后再决定。', interrupted: '更新被中断，请核对运行版本与备份。' };
         const post = (route, body) => apiFetch('/api/pi/settings/updates/' + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         function pending(value) { pendingId = value; try { if (value) sessionStorage.setItem('pivane.update.job', value); else sessionStorage.removeItem('pivane.update.job'); } catch {} }
@@ -86,6 +88,11 @@
                 if (key === 'pi') engine.append(card); else cards.append(card);
             }
             panel.append(cards);
+            const wholePackage = data.maintenance?.wholePackageUpdateSupported === true;
+            panel.append(node('p', t('启动器版本：{0}；后台服务版本：{1}', data.maintenance?.launcherVersion || t('未核实'), data.maintenance?.serviceVersion || data.appVersion), { class: 'updates-note', id: 'updates-component-versions' }));
+            if (custom && data.maintenance?.portableUpdateSupported) panel.append(node('p', t(wholePackage
+                ? '本次更新会退出并自动重新打开启动器，整套程序验证通过后开放工作台。'
+                : '当前外层仅支持后台服务更新。启动器与托盘需要通过迁移入口更新。'), { class: 'updates-note', id: 'updates-launcher-capability' }));
             const job = data.maintenance?.job;
             const canInstall = custom && data.maintenance?.portableUpdateSupported;
             if (canInstall && data.pivane.status === 'available' && !ticket) {

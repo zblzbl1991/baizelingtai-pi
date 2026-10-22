@@ -93,6 +93,10 @@ Windows 托盘以 `scripts/start-desktop.cjs --controlled --generation <UUID>` �
 
 runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,method:"snapshot"|"review"|"execute",input`），响应为 `desktop-response`（`id,result` 或 `error:{code,message}`）。检查不长期锁住工作台；最终接受后沿统一异步停机，桌面停止采用可逆内存派发闸门，不调用持久预约暂停。此私有协议不扩展现有公开维护 action 列表，不新增 HTTP 停机接口。
 
+整包协议增加 `tray-attached` 与挑战绑定的 `tray-validated` 私有帧，仍受继承通道、LF 与 generation 约束。证据含实际装载的原生版本／哈希、托盘脚本哈希、程序根、Node 路径及 runner／托盘的 PID 和完整 Windows FILETIME 创建时间。独立助手持有准确 HANDLE 并响应 ready 后，旧外层才沿统一清理退出；不以 PID 消失推断退出。事件 `update-progress.phase` 为 `waiting-exit`、`validating`、`rollback-waiting-exit` 或 `needs-recovery`；`update-handoff` 绑定 activationId 与 mode。安装根与程序根分别由 `PIVANE_INSTALLATION_ROOT` / `PIVANE_PROGRAM_ROOT` 传递并与唯一 state.active 复核。
+
+候选就绪须声明 `capabilities.validationProof:true`。私有 IPC 的 `desktop-request.method:"validate"` 仅在验证闸门关闭且 activationId 匹配时读取原生会话与预约初始化状态，返回该事务的 control/data 证明和实际应用／引擎版本，不启动模型 worker。维护状态增加 `wholePackageUpdateSupported`、实际 `launcherVersion` / `serviceVersion`、`programRoot` 与有界 `activation:{id,phase,releaseId}`。验证中 HTTP 只豁免 GET 更新快照、GET 维护状态和既有 access/status；通知偏好写入、版本联网检查、普通 HTTP/WS 与后台派发均关闭。只有匹配的持久 committed 状态后才能接受 maintenance-activate；迟到 release 不解除候选闸门。
+
 托盘的稳定只读 `GET /status` 返回 `state,instance,generation` 和可选 `url,message`，状态包括 `starting,ready,error,stopped,stopping,unknown`。页面的 `startup-instance` 标记必须与实例相符。入口仅监听本机 `127.0.0.1`、校验 Host/Origin 并限制请求，随托盘退出关闭；单次读取失败退避重试，读取本身不启动服务或重放操作。它不属于 `/api/pi`，不读取会话或凭据，不接受启动、停机或配置写入。旧单轮临时页保持原有精简状态；生命周期与用户操作见 [托盘启动器](DESKTOP_LAUNCHER.md)。
 ## 消息渠道（messageChannels）
 
@@ -402,7 +406,13 @@ DOC／XLS／PPT 扩展为原件上传、预览和下载格式，容器与内部�
 
 ### 版本检查与 Pi 受管维护
 
+桌面启动、独立 helper/repair、备份恢复、会话离线迁移和信任应用会拒绝未完成的持久服务所有权，错误码 `DESKTOP_OWNER_UNPROVEN`；修复诊断投影为 `{status:"manual-recovery",canRepair:false,code:"DESKTOP_OWNER_UNPROVEN"}`，不公开控制 nonce 或完整 owner。首次 fork 前原子登记，只有同代可信 shutdown ack 与实际 exit0 且清除持久化完成后才放行下一代。新 runner 的拒绝只释放自己的启动资源，不产生旧服务 `clean:true` 证明，也不进入 validating 回退或修改旧状态。便携 metadata 保持 `launcherUpdateProtocol:1`，另要求 `desktopOwnerProtocol:1`；基线和候选须由完整清单绑定，能力不足为 `DESKTOP_OWNER_PROTOCOL_REQUIRED`，须独立维护。缺字段旧 state 仅保留既有兼容读取，不追认旧 orphan 安全；已采用协议后的缺失/畸形记录拒绝启动。普通维护状态不返回完整 owner。
+
 新 Windows 包使用 `baizelingtai-portable.json`，部署配置优先读取 `BAIZELINGTAI_UPDATE_FEED_URL`；以下旧环境变量与元数据文件名继续读取兼容，两个元数据文件同时存在时拒绝猜测。标准 `pack:windows` 读取本机发布配置，并以 `baizelingtai` 作为 GitLab Generic Package Registry 包名；详见[构建与分发](DESKTOP_LAUNCHER.md#内网更新源与-gitlab-分发)。既有 REST 响应字段保持兼容。
+
+Windows 便携包内元数据 `launcherUpdateProtocol:1` 表示候选理解整包启用前验证；新整包链路在停机前拒绝缺失此标识的候选。构建在独立修复代码/native 闭包、自己的 Node 与许可证及显式公钥输入均写入后才声明该能力，随后纳入完整 PORTABLE 清单；能力字段本身不代替验签、完整库存与真实进程验收。未签草稿不能成为正式更新源。分发与独立签名命令见[签名工具](development/UPDATE_SIGNING.md)。
+
+可信清单模式的 `pivane.signedManifest` 保留已签名原始字段和签名；`verification` 为 `{status:"verified",keyId,payloadSha256}`，无信任配置的旧只读诊断为 `{status:"unverified"}`。新协议或配置了本地受信公钥时拒绝无签名/无效签名，卡片 `status:error`；便携维护 review 和暂存始终要求签名，不接受布尔值授权。`release.signedManifest` 随一次性票据及 IPC 贯通，暂存前后重新验签并重读清单。旧客户端忽略额外字段不等于具备验签能力。签名编码与信任轮换规则见[版本与更新](UPDATES.md#发布者签名与首次信任)。
 
 更新快照增加 `source:{type:"official"}` 或 `{type:"manifest",url,origin}`。部署配置 `BAIZELINGTAI_UPDATE_FEED_URL`（兼容 `PIVANE_UPDATE_FEED_URL`）优先于 Windows 包内的 `updateFeedUrl`；清单模式的 check 只读取同源公开 HTTP(S) JSON，不查询 GitHub/npm。可用 `BAIZELINGTAI_UPDATE_RELEASES_URL` 指定同源发布页，作为未检查、错误、暂无适用版本及清单未指定 `releasesUrl` 时的入口；有效清单的 `releasesUrl` 优先。`pivane` 可返回 `packageFormat:"windows-portable-zip"`、`downloadUrl`、`sha256`、`bytes`、`publishedAt`；`pi.bundled:true` 的 version 是目标整包的配套 Pi 版本。错误清单返回各卡片 status:error，平台/架构/渠道不适用返回 no-release，保留 5 分钟缓存及请求互斥。notifications 返回 `supported:false,enabled:false,available:false`，automatic 不联网且不改既有提醒偏好；独立 Pi update review 返回 409；application review 仅在 `maintenance.portableUpdateSupported:true` 时接受 Windows 整包，旧 tar.gz/npm 安装器不处理 ZIP。清单字段与分发步骤见[内网更新源](UPDATES.md#gitlab-与内网-windows-更新源)。未配置源时以下官方检查语义不变。
 

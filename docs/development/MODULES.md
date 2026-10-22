@@ -2,6 +2,8 @@
 
 按任务查阅相关行，再读取对应功能契约。入口文件负责连接模块；状态、持久化和异步互斥由服务或组件本身管理。
 
+启动器整包自动升级的跨模块接手与实施顺序见[专项 Wayfinder](LAUNCHER_UPDATE_WAYFINDER.md)；签名、独立激活及桌面交接已有源码，独立修复和便携交付也已有源码，旧版自动迁移拒绝缺失证明，首次实际迁移和准确包整链按专项记录核对，不能把源码能力当作部署或发行验收。准确包的真实托盘、助手、原快捷方式与故障入口由[原生验收器](../../test/release/native-launcher-update.cjs)及其[契约](LAUNCHER_NATIVE_ACCEPTANCE.md)负责；[QA 上下文](../../server/pi-launcher-qa-context.js)只授权私有隔离路径，[检查点](../../server/pi-launcher-qa-checkpoints.js)只为显式 QA 场景生成回执与确定故障，不提供普通业务接口。
+
 | 任务 | 实现入口 | 契约与验证入口 |
 |---|---|---|
 | 六种 Office 格式、四来源派生预览与只读工作簿 | [来源解析](../../server/pi-office-preview-sources.js)、[服务](../../server/pi-office-previews.js)、[HTTP](../../server/pi-office-preview-routes.js)、[格式检查](../../server/pi-office-format.js)、[引擎](../../server/office-preview/engine.js)、[资源清单](../../server/office-preview/inventory.js)、[阅读桥](../../public/pi-office-file-preview.js)、[网格](../../public/pi-office-table-preview.js)、[工作簿解析](../../public/office-preview/parse.js) | [Office 预览](../OFFICE_PREVIEW.md)、[API](../API.md#office-文件预览)、[E2E 边界](E2E.md#office-预览验证入口)；pi-office-preview-sources/routes/previews/format、office-preview-engine、office-workbook、pi-office-file-preview 与对应浏览器专项 |

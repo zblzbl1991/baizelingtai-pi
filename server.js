@@ -988,20 +988,42 @@ const httpServer = app.listen(PORT, network.host, () => {
         const updateFeed = require('./server/pi-update-feed').configuredFeed(__dirname, process.env);
         process.send({ type: 'maintenance-ready', nonce: maintenance.nonce, backupInputs, port: address.port, appVersion: require('./package.json').version,
             engineVersion: require('./node_modules/@earendil-works/pi-coding-agent/package.json').version,
-            capabilities: { shutdownProof: true },
+            capabilities: { shutdownProof: true, validationProof: true },
             healthUrl: process.env.PI_WORKSPACE_INTERNAL_ORIGIN + '/api/access/status',
-            runtimePaths: { PI_CODING_AGENT_DIR: agent, PI_MEDIA_DATA_DIR: mediaDataRoot, PI_MEDIA_CONFIG_DIR: mediaProfile.directory,
+            runtimePaths: { PI_CODING_AGENT_DIR: agent,
+                ...(process.env.PI_CODING_AGENT_SESSION_DIR ? { PI_CODING_AGENT_SESSION_DIR: path.resolve(process.env.PI_CODING_AGENT_SESSION_DIR) } : {}),
+                ...(typeof process.env.PI_PROJECT_ROOTS === 'string' ? { PI_PROJECT_ROOTS: process.env.PI_PROJECT_ROOTS } : {}),
+                PI_MEDIA_DATA_DIR: mediaDataRoot, PI_MEDIA_CONFIG_DIR: mediaProfile.directory,
                 PI_WEB_DEFERRED_FILE: path.resolve(piAgentGateway.deferred.filePath), BAIZELINGTAI_UPDATE_FEED_URL: updateFeed || '',
                 BAIZELINGTAI_UPDATE_RELEASES_URL: process.env.BAIZELINGTAI_UPDATE_RELEASES_URL || updateFeed || '' } });
+        require('./server/pi-launcher-qa-checkpoints').writeReceipt(require('node:path').resolve(process.env.PI_MANAGED_BASE || __dirname), 'service-live', { programRoot: __dirname });
     }
 });
 piAgentGateway.attachWebSocket(httpServer);
 
+let shutdownTrigger = 'shutdown';
 const shutdown = require('./server/pi-process-shutdown').registerProcessShutdown(async () => {
     const httpClosed = new Promise((resolve, reject) => httpServer.close(error => error ? reject(error) : resolve()));
+    if (maintenance.managed) {
+        const root = require('node:path').resolve(process.env.PI_MANAGED_BASE || __dirname);
+        let outcome = 'unavailable', ownerBound = false;
+        if (process.env.PIVANE_NATIVE_QA === '1') {
+            try {
+                const api = require('./server/pi-desktop-owner'), state = api.stateOf(root), owner = api.ownerOf(state, root);
+                outcome = state.activation?.phase || 'none';
+                ownerBound = owner?.runnerGeneration === maintenance.nonce && owner.serviceGeneration === process.env.PIVANE_DESKTOP_SERVICE_GENERATION;
+            } catch { /* Missing proof never authorizes a synthetic pause. */ }
+        }
+        await require('./server/pi-launcher-qa-checkpoints').checkpoint(root, 'service-cleanup-pending', { programRoot: __dirname,
+            trigger: shutdownTrigger, outcome, ownerBound, generation: process.env.PIVANE_DESKTOP_SERVICE_GENERATION, httpListening: httpServer.listening });
+    }
     try { await piAgentGateway.dispose(); }
     finally { await require('./server/pi-rpc-client').shutdownRpcProcesses(); workspaceAccess.dispose(); }
     await httpClosed;
+    if (maintenance.managed && process.connected) {
+        const qa = await require('./server/pi-launcher-qa-checkpoints').checkpoint(require('node:path').resolve(process.env.PI_MANAGED_BASE || __dirname), 'service-before-cleanup-proof', { programRoot: __dirname });
+        if (qa.omitProof) return;
+    }
     if (maintenance.managed && process.connected) await new Promise((resolve, reject) => {
         process.send({ type: 'maintenance-shutdown-complete', nonce: maintenance.nonce }, error => error ? reject(error) : resolve());
     });
@@ -1009,10 +1031,26 @@ const shutdown = require('./server/pi-process-shutdown').registerProcessShutdown
 if (maintenance.managed) {
     process.on('message', message => {
         if (message?.nonce !== maintenance.nonce) return;
+        if (message.type === 'desktop-request' && message.method === 'validate') {
+            if (typeof message.id !== 'string' || message.id.length > 128) return;
+            void Promise.resolve().then(async () => {
+                if (!maintenance.locked || !message.input?.activationId || message.input.activationId !== maintenance.state.activation?.id
+                    || maintenance.state.activation.phase !== 'validating') throw Error('Validation is not pending');
+                await piAgentGateway.cron.ready; piAgentGateway.cron.healthy(); piAgentGateway.deferred.assertHealthy();
+                await piAgentGateway.learning.resumePromise;
+                // Use the native SessionManager projection. Never open a worker or send a prompt.
+                await piAgentGateway.store.listProjects();
+                return { control: true, data: true, activationId: message.input.activationId,
+                    appVersion: require('./package.json').version, engineVersion: require('./node_modules/@earendil-works/pi-coding-agent/package.json').version };
+            }).then(result => process.connected && process.send({ type: 'desktop-response', nonce: maintenance.nonce, id: message.id, result }, () => {}),
+                () => process.connected && process.send({ type: 'desktop-response', nonce: maintenance.nonce, id: message.id,
+                    error: { code: 'DESKTOP_VALIDATION_FAILED', message: 'Necessary original data could not be verified' } }, () => {}));
+            return;
+        }
         if (require('./server/pivane-desktop-stop').receiveDesktopRequest({ message, maintenance, stop: piAgentGateway.desktopStop,
             send: reply => process.send(reply, () => {}) })) return;
         maintenance.receive(message);
         if (message.type === 'maintenance-shutdown') { maintenance.locked = true; void shutdown(); }
     });
-    process.on('disconnect', () => { maintenance.locked = true; void shutdown(); });
+    process.on('disconnect', () => { maintenance.locked = true; shutdownTrigger = 'parent-disconnect'; void shutdown(); });
 }

@@ -117,7 +117,8 @@ npm test -- test/pi-gongwen.test.js test/pi-gongwen-revise.test.js test/pi-gongw
 |---|---|---|
 | 归档安装、真实 RPC/Shell、升级与恢复 | [acceptance.cjs](../../test/release/acceptance.cjs) | 独立 Node 22、准确归档及 SHA256、浏览器、Playwright、新输出目录；参数和平台门槛见[隔离验收](RELEASING.md#可复跑的隔离验收) |
 | Windows 便携 ZIP | [windows-portable.cjs](../../test/release/windows-portable.cjs) | Windows x64；传入 `ZIP SHA256`，QA 浏览器依赖在归档外 |
-| 网页一键更新 E2E | [portable-auto-update.cjs](../../test/release/portable-auto-update.cjs) | Windows、准确新旧 ZIP 及哈希、目标包 `.update.json`、浏览器与新输出目录；本地合成更新源，参数复用 [options](../../test/release/gitlab-portable-update.cjs) |
+| 原生启动器准确包升级 | [native-launcher-update.cjs](../../test/release/native-launcher-update.cjs) | 显式新旧准确 ZIP/hash、已签清单/QA 公钥、新输出、浏览器、baseline kind 和 22 个场景中的单项；见[完整边界](LAUNCHER_NATIVE_ACCEPTANCE.md)，真实固定 EXE/托盘/HANDLE 助手/原快捷方式/独立 repair；committed-crash 核对旧 service HANDLE 存活时明确拒绝新 owner，不覆盖实际 RPC worker HANDLE。全部 native 执行仍待验，源码与实际准确包结果分开 |
+| 网页服务更新 E2E | [portable-auto-update.cjs](../../test/release/portable-auto-update.cjs) | 旧服务更新入口，构造 manager/未签源，不能代替原生整包升级；参数复用 [options](../../test/release/gitlab-portable-update.cjs) |
 | 内网更新与回退演练 | [gitlab-portable-update.cjs](../../test/release/gitlab-portable-update.cjs) | 新旧包、SHA256 与独立目录；`--source-candidate` 会生成模拟包，结果与正式准确包分开 |
 | Pi 引擎受管联网更新 | [pi-managed-update.cjs](../../test/release/pi-managed-update.cjs) | 显式 `PI_RUN_MANAGED_UPDATE_TRIAL=1`，Node 22 / 24、独立测试数据；先读脚本的联网与更新目标 |
 | 公文生成／修订的开发样本 Office 回归 | [gongwen-office.cjs](../../test/release/gongwen-office.cjs)、[gongwen-revise-office.cjs](../../test/release/gongwen-revise-office.cjs) | Windows、实际 Word / WPS 与字体；`--out` 指向尚不存在的绝对目录；核对报告、渲染和修订接受／拒绝结果，记录缺失程序／字体。日常生成／修订自动核验电子属性，不依赖此脚本或逐份软件验收；样本通过不扩大为任意文件实机通过 |

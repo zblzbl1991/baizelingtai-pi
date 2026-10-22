@@ -11,6 +11,7 @@
 | 会话、并发、文件身份或生命周期问题 | [架构](docs/development/ARCHITECTURE.md) → [API](docs/API.md) | 已追到实际数据来源、互斥和退出边界 |
 | 选择测试或补 E2E | [E2E 导航](docs/development/E2E.md) → [验证矩阵](docs/development/WORKFLOW.md#验证矩阵) | 已列出本次真实经过的层、替身及未覆盖链路 |
 | 安装、升级、回退或发布 | [发布流程](docs/development/RELEASING.md) | 已明确准确归档、平台与隔离验收入口 |
+| 启动器整包自动升级的开发与验收 | [专项 Wayfinder](docs/development/LAUNCHER_UPDATE_WAYFINDER.md) → [已确认设计](docs/development/design/launcher-auto-update.md) | 已区分旧外层服务更新、新协议源码和准确包待验范围，找到签名、退出交接、修复与交付入口 |
 | 帮用户配置或排障 | [用户 Agent 指南](docs/AGENT_GUIDE.md) → [功能文档目录](docs/README.md) | 已核对实际安装版本和可用能力 |
 
 ## 沿调用链找所有者

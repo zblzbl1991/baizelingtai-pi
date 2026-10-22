@@ -33,3 +33,14 @@
 用户可见行为更新指南和 CHANGELOG，接口变化更新 API，模块责任变化更新开发文档。只记录已实现行为，区分源码完成、已部署、已发布和实机验收。应用版本与 lockfile 根版本一致，发行结果绑定实际包 SHA256，同名正式包不覆盖。
 
 私有资料、身份、媒体、备份和运行目录必须同时被 Git 和发行规则排除。Git ignore 不是打包策略或权限边界，也不清除已经提交的历史。
+
+## Agent skills
+
+### Issue tracker
+工程技能使用本地 Markdown 工单，操作前读取 [工单约定](docs/agents/issue-tracker.md)。
+
+### Triage labels
+分诊使用五个默认标签，见 [标签映射](docs/agents/triage-labels.md)。
+
+### Domain docs
+沿用单一上下文，探索领域前读取 [领域文档约定](docs/agents/domain.md)。

@@ -50,7 +50,7 @@ function parseFeed(data, { source, platform, arch, channel, compareVersions, rel
     if (platform !== data.platform || arch !== data.arch || (channel === 'stable' && data.channel !== 'stable')) return null;
     return { version: data.version, piVersion: data.piVersion, prerelease: data.channel === 'preview',
         releasesUrl, downloadUrl, sha256: data.sha256, bytes: data.bytes, publishedAt: data.publishedAt,
-        packageFormat: 'windows-portable-zip' };
+        packageFormat: 'windows-portable-zip', ...(data.signature !== undefined ? { signedManifest: require('./pi-update-signatures').signedManifest(data) } : {}) };
 }
 
 module.exports = { feedUrl, configuredFeed, sourceLink, parseFeed, portableMetadataFile };

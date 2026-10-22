@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { checkDocumentation, assertPublicPath } = require('../scripts/check-docs.cjs');
+const { checkDocumentation, assertPublicPath, publicDocumentation } = require('../scripts/check-docs.cjs');
 function fixture(t) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-docs-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -44,4 +44,37 @@ test('public documentation rejects known instance records and portable symlink e
     fs.symlinkSync(outside, path.join(root, 'docs/escape'), process.platform === 'win32' ? 'junction' : 'dir');
     fs.appendFileSync(path.join(root, 'README.md'), '\n[escape](docs/escape/NOTE.md)');
     assert.throws(() => checkDocumentation(root), /symlink is not allowed/);
+});
+
+test('repository-only summaries are audited when present and excluded from every distribution', t => {
+    const root = fixture(t), registry = path.join(root, 'docs/public-files.json');
+    const data = JSON.parse(fs.readFileSync(registry));
+    data.repositoryOnly = ['THIRD_PARTY_NOTICES.md'];
+    fs.writeFileSync(registry, JSON.stringify(data));
+    const summary = path.join(root, 'THIRD_PARTY_NOTICES.md');
+    fs.writeFileSync(summary, '# Summary\n\n[Guide](docs/GUIDE.md)\n');
+    const inventory = ['README.md', 'docs/GUIDE.md', 'docs/public-files.json'];
+    assert.deepEqual(publicDocumentation(root), data.files);
+    assert.equal(checkDocumentation(root, inventory).documents, 3);
+    assert.throws(() => checkDocumentation(root, [...inventory, 'THIRD_PARTY_NOTICES.md']), /Repository-only document included/);
+    fs.unlinkSync(summary);
+    assert.equal(checkDocumentation(root, inventory).documents, 2);
+    assert.equal(checkDocumentation(root).documents, 2, 'the packaged npm documentation check must also succeed');
+});
+
+test('repository-only classification cannot weaken required documents or package link checks', t => {
+    const root = fixture(t), registry = path.join(root, 'docs/public-files.json');
+    const data = JSON.parse(fs.readFileSync(registry));
+    data.repositoryOnly = ['THIRD_PARTY_NOTICES.md'];
+    fs.writeFileSync(registry, JSON.stringify(data));
+    fs.writeFileSync(path.join(root, 'THIRD_PARTY_NOTICES.md'), '# Summary');
+    fs.appendFileSync(path.join(root, 'README.md'), '\n[Summary](THIRD_PARTY_NOTICES.md)');
+    assert.equal(checkDocumentation(root).documents, 3);
+    assert.throws(() => checkDocumentation(root, data.files), /target is omitted from package/);
+    data.repositoryOnly = ['README.md'];
+    fs.writeFileSync(registry, JSON.stringify(data));
+    assert.throws(() => publicDocumentation(root), /Invalid public documentation registry/);
+    data.repositoryOnly = ['docs/local/NOTES.md'];
+    fs.writeFileSync(registry, JSON.stringify(data));
+    assert.throws(() => publicDocumentation(root), /Private or invalid/);
 });

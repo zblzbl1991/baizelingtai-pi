@@ -22,15 +22,18 @@ internal static class DesktopLauncher
                 CreateShortcut(root, args.Length == 2 ? args[1] : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
                 return 0;
             }
-            string script = Path.Combine(root, "scripts", "desktop-tray.ps1");
+            string programRoot = PivaneProgramSelection.Resolve(root);
+            string script = Path.Combine(programRoot, "scripts", "desktop-tray.ps1");
             if (!File.Exists(script)) throw new FileNotFoundException("找不到托盘程序，请保留完整的白泽灵台目录。", script);
             string powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
             ProcessStartInfo start = new ProcessStartInfo(powershell);
-            start.Arguments = "-NoLogo -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + script + "\"";
+            start.Arguments = "-NoLogo -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + script + "\" -Root \"" + root.TrimEnd(Path.DirectorySeparatorChar) + "\"";
             start.WorkingDirectory = root;
             start.UseShellExecute = false;
             start.CreateNoWindow = true;
             start.WindowStyle = ProcessWindowStyle.Hidden;
+            start.EnvironmentVariables["PIVANE_PROGRAM_ROOT"] = programRoot;
+            start.EnvironmentVariables["PIVANE_INSTALLATION_ROOT"] = root.TrimEnd(Path.DirectorySeparatorChar);
             using (Process child = Process.Start(start))
             {
                 if (child == null) throw new InvalidOperationException("无法启动白泽灵台托盘。");
@@ -73,6 +76,41 @@ internal static class DesktopLauncher
             if (shortcut != null) Marshal.FinalReleaseComObject(shortcut);
             if (shell != null) Marshal.FinalReleaseComObject(shell);
         }
+    }
+}
+
+// The fixed shortcut reads the same installation state as the managed runner.
+// An interrupted write is a repair condition, never permission to guess a root.
+public static class PivaneProgramSelection
+{
+    public static string Resolve(string installationRoot)
+    {
+        string root = Path.GetFullPath(installationRoot).TrimEnd(Path.DirectorySeparatorChar);
+        string stateFile = Path.Combine(root, ".pivane-runtime", "state.json");
+        try { File.GetAttributes(stateFile); }
+        catch (FileNotFoundException) { return root; }
+        catch (DirectoryNotFoundException) { return root; }
+        var json = new System.Web.Script.Serialization.JavaScriptSerializer();
+        json.MaxJsonLength = 4 * 1024 * 1024;
+        var state = json.Deserialize<System.Collections.Generic.Dictionary<string, object>>(System.Text.Encoding.UTF8.GetString(StartupAssetReader.Read(root, ".pivane-runtime/state.json", 4 * 1024 * 1024)));
+        object version, recovery, value;
+        if (!state.TryGetValue("version", out version) || Convert.ToInt32(version) != 1 || state.TryGetValue("needsRecovery", out recovery) && !Object.Equals(recovery, false)) throw new InvalidOperationException("升级状态不完整，请运行独立修复入口。");
+        if (state.TryGetValue("activation", out value) && value != null)
+        {
+            var activation = value as System.Collections.Generic.Dictionary<string, object>;
+            object phase;
+            if (activation == null || !activation.TryGetValue("phase", out phase) || !(phase is string) || Array.IndexOf(new string[] { "prepared", "validating", "committed", "rolled-back" }, (string)phase) < 0) throw new InvalidOperationException("升级替换结果未知，请运行独立修复入口。");
+        }
+        if (!state.TryGetValue("active", out value) || value == null) return root;
+        Guid id;
+        if (!(value is string) || !Guid.TryParse((string)value, out id) || id.ToString() != (string)value) throw new InvalidOperationException("无效的程序版本标识。");
+        string relative = ".pivane-runtime/releases/" + id.ToString();
+        var marker = json.Deserialize<System.Collections.Generic.Dictionary<string, object>>(System.Text.Encoding.UTF8.GetString(StartupAssetReader.Read(root, relative + "/PI_INSTALL_COMPLETE.json", 65536)));
+        byte[] lockBytes = StartupAssetReader.Read(root, relative + "/package-lock.json", 16 * 1024 * 1024);
+        string digest;
+        using(var sha = System.Security.Cryptography.SHA256.Create()) digest = BitConverter.ToString(sha.ComputeHash(lockBytes)).Replace("-", "").ToLowerInvariant();
+        if (!marker.TryGetValue("lockSha256", out value) || !Object.Equals(value, digest)) throw new InvalidOperationException("程序版本校验失败，请运行独立修复入口。");
+        return Path.Combine(root, ".pivane-runtime", "releases", id.ToString());
     }
 }
 

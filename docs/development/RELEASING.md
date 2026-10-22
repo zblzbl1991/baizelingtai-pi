@@ -17,7 +17,7 @@ package.json的应用版本、Pi依赖版本和快照时间戳是不同概念。
 ## 候选包
 
 1. 从明确的源码提交准备候选，核对 Git 跟踪清单与未提交改动，冻结公开文档，列清上述完整门槛的执行位置并在发布前全部完成。源码阶段先做受影响专项和必要集成、尽早发现问题；剩余全量检查可安排在冻结包内，避免相同环境下源码与包内机械执行两轮。记录源码提交、实际运行版本和候选之间的差异。
-2. 运行npm run pack:release（开发快照仍用pack:trial）。相同版本包存在时拒绝覆盖；冻结包变化须重新验收，已公开版本不能悄悄替换。`scripts/source-files.cjs` 的发行集合与 docs/public-files.json 决定内容；LICENSE、第三方声明和原生manifest随包；AGENTS.local.md、docs/local、身份、媒体和备份禁止纳入。构建前强制核对档案记忆 bundle 存在且与审查哈希一致，保证跳过安装脚本的旧版网页更新器仍能使用新包。构建后核对manifest/hash，不能仅检查.gitignore。归档显式使用 UTF-8 USTAR；[tar 调用策略](../../scripts/package-tar.cjs)统一生产器、准确包验收与便携打包的原生 tar 选择及字符集，Windows 固定调用 System32 tar 并显式按 UTF-8 读写，避免 PAX 扩展头或本地代码页乱码；不要以放宽解包器的文件类型、路径或完整性检查代替格式兼容验证。
+2. 运行npm run pack:release（开发快照仍用pack:trial）。相同版本包存在时拒绝覆盖；冻结包变化须重新验收，已公开版本不能悄悄替换。`scripts/source-files.cjs` 的发行集合与 docs/public-files.json 决定内容；LICENSE、依赖原始 LICENSE/NOTICE 和原生manifest随包；根 THIRD_PARTY_NOTICES.md 汇总说明仅在仓库保留；AGENTS.local.md、docs/local、身份、媒体和备份禁止纳入。构建前强制核对档案记忆 bundle 存在且与审查哈希一致，保证跳过安装脚本的旧版网页更新器仍能使用新包。构建后核对manifest/hash，不能仅检查.gitignore。归档显式使用 UTF-8 USTAR；[tar 调用策略](../../scripts/package-tar.cjs)统一生产器、准确包验收与便携打包的原生 tar 选择及字符集，Windows 固定调用 System32 tar 并显式按 UTF-8 读写，避免 PAX 扩展头或本地代码页乱码；不要以放宽解包器的文件类型、路径或完整性检查代替格式兼容验证。
 3. 从该包在独立目录执行 `node scripts/install.cjs`（旧归档没有此脚本时使用 `npm ci`），不继承维护者的node_modules、Provider环境或Pi身份；完成宣称支持平台的浏览器、安装、更新和恢复回归。开发专项、源码预检和冻结归档验收是不同层；最终结果必须证明准确包内运行。
 4. 更新公开平台范围与CHANGELOG，将测试结果绑定到准确的包SHA256。后续改动先按影响获得开发反馈；重新生成的正式候选仍须完整准确包验收。
 5. 准备下载包、SHA256、版本说明、安装/恢复步骤与已知限制。发布仓库/渠道和外部上传作为独立明确操作。
@@ -28,6 +28,10 @@ package.json的应用版本、Pi依赖版本和快照时间戳是不同概念。
 Office 预览的 [inventory](../../server/office-preview/inventory.js)和审查清单必须随准确包核对，涵盖引擎全目录、源码、manifest、NOTICE／许可证、传递依赖及生成的 Worker／模型资源；不能把开发目录可转换当作包内引擎完整。已声明支持的 Windows x64 候选执行严格隔离转换预检，组件缺失或损坏时不得标记完成／激活；首装的工作台可用但 Office 降级是另一种结果。未声明平台经同一策略明确降级，不因缺少 Windows 引擎阻断工作台更新，也不宣称原生转换可用。完整原生及浏览器入口见 [Office 预览验证](E2E.md#office-预览验证入口)，最终办公软件版面和实际新增字体效果单独记录。
 
 Git忽略不删除已经跟踪的内容或历史。新仓库初始化时检查暂存清单；如果别处已有仓库，先检查git ls-files和历史是否包含私有文件，不能据ignore宣称历史已经清理。
+
+## Windows 便携包的可信交付
+
+构建显式提供 `--update-trust` 公钥文件，原始私钥及口令不进入构建。先生成准确 ZIP、SHA256 和 `.update.unsigned.json` 草稿，再以加密私钥显式签署，并通过 `--bundle-only` 验签组装正式离线包；命令与换钥顺序见[签名工具](UPDATE_SIGNING.md)。未签草稿不能当作正式可发布清单，构建/签名/组装成功也不替代准确包验收。先上传验收通过的准确 ZIP 和已签源，再推广新客户端。便携构建在源码冻结后添加稳定根公钥、独立 `repair/` 代码/native 闭包与自己的 Node/许可证，再声明协议能力并写完整 PORTABLE 清单；验收须核对这些文件、根 `修复白泽灵台.cmd` 的只读诊断和不依赖主程序的运行。旧 1.7.3 不支持新清理证明，首次迁移按[独立维护路线](../LAUNCHER_REPAIR.md#173-的独立维护路线)操作，不宣称它可直接自动交接。
 
 ## 可复跑的隔离验收
 

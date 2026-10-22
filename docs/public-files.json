@@ -9,7 +9,6 @@
     "PRODUCT.md",
     "README.md",
     "README.zh-CN.md",
-    "THIRD_PARTY_NOTICES.md",
     "WAYFINDER.md",
     "docs/ACCESS_CONTROL.md",
     "docs/adr/0001-staffing-ledger-authority.md",
@@ -83,6 +82,7 @@
     "docs/development/research/gongwen-kit.md",
     "docs/development/RELEASING.md",
     "docs/development/WORKFLOW.md",
+    "docs/development/UPDATE_SIGNING.md",
     "docs/en/INSTALL.md",
     "docs/en/USER_GUIDE.md",
     "docs/releases/1.0.0.md",
@@ -110,6 +110,16 @@
     "pi-packages/compliance/skills/compliance-materials/SKILL.md",
     "pi-packages/compliance/skills/compliance-checks/SKILL.md",
     "pi-packages/compliance/skills/compliance-review/SKILL.md",
-    "pi-packages/compliance/skills/compliance-reports/SKILL.md"
+    "pi-packages/compliance/skills/compliance-reports/SKILL.md",
+    "docs/agents/issue-tracker.md",
+    "docs/agents/triage-labels.md",
+    "docs/agents/domain.md",
+    "docs/development/LAUNCHER_UPDATE_WAYFINDER.md",
+    "docs/development/LAUNCHER_NATIVE_ACCEPTANCE.md",
+    "docs/development/design/launcher-auto-update.md",
+    "docs/LAUNCHER_REPAIR.md"
+  ],
+  "repositoryOnly": [
+    "THIRD_PARTY_NOTICES.md"
   ]
 }

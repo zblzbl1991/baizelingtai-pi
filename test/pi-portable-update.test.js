@@ -5,6 +5,7 @@ const { once } = require('node:events');
 const express = require('express'), fetch = require('node-fetch');
 const { hash } = require('../server/pi-maintenance-files');
 const { validPortable, downloadPortable, unpackPortable, stagePortable } = require('../server/pi-portable-installer');
+const signatures = require('./update-signature-helper.cjs');
 const { MaintenanceClient } = require('../server/pi-maintenance-client');
 const { UpdateService, mountUpdateRoutes } = require('../server/pi-update-service');
 const fixture = t => { const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'pivane-portable-test-'))); t.after(() => fs.rmSync(dir, { recursive: true, force: true })); return dir; };
@@ -62,11 +63,13 @@ test('Windows extractor rejects traversal, links, aliases, user data and bad inv
 });
 test('review reserves async lookup, seals portable ticket and blocks concurrent maintenance', async t => {
     const app = express(), router = express.Router(); app.use(express.json()); app.use('/api/pi', router);
-    const release = plan(), sent = [], maintenance = new MaintenanceClient({ managed: true, nonce: 'fixture', send: message => sent.push(message) });
+    const root = fixture(t), release = plan(), sign = signatures.signer(root);
+    release.signedManifest = sign(signatures.manifest(release));
+    const sent = [], maintenance = new MaintenanceClient({ managed: true, nonce: 'fixture', send: message => sent.push(message) });
     maintenance.receive({ type: 'maintenance-status', nonce: 'fixture', status: { supported: true, appUpdateSupported: true, portableUpdateSupported: true, busy: false } });
     maintenance.receive({ type: 'maintenance-activate', nonce: 'fixture' });
     let unlock; const held = new Promise(resolve => { unlock = resolve; });
-    const service = new UpdateService({ appVersion: '1.7.1', env: { BAIZELINGTAI_UPDATE_FEED_URL: release.feed }, platform: 'win32', arch: 'x64' });
+    const service = new UpdateService({ root, appVersion: '1.7.1', env: { BAIZELINGTAI_UPDATE_FEED_URL: release.feed }, platform: 'win32', arch: 'x64' });
     service.pivane = async () => { await held; return { ...release, status: 'available' }; };
     mountUpdateRoutes(router, service, { maintenance, idle: () => true, pause() {} });
     const server = app.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
@@ -86,10 +89,13 @@ test('changed manifest or unpublished source stops portable staging before downl
     fs.writeFileSync(path.join(dir, 'package.json'), '{"version":"1.7.1"}');
     fs.writeFileSync(path.join(dir, 'TRIAL_MANIFEST.json'), JSON.stringify({ files: [{ path: 'package.json', bytes: 19, sha256: hash(Buffer.from('{"version":"1.7.1"}')) }] }));
     const app = express(); let downloads = 0;
-    app.get('/latest.json', (_req, res) => res.json({ schemaVersion: 1, version: '1.7.3', piVersion: '1.1.0', platform: 'win32', arch: 'x64', channel: 'stable', publishedAt: new Date().toISOString(), package: 'app.zip', bytes: 5, sha256: plan().sha256 }));
+    const sign = signatures.signer(dir);
+    app.get('/latest.json', (_req, res) => res.json(sign({ ...signatures.manifest(plan()), version: '1.7.3', package: 'app.zip' })));
     app.get('/app.zip', (_req, res) => { downloads++; res.send('hello'); });
     const server = app.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
-    const release = plan(`http://127.0.0.1:${server.address().port}/latest.json`), env = { BAIZELINGTAI_UPDATE_FEED_URL: release.feed };
+    const release = plan(`http://127.0.0.1:${server.address().port}/latest.json`);
+    release.signedManifest = sign(signatures.manifest(release));
+    const env = { BAIZELINGTAI_UPDATE_FEED_URL: release.feed };
     // Correct the byte count explicitly, so this exercises target drift, not a fixture error.
     const manifestFile = path.join(dir, 'TRIAL_MANIFEST.json'), manifest = JSON.parse(fs.readFileSync(manifestFile)); manifest.files[0].bytes = fs.statSync(path.join(dir, 'package.json')).size; fs.writeFileSync(manifestFile, JSON.stringify(manifest));
     await assert.rejects(stagePortable({ root: dir, directory: path.join(dir, 'candidate'), release, env }), /target changed/);
