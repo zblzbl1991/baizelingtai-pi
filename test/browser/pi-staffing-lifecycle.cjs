@@ -1,3 +1,4 @@
+const { browserTargetEnabled } = require('./targets.cjs');
 // Real workspace HTTP/WS, native worker, local provider, ledger and artifact store.
 const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http');
 const { once } = require('node:events'), express = require('express'), { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -93,6 +94,7 @@ async function main() {
     }, cwd);
     const screenshot = async (phase, locator, focus) => {
         for (const width of widths) {
+            if (!browserTargetEnabled(width)) continue;
             await page.setViewportSize({ width, height: 1000 }); await page.emulateMedia({ colorScheme: width === 393 ? 'dark' : 'light' });
             if (focus) await focus.scrollIntoViewIfNeeded();
             assert.deepEqual(await page.evaluate(() => ['body', '#staffing-tab', '.staffing-panel', '.staffing-views', '.staffing-plan-card'].filter(selector => { const node = document.querySelector(selector); return node && node.offsetParent !== null && node.scrollWidth > node.clientWidth + 1; })), [], phase + ' actual width at ' + width);

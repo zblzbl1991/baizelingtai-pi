@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled, target } = require('./targets.cjs');
 // Production index wiring: automatic notifications and settings lifecycle across deferred routes.
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -79,6 +80,7 @@ async function oauthLeave(browser, failure) {
     await finish(f, 'OAuth leave ' + failure);
 }
 async function profileLeave(browser) {
+    if (!browserTargetEnabled(393)) return;
     const f = await fixture(browser, 393, `#/profiles?profileId=${profileId}&section=persona`, { base }), { page } = f;
     let release, requested;
     const held = new Promise(resolve => { requested = resolve; });
@@ -112,6 +114,7 @@ async function profileLeave(browser) {
     await finish(f, 'profile leave');
 }
 async function profileCompletion(browser) {
+    if (!browserTargetEnabled(393)) return;
     const f = await fixture(browser, 393, `#/profiles?profileId=${profileId}&section=persona`, { base }), { page } = f;
     let release, requested;
     const held = new Promise(resolve => { requested = resolve; });
@@ -204,10 +207,10 @@ async function messageFocus(browser, width, leave, failure = false) {
     const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium' });
     try {
         const selected = process.env.PI_STARTUP_REVIEW_CASE;
-        if (!selected || selected === 'notifications') for (const width of [1440, 393]) await notifications(browser, width);
+        if (!selected || selected === 'notifications') for (const width of selectBrowserTargets([1440, 393])) await notifications(browser, width);
         if (!selected || selected === 'oauth') for (const failure of [false, true]) await oauthLeave(browser, failure);
         if (!selected || selected === 'profile') { await profileLeave(browser); await profileCompletion(browser); }
-        if (!selected || selected === 'focus') for (const failure of [true, false]) for (const width of [1440, 393]) for (const leave of [false, true]) await messageFocus(browser, width, leave, failure);
+        if (!selected || selected === 'focus') for (const failure of [true, false]) for (const width of selectBrowserTargets([1440, 393])) for (const leave of [false, true]) await messageFocus(browser, width, leave, failure);
         console.log(JSON.stringify({ reviewCases: selected || 'all', realIndex: true, notifications: 'singleton passive runtime', lifecycle: 'pending/failure cleanup and stale confirmation', focus: 'visible intent and revision' }));
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

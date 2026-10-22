@@ -266,6 +266,7 @@ test('package and skill versions are display metadata; update checks are explici
     fs.mkdirSync(path.dirname(pkgSkill), { recursive: true });
     fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: 'version-package', version: '2.3.4', pi: { skills: ['skills'] } }));
     fs.writeFileSync(pkgSkill, '---\nname: version-skill\ndescription: Fixture\nversion: 1.1.0\n---\nFixture');
+    const packageSource = path.relative(path.join(root, 'agent'), pkg);
     const metaDir = path.join(root, 'agent/skills/meta-version'), badDir = path.join(root, 'agent/skills/bad-version');
     fs.mkdirSync(metaDir, { recursive: true }); fs.mkdirSync(badDir, { recursive: true });
     fs.writeFileSync(path.join(metaDir, 'SKILL.md'), '---\nname: meta-version\ndescription: Fixture\nmetadata:\n  version: "6.6.0"\n---\nFixture');
@@ -275,7 +276,7 @@ test('package and skill versions are display metadata; update checks are explici
     await service.packageAction({ cwd, scope: 'global', action: 'install', source: pkg, confirmed: true, expectedRevision: snap.revision });
     try {
         snap = await service.snapshot(cwd, 'global');
-        const entry = snap.packages.find(item => item.source === '../version-package');
+        const entry = snap.packages.find(item => item.source === packageSource);
         assert.equal(entry.version, '2.3.4'); assert.equal(entry.updateMode, 'local');
         const versionOf = file => snap.resources.find(item => item.path === file)?.version;
         assert.equal(versionOf(pkgSkill), '1.1.0');
@@ -320,7 +321,7 @@ test('package and skill versions are display metadata; update checks are explici
         service.context = originalContext;
         if (savedOffline === undefined) delete process.env.PI_OFFLINE; else process.env.PI_OFFLINE = savedOffline;
         snap = await service.snapshot(cwd, 'global');
-        await service.packageAction({ cwd, scope: 'global', action: 'remove', source: '../version-package', confirmed: true, expectedRevision: snap.revision });
+        await service.packageAction({ cwd, scope: 'global', action: 'remove', source: packageSource, confirmed: true, expectedRevision: snap.revision });
         fs.rmSync(metaDir, { recursive: true, force: true }); fs.rmSync(badDir, { recursive: true, force: true });
     }
 });

@@ -1,3 +1,4 @@
+const { browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const path = require('node:path'), http = require('node:http');
 const { once } = require('node:events');
@@ -5,6 +6,7 @@ const express = require('express');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = path.resolve(__dirname, '../..');
 async function run(browser, base, width) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 852 }, isMobile: width < 900, hasTouch: width < 900 });
     const page = await context.newPage(), errors = [], calls = [];
     page.on('pageerror', e => errors.push(e.message));

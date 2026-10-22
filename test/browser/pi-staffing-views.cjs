@@ -1,3 +1,4 @@
+const { browserTargetEnabled } = require('./targets.cjs');
 // Real page, card, HTTP, domain and private persistence with a synthetic identity.
 const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http');
 const { once } = require('node:events'), express = require('express');
@@ -7,6 +8,7 @@ process.env.PI_CODING_AGENT_DIR = temporary;
 const { PiProfileRegistry } = require('../../server/pi-profile-registry'), { StaffingService } = require('../../server/staffing/service');
 const { mountStaffingRoutes } = require('../../server/staffing/routes'), { WorkspaceAccessService } = require('../../server/workspace-access-service');
 async function run(browser,width) {
+    if (!browserTargetEnabled(width)) return;
     const agent = path.join(temporary,String(width)); fs.mkdirSync(agent); process.env.PI_CODING_AGENT_DIR = agent;
     const service = new StaffingService({profiles:new PiProfileRegistry({resolveProject:value=>value}),today:()=> '2026-11-03'});
     const enabled = await service.enable({requestId:'enable',expectedRevision:0});

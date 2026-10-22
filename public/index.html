@@ -48,11 +48,8 @@
     <link rel="stylesheet" href="pi-composer-tools.css">
     <link rel="stylesheet" href="pi-selection-actions.css">
     <link rel="stylesheet" href="pi-side-chat.css">
-    <link rel="stylesheet" href="pi-artifacts.css">
     <link rel="stylesheet" href="pi-staffing.css">
     <link rel="stylesheet" href="pi-staffing-excel.css">
-    <link rel="stylesheet" href="media-connections.css">
-    <link rel="stylesheet" href="pi-transcription-settings.css">
     <!-- Optional web font: never block first paint when the font host is slow or unreachable. -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
     <link rel="stylesheet" href="/brand/fontawesome-6.4.0/css/all.min.css">
@@ -234,7 +231,7 @@
                         <span id="pi-actual-identity" class="pi-actual-identity" hidden></span>
                         <button id="pi-compliance-open" type="button" hidden aria-expanded="false" aria-controls="pi-compliance-drawer">工程项目档案</button>
                         <button id="pi-profile-authoring-return" class="pi-conversation-origin" type="button" hidden><i class="fa-solid fa-user-pen" aria-hidden="true"></i><span></span></button>
-                        <button id="pi-conversation-origin" class="pi-conversation-origin" type="button" hidden title="在工作对话中打开当前线程" aria-label="在工作对话中打开当前线程" data-i18n-title="s2574" data-i18n-aria-label="s2574"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i><span data-work-chat-label><!--i18n:s3867-->工作对话</span></button>
+                        <button id="pi-conversation-origin" class="pi-conversation-origin" type="button" hidden title="在工作对话中打开当前线程" aria-label="在工作对话中打开当前线程" data-i18n-title="s2581" data-i18n-aria-label="s2581"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i><span data-work-chat-label><!--i18n:s3867-->工作对话</span></button>
                         <button id="pi-current-thread-menu" type="button" title="当前线程操作" aria-label="当前线程操作" aria-haspopup="menu" aria-expanded="false" disabled data-i18n-title="s1347" data-i18n-aria-label="s1347"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></button>
                     </div>
                     <div id="pi-pending-ui-banner" class="pi-pending-ui-banner hidden">
@@ -692,18 +689,18 @@
                     </section>
 
                     <section class="workspace-settings-panel" data-settings-panel="media">
-                        <div class="settings-panel-header"><i class="fa-solid fa-photo-film" aria-hidden="true"></i><div><h3 id="settings-capabilities-title">模型与能力</h3><p><!--i18n:s4417-->配置媒体服务与 Agent 能力。</p></div></div>
+                        <div class="settings-panel-header"><i class="fa-solid fa-photo-film" aria-hidden="true"></i><div><h3 id="settings-capabilities-title">模型与能力</h3><p><!--i18n:s4425-->配置媒体服务与 Agent 能力。</p></div></div>
                         <section class="settings-media-section" aria-labelledby="settings-multimodal-title">
-                            <header class="settings-media-heading"><h4 id="settings-multimodal-title"><!--i18n:s4418-->媒体服务</h4><p><!--i18n:s4419-->选择类型，管理服务与模型。</p></header>
+                            <header class="settings-media-heading"><h4 id="settings-multimodal-title"><!--i18n:s4426-->媒体服务</h4><p><!--i18n:s4427-->选择类型，管理服务与模型。</p></header>
                             <div class="mc-settings-kinds">
-                                <button type="button" data-media-settings-kind="image"><i class="fa-regular fa-image settings-media-kind-icon" aria-hidden="true"></i><span class="settings-media-kind-copy"><strong><!--i18n:s109-->图像</strong><span><!--i18n:s4420-->图像生成与编辑</span></span><i class="fa-solid fa-chevron-right settings-media-chevron" aria-hidden="true"></i></button>
-                                <button type="button" data-media-settings-kind="video"><i class="fa-solid fa-film settings-media-kind-icon" aria-hidden="true"></i><span class="settings-media-kind-copy"><strong><!--i18n:s108-->视频</strong><span><!--i18n:s4421-->文字、图片生成视频</span></span><i class="fa-solid fa-chevron-right settings-media-chevron" aria-hidden="true"></i></button>
+                                <button type="button" data-media-settings-kind="image"><i class="fa-regular fa-image settings-media-kind-icon" aria-hidden="true"></i><span class="settings-media-kind-copy"><strong><!--i18n:s109-->图像</strong><span><!--i18n:s4428-->图像生成与编辑</span></span><i class="fa-solid fa-chevron-right settings-media-chevron" aria-hidden="true"></i></button>
+                                <button type="button" data-media-settings-kind="video"><i class="fa-solid fa-film settings-media-kind-icon" aria-hidden="true"></i><span class="settings-media-kind-copy"><strong><!--i18n:s108-->视频</strong><span><!--i18n:s4429-->文字、图片生成视频</span></span><i class="fa-solid fa-chevron-right settings-media-chevron" aria-hidden="true"></i></button>
                                 <button type="button" id="settings-speech-open" data-media-settings-kind="tts"><i class="fa-solid fa-volume-high settings-media-kind-icon" aria-hidden="true"></i><span class="settings-media-kind-copy"><strong><!--i18n:s107-->语音</strong><span><!--i18n:s3529-->朗读与语音转文字</span></span><i class="fa-solid fa-chevron-right settings-media-chevron" aria-hidden="true"></i></button>
                             </div>
                             <section id="settings-media-chat-execution" aria-labelledby="settings-media-chat-execution-title" aria-describedby="settings-media-chat-execution-description">
                                 <div class="settings-media-heading">
-                                    <h4 id="settings-media-chat-execution-title"><!--i18n:s4422-->对话自动生成</h4>
-                                    <p id="settings-media-chat-execution-description"><!--i18n:s4423-->开启后直接生成，关闭则先确认。</p>
+                                    <h4 id="settings-media-chat-execution-title"><!--i18n:s4430-->对话自动生成</h4>
+                                    <p id="settings-media-chat-execution-description"><!--i18n:s4431-->开启后直接生成，关闭则先确认。</p>
                                 </div>
                                 <div class="settings-media-toggles">
                                     <label class="settings-toggle-line" for="settings-media-auto-image"><span><!--i18n:s109-->图像</span><input id="settings-media-auto-image" type="checkbox" role="switch" checked></label>

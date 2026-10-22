@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled, target } = require('./targets.cjs');
 // Regression: media settings must be styled before the lazy connection dialog is requested.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -98,6 +99,6 @@ async function run(browser, width, language) {
 }
 (async () => {
     const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium' });
-    try { for (const width of [320, 393, 768, 1440, 1920]) for (const language of ['zh-CN', 'en']) await run(browser, width, language); }
+    try { for (const width of selectBrowserTargets([320, 393, 768, 1440, 1920])) for (const language of ['zh-CN', 'en']) await run(browser, width, language); }
     finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

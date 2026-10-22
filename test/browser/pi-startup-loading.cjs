@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled, target } = require('./targets.cjs');
 // Synthetic loading contract: real page assets, isolated HTTP/WS fixtures, no providers or writes.
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -82,7 +83,7 @@ async function main() {
     const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium' });
     const results = [];
     try {
-        for (const width of [1440, 393]) {
+        for (const width of selectBrowserTargets([1440, 393])) {
             for (const mode of ['chat', 'assistant']) {
                 const f = await fixture(browser, width, `#/${mode}`), { page } = f;
                 await f.go();
@@ -154,6 +155,7 @@ async function main() {
                 results.push({ width, hash, group }); await clean(f, hash);
             }
         }
+        if (browserTargetEnabled(393)) {
         // Finishing the initial feature load must not cancel an in-flight chat restore.
         const restore = await fixture(browser, 393, '#/artifacts'); let releaseSessions, requestedSessions;
         const sessionsRequested = new Promise(resolve => { requestedSessions = resolve; });
@@ -172,6 +174,7 @@ async function main() {
         await failed.page.locator('#workspace-feature-state button').click();
         await failed.page.locator('#artifacts-tab .artifacts-header').waitFor({ state: 'visible' });
         assert.equal(failures, 2); await clean(failed, 'style failure retry');
+        }
         // Script failure retries without executing already loaded dependencies a second time.
         const scriptFailure = await fixture(browser, 1440, '#/profiles'); let scriptFailures = 0;
         await scriptFailure.page.route('**/pi-agent-profiles.js', route => ++scriptFailures === 1 ? route.abort() : route.continue());
@@ -201,6 +204,7 @@ async function main() {
         assert.equal(race.requests.filter(url => url.endsWith('/media-connections.js')).length, 1);
         assert.equal(await race.page.locator('#lab-connections-dialog').count(), 1);
         await clean(race, 'rapid navigation and speech');
+        if (browserTargetEnabled(393)) {
         const lateDialog = await fixture(browser, 393); let releaseDialog, requestedDialog;
         const heldDialog = new Promise(resolve => { requestedDialog = resolve; });
         await lateDialog.page.route('**/media-connections.css', async route => { requestedDialog(); await new Promise(resolve => { releaseDialog = resolve; }); await route.continue(); });
@@ -210,6 +214,7 @@ async function main() {
         await lateDialog.page.waitForFunction(() => PiFeatures.ready('connections'));
         assert.equal(await lateDialog.page.locator('#lab-connections-dialog').isVisible(), false, 'late dialog load cannot reopen after leaving and returning');
         await clean(lateDialog, 'late dialog');
+        }
         console.log(JSON.stringify({ results, failures: ['style retry', 'script retry'], race: 'shared promise, no late activation or dialog', writes: 0 }));
     } finally { await browser.close(); }
 }

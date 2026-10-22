@@ -1,3 +1,4 @@
+const { browserTargetEnabled } = require('./targets.cjs');
 // Real feature HTTP and private ledger. Synthetic transcript and unrelated workspace APIs.
 const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http');
 const { once } = require('node:events'), express = require('express');
@@ -7,6 +8,7 @@ process.env.PI_CODING_AGENT_DIR = temporary;
 const { PiProfileRegistry } = require('../../server/pi-profile-registry'), { StaffingService } = require('../../server/staffing/service');
 const { mountStaffingRoutes } = require('../../server/staffing/routes'), { WorkspaceAccessService } = require('../../server/workspace-access-service');
 async function run(browser, width, raceOnly = false) {
+    if (!browserTargetEnabled(width)) return;
     const actualWidth = process.env.PI_STAFFING_VIEWPORT ? Number(process.env.PI_STAFFING_VIEWPORT) : width;
     assert.ok(Number.isInteger(actualWidth) && actualWidth >= 320, 'valid staffing test viewport');
     const stage = name => console.log(`staffing cards ${width}: ${name} ${new Date().toISOString()}`);

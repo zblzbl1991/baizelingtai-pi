@@ -1,3 +1,4 @@
+const { browserTargetEnabled } = require('./targets.cjs');
 // Real Excel/upload/plan/artifact services. Isolated identity, no real conversation.
 const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), http = require('node:http');
 const { once } = require('node:events'), express = require('express'), { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -6,6 +7,7 @@ const { PiProfileRegistry } = require('../../server/pi-profile-registry'), { Sta
 const { StaffingExcelService } = require('../../server/staffing/excel-service'), { mountStaffingRoutes } = require('../../server/staffing/routes'), { mountStaffingExcelRoutes } = require('../../server/staffing/excel-routes');
 const { ArtifactsService } = require('../../server/pi-artifacts'), { WorkspaceAccessService } = require('../../server/workspace-access-service');
 async function run(browser, width) {
+    if (!browserTargetEnabled(width)) return;
     const agent = path.join(temporary, String(width)); fs.mkdirSync(agent); process.env.PI_CODING_AGENT_DIR = agent;
     const staffing = new StaffingService({ profiles: new PiProfileRegistry({ resolveProject: value => value }) });
     const artifacts = new ArtifactsService({ store: { resolveProject: value => value }, supervisor: {}, libraryRoot: path.join(agent, 'artifacts') }), excel = new StaffingExcelService({ staffing, artifacts });

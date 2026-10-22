@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled, target } = require('./targets.cjs');
 // Real index/gateway/native worker and a loopback-only synthetic streaming model.
 // The pressure seam replaces bufferedAmount, not the RPC, snapshot or reconnect paths.
 'use strict';
@@ -9,7 +10,7 @@ const http = require('node:http');
 const { once } = require('node:events');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const artifacts = process.env.PI_BROWSER_ARTIFACT_DIR || os.tmpdir();
-const keep = new Set(['PIVANE_TEST_HERMES_BUNDLE', 'PIVANE_TEST_PI_JITI']);
+const keep = new Set(['PIVANE_TEST_HERMES_BUNDLE', 'PIVANE_TEST_PI_JITI', 'PIVANE_BROWSER_TARGET', 'PIVANE_BROWSER_AUDIT_FILE', 'PIVANE_TEST_SCREENSHOT_DIR']);
 for (const key of Object.keys(process.env)) {
     if (/^(?:PI_|PIVANE_|OPENAI_|ANTHROPIC_|GOOGLE_|GEMINI_|OPENROUTER_|AZURE_OPENAI_|AWS_|BEDROCK_|MISTRAL_|GROQ_|XAI_|DEEPSEEK_)/.test(key) && !keep.has(key)) delete process.env[key];
 }
@@ -74,7 +75,7 @@ const assistant = content => ({ role: 'assistant', content, timestamp: 2, stopRe
         process.env.PI_WORKSPACE_BASE_URL = base;
         wss = gateway.attachWebSocket(server);
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
-        for (const width of [1440, 393]) {
+        for (const width of selectBrowserTargets([1440, 393])) {
             const session = await gateway.store.createSession(cwd, `Integration ${width}`, { agentProfileId: null,
                 initializeSession(manager) {
                     manager.appendCustomEntry('synthetic-large-record', { text: 'x'.repeat(2 * 1024 * 1024) });

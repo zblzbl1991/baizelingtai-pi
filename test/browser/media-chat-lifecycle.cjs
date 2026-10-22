@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled, target } = require('./targets.cjs');
 // Synthetic DOM/API only: detached cards, pending reads/writes, polling and player reuse.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -15,7 +16,7 @@ for (let i = 44; i < wav.length; i += 2) wav.writeInt16LE(Math.round(1000 * Math
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
     const errors = [];
     try {
-        for (const width of [1440, 393]) {
+        for (const width of selectBrowserTargets([1440, 393])) {
             const page = await browser.newPage({ viewport: { width, height: 900 } });
             page.on('pageerror', error => errors.push(error.message));
             await page.goto('about:blank');

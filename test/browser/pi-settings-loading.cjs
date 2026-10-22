@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled, target } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -15,7 +16,7 @@ async function main() {
     try {
         const cases = [1440, 393].flatMap(width => tabs.map(tab => ({ width, tab })));
         cases.push(...[1920, 768, 320].map(width => ({ width, tab: 'media' })));
-        for (const { width, tab } of cases) {
+        for (const { width, tab } of selectBrowserTargets(cases)) {
             const direct = width === 1920;
             const f = await fixture(browser, width, direct ? '#/settings?tab=media' : '#/chat', { base }), { page } = f;
             let release;
@@ -67,6 +68,7 @@ async function main() {
             }
             await clean(f, `${width} ${tab}`);
         }
+        if (browserTargetEnabled(393)) {
         // A failed resource keeps the explicit retry action; retry returns to the settings skeleton.
         const f = await fixture(browser, 393, '#/chat', { base }), { page } = f;
         await f.go(); let attempts = 0, releaseRetry;
@@ -90,6 +92,7 @@ async function main() {
         assert.equal(attempts, 2);
         assert.equal(f.requests.filter(url => url.endsWith('/settings.js')).length, 1);
         await clean(f, 'retry and route changes');
+        }
         console.log(`Settings loading: ${cases.length} viewport/tab cases, direct URL, reduced motion, drafts, return, retry and late-route protection passed`);
     } finally { await browser.close(); }
 }

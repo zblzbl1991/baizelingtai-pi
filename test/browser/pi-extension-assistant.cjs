@@ -109,16 +109,16 @@ async function run(browser, base, width, locale, noProject = false) {
     assert.equal(await page.locator('#extension-pivane-weixin .extensions-version').textContent(), 'v2.4.10', 'messaging connectors report their own installation');
     assert.equal(await page.locator('#extension-pivane-weixin .extensions-card-cta').textContent(), locale === 'en' ? 'Manage' : '管理连接');
     await page.locator('[data-extension-filter="skill"]').click();
-    assert.deepEqual(await page.locator('.extensions-card').evaluateAll(cards => cards.map(c => c.id)), ['extension-ppt-master'], 'type filters narrow the catalog');
+    assert.deepEqual(await page.locator('.extensions-card').evaluateAll(cards => cards.map(c => c.id)), ['extension-guizang-ppt'], 'type filters narrow the catalog');
     await page.locator('[data-extension-filter="all"]').click();
     await page.locator('[data-extension-filter="installed"]').click();
     assert.ok((await page.locator('.extensions-card').evaluateAll(cards => cards.map(c => c.dataset.installation))).every(state => ['installed', 'configured'].includes(state)));
     await page.locator('[data-extension-filter="installed"]').click();
-    assert.equal(await page.locator('.extensions-card').count(), 7, 'pressing an active status filter clears it');
+    assert.equal(await page.locator('.extensions-card').count(), 8, 'pressing an active status filter clears it');
     updates = null; channelState = { component: { installed: false }, accounts: [] };
     await page.locator('#extensions-refresh').click();
     await page.locator('#extension-pivane-weixin [data-installation="optional"]').waitFor();
-    assert.equal(await page.locator('#extension-pi-hermes-memory [data-installation="configured"]').count(), 1);
+    await page.locator('#extension-pi-hermes-memory [data-installation="configured"]').waitFor();
     memoryAdapterInstalled = true; await page.locator('#extensions-refresh').click();
     await page.locator('#extension-pi-hermes-memory [data-installation="installed"]').waitFor();
     assert.equal(await page.locator('#extension-pi-hermes-memory [data-installation]').textContent(), locale === 'en' ? 'Profile adapter installed' : '档案适配已安装');
@@ -235,7 +235,7 @@ async function run(browser, base, width, locale, noProject = false) {
     await page.locator('#workspace-settings-close').click();
     if (!noProject) assert.equal(await page.locator('#pi-input').inputValue(), 'Discovery draft');
     await page.locator('.extensions-explore-choices button').first().click();
-    assert.equal(await page.locator('.extensions-card').count(), 7, 'home shortcuts clear stale search');
+    assert.equal(await page.locator('.extensions-card').count(), 8, 'home shortcuts clear stale search');
     await page.locator('#extensions-nav [data-extensions-tab="installed"]').click();
     await page.locator('#native-installed .native-assistant-entry').waitFor({ state: 'visible' });
     await page.locator('#workspace-settings-close').click();
@@ -369,7 +369,7 @@ async function run(browser, base, width, locale, noProject = false) {
     await page.waitForFunction(() => document.getElementById('pi-extension-assistant-add')?.hidden === true);
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('workspace:open-settings', { detail: { tab: 'extensions' } })));
     await page.locator('.extensions-card').first().waitFor();
-    assert.equal(await page.locator('.extensions-card').count(), 7);
+    assert.equal(await page.locator('.extensions-card').count(), 8);
     assert.equal(await page.locator('[data-extension-configure]:enabled').count(), 1, 'built-in staffing setup does not require an extension assistant');
     assert.equal(await page.locator('#extension-pivane-staffing [data-extension-configure]').isEnabled(), true);
     assert.equal(await page.locator('#extensions-assistant-unavailable').isVisible(), true);

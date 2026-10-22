@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled, target } = require('./targets.cjs');
 // Synthetic assistant selection regression; no native identity, live service or provider is used.
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -17,7 +18,7 @@ async function main() {
     const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium' });
     await fs.mkdir(evidence, { recursive: true });
     try {
-        for (const width of [1440, 393, 320]) {
+        for (const width of selectBrowserTargets([1440, 393, 320])) {
             const context = await browser.newContext({ viewport: { width, height: 900 }, locale: width === 1440 ? 'en-US' : 'zh-CN' });
             const page = await context.newPage(), errors = [], writes = [];
             page.on('pageerror', error => errors.push(error.message));

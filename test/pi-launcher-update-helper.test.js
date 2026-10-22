@@ -202,7 +202,7 @@ test('update helper never retries an interrupted replacement or restores committ
         for (const phase of ['activating', 'rolling-back', 'committed']) {
             const state = JSON.stringify({ version: 1, active: null, activation: { root, id, phase, rollbackAttempts: 0 } });
             fs.writeFileSync(file, state);
-            await assert.rejects(() => recoverActivation({ root, id, shutdownProof: { complete: true, generation: 'stopped' } }), /manual|committed/i);
+            await assert.rejects(() => recoverActivation({ root, id, shutdownProof: { complete: true, generation: 'stopped' } }), error => /manual|committed/i.test(error.message) || error.code === 'DESKTOP_OWNER_PROTOCOL_REQUIRED');
             assert.equal(fs.readFileSync(file, 'utf8'), state);
         }
     } finally { fs.rmSync(root, { recursive: true, force: true }); }

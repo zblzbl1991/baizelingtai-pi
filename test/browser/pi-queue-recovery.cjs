@@ -1,7 +1,9 @@
+const { browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const baseUrl = process.env.PI_QUEUE_TEST_URL || 'http://127.0.0.1:3106';
 async function run(browser, viewport) {
+    if (!browserTargetEnabled(viewport)) return;
     const context = await browser.newContext({ viewport, locale: 'zh-CN', isMobile: viewport.width < 900, hasTouch: viewport.width < 900 });
     const page = await context.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));

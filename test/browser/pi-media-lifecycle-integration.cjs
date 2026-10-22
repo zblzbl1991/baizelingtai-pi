@@ -1,3 +1,4 @@
+const { browserTargetEnabled } = require('./targets.cjs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const express = require('express');
@@ -18,6 +19,7 @@ const messages = id => [{ role: 'user', timestamp: 1, content: [{ type: 'text', 
     try {
         browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
         for (const width of [1440, 393]) {
+            if (!browserTargetEnabled(width)) continue;
             const page = await browser.newPage({ viewport: { width, height: 900 }, isMobile: width < 900 }), errors = [], mutations = [];
             let socket, snapshots = 0, hold = false, release, held;
             const gate = new Promise(resolve => { release = resolve; });

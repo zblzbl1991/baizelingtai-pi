@@ -10438,5 +10438,10 @@
         ["刷新预览", "Refresh preview"]
     );
     rows.push(['仅预览和下载', 'Preview and download only']);
+    rows.push(
+        ['Pi 默认', 'Pi default'],
+        ['使用 Pi 默认基础提示，完整内容见提示正文。', 'Uses the Pi default base prompt. See the prompt body for the full content.'],
+        ['此处为 Pi 当前提示快照。扩展可逐轮修改提示，供应商请求改写不包含在此视图中。', 'This is a snapshot of the current Pi prompt. Extensions can change it each turn; provider request rewrites are not included in this view.']
+    );
     globalThis.PiI18nCatalog = Object.freeze(rows.map(row => Object.freeze(row)));
 })();

@@ -1,3 +1,4 @@
+const { browserTargetEnabled } = require('./targets.cjs');
 // Public workbench boot must remain usable when the optional external font never responds.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -13,6 +14,7 @@ const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['te
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true });
     try {
         for (const width of (process.env.PI_TEST_DESKTOP_ONLY === '1' ? [1440] : [1440, 393, 320])) {
+            if (!browserTargetEnabled(width)) continue;
             const context = await browser.newContext({ viewport: { width, height: 950 }, locale: 'zh-CN', isMobile: width < 900, hasTouch: width < 900 });
             const page = await context.newPage(), errors = [], commands = [];
             page.setDefaultTimeout(12000);

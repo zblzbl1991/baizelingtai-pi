@@ -1,3 +1,4 @@
+const { selectBrowserTargets, browserTargetEnabled, target } = require('./targets.cjs');
 // Synthetic learning-page contract and responsive regression. No real profile or provider is used.
 const assert = require('node:assert/strict');
 const express = require('express');
@@ -30,6 +31,7 @@ const settings = { enabled: true, correctionEnabled: true, reviewEnabled: true, 
     triggerPhrases: { correction: [], preference: [], temporary: [], ignore: [] } };
 const screenshots = process.env.PIVANE_TEST_SCREENSHOT_DIR;
 async function run(browser, base, { width, locale, theme, behaviors }) {
+    if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ viewport: { width, height: 1000 }, locale });
     await context.addInitScript(language => localStorage.setItem('pi.workspace.language', language), locale.startsWith('en') ? 'en' : 'zh-CN');
     const page = await context.newPage(), errors = [], puts = [], actions = [];
