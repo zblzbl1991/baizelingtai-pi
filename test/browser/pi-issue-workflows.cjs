@@ -1,5 +1,6 @@
 // Real gateway + managed native worker + synthetic model; no production identity.
 const assert = require('node:assert/strict');
+const { selectBrowserTargets, target } = require('./targets.cjs');
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), http = require('node:http');
 const { once } = require('node:events');
 const { createHash } = require('node:crypto');
@@ -60,7 +61,7 @@ async function main() {
     const base = `http://127.0.0.1:${server.address().port}`; process.env.PI_WORKSPACE_BASE_URL = base;
     wss = gateway.attachWebSocket(server);
     browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    for (const width of [1440, 393, 320]) {
+    for (const width of selectBrowserTargets([1440, 393, 320])) {
         fs.writeFileSync(path.join(cwd, 'current-note.txt'), 'Original preview snapshot');
         const session = await gateway.store.createSession(cwd, 'Issue workflow ' + width);
         const context = await browser.newContext({ viewport: { width, height: 900 }, acceptDownloads: true, locale: 'en-US' });
@@ -73,7 +74,7 @@ async function main() {
         await context.addInitScript(({ cwd, sessionId }) => { localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem('pi.web.session:' + cwd, sessionId); localStorage.setItem('pi.web.locale', 'en'); }, { cwd, sessionId: session.id });
         const page = await context.newPage(), errors = [];
         page.setDefaultTimeout(30000); page.on('pageerror', error => { errors.push(error.message); console.error('pageerror:', error.message); });
-        await page.goto(base, { waitUntil: 'domcontentloaded' });
+        await page.goto(base + '/#/chat', { waitUntil: 'domcontentloaded' });
         await page.locator('#pi-input').fill('ISSUE_FLOW CHOOSE');
         await page.waitForFunction(() => !document.querySelector('#pi-send-button').disabled);
         await page.locator('#pi-send-button').click();
@@ -140,11 +141,11 @@ async function main() {
     }
     // Exercise cancellation, custom input, timeout and stopping through real form responses.
     for (const scenario of ['CUSTOM', 'CANCEL', 'TIMEOUT', 'STOP', 'FAIL']) {
-        const session = await gateway.store.createSession(cwd, 'Question ' + scenario), context = await browser.newContext({ viewport: { width: 393, height: 852 }, locale: 'en-US' });
+        const session = await gateway.store.createSession(cwd, 'Question ' + scenario), context = await browser.newContext({ viewport: { width: target() === 'desktop' ? 1440 : 393, height: 852 }, locale: 'en-US' });
         await context.request.post(base + '/api/access/login', { headers: { Origin: base, 'X-Pi-Access': '1' }, data: { token: 'synthetic-browser-token' } });
         await context.addInitScript(({ cwd, id }) => { localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem('pi.web.session:' + cwd, id); }, { cwd, id: session.id });
         const page = await context.newPage(); page.setDefaultTimeout(30000);
-        await page.goto(base, { waitUntil: 'domcontentloaded' });
+        await page.goto(base + '/#/chat', { waitUntil: 'domcontentloaded' });
         await page.locator('#pi-input').fill('ISSUE_FLOW ' + scenario); await page.waitForFunction(() => !document.querySelector('#pi-send-button').disabled);
         await page.locator('#pi-send-button').click();
         const panel = page.locator('#pi-question-panel:not([hidden])'); await panel.waitFor();
