@@ -79,7 +79,7 @@ async function run(browser, viewport) {
             throw new Error(`Unexpected RPC ${command.type}`);
         });
     });
-    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', baseUrl).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
     assert.match(await page.title(), /Fixture mode/);
     const tool = page.locator('[data-tool-id="edit1"]');

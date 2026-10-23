@@ -97,6 +97,11 @@
     transition: opacity 140ms ease, transform 140ms ease;
 }
 
+/* Keep the brand variant visible for the active theme. */
+.workspace-logo.brand-inverse { display: none; }
+html[data-theme="dark"] .workspace-logo.brand-default { display: none; }
+html[data-theme="dark"] .workspace-logo.brand-inverse { display: block; }
+
 .sidebar-brand-toggle .pv-panel-icon {
     opacity: 0;
     transform: scale(0.85);
