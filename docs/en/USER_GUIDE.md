@@ -196,7 +196,9 @@ The **Network & access** category is currently hidden in Settings; its existing 
 
 ## Appearance and interface language
 
-Theme and font size apply immediately under Preferences and stay local to this browser. Browser zoom still works; phone inputs remain at least 16px.
+Theme and font size apply immediately under Preferences (or from the palette button in the sidebar) and stay local to this browser. Browser zoom still works; phone inputs remain at least 16px.
+
+Themes: Daylight (sky blue), Mint (teal green), Oat (warm paper with a terracotta accent), Graphite (neutral black and white) and Dark (deep gray with sky blue). Backgrounds stay close to neutral; the theme colour marks buttons, selections and links. System switches between Daylight and Dark. Added lines and healthy connections stay green in every theme. The retired Slate blue and Lilac themes open as Daylight until you pick a theme again.
 
 ### Interface language
 

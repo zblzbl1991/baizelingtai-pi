@@ -86,15 +86,18 @@
     const SIDEBAR_KEY = 'pi.workspace.sidebarCollapsed';
     const FEATURE_KEYS = Object.freeze({ workChat: 'pivane.workspace.showWorkChat', cron: 'pivane.workspace.showCron' });
     const SPLIT_PREFIX = 'pi.workspace.split:';
-    const THEMES = new Set(['system', 'daylight', 'mint', 'slate', 'violet', 'dark']);
+    const THEMES = new Set(['system', 'daylight', 'mint', 'oat', 'graphite', 'dark']);
+    // Retired palettes keep working as the nearest current theme until the user picks again.
+    const RETIRED_THEMES = Object.freeze({ slate: 'daylight', violet: 'daylight' });
     const FONT_SIZE_KEY = 'pi.workspace.fontSize';
     const FONT_SIZES = Object.freeze({ small: '15px', default: '16px', large: '18px', xlarge: '20px' });
+    // Browser chrome follows the conversation header (--surface-transcript).
     const THEME_COLORS = {
-        daylight: '#edf1ee',
-        mint: '#eaf2ed',
-        slate: '#edf2f8',
-        violet: '#f3f0fa',
-        dark: '#0d0f10'
+        daylight: '#ffffff',
+        mint: '#fdfefe',
+        oat: '#fefcf9',
+        graphite: '#ffffff',
+        dark: '#18191d'
     };
 
     function storedNumber(key, fallback) {
@@ -113,7 +116,7 @@
         const managementPage = document.getElementById('workspace-settings-dialog');
         if (app && managementPage) app.append(managementPage);
         const hostLabel = document.getElementById('workspace-host');
-        if (hostLabel) hostLabel.textContent = window.location.host;
+        if (hostLabel) { hostLabel.textContent = window.location.host; hostLabel.title = window.location.host; }
         const routeTabs = new Set(['chat', 'assistant', 'setup', 'cron', 'artifacts', 'staffing', 'media', 'profiles', 'extensions', 'settings']);
         const settingsTabs = new Set(['providers', 'media', 'builtins', 'models', 'system-prompts', 'native', 'access', 'usage', 'updates']);
         const extensionTabs = new Set(['extensions', 'installed', 'mcp', 'channels', 'knowledge', 'builtins']);
@@ -163,6 +166,8 @@
         featureState.setAttribute('aria-live', 'polite');
         app?.append(featureState);
         const featureText = (zh, en) => window.PiI18n?.locale === 'en' ? en : zh;
+        // Navigation labels must not wait for the lazily loaded artifacts module.
+        document.querySelectorAll('[data-artifacts-label]').forEach(label => { label.textContent = featureText('成果中心', 'Artifacts'); });
         function settingsLoadingPage(params) {
             const tab = settingsTabs.has(params.get('tab')) ? params.get('tab') : 'providers';
             const names = { providers: ['供应商与模型', 'Providers and models'], media: ['模型与能力', 'Models & capabilities'], models: ['使用偏好', 'Preferences'], 'system-prompts': ['系统提示词', 'System prompts'], native: ['Pi 配置', 'Pi configuration'], access: ['访问控制', 'Access control'], usage: ['用量统计', 'Usage'], updates: ['版本与更新', 'Versions and updates'] };
@@ -411,9 +416,10 @@
         const themeMeta = document.querySelector('meta[name="theme-color"]');
         const systemThemeMedia = window.matchMedia('(prefers-color-scheme: dark)');
         const mobileMedia = window.matchMedia('(max-width: 900px)');
+        let sidebarCollapsedPreference = localStorage.getItem(SIDEBAR_KEY) !== 'false';
         const syncBrandToggle = () => { if (brandToggle) brandToggle.disabled = mobileMedia.matches; };
         syncBrandToggle();
-        mobileMedia.addEventListener('change', syncBrandToggle);
+        mobileMedia.addEventListener('change', () => { syncBrandToggle(); applySidebarLayout(); });
         const touchMedia = window.matchMedia('(hover: none) and (pointer: coarse)');
         const viewport = window.visualViewport;
         const pageIsZoomed = () => (viewport?.scale || 1) > 1.01;
@@ -433,6 +439,16 @@
         document.addEventListener('gestureend', () => { blockPageGesture = false; });
 
         function setSidebarCollapsed(collapsed, persist = true) {
+            sidebarCollapsedPreference = collapsed;
+            if (persist) localStorage.setItem(SIDEBAR_KEY, String(collapsed));
+            applySidebarLayout();
+        }
+
+        // Tablet widths always show the rail (phones the bottom bar) without changing
+        // the saved desktop choice. Only one toggle is in the tab order: the header
+        // button while expanded, the logo while collapsed.
+        function applySidebarLayout() {
+            const collapsed = sidebarCollapsedPreference || mobileMedia.matches;
             app?.classList.toggle('sidebar-collapsed', collapsed);
             for (const button of [sidebarToggle, brandToggle]) {
                 if (!button) continue;
@@ -440,12 +456,13 @@
                 button.title = collapsed ? translateUi("展开导航") : translateUi("折叠导航");
                 button.setAttribute('aria-label', button.title);
             }
-            if (persist) localStorage.setItem(SIDEBAR_KEY, String(collapsed));
+            if (brandToggle) brandToggle.tabIndex = collapsed ? 0 : -1;
             window.setTimeout(() => window.dispatchEvent(new Event('resize')), 180);
         }
 
         function setTheme(theme, persist = true) {
-            const preference = THEMES.has(theme) ? theme : 'system';
+            const current = RETIRED_THEMES[theme] || theme;
+            const preference = THEMES.has(current) ? current : 'system';
             const selected = preference === 'system'
                 ? (systemThemeMedia.matches ? 'dark' : 'daylight')
                 : preference;
@@ -500,7 +517,10 @@
 
         for (const button of [sidebarToggle, brandToggle]) {
             button?.addEventListener('click', () => {
+                const focused = document.activeElement === button;
                 setSidebarCollapsed(!app.classList.contains('sidebar-collapsed'));
+                // The pressed control hides with its layout; keep keyboard focus on the visible toggle.
+                if (focused) (app.classList.contains('sidebar-collapsed') ? brandToggle : sidebarToggle)?.focus({ preventScroll: true });
             });
         }
 

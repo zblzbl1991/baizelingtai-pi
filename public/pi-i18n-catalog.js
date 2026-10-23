@@ -10451,5 +10451,64 @@
         ['使用 Pi 默认基础提示，完整内容见提示正文。', 'Uses the Pi default base prompt. See the prompt body for the full content.'],
         ['此处为 Pi 当前提示快照。扩展可逐轮修改提示，供应商请求改写不包含在此视图中。', 'This is a snapshot of the current Pi prompt. Extensions can change it each turn; provider request rewrites are not included in this view.']
     );
+    // Workspace themes: warm and neutral palettes.
+    rows.push(
+        ['燕麦', 'Oat'],
+        ['温润舒适', 'Warm and cozy'],
+        ['石墨', 'Graphite'],
+        ['极简中性', 'Minimal and neutral']
+    );
+    // Delivered-file receipts and the structured question panel.
+    rows.push(
+        ['Agent 提问', 'Agent question'],
+        ['上一题', 'Previous question'],
+        ['下一题', 'Next question'],
+        ['收起提问', 'Collapse question'],
+        ['展开提问', 'Expand question'],
+        ['不回答并关闭', 'Close without answering'],
+        ['{0} 秒后自动关闭', 'Closes automatically in {0}s'],
+        ['正在提交回答…', 'Submitting answers…'],
+        ['按数字键 1–{0} 快速选择', 'Press 1–{0} to choose'],
+        ['问题', 'Question'],
+        ['或自行撰写回复', 'Or write your own answer'],
+        ['输入你的回答', 'Type your answer'],
+        ['提交', 'Submit'],
+        ['下一步', 'Next'],
+        ['提问与回答', 'Question and answer'],
+        ['已回答 {0} / {1} 个问题', 'Answered {0} of {1} questions'],
+        ['已回答', 'Answered'],
+        ['提问已超时，未作答', 'Question timed out without an answer'],
+        ['提问已随任务停止', 'Question stopped with the task'],
+        ['当前界面无法提问', 'Questions are unavailable in this interface'],
+        ['已关闭提问，未作答', 'Question closed without an answer'],
+        ['{0} 个文件', '{0} files', '{0} file'],
+        ['打开预览', 'Open preview'],
+        ['打开后下载', 'Open to download'],
+        ['显示其余 {0} 个文件', 'Show {0} more files', 'Show {0} more file'],
+        ['向你提问 · {0} 个问题', 'Asking you · {0} questions'],
+        ['向你提问', 'Asking you'],
+        ['交付文件 · {0}', 'Deliver files · {0}']
+    );
+    rows.push(
+        ['跟随线程的微信接收设置', 'Follow thread WeChat settings'],
+        ['推送至已绑定微信', 'Send to bound WeChat'],
+        ['不发送微信通知', 'Do not send WeChat notifications'],
+        ['默认跟随线程；绑定为接收全部结果时自动推送，静默任务不发送。', 'Follow the thread by default. All-results bindings receive completed tasks; silent tasks stay silent.']
+    );
+    rows.push(
+        ['消息队列', 'Message queue'],
+        ['待执行', 'Queued'],
+        ['已取回', 'Recovered'],
+        ['待执行 {0} 条，取回记录 {1} 组', '{0} queued messages, {1} recovery records'],
+        ['正在取回队列，请稍候…', 'Recovering queued messages…'],
+        ['取回后可编辑，不会停止当前任务。', 'Recover messages to edit them. The current task keeps running.'],
+        ['本轮工具执行后', 'After this round of tools'],
+        ['当前任务完成后', 'After the current task'],
+        ['取回记录 {0} 组', 'Recovery records · {0}'],
+        ['追加到草稿后，由你确认发送。', 'Append to your draft, then send when ready.'],
+        ['可能已经执行，请先核对会话再追加。', 'This may already have run. Check the conversation before appending.'],
+        ['取回与保存说明', 'Recovery and storage details'],
+        ['取回仅包含文字；如原消息含图片，请重新添加图片。', 'Only text is recovered. Add any original images again.']
+    );
     globalThis.PiI18nCatalog = Object.freeze(rows.map(row => Object.freeze(row)));
 })();

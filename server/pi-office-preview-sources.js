@@ -18,7 +18,7 @@ class OfficePreviewSources {
         const limit = this.limit(source), { type, ...input } = source; signal?.throwIfAborted();
         let data, name, proof;
         if (type === 'project') { data = await this.files.preview(input); name = path.basename(data.path); }
-        else if (type === 'delivery') { data = await this.deliveries.request(input, true); name = data.name; proof = data.officeProof; }
+        else if (type === 'delivery') { data = await this.deliveries.request(input, undefined, true); name = data.name; proof = data.officeProof; }
         else if (type === 'artifact') { const result = await this.artifacts.officeSource(input.key, signal); ({ data, name, proof } = result); }
         else {
             const leave = this.documents.reserve();

@@ -15,9 +15,9 @@ const session = { id: 'empty', cwd, name: 'Synthetic workbench', modified: new D
     stats: { messages: 42, context: 12, compactions: 2, contextTokens: 172000, model: { provider: 'fixture', id: 'model-x' } } };
 const model = { provider: 'fixture', id: 'model', name: 'A deliberately long model name for layout checks', input: ['text'], contextWindow: 32000 };
 const plan = id => ({ version: 1, id, explanation: '', plan: [{ step: 'Inspect the workspace', status: 'in_progress' }, { step: 'Verify controls', status: 'pending' }] });
-async function run(browser, base, viewport, preferences = {}) {
+async function run(browser, base, viewport, preferences = {}, { touch = viewport.width <= 680 } = {}) {
     if (!browserTargetEnabled(viewport)) return;
-    const context = await browser.newContext({ viewport, reducedMotion: 'reduce', locale: 'en-US', isMobile: viewport.width <= 680, hasTouch: viewport.width <= 680 });
+    const context = await browser.newContext({ viewport, reducedMotion: 'reduce', locale: 'en-US', isMobile: viewport.width <= 680, hasTouch: touch });
     const page = await context.newPage(), errors = [], writes = [], commands = [];
     let socket, streaming = false, progress = null, sequence = 0;
     page.on('pageerror', error => { errors.push(error.message); console.error('pageerror:', error.stack); });
@@ -66,6 +66,50 @@ async function run(browser, base, viewport, preferences = {}) {
     if (viewport.width <= 680) assert.ok(await page.locator('#pi-input').evaluate(node => parseFloat(getComputedStyle(node).fontSize) >= 16));
     if (viewport.width <= 900) assert.equal(await page.locator('#pi-session-pane').evaluate(node => node.inert), true, 'closed drawer cannot receive keyboard focus');
     if (viewport.width > 900) assert.equal(before.nav.width, preferences['pi.workspace.sidebarCollapsed'] === false ? 184 : 72);
+    // Sidebar: one reachable collapse control per layout, focus follows it, tablets always use the rail
+    // without overwriting the desktop choice, and the phone bar has five equal cells.
+    const sidebar = () => page.evaluate(() => ({ collapsed: document.querySelector('.app-container').classList.contains('sidebar-collapsed'),
+        brand: document.querySelector('#workspace-brand-toggle').tabIndex, toggle: getComputedStyle(document.querySelector('#workspace-sidebar-toggle')).display,
+        saved: localStorage.getItem('pi.workspace.sidebarCollapsed'), focus: document.activeElement.id, width: document.querySelector('#workspace-sidebar').getBoundingClientRect().width }));
+    if (viewport.width > 900) {
+        const initial = await sidebar();
+        assert.ok(initial.brand === (initial.collapsed ? 0 : -1) && (initial.toggle === 'none') === initial.collapsed, JSON.stringify(initial));
+        for (let step = 0; step < 2; step++) {
+            const current = await sidebar();
+            await page.locator(current.collapsed ? '#workspace-brand-toggle' : '#workspace-sidebar-toggle').focus();
+            await page.keyboard.press('Enter');
+            const next = await sidebar();
+            assert.ok(next.collapsed === !current.collapsed && next.saved === String(next.collapsed) && next.width === (next.collapsed ? 72 : 184), JSON.stringify(next));
+            assert.equal(next.focus, next.collapsed ? 'workspace-brand-toggle' : 'workspace-sidebar-toggle', 'focus stays on the visible toggle');
+        }
+        await page.waitForTimeout(250);
+        // The collapsed logo becomes the expand glyph on real hover only. Touch browsers keep :hover
+        // on the last tap, which must not leave a blank logo after collapsing with it.
+        const logo = () => page.evaluate(() => { const button = document.querySelector('#workspace-brand-toggle');
+            return { collapsed: document.querySelector('.app-container').classList.contains('sidebar-collapsed'), hover: button.matches(':hover'),
+                opacity: getComputedStyle(button.querySelector('.workspace-logo')).opacity, hoverNone: matchMedia('(hover: none)').matches }; });
+        if (touch) {
+            await page.tap('#workspace-brand-toggle'); await page.tap('#workspace-brand-toggle');
+            const tapped = await logo();
+            assert.ok(tapped.hoverNone && tapped.collapsed && tapped.hover && tapped.opacity === '1', JSON.stringify(tapped));
+            // This run covers only the touch sidebar; the hover-driven checks below need a mouse.
+            assert.deepEqual(errors, []); await context.close();
+            return { viewport, preferences, touch, before, errors };
+        } else if ((await sidebar()).collapsed) {
+            await page.hover('#workspace-brand-toggle');
+            const hovered = await logo();
+            assert.ok(hovered.hover && hovered.opacity === '0', JSON.stringify(hovered));
+            await page.mouse.move(0, 0);
+        }
+    } else if (viewport.width > 680) {
+        const rail = await sidebar();
+        const saved = 'pi.workspace.sidebarCollapsed' in preferences ? String(preferences['pi.workspace.sidebarCollapsed']) : null;
+        assert.ok(rail.collapsed && rail.width === 72 && rail.saved === saved && await page.locator('#workspace-brand-toggle').isDisabled(), JSON.stringify(rail));
+    } else {
+        const cells = await page.evaluate(() => [...document.querySelectorAll('#workspace-sidebar .nav-btn, #workspace-sidebar .sidebar-tool-button')].filter(node => node.offsetParent)
+            .map(node => ({ width: Math.round(node.getBoundingClientRect().width), font: getComputedStyle(node).fontSize })));
+        assert.ok(cells.length === 5 && cells.every(cell => Math.abs(cell.width - cells[0].width) <= 1 && cell.font === cells[0].font), JSON.stringify(cells));
+    }
     // Desktop merges project/context into the conversation header; smaller screens keep the command bar.
     const header = await page.evaluate(() => ({
         bar: getComputedStyle(document.querySelector('.pi-command-bar')).display,
@@ -290,6 +334,7 @@ async function run(browser, base, viewport, preferences = {}) {
             results.push(await run(browser, base, { width, height })); console.log(`PASS workbench ${width}x${height}`);
         }
         results.push(await run(browser, base, { width: 1440, height: 900 }, { 'pi.workspace.sidebarCollapsed': false, 'pi.workspace.split:agent-sessions': 320, 'pi.workspace.split:agent-inspector': 400 }));
+        results.push(await run(browser, base, { width: 1180, height: 820 }, {}, { touch: true })); console.log('PASS touch tablet 1180x820');
         await fs.writeFile(path.join(evidence, 'measurements.json'), JSON.stringify(results, null, 2));
         console.log(`PASS saved preferences; evidence: ${evidence}`);
     } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

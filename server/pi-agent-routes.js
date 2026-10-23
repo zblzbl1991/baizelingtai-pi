@@ -181,7 +181,7 @@ function createPiAgentGateway(options = {}) {
         idle: () => desktopStop.idle(),
         pause: () => deferred.pauseAll()
     });
-    const deliveries = require('./pi-file-routes').mountFilePreviews(router, { files, store, supervisor });
+    const deliveries = require('./pi-file-routes').mountFilePreviews(router, { files, store, supervisor, access });
     require('./pi-file-roots').mountFileRoots(router, fileRoots);
     require('./pi-project-directories').mountProjectDirectories(router, projectDirectories);
     // Only admitted exports may finish artifact work while disposal drains them.
@@ -273,7 +273,10 @@ function createPiAgentGateway(options = {}) {
         ...options.channelsOptions });
     cron.captureChannelNotify = event => channels.captureScheduledRecipients(event);
     cron.onChannelNotify = event => channels.track(channels.notifyScheduledRun(event));
-    channels.canNotifyScheduled = id => { const job = cron.db?.job(id); return Boolean(job && !job.deleted && job.notifyWeixin); };
+    channels.canNotifyScheduled = id => {
+        const job = cron.db?.job(id);
+        return Boolean(job && !job.deleted && require('./pi-cron-service').weixinNotification(job) !== 'off');
+    };
     channels.scheduledAdmissionPending = id => cron.db?.run(id)?.channelNotify?.status === 'pending';
     require('./channels/service').mountChannels(router, channels);
 
@@ -345,6 +348,8 @@ function createPiAgentGateway(options = {}) {
             fileRoots: descriptorBackendAvailable(),
             createDirectories: descriptorBackendAvailable(),
             filePreviews: descriptorBackendAvailable(),
+            fileDownloads: descriptorBackendAvailable(),
+            fileLimits: { previewBytes: require('./pi-file-types').MAX_FILE_BYTES, ...files.limits },
             deliverables: descriptorBackendAvailable(),
             artifacts: descriptorBackendAvailable(),
             usageStats: descriptorBackendAvailable(),
@@ -936,7 +941,10 @@ function createPiAgentGateway(options = {}) {
                     }
                     unsubscribe = worker.subscribe(event => {
                         if (event.type === 'gateway_reconnect') socket.close(1012, 'Session runtime changed');
-                        else safeSend(socket, event);
+                        else if (event.type === 'gateway_runtime_ended') {
+                            const closing = { code: 4006, reason: 'Session runtime ended' };
+                            safeSend(socket, event, closing); socket.close(closing.code, closing.reason);
+                        } else safeSend(socket, event);
                     });
                     const snapshot = await buildSnapshot(session);
                     if (socketClosed) {

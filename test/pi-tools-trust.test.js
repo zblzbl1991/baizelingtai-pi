@@ -34,7 +34,7 @@ test.after(() => fs.rmSync(root, { recursive: true, force: true }));
 test('default tools preserve empty, inherited and native defaults, with actual new-worker activation and strict CLI distinction', { timeout: 120000 }, async () => {
     const supervisor = new PiAgentSupervisor();
     const active = async worker => (await worker.getNativeResources()).tools.filter(t => t.active).map(t => t.name).sort();
-    const extensionTools = ['bg_wait', 'contact_supervisor', 'fixture_custom', 'subagent', 'subagent_supervisor', 'update_plan',
+    const extensionTools = ['ask_user_question', 'bg_wait', 'contact_supervisor', 'fixture_custom', 'subagent', 'subagent_supervisor', 'update_plan',
         'web_search', 'fetch_content', 'get_search_content', 'source_check',
         'find_roots', 'observe_ui', 'search_ui', 'expand_ui', 'inspect_ui', 'act_ui', 'read_text', 'wait_for',
         'launch_browser', 'navigate_browser', 'evaluate_browser'].sort();

@@ -102,17 +102,17 @@ runner 与服务沿已有 nonce 验证的 IPC 发送 `desktop-request`（`id,met
 
 `GET /api/pi/status.messageChannels=true` 表示消息渠道接口可用，不表示微信组件已安装或账号已连接。以下接口沿用工作台身份、Origin/CSRF、维护准入与 no-store；worker 内部凭据不能管理渠道。
 
-- `GET /api/pi/channels`：返回配置 `revision`、组件 installed/version/availableVersion/sources、脱敏 accounts、bindings、已允许 peers、最近 60 条 jobs（含 `sentChunks`、`sentMedia`、`waiting`、`kind`、有界 `deliveryIssues:[{name,reason}]`）、当前登录的二维码布尔矩阵/status/expiresAt 和 capabilities（`text`、`images`、`files`、`slashCommands`、`typing`、`proactive`）。没有账号 token、微信 context token、登录验证码或消息正文。
+- `GET /api/pi/channels`：返回配置 `revision`、组件 installed/version/availableVersion/sources、脱敏 accounts、bindings、已允许 peers、最近 60 条 jobs（含 `sentChunks`、`sentMedia`、`waiting`、`kind`、有界 `deliveryIssues:[{name,reason}]`）、当前登录的二维码布尔矩阵/status/expiresAt 和 capabilities（`text`、`images`、`files`、`slashCommands`、`typing`、`proactive`、`threadResults`）。没有账号 token、微信 context token、登录验证码或消息正文。
 - `POST /api/pi/channels/weixin/actions`：共同字段 `{action, confirmed:true, expectedRevision}`。操作在 await 前预占互斥；冲突 409，其他失败 400，结果不确定不自动重放。当前支持 `install`、`uninstall`、`login`、`cancel-login`、`verify-login`、`account`、`bind`、`unbind`、`stop`、`recover`、`acknowledge`。
 - `cancel-login` 需要 loginId；`verify-login` 需要 loginId/code（1–12 位数字）；登录最多五分钟，通过 GET 查询进度，不由浏览器重复提交登录请求。
-- `account` 需要 accountId/enabled/allowedUsers（最多 100 个 1–256 字符 ID）；启用必须有非空允许列表。`bind` 需要 accountId/peerId/cwd 和 sessionId，或显式 newSession=true。`unbind` 需要 accountId/peerId。最多 10 个账号、200 条绑定、500 个已允许聊天；临时及管理助手线程不接受绑定。
+- `account` 需要 accountId/enabled/allowedUsers（最多 100 个 1–256 字符 ID）；启用必须有非空允许列表。`bind` 需要 accountId/peerId/cwd 和 sessionId，或显式 newSession=true；可带 `replyMode:'all'|'wechat'`（默认 all，旧绑定缺失同样为 all），分别接收全部线程最终结果或仅微信发起的回复。绑定保存生效时间与最近已完成轮次边界，接收尚未结束的任务，不补发历史。`unbind` 需要 accountId/peerId。最多 10 个账号、200 条绑定、500 个已允许聊天；临时及管理助手线程不接受绑定。
 - `stop`、`recover`、`acknowledge` 需要 jobId。stop 仅请求中止所属微信运行；recover 仅在未开始微信发送且原生当前分支存在已完成结果时恢复发送；acknowledge 不重跑、不补发。
 
 `jobs.status=partial` 表示文字或部分文件已送达，但有附件因 `size`、`limit`、`unreadable`、`unavailable`、`pending` 或 `failed` 未发送；不会自动补发。`typing` 返回最多 100 个脱敏运行诊断 `{accountId,peerId,status,failures,reason}`，不包含票据或上游错误正文。修改指令在提交前持久化为 `dispatching`；重启或未知结果转 `uncertain`，Slash Command 不提供 `recover` 自动补运行入口。
 
-`GET /api/pi/cron` 新增 `channelNotifications:{pending,failed,lastError}`；`lastError` 仅为 `channel-admission-pending`、`channel-capture-failed` 或 null。运行记录的 `channelNotify.status` 为 `pending`、`accepted` 或 `skipped`；accepted 仅表示渠道持久入队，实际微信送达以渠道 jobs 为准。
+`GET /api/pi/cron` 新增 `channelNotifications:{pending,failed,lastError}`；任务的 `weixinNotification:'inherit'|'on'|'off'` 默认为跟随线程；旧任务的默认 false 跟随，原 true 保持推送，显式关闭使用 off。旧客户端提交的布尔 `notifyWeixin` 仍转换为 on/off。`lastError` 仅为 `channel-admission-pending`、`channel-capture-failed` 或 null。运行记录的 `channelNotify.status` 为 `pending`、`accepted` 或 `skipped`；accepted 仅表示渠道持久入队，实际微信送达以渠道 jobs 为准。
 
-状态、队列预算、组件来源与存储见[消息渠道](MESSAGE_CHANNELS.md)。原生私有命令标记 `channels-v1` 不加入公开 RPC 命令白名单；`pivane-channel-message` 是唯一聊天正文，`pivane-channel-turn` 记录运行状态和回复条目 ID。浏览器只按真实回执显示送达，不以模型输出结束推断微信收到。
+状态、队列预算、组件来源与存储见[消息渠道](MESSAGE_CHANNELS.md)。原生私有命令标记 `channels-v1` 不加入公开 RPC 命令白名单；`pivane-channel-message` 是唯一聊天正文，`pivane-channel-turn` 记录运行状态和回复条目 ID。浏览器只按真实回执显示送达，不以模型输出结束推断微信收到。`pivane-thread-turn` 保存普通受管轮次起止、来源及最终回复 ID；`jobs.kind='thread'` 仅持久化原生轮次引用与固定接收绑定，恢复时重读当前原生分支。微信原发起者和定时任务分别沿用既有渠道／调度回执，避免重复投递。网页 `stop_and_recover` 对独占中的微信轮次直接中止，保留其原生结算互斥。
 
 ## 成果中心（artifacts）
 
@@ -406,7 +406,9 @@ DOC／XLS／PPT 扩展为原件上传、预览和下载格式，容器与内部�
 
 `fileRoots=true` 标记独立于会话 cwd 的多目录浏览：`GET/POST /files/roots` 读取／修改按项目保存的关联目录（`expectedRevision`、最多16根）；`GET /files/directories?path` 安全选择服务器目录；`GET /files/resolve?cwd&path` 返回文件所属根与是否已关联，不读取正文或自动授权。关联根只是导航偏好，不更改会话、工具权限或交付分支。字段与错误见 [关联目录 API](FILE_VIEWER.md#关联目录-api)。
 
-`filePreviews=true` 提供 `GET /files/preview?cwd&path` 的类型化 JSON 快照（16 MiB、UTF-8 文本或 base64），供图片、PDF、CSV/TSV、SVG、音频、HTML 隔离预览及浏览器原字节下载；`/files/content` 保持原语义。`deliverables=true` 提供 `GET /deliverables?cwd&sessionId` 列表，加 `path` 查已登记来源别名，加 `id/index` 读取原生当前分支可见的交付快照。新 `deliver_files` 工具在受管 worker 中登记授权成果并追加原生引用，不提供任意 Web 注册接口。类型、来源、边界和错误见 [文件交付契约](FILE_VIEWER.md#类型化预览与交付-api)。
+`filePreviews=true` 提供 `GET /files/preview?cwd&path` 的类型化 JSON 快照（16 MiB、UTF-8 文本或 base64），供图片、PDF、CSV/TSV、SVG、音频、签名识别的 MP4 和隔离 HTML 预览；`/files/content` 保持原语义。`fileDownloads=true` 提供独立的 `GET/HEAD /files/download?cwd&path` 与 `GET/HEAD /deliverables/download?cwd&sessionId&id&index`，通过受认证的 attachment 响应分块下载；预览失败不再禁用超大文件下载。`fileLimits` 返回 `previewBytes/downloadBytes/deliveryFileBytes/deliveryTotalBytes`，默认分别为 16/512/512/1024 MiB。`deliverables=true` 提供 `GET /deliverables?cwd&sessionId` 列表，加 `path` 查已登记来源别名，加 `id/index` 读取原生当前分支可见的交付预览。`deliver_files` 在受管 worker 中登记授权成果并追加原生引用，成功的 `details.pivaneDeliverable` 由聊天自动渲染为文件卡片；不提供任意 Web 注册接口。类型、来源、限额、环境配置和错误见 [文件交付契约](FILE_VIEWER.md#类型化预览与交付-api)。
+
+受管主会话新增模型专用工具 `ask_user_question`，参数为 `questions`（1–4 项，问题文字须唯一）和可选 `timeoutMs`（1000–1800000，默认 600000，整次调用共用）。每项含 `question`（1–1000 字符）、可选 `header`（最多 24 字符的短标签）、`options`（2–8 项 `{label, description?}`，label 1–120 字符且唯一，description 最多 240 字符）、`allowCustom`（有选项时默认 true）和 `placeholder`（最多 120 字符）。省略选项时为文字问题；回答最多 4000 字符。每题按顺序复用一个原生 `extension_ui_request` select/input 及 `extension_ui_response`：select 的 value 为选项 label、允许时为自写文字、空字符串表示跳过；通用对话框仍可选“其他 / Other”后再发 input。不增加 RPC 命令或第二份提问存储。同线程只允许一项此工具等待；刷新／重连使用现有 pendingUi 快照。结果在文本及 `details.pivaneQuestion` 返回 `{status,cancelled,answers}`，status 为 `answered|cancelled|timed_out|aborted|unavailable`；仅 answered 的 cancelled=false 且 answers 每项为 `{question,header?,answer,selectedIndex,custom,skipped}`，其他状态 answers 为空数组。selectedIndex 为零基选项索引或 null；skipped 的 answer 为 null。停止沿用原生工具 signal 和 worker 生命周期，不将超时或取消视为默认答案。
 
 `fileViewer=true` 标记已挂载 `GET /files/content?cwd&path`：按当前项目范围读取普通 UTF-8 文件，最大 2MiB、4 并发，返回 cwd/path/absolutePath/content/size/modifiedAt/readAt/revision，响应 no-store/nosniff。复用 token/Origin/realpath/项目根校验，拒绝凭据、越界软链接、非普通文件、二进制与读取中变化；不启动 worker、不写文件或历史。write 记录全文来自原生消息，当前磁盘全文仅用户选择/刷新时请求。字段、错误码及展示契约见 [FILE_VIEWER.md](FILE_VIEWER.md)。
 
@@ -869,7 +871,7 @@ Gateway 在响应或 timeout 时向订阅者发送 `{ "type": "gateway_ui_resolv
 
 ### 3.9 事件
 
-除 gateway 自定义 `gateway_error`、`gateway_ui_resolved` 外，服务端原样转发 Pi RPC 事件。当前前端处理：
+服务端透传 Pi RPC 事件，并提供 `gateway_` 开头的网关事件。当前前端处理：
 
 - `agent_start`, `agent_settled`
 - `message_start`, `message_update`, `message_end`
@@ -883,6 +885,7 @@ Gateway 在响应或 timeout 时向订阅者发送 `{ "type": "gateway_ui_resolv
 - `extension_error`（保留原生扩展错误，不冒充普通回复或执行成功）
 - `gateway_controls`（主会话运行队列、取回列表和扩展状态的有修订内存快照）
 - `gateway_error`
+- `gateway_runtime_ended`：`{type:'gateway_runtime_ended',reason:'quit',cwd,sessionId,webRuntimeId,webSequence}`。显式退出在Shell与RPC实际结束后，通知该持久线程其余仍在订阅的连接，并以4006（Session runtime ended）关闭；客户端清除运行展示、保留本页草稿/附件且不因该终态自动重连。主动退出的连接仍接收`quit_session`成功响应。其他重启、移动、删除及断线恢复沿用其原有关闭协议，停机未完成或失败不发送此确认。
 
 新增 Pi event 支持时，优先保持透传，在 `pi-chat.js` 增加渲染分支。
 

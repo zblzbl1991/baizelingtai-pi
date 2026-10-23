@@ -230,8 +230,8 @@
 .native-item-row.is-off .native-item-title > strong { color: var(--text-muted); }
 .native-item-badge[data-kind="off"] { background: transparent; border: 1px solid var(--line); }
 #native-installed .native-item-toggle { min-width: 84px; gap: 6px; font-weight: 600; }
-#native-installed .native-item-toggle[data-action="on"] { border-color: #4d9a76; background: #347c5b; color: #fff; }
-#native-installed .native-item-toggle[data-action="on"]:hover:not(:disabled) { border-color: #4d9a76; background: #3d8d69; }
+#native-installed .native-item-toggle[data-action="on"] { border-color: var(--primary); background: var(--primary); color: var(--primary-contrast); }
+#native-installed .native-item-toggle[data-action="on"]:hover:not(:disabled) { border-color: var(--primary-hover); background: var(--primary-hover); }
 #native-installed .native-item-toggle[data-action="off"] { border-color: var(--line); background: transparent; color: var(--text-muted); }
 #native-installed .native-item-toggle[data-action="off"]:hover:not(:disabled) { border-color: var(--danger); background: var(--danger-soft, var(--surface-2)); color: var(--danger); }
 @media (max-width: 680px) {
@@ -248,8 +248,8 @@
 .native-item-badge[data-kind="update"] { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); font-weight: 600; }
 .native-item-badge[data-kind="muted"] { background: transparent; border: 1px dashed var(--line); }
 .native-item-row[data-update="true"] .native-item-icon { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); }
-#native-installed .native-item-update { min-width: 76px; gap: 6px; border-color: #4d9a76; background: #347c5b; color: #fff; font-weight: 600; }
-#native-installed .native-item-update:hover:not(:disabled) { border-color: #4d9a76; background: #3d8d69; }
+#native-installed .native-item-update { min-width: 76px; gap: 6px; border-color: var(--primary); background: var(--primary); color: var(--primary-contrast); font-weight: 600; }
+#native-installed .native-item-update:hover:not(:disabled) { border-color: var(--primary-hover); background: var(--primary-hover); }
 .native-package-scope-hint { display: grid; gap: 2px; min-width: 0; }
 #native-installed .native-package-scope-hint p { padding-bottom: 0; }
 .native-update-summary { color: var(--text-muted); font-size: .74rem; line-height: 1.55; overflow-wrap: anywhere; }

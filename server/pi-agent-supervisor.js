@@ -329,6 +329,20 @@ class AgentWorker extends EventEmitter {
 
     async recoverQueue(stop) {
         this.assertReferenceWritable();
+        // Channel turns retain exclusive ownership through native settlement.
+        // Their web stop must not inject a queue-clear prompt into that turn.
+        if (stop && this.operation && (this.channelRun || this.channelCommandId)
+            && !this.controlPending && !this.disposed && !this.exited && !this.shell.busy) {
+            this.controlPending = true;
+            this.controls.stopping = true; this.controls.changed(); this.broadcastControls();
+            try { await this.client.request('abort', {}, 120000); this.finishControl(); }
+            catch (error) {
+                if (error.code === 'RPC_TIMEOUT') this.controlUncertain = true;
+                else this.finishControl();
+                throw error;
+            }
+            return this.controls.snapshot();
+        }
         if (this.shell.busy || this.disposed || this.exited || this.operation || this.controlPending || this.promptPending) throw new Error('会话正在处理其他操作，请稍后重试');
         const release = this.queueStore?.beginOperation();
         let recovery, operation;
@@ -425,8 +439,12 @@ class AgentWorker extends EventEmitter {
         // process. In-flight prompt/clear operations retain their journal proof.
         const token = Symbol('session-shutdown');
         this.operation = token;
+        this.shutdownToken = token;
         try { return await callback(); }
-        finally { if (this.operation === token) this.operation = null; }
+        finally {
+            if (this.operation === token) this.operation = null;
+            if (this.shutdownToken === token) this.shutdownToken = null;
+        }
     }
 
     // Keep the existing exclusive operation until the native turn settles or its
@@ -769,6 +787,15 @@ class AgentWorker extends EventEmitter {
                         && Number.isSafeInteger(result.pivaneStaffingLoaded) && result.pivaneStaffingLoaded >= 0) this.loadedStaffingEpoch = result.pivaneStaffingLoaded;
                     return; // Private resource lifecycle receipt, including late or malformed replies.
                 }
+                if (result && Object.hasOwn(result, 'pivaneThreadResult')) {
+                    const state = result.pivaneThreadResult;
+                    if (this.managed && !this.noSession && result.token === this.navigationToken && state?.sessionId === this.sessionId
+                        && /^[a-f0-9]{64}$/.test(state.id) && ['completed', 'stopped', 'error'].includes(state.status)
+                        && ['thread', 'channel', 'cron'].includes(state.source?.kind) && Number.isFinite(state.completedAt)) {
+                        this.emit('thread-result', { ...state, target: { cwd: this.cwd, sessionId: this.sessionId } });
+                    }
+                    return;
+                }
                 if (result && Object.hasOwn(result, 'pivaneAgentProfileLoaded')) {
                     if (this.managed && !this.noSession && result.sessionId === this.sessionId
                         && (result.pivaneAgentProfileLoaded === null && result.profileRevision === null
@@ -918,6 +945,9 @@ class AgentWorker extends EventEmitter {
         // They are internal transcript state and must not enter the browser chat,
         // side-chat event stream, or extension UI history.
         if (event?.message?.role === 'system') return;
+        // Explicit quit retains subscribers for the observed runtime exit.
+        // A Shell terminal snapshot would trigger reads against the retiring RPC.
+        if (this.disposed && this.shutdownToken && event?.type === 'gateway_shell') return;
         event = { ...event, webRuntimeId: this.live.runtimeId, webSequence: ++this.live.sequence };
         for (const subscriber of this.subscribers) {
             try {
@@ -958,11 +988,18 @@ class AgentWorker extends EventEmitter {
     dispose() {
         if (this.disposal) return this.disposal;
         this.disposed = true;
+        const explicitQuit = Boolean(this.shutdownToken);
         this.disposal = Promise.resolve().then(async () => {
             for (const id of this.pendingUi.keys()) this.resolveUi(id);
-            this.subscribers.clear();
+            // Quit subscribers must see the observed terminal state, not just
+            // the last running Shell snapshot. Unsubscribing during the await
+            // still removes that subscriber; other disposal flows keep their
+            // existing navigation/reconnect protocol.
+            if (!explicitQuit) this.subscribers.clear();
             await this.shell.dispose();
             await this.client.dispose();
+            if (explicitQuit) this._broadcast({ type: 'gateway_runtime_ended', reason: 'quit', cwd: this.cwd, sessionId: this.sessionId });
+            this.subscribers.clear();
             this.runStartupCalls.clear();
             this.historyResults.clear(); this.historyWriting = null;
             this.emit('disposed');
@@ -1055,6 +1092,7 @@ class PiAgentSupervisor extends EventEmitter {
             const worker = new AgentWorker({ cwd, sessionPath, sessionId, env, queueStore, referenceGuard: () => this.referenceGuard, startupTimeoutMs: this.startupTimeoutMs,
                 isSuspended: this.isSuspended, onActivity: this.onActivity });
             worker.on('completion', notice => this.emit('completion', notice, worker));
+            worker.on('thread-result', result => this.emit('thread-result', result, worker));
             worker.on('attention', event => this.emit('attention', event));
             worker.on('exit', () => {
                 if (this.workers.get(sessionPath) === worker) void this.stopSession(sessionPath).catch(() => {});

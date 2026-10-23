@@ -2,8 +2,10 @@ import { registerModelSpeed } from './pi-model-speed-extension.mjs';
 import { registerRequestStats } from './pi-request-stats-extension.mjs';
 import { registerCron } from './pi-cron-runtime.js';
 import { registerChannelTurns } from './channels/runtime.js';
+import { registerThreadResults } from './channels/thread-results.js';
 import { registerTaskProgress } from './pi-task-progress-extension.ts';
 import { registerDeliverables } from './pi-deliverables-extension.ts';
+import { registerUserQuestion } from './pi-user-question-extension.ts';
 import { registerDocuments } from './pi-document-extension.ts';
 import { registerMediaChat } from './pi-media-chat-extension.ts';
 import { registerToolProvenance } from './pi-tool-provenance.js';
@@ -44,6 +46,7 @@ function currentSystemPrompt(ctx: any, messages: any[]) {
 export default async function (pi: ExtensionAPI) {
     const cron = registerCron(pi);
     const channelTurn = registerChannelTurns(pi);
+    registerThreadResults(pi);
     const modelSpeed = registerModelSpeed(pi, { agentDir: getAgentDir(), bridge: true });
     registerRequestStats(pi);
     registerToolProvenance(pi);
@@ -52,6 +55,7 @@ export default async function (pi: ExtensionAPI) {
     registerAgentMessages(pi);
     registerTaskProgress(pi);
     registerDeliverables(pi);
+    registerUserQuestion(pi);
     registerDocuments(pi);
     registerMediaChat(pi);
     registerSubagentHost(pi);
