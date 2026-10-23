@@ -8,12 +8,6 @@
         return el;
     };
     const entries = [
-        { id: 'pivane-weixin', type: 'channel', name: 'WeChat ClawBot', author: 'Tencent · Pivane', kind: ['可选组件 · 消息渠道', 'Optional · Messaging'], icon: 'fa-comments',
-            url: 'https://github.com/Tencent/openclaw-weixin',
-            title: ['在微信继续对话', 'Continue in WeChat'],
-            description: ['扫码连接微信 ClawBot，把私聊绑定到 白泽灵台线程，支持图片、文件、斜杠指令和定时通知。', 'Connect WeChat ClawBot with a QR code and bind a DM to a 白泽灵台 thread, with images, files, slash commands and scheduled notifications.'],
-            requirement: ['按需下载连接组件；支持文字与图片私聊、文件交付及定时推送，需要扫码和线程绑定。', 'Downloads the connector on demand. Supports text/image DMs, file delivery and scheduled notifications with QR login and a thread binding.'],
-            example: ['把当前项目线程连接到我的微信聊天。', 'Connect this project thread to my WeChat chat.'] },
         { id: 'guizang-ppt', type: 'skill', name: 'guizang-ppt', bundledName: 'pivane-presentations', author: '归藏', kind: ['内置 · 技能工作流', 'Built-in · Skill workflow'], icon: 'fa-file-powerpoint',
             url: '',
             title: ['制作演示文稿', 'Create presentations'],
@@ -142,7 +136,7 @@
             const status = await host.apiFetch('/api/pi/status');
             if (!valid()) return;
             piVersion = typeof status.version === 'string' ? status.version : '';
-            const channelsRead = status.messageChannels ? host.apiFetch('/api/pi/channels').catch(() => null) : Promise.resolve(null);
+            const channelsRead = status.messageChannels && window.PiChannels?.weixinVisible === true ? host.apiFetch('/api/pi/channels').catch(() => null) : Promise.resolve(null);
             const cwd = selected || status.defaultProject;
             if (!status.nativeResources || !cwd) throw new Error(text('当前服务无法提供安装清单。', 'Installation inventory is unavailable on this server.'));
             const result = await host.apiFetch(`/api/pi/settings/native/resources?cwd=${encodeURIComponent(cwd)}&scope=${scope}`);
@@ -209,6 +203,151 @@
         builtins: ['业务功能', 'Business tools'],
         channels: ['消息渠道', 'Messaging']
     };
+    let businessFilter = 'all', businessStaffingEpoch = 0;
+    let businessStaffing = null, businessStaffingBusy = false;
+    function staffingFeedback(message) {
+        const element = document.getElementById('business-staffing-feedback');
+        if (element) { element.textContent = message; element.hidden = !message; }
+    }
+    function renderStaffingControls() {
+        const control = document.getElementById('business-staffing-enabled'), check = document.getElementById('business-staffing-check');
+        if (!control || !check) return;
+        const pending = window.PiStaffingActions?.pending;
+        control.checked = businessStaffing?.enabled === true;
+        control.disabled = businessStaffingBusy || !businessStaffing || typeof businessStaffing.enabled !== 'boolean' || Boolean(pending) || businessStaffing.state === 'initializing';
+        control.title = businessStaffing?.state === 'initializing' ? text('请先进入人员调配，继续原初始化。', 'Open staffing to resume the original setup.') : '';
+        check.hidden = !pending; check.disabled = businessStaffingBusy;
+        if (pending) staffingFeedback(text('提交结果待核对，请查询原操作结果。台账与历史仍保留。', 'The operation outcome is unconfirmed. Check the original receipt. Ledger and history are retained.'));
+    }
+    async function changeStaffingEnabled(nextEnabled) {
+        if (businessStaffingBusy || !businessStaffing || !window.PiStaffingActions) return;
+        businessStaffingBusy = true; renderStaffingControls();
+        const previous = businessStaffing, expectedRevision = previous.revision;
+        staffingFeedback(text('正在保存…', 'Saving…'));
+        try {
+            const result = await window.PiStaffingActions.setEnabled({ enabled: nextEnabled, expectedRevision });
+            if (result?.ok) {
+                staffingFeedback(nextEnabled ? text('已启用，原台账与助手已保留。', 'Enabled. Existing ledger and assistant are retained.') : text('已停用，菜单已隐藏，台账、占用和助手历史均保留。', 'Disabled. Navigation is hidden; ledger, occupancy and assistant history are retained.'));
+                if (nextEnabled && !previous.initialized) window.PiWorkspaceRoute?.navigate('staffing');
+            } else staffingFeedback(result?.message || text('结果尚未确定，请核对状态。', 'The outcome is unconfirmed. Check the status.'));
+        } catch (error) { staffingFeedback(error.message); }
+        finally { businessStaffingBusy = false; if (view === 'builtins') await refreshBusinessStaffing(); else renderStaffingControls(); }
+    }
+    function updateBusinessList() {
+        const root = document.getElementById('settings-builtins');
+        if (!root) return;
+        const rows = [...root.querySelectorAll('[data-business-feature]')];
+        const query = document.getElementById('business-search')?.value.trim().toLocaleLowerCase() || '';
+        const category = document.getElementById('business-category')?.value || 'all';
+        const counts = { all: rows.length, on: 0, off: 0 };
+        let visible = 0;
+        for (const row of rows) {
+            if (row.dataset.businessState in counts) counts[row.dataset.businessState]++;
+            row.hidden = (businessFilter !== 'all' && row.dataset.businessState !== businessFilter)
+                || (category !== 'all' && row.dataset.businessCategory !== category)
+                || Boolean(query && !row.dataset.businessSearch.toLocaleLowerCase().includes(query));
+            if (!row.hidden) visible++;
+        }
+        root.querySelectorAll('[data-business-filter]').forEach(item => {
+            const active = item.dataset.businessFilter === businessFilter;
+            item.classList.toggle('active', active); item.setAttribute('aria-pressed', String(active));
+            item.querySelector('span').textContent = counts[item.dataset.businessFilter];
+        });
+        const summary = document.getElementById('business-summary');
+        const unknown = counts.all - counts.on - counts.off;
+        if (summary) summary.textContent = text(`${counts.all} 项功能 · ${counts.on} 项已启用${unknown ? ` · ${unknown} 项状态待核对` : ''}`,
+            `${counts.all} tools · ${counts.on} enabled${unknown ? ` · ${unknown} unverified` : ''}`);
+        const empty = document.getElementById('business-empty'); if (empty) empty.hidden = visible > 0;
+        const categorySelect = document.getElementById('business-category'); if (categorySelect) categorySelect.hidden = rows.length <= 4;
+    }
+    async function refreshBusinessStaffing() {
+        const row = document.getElementById('business-staffing');
+        if (!row || !host) return;
+        const ticket = generation, refresh = ++businessStaffingEpoch;
+        const badge = row.querySelector('.business-state');
+        businessStaffing = null; renderStaffingControls();
+        row.dataset.businessState = 'unknown'; badge.textContent = text('正在核对…', 'Checking…'); updateBusinessList();
+        try {
+            const state = await host.apiFetch('/api/pi/staffing/status');
+            if (ticket !== generation || refresh !== businessStaffingEpoch || view !== 'builtins') return;
+            businessStaffing = state;
+            row.dataset.businessState = typeof state.enabled === 'boolean' ? (state.enabled ? 'on' : 'off') : 'unknown';
+            badge.textContent = row.dataset.businessState === 'unknown' ? text('状态待核对', 'Status unknown')
+                : state.enabled ? text('已启用', 'Enabled') : text('未启用', 'Disabled');
+        } catch {
+            if (ticket !== generation || refresh !== businessStaffingEpoch || view !== 'builtins') return;
+            badge.textContent = text('状态待核对', 'Status unknown');
+        }
+        renderStaffingControls();
+        updateBusinessList();
+    }
+    function mountBusiness() {
+        const root = document.getElementById('settings-builtins'), compliance = document.getElementById('settings-compliance');
+        if (!root || !compliance) return;
+        const heading = node('div', null, { class: 'settings-panel-header' }), title = node('div');
+        title.append(node('h3', text('业务功能', 'Business tools')),
+            node('p', text('按需启用业务能力，每项功能独立配置。', 'Enable the tools you need, each with its own configuration.')));
+        heading.append(node('i', '', { class: 'fa-solid fa-briefcase', 'aria-hidden': 'true' }), title);
+        const summary = node('div', null, { class: 'business-summary' });
+        const summaryTitle = node('div');
+        summaryTitle.append(node('strong', text('功能管理', 'Manage tools')), node('span', '', { id: 'business-summary', role: 'status' }));
+        summary.append(summaryTitle, node('span', text('独立配置 · 资料持续保留', 'Independent settings · Data retained'), { class: 'business-summary-hint' }));
+        const panel = node('section', null, { class: 'business-panel', 'aria-label': text('业务功能管理', 'Business tool management') });
+        const toolbar = node('div', null, { class: 'business-toolbar' }), filters = node('div', null, { class: 'business-filters', role: 'group', 'aria-label': text('按启用状态筛选', 'Filter by enabled state') });
+        for (const [state, label] of [['all', ['全部功能', 'All tools']], ['on', ['已启用', 'Enabled']], ['off', ['未启用', 'Disabled']]]) {
+            const item = button(text(...label), () => { businessFilter = state; updateBusinessList(); }, { type: 'button', 'data-business-filter': state });
+            item.append(node('span', '0')); filters.append(item);
+        }
+        const searchTools = node('div', null, { class: 'business-search-tools' });
+        const category = node('select', null, { id: 'business-category', 'aria-label': text('按业务分类筛选', 'Filter business category'), hidden: '' });
+        for (const [value, label] of [['all', ['全部分类', 'All categories']], ['project', ['项目管理', 'Project management']], ['review', ['审查与风控', 'Review & risk']]]) category.append(node('option', text(...label), { value }));
+        category.onchange = updateBusinessList;
+        const search = node('label', null, { class: 'business-search' });
+        const input = node('input', null, { id: 'business-search', type: 'search', placeholder: text('搜索业务功能', 'Search business tools'), 'aria-label': text('搜索业务功能', 'Search business tools') });
+        input.oninput = updateBusinessList; search.append(node('i', '', { class: 'fa-solid fa-magnifying-glass', 'aria-hidden': 'true' }), input);
+        searchTools.append(category, search); toolbar.append(filters, searchTools);
+        const staffing = node('section', null, { id: 'business-staffing', class: 'business-feature', 'data-business-feature': 'staffing', 'data-business-state': 'unknown', 'data-business-category': 'project',
+            'data-business-search': text('项目人员分配 人员调配 项目管理 人员台账 占用核对 项目排班', 'Project staffing personnel allocation ledger occupancy scheduling'), 'aria-labelledby': 'extensions-staffing-title' });
+        const row = node('div', null, { class: 'business-row' }), icon = node('div', null, { class: 'business-icon', 'aria-hidden': 'true' });
+        icon.append(node('i', '', { class: 'fa-solid fa-users' }));
+        const details = node('div', null, { class: 'business-copy' }), titleRow = node('div', null, { class: 'business-title' });
+        titleRow.append(node('h4', text('项目人员分配', 'Project staffing'), { id: 'extensions-staffing-title' }), node('span', text('正在核对…', 'Checking…'), { class: 'business-state' }));
+        details.append(titleRow, node('p', text('建立人员台账，核对当前和未来占用，再安排项目人员。', 'Build a personnel ledger and review current and future occupancy before assigning project staff.'), { class: 'business-description' }),
+            node('p', text('项目管理　·　人员台账 / 占用核对 / 项目排班', 'Project management · Personnel ledger / Occupancy / Scheduling'), { class: 'business-meta' }));
+        const actions = node('div', null, { class: 'business-actions' });
+        actions.append(button(text('打开人员调配', 'Open staffing'), () => window.PiWorkspaceRoute?.navigate('staffing'), { id: 'extensions-open-staffing', class: 'settings-secondary-button', type: 'button' }));
+        const toggleLabel = node('label', null, { class: 'business-switch' });
+        const toggle = node('input', null, { id: 'business-staffing-enabled', type: 'checkbox', role: 'switch', disabled: '' });
+        toggleLabel.append(node('span', text('启用项目人员分配', 'Enable project staffing'), { class: 'business-switch-label' }), toggle);
+        const confirm = node('div', null, { id: 'business-staffing-confirm', class: 'business-lifecycle-confirm', hidden: '' });
+        const confirmation = node('p', text('停用后隐藏工作菜单，专用助手仅保留历史查看。人员台账、项目和已有占用不会删除或释放。', 'Disabling hides work navigation and leaves the dedicated assistant available for history viewing. Personnel, projects and existing occupancy are retained.'));
+        const cancel = button(text('取消', 'Cancel'), () => { confirm.hidden = true; toggle.focus(); }, { type: 'button', class: 'settings-secondary-button' });
+        confirm.append(confirmation, cancel, button(text('确认停用并保留数据', 'Disable and retain data'), () => { confirm.hidden = true; void changeStaffingEnabled(false); }, { id: 'business-staffing-disable-confirm', type: 'button', class: 'settings-secondary-button' }));
+        toggle.onchange = () => {
+            const next = toggle.checked; toggle.checked = businessStaffing?.enabled === true;
+            if (!next) { confirm.hidden = false; cancel.focus(); } else void changeStaffingEnabled(true);
+        };
+        const feedback = node('p', '', { id: 'business-staffing-feedback', class: 'business-lifecycle-feedback', role: 'status', hidden: '' });
+        const check = button(text('查询原操作结果', 'Check original operation'), async () => {
+            if (businessStaffingBusy) return;
+            businessStaffingBusy = true; renderStaffingControls();
+            try { const result = await window.PiStaffingActions.checkPending(); staffingFeedback(result?.message || ''); }
+            finally { businessStaffingBusy = false; if (view === 'builtins') await refreshBusinessStaffing(); }
+        }, { id: 'business-staffing-check', type: 'button', class: 'settings-secondary-button', hidden: '' });
+        actions.append(check, toggleLabel); details.append(feedback);
+        row.append(icon, details, actions); staffing.append(row);
+        staffing.append(confirm);
+        compliance.classList.add('business-feature'); compliance.dataset.businessFeature = 'compliance'; compliance.dataset.businessState = 'unknown'; compliance.dataset.businessCategory = 'review';
+        compliance.dataset.businessSearch = text('合同审查 合规审查 工程资料 审查与风控 规则审查 复核报告', 'Contract compliance review engineering documents rules reports risk');
+        const empty = node('div', null, { id: 'business-empty', class: 'business-empty', hidden: '' });
+        empty.append(node('strong', text('没有找到匹配的功能', 'No matching tools')), node('p', text('试试其他关键词，或调整筛选条件。', 'Try another keyword or change the filters.')),
+            button(text('清除筛选', 'Clear filters'), () => { input.value = ''; category.value = 'all'; businessFilter = 'all'; updateBusinessList(); }, { type: 'button', class: 'settings-secondary-button' }));
+        const footnote = node('p', text('停用仅关闭功能入口，已有配置与业务资料会保留。', 'Disabling closes the tool entry; existing settings and business data are retained.'), { class: 'business-footnote' });
+        footnote.prepend(node('i', '', { class: 'fa-solid fa-lock', 'aria-hidden': 'true' }));
+        panel.append(toolbar, staffing, compliance, empty, footnote);
+        root.replaceChildren(heading, summary, panel, node('p', text('首次使用项目人员分配，请先在人员调配页面核对初始台账。', 'Before using project staffing, review the initial ledger on the staffing page.'), { class: 'business-hint' }));
+        updateBusinessList();
+    }
     function mountSubnav() {
         const dialog = document.getElementById('workspace-settings-dialog');
         const header = dialog?.querySelector('.workspace-settings-header');
@@ -250,6 +389,7 @@
             }
             if (window.PiKnowledgeBase) {
                 knowledgePanel = window.PiKnowledgeBase.create(value);
+                knowledgePanel.setAssistantEnabled(enabled);
                 document.querySelector('.workspace-settings-content')?.append(knowledgePanel.root);
             }
         },
@@ -257,6 +397,7 @@
         setChannelTarget(value) { channelsPanel?.setTarget(value); },
         setAssistantEnabled(value) {
             enabled = Boolean(value);
+            knowledgePanel?.setAssistantEnabled(enabled);
             document.querySelectorAll('[data-extension-configure]').forEach(el => { el.disabled = !enabled; });
             renderCards();
             const hint = document.getElementById('extensions-assistant-unavailable'); if (hint) hint.hidden = enabled;
@@ -289,6 +430,7 @@
                 knowledgePanel?.open();
             } else knowledgePanel?.close();
             if (view === 'extensions') void refreshInventory();
+            if (view === 'builtins') void refreshBusinessStaffing();
             const close = document.getElementById('workspace-settings-close');
             if (close) close.title = close.ariaLabel = extensionView ? text('关闭扩展', 'Close extensions') : text('关闭设置', 'Close settings');
             document.querySelector('.workspace-settings-nav')?.setAttribute('aria-label', extensionView ? text('扩展分类', 'Extension categories') : text('设置分类', 'Settings categories'));
@@ -296,19 +438,9 @@
     };
     document.addEventListener('DOMContentLoaded', () => {
         mountSubnav();
-        const business = document.getElementById('settings-builtins');
-        if (business) {
-            const heading = node('div', null, { class: 'settings-panel-header' });
-            const title = node('div');
-            title.append(node('h3', text('业务功能', 'Business tools')));
-            heading.append(node('i', '', { class: 'fa-solid fa-briefcase', 'aria-hidden': 'true' }), title);
-            const staffing = node('section', null, { class: 'extensions-business-entry', 'aria-labelledby': 'extensions-staffing-title' });
-            const details = node('div');
-            details.append(node('h4', text('项目人员分配', 'Project staffing'), { id: 'extensions-staffing-title' }),
-                node('p', text('建立人员台账，核对当前和未来占用，再安排项目人员。首次启用需核对初始台账。', 'Build a personnel ledger and review current and future occupancy before assigning project staff. Review the initial ledger at first setup.')));
-            staffing.append(details, button(text('打开人员调配', 'Open staffing'), () => window.PiWorkspaceRoute?.navigate('staffing'), { id: 'extensions-open-staffing', class: 'settings-secondary-button' }));
-            business.prepend(heading, node('p', text('按需启用。每项功能独立配置，停用后保留已有资料。', 'Enable tools as needed. Each tool has its own configuration; disabling retains existing data.'), { class: 'settings-help' }), staffing);
-        }
+        mountBusiness();
+        window.addEventListener('pi:business-state-changed', updateBusinessList);
+        window.addEventListener('workspace:staffing-changed', () => { if (view === 'builtins') void refreshBusinessStaffing(); });
         const panel = node('section', null, { class: 'workspace-settings-panel', 'data-settings-panel': 'extensions' });
         const featured = node('section', null, { id: 'extensions-featured' });
         const intro = node('header', null, { class: 'extensions-head' });

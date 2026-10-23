@@ -7,11 +7,19 @@
 ## Start your first session
 
 1. Follow the [installation guide](INSTALL.md), start the instance and open its URL.
-2. In **Settings → Providers and models**, check existing model configuration. Add an API key or complete OAuth if credentials are missing. Keep credentials out of chat. For remote OAuth, localhost means the server; use the provider's device-code or manual-callback flow when available.
-3. Return to Work chat, select a server project directory and choose **New chat**, a model and its thinking level.
-4. Send a simple question, then refresh and reopen the persistent thread to check that the reply is retained. Requests use your provider account.
+2. A first visit to the home page opens **Setup**. Connect a model service through the existing settings page, then choose **Continue setup** and an available default model. Keep API keys out of chat. For remote OAuth, localhost means the server; use the provider's device-code or manual-callback flow when available.
+3. Meet your default assistant **小白 (Xiaobai)**. Customize its name, avatar and instructions. It stays enabled and cannot be trashed. Long-term memory starts enabled; background learning starts disabled. These capabilities remain independently adjustable.
+4. Choose an existing folder on the computer or server running 白泽灵台, save the work project, then choose **Next**.
+5. Optionally try configuring a knowledge base through conversation. Choose **Configure WeKnora with AI**, replace the example `url` (including `/api/v1`) and `key` with your existing service details, and select a scope. Enter the extension assistant, review and send the draft, then confirm the configuration. The key goes to the selected model and is saved in chat history; private fields under **Extensions → MCP** are also available. After the turn finishes, reload resources in an idle conversation or open a new one, then connect and load documents on the knowledge base page. See [knowledge base configuration](../KNOWLEDGE_BASE.md#让助手配置内置-weknora). Choose **Continue setup** to return. You can leave this step for later if you have no WeKnora service.
+6. Choose **Start first conversation**. Setup creates a blank conversation without sending a message or testing a model. Your first message uses your provider account and confirms actual connectivity.
+
+You can skip setup or reopen it from the sidebar. Steps survive refreshes; returning from configuration reads actual saved settings. Completion and dismissal apply to this browser. Direct page and conversation bookmarks bypass automatic setup. Creating a project does not move files. If a save or creation outcome is uncertain, check the actual list before submitting again.
 
 If Pi CLI has models but the browser does not, check its identity directory and startup environment using [existing Pi users](INSTALL.md#existing-pi-cli-users). Global models and extensions can be managed before selecting a project.
+
+During source development, running `npm start` again stops the previous foreground managed instance in the same installation directory, waits for service and worker cleanup, then starts the new instance. Save unsent drafts and stop external writers using the same identity first. Active tasks, Shell, side chat, media, configuration or maintenance operations block replacement. Timeouts and cleanup failures never force-kill the old process or start a second instance. Stop tray instances, system services, `start:direct` and older versions through their original entry point; the first upgrade to this feature also requires stopping the old process manually once.
+
+The foreground managed service waits up to 180 seconds for startup. Allow the same cold start to finish. After a timeout, the launcher still waits for ordered service cleanup; a listening-address log alone does not confirm launcher readiness. Avoid force-killing or repeatedly starting during cleanup. This startup budget is separate from the 60-second wait for the previous instance to stop.
 
 The Windows manual tray launcher opens your default browser. Double-click the tray icon for service management; closing or minimizing that window keeps the service running. **Stop service** retains the tray, while **Exit 白泽灵台** closes it after checked shutdown. Save browser drafts when prompted and resolve listed blockers in the workspace. A temporarily disconnected waiting page keeps checking and can follow an explicit new service start within the same tray. See the [tray launcher guide](../DESKTOP_LAUNCHER.md).
 
@@ -19,7 +27,9 @@ In **Open project**, browse to the parent directory and choose **New folder** be
 
 ## Workspace navigation
 
-Under **Settings → Preferences → Feature visibility**, turn on **Show assistants** or **Show scheduled tasks** to show assistant chat/identity entry points or scheduled-task navigation and creation controls. Both default to off, apply immediately, and persist in this browser across refreshes. You can change them at any time; explicitly saved choices remain in effect. Existing data, active conversations and bookmarked pages remain available. **Hiding scheduled tasks does not pause enabled tasks**; disable them on the Scheduled tasks page to stop execution.
+After enabling [Personnel staffing](../STAFFING.md), its menu appears under **Work** in the sidebar and opens the staffing page directly. Disabling hides the entry. Enable or re-enable it from **Extensions → Business tools → Project staffing**.
+
+Assistant chat is the default entry point, and assistant profiles remain visible. Xiaobai is selected initially; a valid remembered selection is retained. An explicitly requested unavailable identity is reported instead of silently replaced. Under **Settings → Preferences → Feature visibility**, turn on **Show work chat** or **Show scheduled tasks** to reveal these optional entry points. Both default to off, apply immediately, and persist in this browser across refreshes. Existing data, active conversations and bookmarked Work chat pages remain available. **Hiding scheduled tasks does not pause enabled tasks**; disable them on the Scheduled tasks page to stop execution.
 
 The workbench uses locally available fonts and does not download fonts during startup.
 

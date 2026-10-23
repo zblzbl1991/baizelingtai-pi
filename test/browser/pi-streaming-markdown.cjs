@@ -34,7 +34,7 @@ const cwd = '/srv/render-fixture', session = { id: 'render', cwd, name: 'Render 
                     ws.send(JSON.stringify({ type: 'response', id: c.id, command: c.type, success: true, data }));
                 });
             });
-            await page.goto(base, { waitUntil: 'domcontentloaded' });
+            await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
             await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
             const parity = await page.evaluate(() => {
                 const sequences = [

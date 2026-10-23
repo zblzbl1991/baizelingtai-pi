@@ -20,6 +20,11 @@
         if (!root) return;
         document.querySelectorAll('[data-staffing-label]').forEach(element => { element.textContent = tr('人员调配'); });
         let active = false, generation = 0, status = null, busy = false, draft = '', pending = null, editingInitial = false;
+        const lifecycleKey = 'pivane.staffing.lifecycle-operation';
+        try {
+            const stored = JSON.parse(sessionStorage.getItem(lifecycleKey) || 'null');
+            if (stored && ['enable', 'disable'].includes(stored.action) && typeof stored.requestId === 'string') pending = stored;
+        } catch { /* An unreadable receipt is not replayed. */ }
         const header = node('header', undefined, { class: 'staffing-header' });
         header.append(node('h1', tr('人员调配')), node('p', tr('先核对台账，再安排人员。')));
         const feedback = node('p', '', { class: 'staffing-feedback', role: 'status', 'aria-live': 'polite' });
@@ -53,35 +58,49 @@
             } catch (error) { if (ticket === generation && active) feedback.textContent = error.message; }
         }
         async function lookup() {
-            if (!pending || busy) return;
+            if (!pending || busy) return { ok: false, pending: Boolean(pending) };
             busy = true;
             try {
                 const result = await api('/operations/' + encodeURIComponent(pending.requestId));
                 if (result.state === 'completed') {
-                    if (pending.action === 'enable') window.dispatchEvent(new Event('workspace:agent-profiles-changed'));
+                    sessionStorage.removeItem(lifecycleKey);
                     pending = null; feedback.textContent = tr('已核对操作结果。');
+                    window.dispatchEvent(new Event('workspace:staffing-changed'));
+                    window.dispatchEvent(new Event('workspace:agent-profiles-changed'));
                 }
                 else feedback.textContent = tr('结果尚未确定。请继续核对状态，不要重复提交。');
-            } catch (error) { feedback.textContent = error.message; }
+                return { ok: result.state === 'completed', pending: Boolean(pending), message: feedback.textContent };
+            } catch (error) { feedback.textContent = error.message; return { ok: false, pending: true, message: error.message }; }
             finally { busy = false; await load(); }
         }
-        async function write(action, extra = {}, resume = null) {
-            if (busy || pending || !status) return;
+        async function write(action, extra = {}, resume = null, expectedRevision = status?.revision) {
+            if (busy || pending || !Number.isSafeInteger(expectedRevision)) return { ok: false, pending: Boolean(pending), message: tr('请先核对人员调配状态或原操作结果。') };
             busy = true;
-            const input = resume || { requestId: crypto.randomUUID(), expectedRevision: status.revision, ...extra };
+            const input = resume || { requestId: crypto.randomUUID(), expectedRevision, ...extra };
+            const lifecycle = ['enable', 'disable'].includes(action);
+            if (lifecycle) sessionStorage.setItem(lifecycleKey, JSON.stringify({ requestId: input.requestId, action }));
             const ticket = generation;
             panel.querySelectorAll('button,input,textarea').forEach(element => { element.disabled = true; });
             feedback.textContent = tr('正在保存…');
             try {
                 await api('/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+                if (lifecycle) sessionStorage.removeItem(lifecycleKey);
                 editingInitial = false;
                 if (ticket === generation && active) feedback.textContent = tr('已保存。');
                 window.dispatchEvent(new Event('workspace:staffing-changed'));
-                if (action === 'enable') window.dispatchEvent(new Event('workspace:agent-profiles-changed'));
+                if (lifecycle) window.dispatchEvent(new Event('workspace:agent-profiles-changed'));
+                return { ok: true };
             } catch (error) {
                 // A lost/failed response is not cancellation. Retain receipt and only query it.
                 if (!error.status || error.status >= 500) pending = { requestId: input.requestId, action };
+                if (lifecycle && !pending) {
+                    // An interrupted first setup can reject after recording its operation.
+                    try { const result = await api('/operations/' + encodeURIComponent(input.requestId)); if (result.state !== 'unknown') pending = { requestId: input.requestId, action }; }
+                    catch { pending = { requestId: input.requestId, action }; }
+                    if (!pending) sessionStorage.removeItem(lifecycleKey);
+                }
                 if (ticket === generation && active) feedback.textContent = pending ? tr('提交结果待核对。请查询原操作，不要重新提交。') : error.message;
+                return { ok: false, pending: Boolean(pending), message: pending ? tr('提交结果待核对。请查询原操作，不要重新提交。') : error.message };
             } finally { busy = false; await load(); }
         }
         function render(ledger) {
@@ -91,7 +110,11 @@
                 node('p', tr('台账版本：{0}').replace('{0}', status.revision)));
             if (pending) {
                 const check = button('查询原操作结果', 'staffing-check-operation', () => void lookup()); check.disabled = busy;
-                panel.append(node('p', tr('提交结果待核对。请查询原操作，不要重新提交。')), check); return;
+                panel.append(node('p', tr('提交结果待核对。请查询原操作，不要重新提交。')), check);
+                if (pending.action === 'enable' && status.state === 'initializing' && pending.requestId === status.initialization?.requestId) {
+                    const resume = button('继续初始化', 'staffing-resume', () => { pending = null; void write('enable', {}, status.initialization); }); resume.disabled = busy; panel.append(resume);
+                }
+                return;
             }
             if (!status.enabled) {
                 panel.append(node('p', tr('启用后建立专用智能体。普通聊天保持原有配置。停用后保留台账和历史。')),
@@ -161,6 +184,11 @@
         window.addEventListener('workspace:access-locked', () => { generation++; status = null; panel.replaceChildren(); navigation(null); });
         window.addEventListener('workspace:staffing-changed', () => { if (!busy && !pending) void load(); });
         window.addEventListener('pagehide', () => { active = false; generation++; });
+        window.PiStaffingActions = Object.freeze({
+            setEnabled({ enabled, expectedRevision }) { return write(enabled === true ? 'enable' : 'disable', {}, null, expectedRevision); },
+            checkPending: lookup,
+            get pending() { return pending ? { ...pending } : null; }
+        });
         route(window.PiWorkspaceRoute?.current());
         Promise.resolve(window.WorkspaceAccess?.ready).then(() => { if (!active) void load(); });
     });

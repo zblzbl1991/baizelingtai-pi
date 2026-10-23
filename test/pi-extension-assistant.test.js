@@ -58,8 +58,10 @@ test('extension assistant persists its identity, scopes tools, confirms packages
         let worker = await gateway.supervisor.getWorker({ cwd, sessionPath: session.path, sessionId: session.id });
         let resources = await worker.getNativeResources();
         assert.ok(resources.tools.some(t => t.name === 'extensions_package' && t.active));
+        assert.ok(resources.tools.some(t => t.name === 'extensions_weknora_configure' && t.active));
         const ordinary = await gateway.supervisor.getWorker({ cwd, sessionPath: original.path, sessionId: original.id });
         assert.equal((await ordinary.getNativeResources()).tools.some(t => t.name === 'extensions_package'), false);
+        assert.equal((await ordinary.getNativeResources()).tools.some(t => t.name === 'extensions_weknora_configure'), false);
         assert.equal(ordinary.client.env.PI_EXTENSION_ASSISTANT_TOKEN, undefined);
         const run = async tool => {
             nextTool = tool;

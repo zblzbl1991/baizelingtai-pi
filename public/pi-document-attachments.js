@@ -2,7 +2,7 @@
     const t = globalThis.PiI18n?.t || ((text, ...values) => text.replace(/\{(\d+)\}/g, (_, i) => values[i] ?? `{${i}}`));
     const refs = globalThis.PiDocumentReferences;
     class PiDocumentAttachments {
-        constructor({ context, api, fetchBytes, toast }) { Object.assign(this, { context, api, fetchBytes, toast }); this.enabled = false; }
+        constructor({ context, api, fetchBytes, toast, openPreview, closeFilePreview }) { Object.assign(this, { context, api, fetchBytes, toast, openPreview, closeFilePreview }); this.enabled = false; }
         key(context = this.context()) { return JSON.stringify([context.cwd, context.session?.id, context.generation]); }
         target() {
             const context = this.context();
@@ -46,14 +46,16 @@
             // Allow the browser to acquire the object before releasing it.
             setTimeout(() => URL.revokeObjectURL(url), 10000);
         }
-        closePreview() {
+        closePreview(closeFile = true) {
+            if (closeFile) this.closeFilePreview?.();
             this.previewCleanup?.(); this.previewCleanup = null;
             if (this.previewDialog?.open) this.previewDialog.close();
         }
         preview(reference, options = {}) {
             let target;
             try { target = this.target(); } catch (error) { this.toast(error.message, 'error'); return; }
-            this.closePreview();
+            if (this.openPreview && !options.dialog) { this.openPreview(reference, options); return; }
+            this.closePreview(false);
             const dialog = document.createElement('dialog'); dialog.className = 'pi-document-preview'; dialog.setAttribute('aria-label', reference.name);
             const header = document.createElement('header'), title = document.createElement('strong'); title.textContent = reference.name;
             const body = document.createElement('div'); body.className = 'pi-document-preview-body';
@@ -100,7 +102,7 @@
             if (globalThis.PiOfficeFilePreview?.supports(reference.name)) {
                 const preview = document.createElement('button'); preview.type = 'button'; preview.className = 'icon-btn subtle';
                 preview.title = t('预览文档'); preview.setAttribute('aria-label', t('预览文档')); preview.textContent = t('预览');
-                preview.addEventListener('click', () => this.preview(reference, { isCurrent: () => card.isConnected && (!card.closest('dialog') || card.closest('dialog').open) })); card.append(preview);
+                preview.addEventListener('click', () => this.preview(reference, { dialog: Boolean(card.closest('dialog')), isCurrent: () => card.isConnected && (!card.closest('dialog') || card.closest('dialog').open) })); card.append(preview);
             }
             return card;
         }

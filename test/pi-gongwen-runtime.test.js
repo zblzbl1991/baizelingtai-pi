@@ -54,6 +54,8 @@ test('native tool generates versioned files, publishes authorized snapshots, dow
         assert.equal(generated.format.properties.status, 'passed');
         assert.equal(generated.status, generated.format.fontAvailability.status === 'available' ? 'checked' : 'needs-review');
         assert.equal(generated.delivery.files.length, 2);
+        assert.equal(generated.delivery.files[0].name, `培训通知-${generated.version.slice(0, 12)}.docx`);
+        assert.equal(generated.delivery.files[1].name, `培训通知-${generated.version.slice(0, 12)}-检查报告.md`);
         const ref = generated.delivery.reference;
         const verifiedSession = await gateway.store.getSession(cwd, session.id);
         assert.deepEqual({ id: worker.sessionId, cwd: worker.cwd, disposed: Boolean(worker.disposed), restarting: Boolean(worker.restarting) },
@@ -78,6 +80,8 @@ test('native tool generates versioned files, publishes authorized snapshots, dow
         assert.deepEqual(repeated.details.pivaneGongwen.format, generated.format);
         input.requestId = 'runtime-v2'; input.date = '2026年10月16日'; pending = true; await run();
         assert.equal((await worker.request('get_entries')).entries.filter(entry => entry.customType === 'pivane-deliverable').length, 2);
+        const next = (await worker.request('get_entries')).entries.filter(entry => entry.message?.toolName === 'generate_gongwen').at(-1).message.details.pivaneGongwen;
+        assert.notEqual(next.delivery.files[0].name, generated.delivery.files[0].name);
         const originalFile = path.join(root, 'handwritten.docx'); await require('../vendor/gongwen-kit/tests/messy-docx').build(originalFile);
         const original = fs.readFileSync(originalFile), uploadQuery = new URLSearchParams({ cwd, sessionId: session.id, requestId: 'uploaded-original', name: '培训通知.docx' });
         const uploaded = await fetch(`${origin}/api/pi/uploads?${uploadQuery}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' }, body: original });

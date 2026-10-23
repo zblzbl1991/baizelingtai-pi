@@ -82,7 +82,7 @@ async function run(browser, viewport) {
             throw Error('Unexpected RPC ' + cmd.type);
         });
     });
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
     const input = page.locator('#pi-input'), menu = page.locator('#pi-command-menu'), dialog = page.locator('#pi-template-dialog');
     const plus = page.locator('#pi-composer-add-button'), addMenu = page.locator('#pi-composer-add-menu');

@@ -7,6 +7,7 @@
  * Theme colours are tokens from workspace.css; legacy style.css rules are overridden here. */
 
 .pv-icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.nav-menu [data-staffing-nav][hidden] { display: none; }
 /* Icons follow the workspace font-size preference (root rem), like their labels. */
 .pv-icon {
     width: 1.125rem;
@@ -584,6 +585,7 @@ html[data-theme="dark"] .workspace-logo.brand-inverse { display: block; }
     .nav-btn.active::before { content: none; }
 
     .nav-menu [data-tab="cron"],
+    .nav-menu [data-tab="staffing"],
     .nav-menu [data-tab="artifacts"],
     .nav-menu [data-tab="media"],
     .nav-menu [data-tab="profiles"],

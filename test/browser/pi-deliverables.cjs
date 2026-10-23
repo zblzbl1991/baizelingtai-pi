@@ -65,7 +65,7 @@ async function run(browser, base, width, locale = 'zh-CN') {
         const data = cmd.type === 'open_session' ? { session: { id: active, cwd, name: active, messageCount: 1 }, state, messages: { messages }, stats: {}, models: { models: [model] }, thinkingLevels: { levels: ['off'] }, commands: { commands: [] } } : cmd.type === 'get_messages' ? { messages } : cmd.type === 'get_state' ? state : {};
         ws.send(JSON.stringify({ type: 'response', id: cmd.id, command: cmd.type, success: true, data }));
     }));
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.locator('#pi-input').fill('retained draft');
     const link = name => page.locator('#pi-transcript-content .assistant a').filter({ hasText: new RegExp('^' + name + '$') });
     await link('方案').click(); await page.locator('#pi-file-body h1').waitFor();

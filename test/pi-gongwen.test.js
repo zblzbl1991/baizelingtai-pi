@@ -142,11 +142,14 @@ test('version outputs preserve files, reject changed IDs and incomplete requests
     const service = new GongwenService(new PiSessionStore()), context = { cwd, sessionId: 'synthetic-session' };
     try {
         const saved = await service.generate(context, base()); const original = fs.readFileSync(saved.files[0].path);
+        assert.equal(saved.files[0].name, `培训通知-${saved.id.slice(0, 12)}.docx`);
+        assert.equal(saved.files[1].name, `培训通知-${saved.id.slice(0, 12)}-检查报告.md`);
         assert.equal(fs.readFileSync(path.join(cwd, '.pivane-gongwen/.gitignore'), 'utf8'), '*\n');
         for (const file of [...saved.files, saved.source]) require('./private-file-helper.cjs').assertPrivateFile(file.path);
         assert.equal(saved.files.length, 2); assert.equal((await service.generate(context, base())).reused, true);
         await assert.rejects(service.generate(context, base({ title: '改变标题' })), error => error.code === 'GONGWEN_CONFLICT');
         const revised = await service.generate(context, base({ requestId: 'revision', date: '2026年10月16日' }));
+        assert.notEqual(saved.files[0].name, revised.files[0].name);
         assert.notEqual(saved.id, revised.id); assert.deepEqual(fs.readFileSync(saved.files[0].path), original);
         const controller = new AbortController();
         await assert.rejects(service.generate(context, base({ requestId: 'interrupted' }), controller.signal, () => controller.abort()));
@@ -165,6 +168,46 @@ test('version outputs preserve files, reject changed IDs and incomplete requests
         await assert.rejects(interruption.generate(context, base({ requestId: 'incomplete' })), /synthetic crash/);
         await assert.rejects(interruption.generate(context, base({ requestId: 'incomplete' })), error => error.code === 'GONGWEN_INCOMPLETE');
     } finally { await interruption.dispose(); }
+});
+
+test('delivery filenames sanitize titles, bound Unicode names, preserve report-only output and reuse legacy receipts without regeneration', async () => {
+    const { PiSessionStore } = require('../server/pi-session-store');
+    const { finish } = require('../server/gongwen/report');
+    const { zip, docxFiles } = require('./document-fixtures.cjs');
+    let runs = 0;
+    const generator = { run: async input => {
+        runs++;
+        return { input, bytes: input.requestId === 'names-report-only' ? null : zip(docxFiles()),
+            report: finish(input, { errors: [], hints: [], styles: [], faults: [], stages: [] }) };
+    }, dispose: async () => {} };
+    const service = new GongwenService(new PiSessionStore(), { process: generator }), context = { cwd, sessionId: 'names-session' };
+    try {
+        const titles = ['培训/通知:第一期?*', ['第一行', '第二行'], '通'.repeat(100), 'CON', '../..'];
+        for (const [index, title] of titles.entries()) {
+            const saved = await service.generate(context, base({ requestId: `names-${index}`, title }));
+            for (const file of saved.files) {
+                assert.equal(path.dirname(file.path), path.join(cwd, '.pivane-gongwen', saved.id));
+                assert.doesNotMatch(file.name, /[<>:"/\\|?*\x00-\x1f\x7f]/);
+                assert.ok(Buffer.byteLength(file.name) < 255);
+                assert.ok(file.name.includes(saved.id.slice(0, 12)));
+            }
+            assert.equal((await service.generate(context, base({ requestId: `names-${index}`, title }))).reused, true);
+        }
+        const only = await service.generate(context, base({ requestId: 'names-report-only' }));
+        assert.deepEqual(only.files.map(file => file.name), [`培训通知-${only.id.slice(0, 12)}-检查报告.md`]);
+        const raw = base({ requestId: 'names-legacy' }), legacy = await service.generate(context, raw);
+        for (const [index, file] of legacy.files.entries()) {
+            const old = path.join(path.dirname(file.path), index ? '检查报告.md' : '公文.docx');
+            fs.renameSync(file.path, old); file.name = path.basename(old); file.path = old;
+        }
+        const receiptPath = path.join(path.dirname(legacy.source.path), 'receipt.json');
+        fs.writeFileSync(receiptPath, JSON.stringify(legacy));
+        const beforeReuse = runs, reused = await service.generate(context, raw);
+        assert.equal(reused.reused, true); assert.equal(runs, beforeReuse);
+        assert.deepEqual(reused.files, legacy.files, 'old names and identities are preserved');
+        legacy.files[0].name = '../escape.docx'; fs.writeFileSync(receiptPath, JSON.stringify(legacy));
+        await assert.rejects(service.generate(context, raw), { code: 'GONGWEN_CHANGED' });
+    } finally { await service.dispose(); }
 });
 
 test('pinned upstream positive samples and negative rule specimens remain valid under the root dependency lock', { timeout: 120000 }, async () => {

@@ -119,7 +119,7 @@ async function run(browser, viewport, theme, fullContext = true, retention = ful
             throw new Error(`Unexpected side command ${cmd.type}`);
         });
     });
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
     const parentUsage = await page.locator('#pi-context-tokens').textContent();
     const selectParentText = async () => page.evaluate(() => {

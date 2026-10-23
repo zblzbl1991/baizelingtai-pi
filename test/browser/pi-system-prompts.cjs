@@ -62,7 +62,7 @@ async function run(browser, base, width, locale) {
         }
         ws.send(JSON.stringify({ type: 'response', id: cmd.id, command: cmd.type, success: true, data }));
     }); });
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
     await page.locator('#pi-input').fill('CHAT_DRAFT');
     await page.locator('#pi-file-input').setInputFiles({ name: 'fixture.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic attachment') });
@@ -271,7 +271,7 @@ async function noProject(browser, base) {
         return route.fulfill({ json: data });
     });
     await page.routeWebSocket('**/api/pi/ws', () => { throw new Error('No project must not start a worker'); });
-    await page.goto(base);
+    await page.goto(new URL('#/chat', base).href);
     await page.locator('#pi-project-dialog').waitFor({ state: 'visible' });
     await page.locator('#pi-project-dialog-close').click();
     await page.locator('#workspace-settings-toggle').click();

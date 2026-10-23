@@ -79,7 +79,7 @@ async function run(browser, viewport) {
             socket.send(JSON.stringify({ type: 'response', id: command.id, command: command.type, success: true, data }));
         });
     });
-    await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForFunction(() => !document.getElementById('pi-input').disabled);
     const drawer = async () => {
         if (viewport.width < 900 && !await page.locator('#pi-session-pane').evaluate(node => node.classList.contains('open'))) await page.locator('#pi-toggle-sessions').click();

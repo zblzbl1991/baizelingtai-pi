@@ -60,11 +60,11 @@ async function main() {
                         await page.waitForFunction(() => document.querySelectorAll('#pi-attachments .pi-attachment-chip').length === 1 && document.querySelector('#pi-attachments').getAttribute('aria-busy') === 'false');
                         await page.locator('[data-preview-attachment]').click();
                     }
-                    const host = source === 'project' ? '#pi-file-body' : '.pi-document-preview-body'; await ready(page, host);
-                    const event = page.waitForEvent('download'); event.catch(() => {}); await (source === 'project' ? page.locator('#pi-file-download') : page.locator('.pi-document-preview header button').first()).click();
+                    const host = '#pi-file-body'; await ready(page, host);
+                    const event = page.waitForEvent('download'); event.catch(() => {}); await page.locator('#pi-file-download').click();
                     assert.equal(hash(fs.readFileSync(await (await event).path())), input.sha256);
                     matrix.push({ width, source, strict: input.strict, encoding: input.encoding, declaration: input.declaration || 'override', mainPart: 'xl/book.xml', sha256: input.sha256 });
-                    if (source !== 'project') { await page.keyboard.press('Escape'); await page.locator('.pi-document-preview').waitFor({ state: 'detached' }); await page.locator('[data-remove-attachment]').click(); }
+                    if (source !== 'project') { await page.locator('#pi-close-inspector').click(); await page.locator('[data-remove-attachment]').click(); }
                     assert.equal(await page.locator('#pi-input').inputValue(), 'OPC retained draft');
                 }
                 assert.deepEqual(errors, []); await page.screenshot({ path: path.join(output, `opc-${width}.png`) });

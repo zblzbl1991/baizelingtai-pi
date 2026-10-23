@@ -73,7 +73,7 @@ async function run(browser, base, width, scenario) {
     });
     try {
         const start = Date.now();
-        await page.goto(base, { waitUntil: 'domcontentloaded' });
+        await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
         if (scenario === 'visibility-race') {
             await waitFor(() => requests.some(request => request.includes('/api/pi/activity')));
             releaseGlobal();

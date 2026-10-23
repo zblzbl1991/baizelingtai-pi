@@ -25,7 +25,7 @@ async function main() {
                 globalThis.previewFeedback = () => ({ clickAt, noticeAt, durationMs: noticeAt - clickAt });
             }, { cwd: fixture.cwd, id: fixture.session.id });
             const page = await context.newPage(), errors = []; page.on('pageerror', error => errors.push(error.message));
-            const ready = () => page.waitForFunction(() => document.querySelector('.pi-document-preview .pi-file-pdf-text pre')?.textContent.includes('WORD-PAGE-ONE'));
+            const ready = () => page.waitForFunction(() => document.querySelector('#pi-file-body .pi-file-pdf-text pre')?.textContent.includes('WORD-PAGE-ONE'));
             try {
                 await page.goto(fixture.origin + '/#/chat'); await page.locator('#pi-input:not([disabled])').waitFor();
                 const toolCount = await page.locator('#pi-transcript-content .pi-tool-row').count(); assert.ok(toolCount >= 1);
@@ -35,8 +35,7 @@ async function main() {
                 await page.locator('[data-preview-attachment]').click(); await ready();
                 const feedback = await page.evaluate(() => previewFeedback()); assert.ok(feedback.noticeAt > 0 && feedback.durationMs <= 250, JSON.stringify(feedback));
                 const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/pi/office/preview' && response.request().postDataJSON()?.refresh === true); refreshed.catch(() => {});
-                await page.locator('.pi-document-preview header button').nth(1).click(); assert.equal((await refreshed).status(), 200); await ready(); await page.keyboard.press('Escape');
-                await page.locator('.pi-document-preview').waitFor({ state: 'detached' });
+                await page.locator('#pi-file-refresh').click(); assert.equal((await refreshed).status(), 200); await ready(); await page.locator('#pi-close-inspector').click();
                 await page.locator(`[data-session-id="${fixture.otherSession.id}"] .pi-session-main`).click();
                 await page.waitForFunction(id => location.hash.includes(id) && !document.querySelector('#pi-input').disabled, fixture.otherSession.id);
                 assert.equal(await page.locator('#pi-attachments .pi-attachment-chip').count(), 0); await page.locator('#pi-input').fill('Independent other draft');
@@ -47,12 +46,14 @@ async function main() {
                 const workerBefore = fixture.gateway.supervisor.getActiveWorker(fixture.session.path); assert.ok(workerBefore);
                 await page.locator('[data-preview-attachment]').click(); await ready(); const socketCount = await page.evaluate(() => socketCount());
                 await page.evaluate(() => disconnectPreviewSocket());
-                await page.locator('.pi-document-preview').waitFor({ state: 'detached' });
+                await page.waitForFunction(() => !document.querySelector('#pi-file-body .pi-office-file-preview'));
                 await page.waitForFunction(count => socketCount() > count && !document.querySelector('#pi-input').disabled, socketCount);
                 assert.equal(fixture.gateway.supervisor.getActiveWorker(fixture.session.path), workerBefore, 'Reconnect reuses the supervised native-session worker');
+                await page.locator('#pi-files-uploads').click();
+                await page.locator('#pi-uploads-list .pi-delivery-card').filter({ hasText: 'draft.docx' }).click(); await ready();
+                await page.locator('#pi-close-inspector').click();
                 assert.equal(await page.locator('#pi-input').inputValue(), 'Draft retained across preview, threads and reconnect'); assert.equal(await page.locator('#pi-transcript-content .pi-tool-row').count(), toolCount);
-                await page.locator('[data-preview-attachment]').click(); await ready(); await page.keyboard.press('Escape');
-                await page.locator('.pi-document-preview').waitFor({ state: 'detached' });
+                await page.locator('[data-preview-attachment]').click(); await ready(); await page.locator('#pi-close-inspector').click();
                 await openInspector(page, 'changes'); await page.locator('#pi-files-browse').click(); await page.locator('.pi-file-tree-row[data-path="missing-font.docx"]').click();
                 await page.waitForFunction(() => document.querySelector('#pi-file-body .pi-file-pdf-text pre')?.textContent.includes('WORD-PAGE-ONE'));
                 assert.match(await page.locator('#pi-file-body').innerText(), /PivaneFixtureMissingFont2026/);

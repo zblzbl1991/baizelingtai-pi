@@ -54,12 +54,16 @@ test('revisioned HTTP, native immutable bindings, fork/import, and verified runt
     assert.equal(start.data.profiles.length, 1);
     const initial = start.data.profiles[0];
     assert.equal(initial.name, '小白');
+    assert.equal(start.data.defaultAssistantId, initial.id);
     assert.equal(initial.enabled, true);
     assert.deepEqual(initial.memory, { enabled: true, autoLearn: false });
     assert.equal(initial.soul, '');
     const repeated = await call('GET', '/profiles');
     assert.equal(repeated.data.revision, start.data.revision);
     assert.deepEqual(repeated.data.profiles, start.data.profiles);
+    assert.equal((await call('PUT', '/profiles', { expectedRevision: start.data.revision, profile: { ...initial, enabled: false } })).status, 409);
+    assert.equal((await call('POST', `/profiles/${initial.id}/trash`, { expectedRevision: start.data.revision })).status, 409);
+    assert.equal((await call('GET', '/profiles')).data.revision, start.data.revision);
     const initialThread = await call('POST', '/sessions', { cwd: first, profileId: initial.id });
     assert.equal(initialThread.data.agentProfile.id, initial.id);
     const initialEnvironment = await gateway.supervisor.workerEnvironment({ cwd: first,
@@ -456,7 +460,7 @@ test('trash metadata validation, newest-first projection and the cap include tra
     t.after(async () => { await profiles.dispose(); fs.rmSync(fixtureRoot, { recursive: true, force: true }); });
     const live = { id: randomUUID(), name: 'Retained', description: '', soul: '', enabled: true,
         memory: { enabled: false, autoLearn: false }, skills: { learnedEnabled: true } };
-    const write = records => fs.writeFileSync(file, JSON.stringify({ version: 1, profiles: records, defaults: {} }));
+    const write = (records, defaultAssistantId) => fs.writeFileSync(file, JSON.stringify({ version: 1, profiles: records, defaults: {}, ...(defaultAssistantId ? { defaultAssistantId } : {}) }));
     for (const metadata of [{ trashedAt: '2026-10-17T00:00:00.000Z' }, { trashedEnabled: true },
         { trashedAt: 'invalid', trashedEnabled: false, enabled: false },
         { trashedAt: 123, trashedEnabled: false, enabled: false },
@@ -468,11 +472,12 @@ test('trash metadata validation, newest-first projection and the cap include tra
         write([{ ...live, ...metadata }]);
         assert.throws(() => readRegistry(file), /Profile registry is invalid/, JSON.stringify(metadata));
     }
-    const records = Array.from({ length: 50 }, (_, index) => ({ ...live, id: randomUUID(), enabled: false,
+    const defaultAssistant = { ...live, id: randomUUID() };
+    const records = Array.from({ length: 49 }, (_, index) => ({ ...live, id: randomUUID(), enabled: false,
         trashedEnabled: index % 2 === 0, trashedAt: new Date(Date.UTC(2026, 9, 1, 0, index)).toISOString() }));
-    write(records);
+    write([...records, defaultAssistant], defaultAssistant.id);
     const list = await profiles.list();
-    assert.deepEqual(list.profiles, []); assert.equal(list.trash.length, 50);
+    assert.deepEqual(list.profiles, [defaultAssistant]); assert.equal(list.trash.length, 49);
     assert.deepEqual(list.trash.map(profile => profile.id), records.map(profile => profile.id).reverse());
     assert.ok(list.trash.every(profile => Object.keys(profile).sort().join(',') === 'avatar,description,id,name,trashedAt'));
     assert.equal(Object.keys(list.profileRevisions).length, 50);

@@ -38,6 +38,100 @@ test('built-in presets are disabled, independent, private and cannot overwrite e
     await assert.rejects(f.save({ action: 'builtin', builtin: 'ocr', config: {} }), { code: 'MCP_INVALID_EDIT' });
     require('./private-file-helper.cjs').assertPrivateFile(path.join(f.agent, 'mcp.json'));
 });
+test('conversational WeKnora configuration creates the builtin atomically and preserves other settings', async t => {
+    const f = fixture(t);
+    f.write('mcp.json', { future: 7, mcpServers: { other: { command: 'synthetic', env: { PRIVATE: 'unrelated-secret' } } } });
+    const configure = async extra => f.service.configureWeKnora({ cwd: f.cwd, scope: 'global', confirmed: true,
+        expectedRevision: (await f.service.snapshot(f.cwd)).revision, baseUrl: 'https://weknora.example.invalid/api/v1/', apiKey: 'synthetic-chat-key', ...extra });
+    const result = await configure();
+    assert.deepEqual(result, { ok: true, server: 'pivane-weknora', scope: 'global', enabled: true, requiresRuntimeRestart: true, connectionStatus: 'not_checked' });
+    let disk = JSON.parse(fs.readFileSync(path.join(f.agent, 'mcp.json')));
+    assert.equal(disk.future, 7); assert.equal(disk.mcpServers.other.env.PRIVATE, 'unrelated-secret');
+    assert.equal(disk.mcpServers['pivane-weknora'].env.WEKNORA_BASE_URL, 'https://weknora.example.invalid/api/v1');
+    assert.equal(disk.mcpServers['pivane-weknora'].env.WEKNORA_API_KEY, 'synthetic-chat-key');
+    disk.mcpServers['pivane-weknora'].future = { retained: true };
+    disk.mcpServers['pivane-weknora'].env.EXTRA = 'keep'; disk.mcpServers['pivane-weknora'].exposure = 'hidden';
+    f.write('mcp.json', disk);
+    await configure({ apiKey: 'synthetic-replacement' });
+    disk = JSON.parse(fs.readFileSync(path.join(f.agent, 'mcp.json')));
+    assert.deepEqual(disk.mcpServers['pivane-weknora'].future, { retained: true });
+    assert.equal(disk.mcpServers['pivane-weknora'].env.EXTRA, 'keep'); assert.equal(disk.mcpServers['pivane-weknora'].exposure, 'hidden');
+    assert.doesNotMatch(JSON.stringify(await f.service.snapshot(f.cwd)), /synthetic-chat-key|synthetic-replacement|unrelated-secret/);
+    require('./private-file-helper.cjs').assertPrivateFile(path.join(f.agent, 'mcp.json'));
+});
+
+test('knowledge preferences use private native saves, retain credentials and unknown fields, and reject stale revisions', async t => {
+    const f = fixture(t), { ENV_KEY } = require('../server/pi-knowledge-search-settings');
+    await f.save({ action: 'builtin', builtin: 'weknora' });
+    await f.save({ action: 'patch', name: 'pivane-weknora', patch: { env: { WEKNORA_API_KEY: { op: 'replace', value: 'synthetic-knowledge-secret' }, [ENV_KEY]: { op: 'replace', value: JSON.stringify({ future: { retained: true } }) } } } });
+    const value = { knowledgeBaseIds: ['kb-1', 'kb-2'], limit: 8, vectorThreshold: 0.75, keywordThreshold: 0.4 };
+    const prior = (await f.service.snapshot(f.cwd)).revision;
+    assert.equal((await f.save({ action: 'knowledge', name: 'pivane-weknora', knowledgeSettings: value })).requiresRuntimeRestart, true);
+    const disk = JSON.parse(fs.readFileSync(path.join(f.agent, 'mcp.json')));
+    assert.equal(disk.mcpServers['pivane-weknora'].env.WEKNORA_API_KEY, 'synthetic-knowledge-secret');
+    assert.deepEqual(JSON.parse(disk.mcpServers['pivane-weknora'].env[ENV_KEY]), { future: { retained: true }, ...value });
+    const snapshot = await f.service.snapshot(f.cwd);
+    assert.equal(snapshot.capabilities.knowledgeSearchSettings, true);
+    assert.deepEqual(snapshot.servers[0].knowledgeSettings, { supported: true, valid: true, value });
+    assert.doesNotMatch(JSON.stringify(snapshot), /synthetic-knowledge-secret|retained/);
+    await assert.rejects(f.service.save({ cwd: f.cwd, scope: 'global', expectedRevision: prior, confirmed: true, action: 'knowledge', name: 'pivane-weknora', knowledgeSettings: value }), { code: 'MCP_CHANGED' });
+    require('./private-file-helper.cjs').assertPrivateFile(path.join(f.agent, 'mcp.json'));
+});
+
+test('knowledge settings validate bounds, project trust, service identity and malformed saved preferences without writing', async t => {
+    const f = fixture(t), { ENV_KEY, defaults } = require('../server/pi-knowledge-search-settings');
+    await f.save({ action: 'builtin', builtin: 'weknora' });
+    const before = fs.readFileSync(path.join(f.agent, 'mcp.json'), 'utf8');
+    for (const change of [{ limit: 0 }, { limit: 21 }, { limit: null }, { vectorThreshold: NaN }, { keywordThreshold: 1.1 }, { knowledgeBaseIds: ['name with space'] }, { knowledgeBaseIds: ['kb-1', 'kb-1'] }, { knowledgeBaseIds: Array.from({ length: 11 }, (_, i) => `kb-${i}`) }, { arbitrary: true }]) {
+        await assert.rejects(f.save({ action: 'knowledge', name: 'pivane-weknora', knowledgeSettings: { ...defaults, ...change } }), { code: 'MCP_KNOWLEDGE_INVALID_SETTINGS' });
+    }
+    assert.equal(fs.readFileSync(path.join(f.agent, 'mcp.json'), 'utf8'), before);
+    await assert.rejects(f.save({ action: 'knowledge', name: 'unknown', knowledgeSettings: defaults }), { code: 'MCP_KNOWLEDGE_UNSUPPORTED' });
+    await assert.rejects(f.save({ action: 'knowledge', scope: 'project', name: 'pivane-weknora', knowledgeSettings: defaults }), { code: 'MCP_PROJECT_UNTRUSTED' });
+    const disk = JSON.parse(before); disk.mcpServers['pivane-weknora'].env[ENV_KEY] = 'invalid-private-content'; f.write('mcp.json', disk);
+    const dto = await f.service.snapshot(f.cwd);
+    assert.equal(dto.servers[0].knowledgeSettings.valid, false); assert.doesNotMatch(JSON.stringify(dto), /invalid-private-content/);
+    await f.save({ action: 'knowledge', name: 'pivane-weknora', knowledgeSettings: defaults });
+    assert.equal((await f.service.snapshot(f.cwd)).servers[0].knowledgeSettings.valid, true);
+    f.trust();
+    await f.save({ action: 'builtin', builtin: 'ocr' });
+    await assert.rejects(f.save({ action: 'knowledge', name: 'pivane-ocr', knowledgeSettings: defaults }), { code: 'MCP_KNOWLEDGE_UNSUPPORTED' });
+    const projectConfig = require('../server/pi-builtin-mcp').builtinConfig('weknora');
+    projectConfig.env.WEKNORA_API_KEY = 'synthetic-project-key';
+    fs.writeFileSync(path.join(f.cwd, '.pi', 'mcp.json'), JSON.stringify({ future: 1, mcpServers: { 'project-weknora': projectConfig, 'pivane-weknora': { enabled: true } } }));
+    await f.save({ action: 'knowledge', scope: 'project', name: 'project-weknora', knowledgeSettings: { ...defaults, knowledgeBaseIds: ['kb-project'], limit: 3 } });
+    const projectSnapshot = await f.service.snapshot(f.cwd, 'project');
+    assert.deepEqual(projectSnapshot.servers.find(item => item.name === 'project-weknora').knowledgeSettings.value.knowledgeBaseIds, ['kb-project']);
+    assert.doesNotMatch(JSON.stringify(projectSnapshot), /synthetic-project-key/);
+    await assert.rejects(f.save({ action: 'knowledge', scope: 'project', name: 'pivane-weknora', knowledgeSettings: defaults }), { code: 'MCP_KNOWLEDGE_UNSUPPORTED' });
+    const projectDisk = JSON.parse(fs.readFileSync(path.join(f.cwd, '.pi', 'mcp.json')));
+    assert.equal(projectDisk.future, 1); assert.equal(projectDisk.mcpServers['project-weknora'].env.WEKNORA_API_KEY, 'synthetic-project-key');
+    require('./private-file-helper.cjs').assertPrivateFile(path.join(f.cwd, '.pi', 'mcp.json'));
+});
+test('conversational WeKnora rejects stale revisions, scope changes, replaced commands and credential references', async t => {
+    const f = fixture(t);
+    const input = { cwd: f.cwd, scope: 'global', confirmed: true, expectedRevision: (await f.service.snapshot(f.cwd)).revision,
+        baseUrl: 'http://127.0.0.1:1/api/v1', apiKey: 'synthetic-only' };
+    for (const extra of [{ baseUrl: 'file:///tmp/private' }, { baseUrl: 'https://user:secret@example.invalid' },
+        { baseUrl: 'https://example.invalid?key=secret' }, { apiKey: '!echo secret' }, { apiKey: '${SECRET}' }, { apiKey: '\nsecret' }, { apiKey: '' }, { apiKey: 'xxx' },
+        { confirmed: false }, { command: 'evil' }]) await assert.rejects(f.service.configureWeKnora({ ...input, ...extra }), /^Error: MCP_/);
+    assert.equal(fs.existsSync(path.join(f.agent, 'mcp.json')), false);
+    f.write('mcp.json', { mcpServers: { 'pivane-weknora': { command: 'synthetic-other-server' } } });
+    await assert.rejects(f.service.configureWeKnora(input), { code: 'MCP_CHANGED' });
+    input.expectedRevision = (await f.service.snapshot(f.cwd)).revision;
+    await assert.rejects(f.service.configureWeKnora(input), { code: 'MCP_WEKNORA_BUILTIN_CONFLICT' });
+    fs.unlinkSync(path.join(f.agent, 'mcp.json'));
+    fs.writeFileSync(path.join(f.cwd, '.pi', 'mcp.json'), JSON.stringify({ mcpServers: { 'pivane-weknora': { enabled: false } } }));
+    input.expectedRevision = (await f.service.snapshot(f.cwd)).revision;
+    await assert.rejects(f.service.configureWeKnora(input), { code: 'MCP_WEKNORA_SCOPE_CONFLICT' });
+    fs.unlinkSync(path.join(f.cwd, '.pi', 'mcp.json'));
+    input.expectedRevision = (await f.service.snapshot(f.cwd)).revision;
+    await assert.rejects(f.service.configureWeKnora({ ...input, scope: 'project' }), { code: 'MCP_PROJECT_UNTRUSTED' });
+    f.trust(); input.expectedRevision = (await f.service.snapshot(f.cwd)).revision;
+    await f.service.configureWeKnora({ ...input, scope: 'project' });
+    assert.equal(fs.existsSync(path.join(f.agent, 'mcp.json')), false);
+    assert.equal((await f.service.snapshot(f.cwd, 'project')).servers[0].enabled, true);
+});
 test('saved GET is redacted and never evaluates references; explicit secret edits retain unknown fields', async t => {
     const f = fixture(t), marker = path.join(f.root, 'executed');
     f.write('mcp.json', { future: { preserved: true }, mcpServers: { local: { command: `!touch ${marker}`, args: ['secret-token'], env: { KEY: 'literal' }, unknown: 'unknown-secret', exposure: 'direct' }, remote: { url: 'https://user:secret@example.invalid/mcp?token=secret', headers: { Authorization: 'secret' }, oauth: { clientSecret: 'secret' } } } });

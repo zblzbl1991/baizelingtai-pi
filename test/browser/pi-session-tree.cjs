@@ -78,7 +78,7 @@ async function run(browser, viewport, SessionManager) {
     });
     // Validate mutation fields separately from the RPC envelope.
     function inputWithId(c) { const { id, type, ...input } = c; Object.defineProperties(input, { id: { value: id }, type: { value: type } }); return input; }
-    await page.goto(base, { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
     await page.locator('#pi-input').fill('保留已有草稿');
     await openInspector(page, 'history');
     await page.waitForFunction(() => document.querySelectorAll('[data-history-id]').length > 0);

@@ -97,7 +97,7 @@ const assistant = content => ({ role: 'assistant', content, timestamp: 2, stopRe
                 if (value.command === 'open_session' && value.success) snapshots.push(value.data.session.id);
             }));
             await page.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
-            await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+            await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
             await page.locator('#pi-transcript').getByText('SEEDED_ANSWER', { exact: true }).waitFor();
             await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
             assert.deepEqual(cronAssets, [], 'chat starts before the cron assets are requested');

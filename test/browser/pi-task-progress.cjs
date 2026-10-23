@@ -56,7 +56,7 @@ async function check(browser, base, width, language) {
         }
         throw new Error(`Unexpected command: ${cmd.type}`);
     }));
-    await page.goto(base);
+    await page.goto(new URL('#/chat', base).href);
     await page.locator('#pi-input').fill('Keep my draft');
     const card = page.locator('#pi-task-progress');
     assert.equal(await card.isVisible(), false, 'simple task has no card');

@@ -2,6 +2,11 @@
     const t = globalThis.PiI18n?.t || (s => s);
     const node = (tag, text, attrs = {}) => { const e = document.createElement(tag); if (text != null) e.textContent = text; for (const [key, value] of Object.entries(attrs)) e.setAttribute(key, value); return e; };
     window.PiExtensionAssistant = {
+        weknoraDraft() {
+            return globalThis.PiI18n?.locale === 'en'
+                ? 'Configure my built-in WeKnora knowledge base.\nurl: xxx\nkey: xxx'
+                : '帮我配置内置 WeKnora 知识库。\nurl：xxx\nkey：xxx';
+        },
         create(host) {
             let enabled = false, busy = false, opener, launchGeneration = 0;
             const button = (text, fn, attrs = {}) => { const b = node('button', text, { type: 'button', ...attrs }); b.addEventListener('click', fn); return b; };
@@ -19,20 +24,24 @@
             scopeLabel.append(scope);
             const needLabel = node('label', t('你需要什么能力？')), need = node('textarea', null, { id: 'pi-extension-assistant-need', rows: '3', maxlength: '4000', placeholder: t('例如：把 Word 资料做成中文汇报 PPT，或粘贴 GitHub / npm 链接') });
             needLabel.append(need);
+            const credentialHint = node('p', t('请替换 url 和 key 中的 xxx。发送后，Key 会交给所选模型并保存在对话中；如不希望这样，请到 MCP 设置填写。'), { class: 'settings-help', hidden: '' });
+            const updateCredentialHint = () => { credentialHint.hidden = !/weknora/i.test(need.value); };
+            need.addEventListener('input', updateCredentialHint);
             const examples = node('div', null, { class: 'pi-extension-examples', 'aria-label': t('需求示例') });
             for (const [title, prompt] of [
                 [t('办公文档'), t('帮我查找适合处理 Word 和 PDF 的技能，先检查本机已有能力，并比较来源和配置要求。检查兼容性后给出安装方案')],
                 [t('分析 Excel'), t('帮我查找整理 Excel 数据、汇总分析和制作图表的技能，先检查兼容性并给出安装方案。')],
                 [t('检查更新'), t('帮我检查所有已安装的 Packages 和 Skills 是否有版本更新。先核对本机清单、安装范围、来源和当前版本，再查询对应来源的最新版本，列出可更新项、主要变化、兼容性影响及更新方案。对手动安装或无法确认版本的项目明确标注，不要猜测。先只读检查，等我确认后再更新。')],
-                [t('排查扩展'), t('帮我检查已安装的 Packages 和 Skills，找出缺失依赖或加载问题，先说明发现的问题和修复方案。')]
-            ]) examples.append(button(title, () => { need.value = prompt; need.focus(); }));
+                [t('排查扩展'), t('帮我检查已安装的 Packages 和 Skills，找出缺失依赖或加载问题，先说明发现的问题和修复方案。')],
+                [t('配置 WeKnora'), window.PiExtensionAssistant.weknoraDraft()]
+            ]) examples.append(button(title, () => { need.value = prompt; updateCredentialHint(); need.focus(); }));
             const status = node('p', '', { role: 'status', 'aria-live': 'polite', id: 'pi-extension-assistant-status' });
             const submit = node('button', null, { type: 'submit', id: 'pi-extension-assistant-create' });
             submit.append(node('span', t('进入助手')), node('i', '', { class: 'fa-solid fa-arrow-right', 'aria-hidden': 'true' }));
             const options = node('div', null, { class: 'pi-extension-options' }); options.append(scopeLabel);
             const location = node('details', null, { class: 'pi-extension-location' });
             location.append(node('summary', t('安装位置与项目')), target); options.append(location);
-            const body = node('div', null, { class: 'pi-extension-body' }); body.append(needLabel, examples, options);
+            const body = node('div', null, { class: 'pi-extension-body' }); body.append(needLabel, credentialHint, examples, options);
             const footer = node('footer', null, { class: 'pi-extension-footer' });
             footer.append(node('p', t('下一步在对话中确认并发送，原草稿会保留。')), submit);
             form.append(body, status, footer);
@@ -56,6 +65,7 @@
                 scope.value = detail.scope === 'project' && current.cwd ? 'project' : 'global';
                 target.textContent = t('安装到运行白泽灵台的机器。项目上下文：{0}', cwd);
                 need.value = typeof detail.need === 'string' ? detail.need.slice(0, 4000) : '';
+                updateCredentialHint();
                 location.open = false; body.scrollTop = 0;
                 status.textContent = ''; submit.disabled = false;
                 if (!dialog.open) dialog.showModal();
@@ -68,7 +78,7 @@
                 try {
                     const opened = await host.start({ cwd: dialog.dataset.cwd, scope: scope.value, language: globalThis.PiI18n?.locale === 'en' ? 'en' : 'zh-CN', draft: need.value.trim(),
                         canNavigate: () => dialog.open && generation === launchGeneration });
-                    if (opened) { dialog.close(); document.getElementById('workspace-settings-close').click(); document.getElementById('pi-input').focus(); }
+                    if (opened) { dialog.close(); window.PiWorkspaceRoute.returnToConversation(); document.getElementById('pi-input').focus(); }
                     else dialog.close();
                 } catch (error) { status.textContent = error.message + ' ' + t('请先核对会话列表，再重新打开助手；不会自动重试。'); }
                 finally { busy = false; }

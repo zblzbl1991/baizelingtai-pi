@@ -54,6 +54,8 @@
         }
         else if (['subagent', 'subagent_supervisor', 'subagents_enable', 'bg_wait'].includes(name)) title = subagentTitle(name, args);
         else if (name === 'extensions_inventory') title = t('检查扩展清单');
+        else if (name === 'extensions_mcp_inventory') title = t('检查 MCP 配置');
+        else if (name === 'extensions_weknora_configure') title = t('配置 WeKnora');
         else if (name === 'extensions_package') {
             title = ({ install: t('安装扩展包'), update: t('更新扩展包'), remove: t('移除扩展包') })[args.action] || t('管理扩展包');
             if (text(args.source, 1000)) title += ' · ' + args.source;
@@ -87,7 +89,8 @@
             if (!detail) { detail = document.createElement('p'); detail.className = 'pi-tool-provenance'; row.querySelector('.pi-tool-detail')?.prepend(detail); }
             detail.textContent = t('原始工具：{0}', name) + (info ? '\n' + info : '');
         } else detail?.remove();
-        if (name === 'extensions_package' && (result?.details?.pivanePackageOperation ?? result?.details?.pi5PackageOperation)?.status === 'cancelled') {
+        if (name === 'extensions_package' && (result?.details?.pivanePackageOperation ?? result?.details?.pi5PackageOperation)?.status === 'cancelled'
+            || name === 'extensions_weknora_configure' && result?.details?.pivaneMcpConfiguration?.status === 'cancelled') {
             row.dataset.state = 'cancelled'; row.querySelector('.pi-tool-status').textContent = t('已取消');
         }
     }

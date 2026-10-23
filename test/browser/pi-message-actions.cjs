@@ -84,7 +84,7 @@ async function run(browser, viewport, theme) {
             throw new Error(`Unexpected RPC ${command.type}`);
         });
     });
-    try { await page.goto(base, { waitUntil: 'domcontentloaded' }); }
+    try { await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' }); }
     catch (error) { console.error('Unfinished page resources:', [...pendingRequests]); throw error; }
     await page.waitForFunction(() => document.querySelectorAll('[data-message-workflow="reply-fork"]').length === 2);
     const users = page.locator('article.user');

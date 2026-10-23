@@ -53,7 +53,7 @@ async function run(browser, base, width, locale) {
             ws.send(JSON.stringify({ type: 'response', id: cmd.id, command: cmd.type, success: !error, error, data }));
         });
     });
-    await page.goto(base, { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
     await openInspector(page, 'side'); await page.waitForFunction(() => !document.querySelector('#pi-side-input').disabled);
     assert.equal(prepares.length, 0); assert.equal(sides.length, 0);
     const english = locale === 'en-US';

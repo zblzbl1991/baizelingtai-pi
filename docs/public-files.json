@@ -17,6 +17,7 @@
     "docs/adr/0001-staffing-ledger-authority.md",
     "docs/adr/0002-compliance-record-authority.md",
     "docs/adr/0003-compliance-optional-builtin.md",
+    "docs/adr/0004-staffing-effective-dated-person-properties.md",
     "docs/AGENT_GUIDE.md",
     "docs/AGENT_PROFILES.md",
     "docs/AGENT_THREADS.md",
@@ -122,6 +123,7 @@
     "docs/LAUNCHER_REPAIR.md"
   ],
   "repositoryOnly": [
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "user-manual/白泽灵台使用说明.md"
   ]
 }

@@ -90,7 +90,7 @@ async function check(browser, base, width, language) {
         }
         throw new Error(`Unexpected command: ${cmd.type}`);
     }));
-    await page.goto(base);
+    await page.goto(new URL('#/chat', base).href);
     await page.locator('#pi-input').fill('Keep my draft');
     const panel = page.locator('#pi-subagent-runs');
     await panel.waitFor({ state: 'visible' });

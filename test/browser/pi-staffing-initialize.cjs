@@ -15,7 +15,7 @@ const { WorkspaceAccessService } = require('../../server/workspace-access-servic
 async function run(browser, width, locale) {
     const actualWidth = process.env.PI_STAFFING_VIEWPORT ? Number(process.env.PI_STAFFING_VIEWPORT) : width;
     assert.ok(Number.isInteger(actualWidth) && actualWidth >= 320, 'valid staffing test viewport');
-    const agent = path.join(temporary, String(width)); fs.mkdirSync(agent); process.env.PI_CODING_AGENT_DIR = agent;
+    const agent = path.join(temporary, `${width}-${locale}`); fs.mkdirSync(agent); process.env.PI_CODING_AGENT_DIR = agent;
     const profiles = new PiProfileRegistry({ resolveProject: value => value });
     const service = new StaffingService({ profiles });
     await service.status(); // Prepare the isolated identity before timing browser interactions.
@@ -31,7 +31,7 @@ async function run(browser, width, locale) {
     let enableRequests = 0, dropped = false;
     page.setDefaultTimeout(30000); page.on('pageerror', error => errors.push(error.message));
     await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, route => route.abort());
-    await page.addInitScript(() => { localStorage.setItem('pi.web.cwd', '/projects/staffing-fixture'); localStorage.setItem('pi.web.session:/projects/staffing-fixture', 'synthetic-session'); });
+    await page.addInitScript(() => { localStorage.setItem('pi.workspace.sidebarCollapsed', 'false'); localStorage.setItem('pi.web.cwd', '/projects/staffing-fixture'); localStorage.setItem('pi.web.session:/projects/staffing-fixture', 'synthetic-session'); });
     await page.route('**/api/**', async route => {
         const pathname = new URL(route.request().url()).pathname;
         if (pathname === '/api/pi/staffing/enable' && route.request().method() === 'POST') {
@@ -52,11 +52,45 @@ async function run(browser, width, locale) {
         ws.send(JSON.stringify({ type: 'response', id: command.id, command: command.type, success: true, data })); }));
     try {
         await page.goto(origin + '/#/staffing', { waitUntil: 'domcontentloaded' });
+        const staffingNav = page.locator('.nav-btn[data-tab="staffing"]');
+        const moreStaffing = page.locator('[data-more-tab="staffing"]');
+        const checkStaffingNavigation = async () => {
+            assert.equal(await staffingNav.getAttribute('hidden'), null);
+            assert.equal(await moreStaffing.getAttribute('hidden'), null);
+            if (actualWidth <= 680) return;
+            await staffingNav.waitFor({ state: 'visible' });
+            assert.equal(await staffingNav.getAttribute('aria-label'), locale === 'en' ? 'Personnel staffing' : '人员调配');
+            assert.equal(await staffingNav.evaluate(element => {
+                let previous = element.previousElementSibling;
+                while (previous && !previous.classList.contains('workspace-nav-heading')) previous = previous.previousElementSibling;
+                return previous === document.querySelector('.workspace-nav-heading');
+            }), true, 'staffing belongs to the Work group');
+            if (actualWidth > 900) {
+                await page.locator('#workspace-sidebar-toggle').click();
+                await staffingNav.locator('.workspace-nav-short').waitFor({ state: 'visible' });
+                assert.equal(await staffingNav.locator('.workspace-nav-short').innerText(), locale === 'en' ? 'Staffing' : '调配');
+                assert.ok(await staffingNav.evaluate(element => element.scrollWidth <= element.clientWidth + 1));
+                await page.locator('#workspace-brand-toggle').click();
+            }
+            await page.evaluate(() => window.PiWorkspaceRoute.navigate('chat'));
+            await page.locator('#chat-tab.active').waitFor();
+            await staffingNav.click();
+            await page.locator('#staffing-tab.active').waitFor();
+            assert.equal(await staffingNav.getAttribute('aria-current'), 'page');
+            assert.ok(await staffingNav.evaluate(element => element.scrollWidth <= element.clientWidth + 1));
+        };
+        await page.locator('#staffing-enable').waitFor();
+        assert.equal(await staffingNav.count(), 1);
+        assert.equal(await moreStaffing.count(), 1);
+        assert.equal(await staffingNav.isVisible(), false);
+        assert.equal(await moreStaffing.getAttribute('hidden'), '');
         await page.locator('#staffing-enable').click();
         if (width === 1440) {
             await page.locator('#staffing-check-operation').click();
             assert.equal(enableRequests, 1, 'an uncertain result must be queried without a second write');
         }
+        await page.locator('[data-staffing-state="awaiting-import"]').waitFor();
+        await checkStaffingNavigation();
         await page.locator('[data-staffing-advanced] > summary').click();
         await page.locator('#staffing-initial-json').waitFor();
         if (actualWidth < 680) assert.ok(await page.locator('#staffing-initial-json').evaluate(element => parseFloat(getComputedStyle(element).fontSize)) >= 16);
@@ -77,20 +111,28 @@ async function run(browser, width, locale) {
         await page.locator('#staffing-confirm-initial').click();
         await page.locator('[data-staffing-state="ready"]').waitFor();
         const profileId = (await service.status()).profileId;
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await page.locator('[data-staffing-state="ready"]').waitFor();
+        await checkStaffingNavigation();
+        const profileIds = (await profiles.list()).profiles.map(profile => profile.id).sort();
         await page.locator('#staffing-disable').click();
+        await page.locator('#staffing-enable').waitFor();
+        assert.equal(await staffingNav.isVisible(), false);
+        assert.equal(await moreStaffing.getAttribute('hidden'), '');
         await page.locator('#staffing-enable').click();
         await page.locator('[data-staffing-state="ready"]').waitFor();
+        await checkStaffingNavigation();
         assert.equal((await service.status()).profileId, profileId);
-        assert.equal((await profiles.list()).profiles.length, 1);
+        assert.deepEqual((await profiles.list()).profiles.map(profile => profile.id).sort(), profileIds);
         assert.equal((await service.ledger()).people.length, 1);
         assert.deepEqual(await page.evaluate(() => ['body', '#staffing-tab', '.staffing-panel'].filter(selector => { const el = document.querySelector(selector); return el && el.scrollWidth > el.clientWidth + 1; })), []);
-        if (process.env.PIVANE_TEST_SCREENSHOT_DIR) { fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, `staffing-${width}.png`) }); }
+        if (process.env.PIVANE_TEST_SCREENSHOT_DIR) { fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, `staffing-${width}-${locale}.png`) }); }
         assert.deepEqual(errors, []);
         console.log(`staffing initialize case ${width}: actual ${actualWidth}px ${locale} passed`);
     } finally { await context.close(); await service.dispose(); access.dispose(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 (async () => {
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
-    try { for (const [width, locale] of selectBrowserTargets([[1440, 'zh-CN'], [393, 'zh-CN'], [320, 'en']])) await run(browser, width, locale); }
+    try { for (const [width, locale] of selectBrowserTargets([[1440, 'zh-CN'], [1440, 'en'], [393, 'zh-CN'], [320, 'en']])) await run(browser, width, locale); }
     finally { await browser.close(); fs.rmSync(temporary, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -68,7 +68,7 @@ async function run(browser, base, width, language, emptyTargets = false) {
         ws.send(JSON.stringify({ type: 'response', id: command.id, command: command.type, success: true, data }));
     }));
     await page.route(/https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com)\//, route => route.abort());
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     assert.equal(await page.evaluate(() => isSecureContext), !base.includes('pivane-http.test'));
     if (base.includes('pivane-http.test')) assert.equal(await page.evaluate(() => typeof crypto.randomUUID), 'undefined');
     await page.locator('#pi-input:not([disabled])').waitFor();

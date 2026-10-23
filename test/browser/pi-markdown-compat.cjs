@@ -50,7 +50,7 @@ const source = String.raw`| \(x_1\) 处的情况 | 结论 | 理由 |
                     ws.send(JSON.stringify({ type: 'response', id: command.id, command: command.type, success: true, data }));
                 });
             });
-            await page.goto(base, { waitUntil: 'domcontentloaded' });
+            await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
             await page.waitForSelector('#pi-transcript-content table .katex');
             const initial = await page.evaluate(() => {
                 const root = document.querySelector('#pi-transcript-content table').closest('.pi-markdown');

@@ -70,7 +70,7 @@ async function run(browser, base, width, locale) {
         else if (command.type === 'get_available_thinking_levels') data = { levels: ['off'] };
         ws.send(JSON.stringify({ type: 'response', id: command.id, command: command.type, success: true, data }));
     }));
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.getElementById('pi-input').disabled);
     await page.locator('#pi-input').fill('草稿保持 <keep>');
     await page.locator('#pi-file-input').setInputFiles({ name: 'fixture.txt', mimeType: 'text/plain', buffer: Buffer.from('附件正文') });

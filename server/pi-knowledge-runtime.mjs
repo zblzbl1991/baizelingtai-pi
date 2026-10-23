@@ -26,12 +26,13 @@ function catalog(session) {
         if (!match || !rawNames.has(match[2]) || !info.namespace?.aliases?.includes(match[1])) continue;
         const [server, raw] = match.slice(1);
         if (!servers.has(server)) servers.set(server, []);
-        servers.get(server).push({ name: info.name, raw, parameters: info.parameters, exposure: info.exposure });
+        servers.get(server).push({ name: info.name, raw, parameters: info.parameters, description: definition.description, exposure: info.exposure });
     }
     const entries = [...servers].map(([name, tools]) => ({ name, tools }));
     const revision = createHash('sha256').update(JSON.stringify(entries)).digest('hex');
     return { revision, servers: entries.map(({ name, tools }) => ({ name,
-        searchRequiresBase: !!needsBase(tools.find(tool => tool.raw === 'search_knowledge') || tools.find(tool => tool.raw === 'hybrid_search')), operations: Object.fromEntries(
+        searchRequiresBase: !!needsBase(tools.find(tool => tool.raw === 'search_knowledge') || tools.find(tool => tool.raw === 'hybrid_search')),
+        searchUsesDefaults: tools.some(tool => tool.raw === 'search_knowledge' && has(tool, 'kb_id') && !has(tool, 'knowledge_base_ids') && !needsBase(tool)), operations: Object.fromEntries(
         Object.entries(operations).map(([op, names]) => [op, names.map(raw => tools.find(tool => tool.raw === raw)).find(Boolean)?.name || null])) })), entries };
 }
 export function argumentsFor(tool, input) {
@@ -40,7 +41,7 @@ export function argumentsFor(tool, input) {
     // but has a different schema. Choose arguments from the advertised schema.
     if (raw === 'list_knowledge_bases' && has(tool, 'page')) return { page: input.page || 1, page_size: 20 };
     if (raw === 'list_documents' && has(tool, 'kb_id') && !has(tool, 'knowledge_base_id')) return { kb_id: input.kbId, page: input.page || 1, page_size: 20 };
-    if (raw === 'search_knowledge' && has(tool, 'kb_id') && !has(tool, 'knowledge_base_ids')) return { query: input.query, kb_id: input.kbId, limit: 10 };
+    if (raw === 'search_knowledge' && has(tool, 'kb_id') && !has(tool, 'knowledge_base_ids')) return { query: input.query, ...(input.kbId ? { kb_id: input.kbId } : {}) };
     if (raw === 'read_document' && has(tool, 'content_offset')) return { knowledge_id: input.documentId, page: input.page || 1, page_size: 20, content_offset: input.contentOffset || 0 };
     switch (raw) {
     case 'list_knowledge_bases': return {};

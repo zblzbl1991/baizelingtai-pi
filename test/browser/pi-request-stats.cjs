@@ -49,7 +49,7 @@ async function run(browser, base, width, language) {
     const back = async () => { await page.locator('#workspace-settings-close').click(); };
     const emit = event => socket.send(JSON.stringify(event));
     try {
-        await page.goto(base); await page.locator('.pi-request-stats').waitFor({ state: 'attached' });
+        await page.goto(new URL('#/chat', base).href); await page.locator('.pi-request-stats').waitFor({ state: 'attached' });
         assert.equal(await page.locator('.pi-request-stats').isVisible(), false);
         assert.equal(await page.locator('.pi-request-stats').count(), 1, 'legacy replies have no fabricated stats');
         await settings(); await page.locator('#pi-show-request-stats').check();

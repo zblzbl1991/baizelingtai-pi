@@ -36,15 +36,15 @@
         }).join('');
     }
 
-    function createEditor({ apiFetch, onSaved, onDeleted, profileId }) {
+    function createEditor({ apiFetch, onSaved, onDeleted, profileId, initialSetup = false, idPrefix = 'pi-assistant' }) {
         const dialog = document.createElement('dialog');
         dialog.className = 'pi-assistant-project-editor';
-        dialog.setAttribute('aria-labelledby', 'pi-assistant-project-editor-title');
+        dialog.setAttribute('aria-labelledby', `${idPrefix}-project-editor-title`);
         dialog.innerHTML = `<form method="dialog" class="pi-assistant-project-form">
-            <header><h2 id="pi-assistant-project-editor-title"></h2><button type="button" data-close class="icon-btn subtle" aria-label="${t('关闭', 'Close')}"><i class="fa-solid fa-xmark"></i></button></header>
+            <header><h2 id="${idPrefix}-project-editor-title"></h2><button type="button" data-close class="icon-btn subtle" aria-label="${t('关闭', 'Close')}"><i class="fa-solid fa-xmark"></i></button></header>
             <label>${t('名称', 'Name')}<input name="name" maxlength="80" required></label>
-            <div class="pi-assistant-directory-field"><label for="pi-assistant-cwd">${t('项目目录', 'Project directory')}</label>
-                <div class="pi-assistant-directory-input"><input id="pi-assistant-cwd" name="cwd" required spellcheck="false"><button type="button" data-browse class="settings-secondary-button"><i class="fa-regular fa-folder-open" aria-hidden="true"></i> ${t('浏览目录', 'Browse folders')}</button></div>
+            <div class="pi-assistant-directory-field"><label for="${idPrefix}-cwd">${t('项目目录', 'Project directory')}</label>
+                <div class="pi-assistant-directory-input"><input id="${idPrefix}-cwd" name="cwd" required spellcheck="false"><button type="button" data-browse class="settings-secondary-button"><i class="fa-regular fa-folder-open" aria-hidden="true"></i> ${t('浏览目录', 'Browse folders')}</button></div>
                 <small>${t('选择此服务器上的目录；也可输入完整路径。', 'Choose a folder on this server, or enter its full path.')}</small></div>
             <section class="pi-assistant-directory-browser" aria-label="${t('服务器目录', 'Server folders')}" hidden>
                 <div class="pi-assistant-directory-toolbar"><button type="button" data-up class="icon-btn subtle" title="${t('上级目录', 'Parent folder')}" aria-label="${t('上级目录', 'Parent folder')}"><i class="fa-solid fa-arrow-up"></i></button><span data-current></span><button type="button" data-choose class="settings-secondary-button">${t('选用此目录', 'Use this folder')}</button></div>
@@ -57,10 +57,18 @@
             <p data-status role="status"></p><footer><button type="button" data-delete class="settings-secondary-button pi-assistant-delete" hidden>${t('删除分类', 'Delete category')}</button><button type="submit" class="settings-primary-button">${t('保存项目', 'Save project')}</button></footer>
         </form>`;
         document.body.append(dialog);
+        if (initialSetup) {
+            const advanced = document.createElement('details');
+            const summary = document.createElement('summary'); summary.textContent = t('更多项目设置（可选）', 'More project settings (optional)');
+            advanced.append(summary);
+            for (const name of ['description', 'instructions']) advanced.append(dialog.querySelector(`[name="${name}"]`).closest('label'));
+            dialog.querySelector('.pi-assistant-archive').hidden = true;
+            dialog.querySelector('[data-status]').before(advanced);
+        }
         const form = dialog.querySelector('form'), status = dialog.querySelector('[data-status]');
         const browser = dialog.querySelector('.pi-assistant-directory-browser');
         const directoryList = dialog.querySelector('[data-directories]'), filter = dialog.querySelector('[data-filter]');
-        let project = null, revision = null, saving = false, browseRevision = 0, current = null, parent = null, directories = [];
+        let project = null, revision = null, saving = false, uncertainSave = false, browseRevision = 0, current = null, parent = null, directories = [];
         function renderDirectories() {
             directoryList.replaceChildren();
             const matches = directories.filter(item => item.name.toLocaleLowerCase().includes(filter.value.trim().toLocaleLowerCase()));
@@ -138,7 +146,7 @@
         dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
         form.addEventListener('submit', async event => {
             event.preventDefault();
-            if (saving) return;
+            if (saving || uncertainSave) return;
             const name = form.elements.name.value.trim(), cwd = form.elements.cwd.value.trim();
             const description = form.elements.description.value, instructions = form.elements.instructions.value;
             if (!name || !cwd || new TextEncoder().encode(instructions).length > 8192) { status.textContent = t('请填写名称、目录；附加指令不能超过 8192 字节。', 'Enter a name and directory; instructions must not exceed 8192 bytes.'); return; }
@@ -151,14 +159,17 @@
                     } }) });
                 dialog.close(); onSaved(result.project);
             } catch (error) {
-                status.textContent = error.status === 409 ? t('保存冲突。草稿已保留；请核对最新项目后再提交。', 'Save conflict. Draft retained; review current projects before retrying.') : error.message;
-            } finally { setBusy(false); deleteButton.disabled = deleteButton.dataset.uncertain === 'true'; }
+                uncertainSave = !error.status || error.status >= 500;
+                status.textContent = uncertainSave ? t('保存结果待核对。请关闭窗口并刷新项目列表，不要重复提交。', 'Save outcome needs checking. Close and refresh the project list; do not submit again.')
+                    : error.status === 409 ? t('保存冲突。草稿已保留；请核对最新项目后再提交。', 'Save conflict. Draft retained; review current projects before retrying.') : error.message;
+            } finally { setBusy(false); form.querySelector('[type="submit"]').disabled = uncertainSave; deleteButton.disabled = deleteButton.dataset.uncertain === 'true'; }
         });
         return { open(value, currentRevision, cwd = '') {
             if (saving) return;
+            uncertainSave = false;
             project = value || null; revision = currentRevision;
             deleteButton.hidden = !project; delete deleteButton.dataset.uncertain; deleteButton.disabled = false;
-            dialog.querySelector('h2').textContent = project ? t('编辑项目', 'Edit project') : t('新建项目', 'New project');
+            dialog.querySelector('h2').textContent = project ? t('编辑项目', 'Edit project') : initialSetup ? t('选择工作目录', 'Choose a working folder') : t('新建项目', 'New project');
             form.elements.name.value = project?.name || '';
             form.elements.cwd.value = project?.cwd || cwd;
             form.elements.cwd.readOnly = Boolean(project);

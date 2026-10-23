@@ -16,7 +16,8 @@ test('WeKnora 0.7 schemas use kb_id, base pages and per-page Unicode content off
     const input = { kbId: 'kb-1', documentId: 'doc-1', query: '规范', page: 3, contentOffset: 12000 };
     assert.deepEqual(argumentsFor(bridge('list_knowledge_bases', ['page', 'page_size']), input), { page: 3, page_size: 20 });
     assert.deepEqual(argumentsFor(bridge('list_documents', ['kb_id']), input), { kb_id: 'kb-1', page: 3, page_size: 20 });
-    assert.deepEqual(argumentsFor(bridge('search_knowledge', ['kb_id']), input), { query: '规范', kb_id: 'kb-1', limit: 10 });
+    assert.deepEqual(argumentsFor(bridge('search_knowledge', ['kb_id']), input), { query: '规范', kb_id: 'kb-1' });
+    assert.deepEqual(argumentsFor(bridge('search_knowledge', ['kb_id']), { query: '默认范围' }), { query: '默认范围' });
     assert.deepEqual(argumentsFor(bridge('read_document', ['content_offset']), input), { knowledge_id: 'doc-1', page: 3, page_size: 20, content_offset: 12000 });
     assert.deepEqual(argumentsFor(bridge('search_knowledge', ['knowledge_base_ids']), input), { query: '规范', knowledge_base_ids: ['kb-1'], limit: 10 });
     const request = { action: 'knowledge-read', runtimeId: 'fixture', confirmed: true, server: 'weknora', expectedRevision: 'a'.repeat(64), operation: 'read', documentId: 'doc-1', contentOffset: 100000000 };
@@ -29,7 +30,7 @@ test('HTTP → unique managed worker → native WeKnora read tools, hooks, lifec
     fs.mkdirSync(agent); fs.mkdirSync(cwd);
     const previous = {};
     for (const [key, value] of Object.entries({ PI_CODING_AGENT_DIR: agent, PI_PROJECT_ROOTS: root, PI_OFFLINE: '1' })) { previous[key] = process.env[key]; process.env[key] = value; }
-    const calls = [], modelRequests = []; let release, hold = false, toolFailure = false, huge = false, modelCall = true;
+    const calls = [], modelRequests = []; let release, hold = false, toolFailure = false, huge = false, modelCall = true, nextChatTool = null;
     const tools = ['list_knowledge_bases', 'list_documents', 'search_knowledge', 'read_document', 'delete_document', 'list_chunks', 'hybrid_search', 'list_knowledge', 'get_knowledge'];
     const mcp = http.createServer(async (req, res) => {
         if (req.url.startsWith('/api/v1/')) {
@@ -63,14 +64,14 @@ test('HTTP → unique managed worker → native WeKnora read tools, hooks, lifec
         let raw = ''; for await (const chunk of req) raw += chunk; modelRequests.push(JSON.parse(raw));
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
         const send = (delta, finish_reason = null) => res.write(`data: ${JSON.stringify({ id: 'fixture', object: 'chat.completion.chunk', model: 'fixture', choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
-        if (modelCall) { modelCall = false; send({ role: 'assistant', tool_calls: [{ index: 0, id: 'knowledge-chat-call', type: 'function', function: { name: 'mcp__weknora__search_knowledge', arguments: JSON.stringify({ query: '验收要求', knowledge_base_ids: ['kb-1'] }) } }] }); send({}, 'tool_calls'); }
+        if (modelCall) { modelCall = false; send({ role: 'assistant', tool_calls: [{ index: 0, id: 'knowledge-chat-call', type: 'function', function: nextChatTool || { name: 'mcp__weknora__search_knowledge', arguments: JSON.stringify({ query: '验收要求', knowledge_base_ids: ['kb-1'] }) } }] }); send({}, 'tool_calls'); }
         else { send({ role: 'assistant', content: '验收前核对原始记录。来源：工程规程（doc-1）。' }); send({}, 'stop'); }
         res.end('data: [DONE]\n\n');
     });
     mcp.listen(0, '127.0.0.1'); provider.listen(0, '127.0.0.1'); await Promise.all([once(mcp, 'listening'), once(provider, 'listening')]);
     fs.writeFileSync(path.join(agent, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture', defaultModel: 'fixture', enableInstallTelemetry: false }));
     fs.writeFileSync(path.join(agent, 'models.json'), JSON.stringify({ providers: { fixture: { baseUrl: `http://127.0.0.1:${provider.address().port}/v1`, api: 'openai-completions', apiKey: 'synthetic', models: [{ id: 'fixture', input: ['text'], contextWindow: 32000, maxTokens: 2000 }] } } }));
-    fs.writeFileSync(path.join(agent, 'mcp.json'), JSON.stringify({ mcpServers: { weknora: { url: `http://127.0.0.1:${mcp.address().port}/mcp`, exposure: 'direct', toolExposure: { list_chunks: 'hidden' } }, legacy: { url: `http://127.0.0.1:${mcp.address().port}/mcp`, exposure: 'direct', toolExposure: { search_knowledge: 'hidden', list_documents: 'hidden', read_document: 'hidden' } }, bridge: { command: process.execPath, args: [path.resolve(__dirname, '../server/builtin-mcp/host.mjs'), 'weknora'], exposure: 'direct', env: { WEKNORA_BASE_URL: `http://127.0.0.1:${mcp.address().port}/api/v1`, WEKNORA_API_KEY: 'synthetic-bridge-key' } } } }));
+    fs.writeFileSync(path.join(agent, 'mcp.json'), JSON.stringify({ mcpServers: { weknora: { url: `http://127.0.0.1:${mcp.address().port}/mcp`, exposure: 'direct', toolExposure: { list_chunks: 'hidden' } }, legacy: { url: `http://127.0.0.1:${mcp.address().port}/mcp`, exposure: 'direct', toolExposure: { search_knowledge: 'hidden', list_documents: 'hidden', read_document: 'hidden' } }, bridge: { type: 'stdio', command: process.execPath, args: [path.resolve(__dirname, '../server/builtin-mcp/host.mjs'), 'weknora'], exposure: 'direct', env: { WEKNORA_BASE_URL: `http://127.0.0.1:${mcp.address().port}/api/v1`, WEKNORA_API_KEY: 'synthetic-bridge-key' } } } }));
     // A real native permission hook must block a read through the UI path too.
     fs.mkdirSync(path.join(agent, 'extensions'));
     fs.writeFileSync(path.join(agent, 'extensions', 'knowledge-guard.ts'), `export default function(pi) { pi.on('tool_call', e => { if(e.input?.query === 'blocked') return {block:true, reason:'synthetic permission denial'}; }); pi.on('tool_result', e => { if(e.input?.query === 'filtered') return {content:[{type:'text',text:'filtered by native hook'}]}; }); }`);
@@ -143,4 +144,36 @@ test('HTTP → unique managed worker → native WeKnora read tools, hooks, lifec
     const reopened = await gateway.supervisor.getWorker({ cwd, sessionPath: session.path, sessionId: session.id });
     assert.equal((await request({ action: 'knowledge-catalog', runtimeId: reopened.shell.runtimeId })).status, 200);
     assert.equal((await request({ ...base, operation: 'bases' })).data.code, 'MCP_RUNTIME_CHANGED');
+    // Save through the authenticated HTTP settings route, then prove that the
+    // same managed worker applies the defaults only after an explicit reload.
+    const settingsUrl = `${origin}/api/pi/settings/mcp`;
+    const headers = { Authorization: 'Bearer fixture-knowledge-access', 'Content-Type': 'application/json' };
+    const savedSnapshot = await (await fetch(`${settingsUrl}?cwd=${encodeURIComponent(cwd)}&scope=global`, { headers })).json();
+    const defaults = { knowledgeBaseIds: ['kb-1', 'kb-2'], limit: 8, vectorThreshold: 0.8, keywordThreshold: 0.4 };
+    await reopened.mcpControl.request({ action: 'reconnect', runtimeId: reopened.shell.runtimeId, server: 'bridge', confirmed: true });
+    const oldCatalog = (await request({ action: 'knowledge-catalog', runtimeId: reopened.shell.runtimeId })).data;
+    const save = await fetch(settingsUrl, { method: 'PUT', headers, body: JSON.stringify({ cwd, scope: 'global', expectedRevision: savedSnapshot.revision, confirmed: true, action: 'knowledge', name: 'bridge', knowledgeSettings: defaults }) });
+    assert.equal(save.status, 200); assert.equal((await save.json()).requiresRuntimeRestart, true);
+    const oldRead = { action: 'knowledge-read', runtimeId: reopened.shell.runtimeId, server: 'bridge', confirmed: true, expectedRevision: oldCatalog.revision, operation: 'search', query: '规范' };
+    assert.equal((await request(oldRead)).data.code, 'MCP_KNOWLEDGE_INPUT_REQUIRED', 'saving does not silently replace the active MCP process');
+    await reopened.reloadResources();
+    await reopened.mcpControl.request({ action: 'reconnect', runtimeId: reopened.shell.runtimeId, server: 'bridge', confirmed: true });
+    const newCatalog = (await request({ action: 'knowledge-catalog', runtimeId: reopened.shell.runtimeId })).data;
+    assert.equal(newCatalog.servers.find(item => item.name === 'bridge').searchUsesDefaults, true);
+    assert.equal(newCatalog.servers.find(item => item.name === 'bridge').searchRequiresBase, false);
+    const priorCalls = calls.length;
+    const defaultSearch = await request({ ...oldRead, runtimeId: reopened.shell.runtimeId, expectedRevision: newCatalog.revision });
+    assert.equal(defaultSearch.status, 200); assert.deepEqual(defaultSearch.data.value.kb_ids, ['kb-1', 'kb-2']);
+    for (const call of calls.slice(priorCalls)) assert.deepEqual(JSON.parse(call.raw), { query_text: '规范', match_count: 8, vector_threshold: 0.8, keyword_threshold: 0.4 });
+    assert.equal(calls.length - priorCalls, 2);
+    // A synthetic model omits scope/count/thresholds in its native MCP call.
+    nextChatTool = { name: 'mcp__bridge__search_knowledge', arguments: JSON.stringify({ query: '助手默认查询' }) }; modelCall = true;
+    const modelCallsBefore = calls.length;
+    const modelSettled = new Promise(resolve => { const remove = reopened.subscribe(event => { if (event.type === 'agent_settled') { remove(); resolve(); } }); });
+    await reopened.request('prompt', { message: '请使用已保存的知识库默认设置查询。' }); await modelSettled;
+    const toolResult = (await reopened.request('get_messages')).messages.findLast(message => message.toolName === 'mcp__bridge__search_knowledge');
+    assert.equal(toolResult.isError, false);
+    assert.equal(calls.length - modelCallsBefore, 2);
+    for (const call of calls.slice(modelCallsBefore)) assert.deepEqual(JSON.parse(call.raw), { query_text: '助手默认查询', match_count: 8, vector_threshold: 0.8, keyword_threshold: 0.4 });
+    assert.equal(gateway.supervisor.workers.size, 1);
 });

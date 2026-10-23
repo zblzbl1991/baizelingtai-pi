@@ -1,6 +1,20 @@
 (() => {
     const translateUi = globalThis.PiI18n?.t || ((text, ...values) => text.replace(/\{(\d+)\}/g, (_, index) => values[index] ?? `{${index}}`));
     const $ = id => document.getElementById(id);
+    const fileKey = file => JSON.stringify(file.deliveryId ? ['delivery', file.deliveryId, file.index] : ['path', file.path]);
+    const gongwenStatuses = { checked: '规则机检通过', 'needs-input': '待补充草稿', 'needs-review': '待核对草稿', unchecked: '检查未完成', failed: '生成失败' };
+    function gongwenDelivery(call, result) {
+        if (call?.name !== 'generate_gongwen' || result?.toolName !== call.name || result.isError) return null;
+        const delivery = result.details?.pivaneGongwen?.delivery;
+        const hash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+        if (delivery?.reference?.version !== 1 || !hash(delivery.reference.id) || !hash(delivery.reference.manifestRevision)
+            || typeof delivery.title !== 'string' || delivery.title.length > 160
+            || !Array.isArray(delivery.files) || !delivery.files.length || delivery.files.length > 20
+            || delivery.files.some((file, index) => !file || typeof file.name !== 'string' || !file.name.trim() || file.name.length > 4096
+                || /[\x00-\x1f\x7f]/.test(file.name) || !Number.isSafeInteger(file.size) || file.size < 0 || !hash(file.revision)
+                || file.href !== `#pi-delivery=${delivery.reference.id}/${index}`)) return null;
+        return delivery;
+    }
     const textOf = message => {
         const raw = typeof message.content === 'string' ? message.content : (Array.isArray(message.content) ? message.content.filter(b => b.type === 'text').map(b => b.text).join('\n') : '');
         if (message.role === 'custom' && message.customType === 'pivane-channel-message') {
@@ -41,37 +55,62 @@
         return segments.flatMap((part, index) => {
             if (running && index === segments.length - 1) return [];
             const files = new Map();
+            const pathFile = (path, id) => {
+                const key = fileKey({ path });
+                if (!files.has(key)) files.set(key, { path, edits: [], writes: [], firstId: id });
+                return files.get(key);
+            };
             const addNested = (id, call, result) => {
                 if (!result?.nestedCalls || !call || result.toolName && result.toolName !== call.name) return;
                 for (const nested of window.PiNestedTools?.mutations(id, result.nestedCalls, window.PiFilePolicy) || []) {
                     // A model-issued id overlapping a native descendant is ambiguous.
                     if ([...part.calls.keys()].some(other => other !== id && (other === nested.id || nested.id.startsWith(other + '/')))) continue;
                     const path = nested.arguments.path;
-                    if (!files.has(path)) files.set(path, { path, edits: [], writes: [], firstId: id });
                     const owner = `${call.name} → ${nested.name}`;
-                    if (nested.name === 'write') files.get(path).writes.push({ id: nested.id, content: nested.arguments.content, owner });
-                    else files.get(path).edits.push({ id: nested.id, result: null, source: 'native-nested-no-output', counts: null, owner });
+                    if (nested.name === 'write') pathFile(path, id).writes.push({ id: nested.id, content: nested.arguments.content, owner });
+                    else pathFile(path, id).edits.push({ id: nested.id, result: null, source: 'native-nested-no-output', counts: null, owner });
                 }
             };
             for (const [id, call] of part.calls) {
                 const result = part.results.get(id);
                 addNested(id, call, result);
+                const delivery = gongwenDelivery(call, result);
+                if (delivery) delivery.files.forEach((item, index) => {
+                    const file = { path: item.name, deliveryId: delivery.reference.id, index, revision: item.revision,
+                        deliveryTitle: delivery.title, gongwenStatus: Object.hasOwn(gongwenStatuses, result.details.pivaneGongwen.status) ? result.details.pivaneGongwen.status : null,
+                        edits: [], writes: [], firstId: id };
+                    const key = fileKey(file);
+                    if (!files.has(key)) files.set(key, file);
+                });
                 if (!['edit', 'write'].includes(call?.name) || !result || result.isError || result.toolName && result.toolName !== call.name
                     || typeof call.arguments?.path !== 'string' || !call.arguments.path.trim() || call.arguments.path.length > 4096
                     || /[\x00-\x1f\x7f]/.test(call.arguments.path) || window.PiFilePolicy.restricted(call.arguments.path)) continue;
                 const path = call.arguments.path;
                 if (call.name === 'write') {
                     if (typeof call.arguments.content !== 'string' || new TextEncoder().encode(call.arguments.content).length > window.PiFilePolicy.maxBytes) continue;
-                    if (!files.has(path)) files.set(path, { path, edits: [], writes: [], firstId: id });
-                    files.get(path).writes.push({ id, content: call.arguments.content });
+                    pathFile(path, id).writes.push({ id, content: call.arguments.content });
                 } else {
                     const info = window.PiToolDiff.describe(result);
                     if (!info) continue;
-                    if (!files.has(path)) files.set(path, { path, edits: [], writes: [], firstId: id });
-                    files.get(path).edits.push({ id, result, source: info.source, counts: info.counts });
+                    pathFile(path, id).edits.push({ id, result, source: info.source, counts: info.counts });
                 }
             }
             if (!files.size) return [];
+            // Versions are scoped to this native turn and document title. Reusing
+            // an older immutable receipt must not promote it over a newer result.
+            const versions = new Map();
+            for (const file of files.values()) {
+                if (!file.deliveryId) continue;
+                if (!versions.has(file.deliveryTitle)) versions.set(file.deliveryTitle, new Map());
+                const group = versions.get(file.deliveryTitle);
+                if (!group.has(file.deliveryId)) group.set(file.deliveryId, group.size + 1);
+            }
+            for (const file of files.values()) {
+                if (!file.deliveryId) continue;
+                const group = versions.get(file.deliveryTitle);
+                file.generation = group.get(file.deliveryId);
+                file.latest = group.size > 1 && file.generation === group.size;
+            }
             return [{ key: `edits:${JSON.stringify([part.timestamp ?? index, [...files.values()][0].firstId])}`, label: `${index + 1}. ${part.label}`, endIndex: part.endIndex, files: [...files.values()] }];
         });
     }
@@ -122,10 +161,19 @@
         fileButton(file, choose, selected = false) {
             const button = document.createElement('button'); button.type = 'button'; button.className = 'pi-edit-file';
             button.dataset.editPath = file.path;
+            button.dataset.editKey = fileKey(file);
             const name = document.createElement('span'); name.className = 'pi-edit-path';
             const prefix = this.context().cwd.replace(/\/$/, '') + '/';
             name.textContent = file.path.startsWith(prefix) ? file.path.slice(prefix.length) : file.path;
             name.title = file.path;
+            const fileLabel = [name.textContent];
+            if (file.deliveryId) {
+                const detail = document.createElement('small'); detail.className = 'pi-edit-owner';
+                detail.textContent = [file.deliveryTitle, translateUi('第 {0} 版', file.generation),
+                    file.gongwenStatus && translateUi(gongwenStatuses[file.gongwenStatus]), file.latest && translateUi('本轮最新')].filter(Boolean).join(' · ');
+                fileLabel.push(detail.textContent);
+                name.append(detail);
+            }
             const meta = document.createElement('span'); meta.className = 'pi-edit-count';
             const known = file.edits.every(edit => edit.counts);
             const added = file.edits.reduce((sum, edit) => sum + (edit.counts?.added || 0), 0);
@@ -139,10 +187,11 @@
                 } else meta.append(translateUi("行数未知"));
             }
             if (file.writes.length) meta.append(translateUi("{0}写入 {1} 次", file.edits.length ? ' · ' : '', file.writes.length));
+            if (file.deliveryId) meta.append(translateUi('已交付'));
             const owners = [...new Set([...file.edits, ...file.writes].map(record => record.owner).filter(Boolean))];
             if (owners.length) { const attribution = document.createElement('small'); attribution.className = 'pi-edit-owner'; attribution.textContent = translateUi('嵌套来源：{0}', owners.join(' · ')); name.append(attribution); }
-            meta.title = translateUi("编辑行数为累计；写入可能是新建，也可能覆盖已有文件");
-            button.setAttribute('aria-label', translateUi("查看 {0} 的文件记录", file.path));
+            meta.title = file.deliveryId ? translateUi('交付时保存的只读版本，不随源文件变化') : translateUi("编辑行数为累计；写入可能是新建，也可能覆盖已有文件");
+            button.setAttribute('aria-label', translateUi("查看 {0} 的文件记录", fileLabel.join(' · ')));
             if (selected) button.setAttribute('aria-current', 'true');
             button.append(name, meta); button.addEventListener('click', choose);
             return button;
@@ -153,10 +202,11 @@
             card.setAttribute('aria-label', translateUi("本轮文件"));
             const heading = document.createElement('div'); heading.className = 'pi-turn-edits-heading';
             const title = document.createElement('strong'); title.textContent = translateUi("本轮文件 · {0} 个文件", round.files.length);
-            const note = document.createElement('small'); note.textContent = translateUi("成功编辑 / 写入 · 编辑行数为累计");
+            const note = document.createElement('small'); note.textContent = translateUi(round.files.some(file => file.deliveryId)
+                ? '成功编辑 / 写入 / 公文交付 · 编辑行数为累计' : "成功编辑 / 写入 · 编辑行数为累计");
             heading.append(title, note); card.append(heading);
             const add = (host, file) => host.append(this.fileButton(file, () => {
-                this.returnTarget = { key: round.key, path: file.path };
+                this.returnTarget = { key: round.key, fileKey: fileKey(file) };
                 this.selection = { ...this.returnTarget }; this.closePickers(); this.showPane('changes'); this.renderPane();
                 $('pi-changes-title').focus({ preventScroll: true });
             }));
@@ -184,7 +234,7 @@
         }
         returnFocus() {
             const card = [...this.transcript.querySelectorAll('.pi-turn-edits')].find(node => node.dataset.editRound === this.returnTarget?.key);
-            const button = card && [...card.querySelectorAll('.pi-edit-file')].find(node => node.dataset.editPath === this.returnTarget?.path);
+            const button = card && [...card.querySelectorAll('.pi-edit-file')].find(node => node.dataset.editKey === this.returnTarget?.fileKey);
             (button || $(innerWidth <= 900 ? 'pi-tools-toggle' : 'pi-tool-changes'))?.focus({ preventScroll: true });
         }
         renderPane() {
@@ -205,24 +255,26 @@
             if (!round) {
                 this.closePickers(); this.viewer.clear();
                 $('pi-changes-files').replaceChildren(); $('pi-changes-diffs').replaceChildren(); this.renderedFile = null;
-                $('pi-changes-empty').textContent = this.rounds.size ? translateUi("点击回复下方的文件查看记录，或重新点击“文件”查看最近一轮。") : translateUi("暂无文件记录。成功编辑、写入的文件会在本轮结束后显示；也可点击回复中的文件链接。");
+                $('pi-changes-empty').textContent = this.rounds.size ? translateUi("点击回复下方的文件查看记录，或重新点击“文件”查看最近一轮。") : translateUi('暂无文件记录。成功编辑、写入和公文交付会在本轮结束后显示；也可点击回复中的文件链接。');
                 return;
             }
             picker.value = round.key;
-            const file = round.files.find(file => file.path === this.selection.path) || round.files[0]; this.selection.path = file.path;
-            this.viewer.setFile({ ...file, identity: `${round.key}:${file.path}`, hasDiff: file.edits.length > 0 });
+            const file = round.files.find(file => fileKey(file) === this.selection.fileKey) || round.files[0]; this.selection.fileKey = fileKey(file);
+            this.viewer.setFile({ ...file, identity: JSON.stringify([round.key, fileKey(file), file.revision]), hasDiff: file.edits.length > 0 });
             const previous = this.renderedFile;
             // Reconnection and settled snapshots must not reset the selected diff's scroll/details/focus.
             const sameFiles = previous?.round.key === round.key && previous.round.files.length === round.files.length
-                && previous.round.files.every((old, i) => old.path === round.files[i].path && old.edits.length === round.files[i].edits.length
+                && previous.round.files.every((old, i) => fileKey(old) === fileKey(round.files[i]) && old.revision === round.files[i].revision
+                    && old.generation === round.files[i].generation && old.latest === round.files[i].latest
+                    && old.deliveryTitle === round.files[i].deliveryTitle && old.gongwenStatus === round.files[i].gongwenStatus && old.edits.length === round.files[i].edits.length
                     && old.writes.length === round.files[i].writes.length && old.writes.every((w, j) => w.id === round.files[i].writes[j].id && w.content === round.files[i].writes[j].content)
                     && old.edits.every((edit, j) => edit.source === round.files[i].edits[j].source && edit.id === round.files[i].edits[j].id));
-            if (sameFiles && previous.file.path === file.path) return;
+            if (sameFiles && fileKey(previous.file) === fileKey(file)) return;
             const list = $('pi-changes-files'); list.replaceChildren();
             for (const entry of round.files) list.append(this.fileButton(entry, () => {
-                this.selection.path = entry.path; this.closePickers(); this.renderPane();
+                this.selection.fileKey = fileKey(entry); this.closePickers(); this.renderPane();
                 $('pi-changes-title').focus({ preventScroll: true });
-            }, entry.path === file.path));
+            }, fileKey(entry) === fileKey(file)));
             const diffs = $('pi-changes-diffs'); diffs.replaceChildren();
             for (const [index, edit] of file.edits.entries()) {
                 const details = document.createElement('details'); details.className = 'pi-edit-record';

@@ -63,7 +63,7 @@ function readRegistry(file) {
         const raw = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size));
         const state = JSON.parse(raw);
         if (!object(state) || state.version !== 1 || !Array.isArray(state.profiles) || state.profiles.length > 50
-            || !object(state.defaults) || state.defaultAssistantId !== undefined && (!ID.test(state.defaultAssistantId)
+            || !object(state.defaults) || state.defaultAssistantId !== undefined && (typeof state.defaultAssistantId !== 'string' || !ID.test(state.defaultAssistantId)
                 || !state.profiles.some(profile => profile.id === state.defaultAssistantId && profile.enabled === true && profile.trashedAt === undefined))
             || state.managedProfiles !== undefined && (!object(state.managedProfiles)
                 || Object.entries(state.managedProfiles).some(([key, id]) => key !== 'pivane-staffing:v1' || !ID.test(id)
@@ -113,7 +113,16 @@ function profileRevision(profile) {
 }
 
 class PiProfileRegistry {
-    constructor(store) { this.store = store; this.busy = false; this.stopping = false; this.pending = null; }
+    constructor(store, { businessStatus } = {}) { this.store = store; this.businessStatus = businessStatus; this.busy = false; this.stopping = false; this.pending = null; }
+
+    async businessFor(id, state) {
+        if (!id || state.managedProfiles?.['pivane-staffing:v1'] !== id || !this.businessStatus) return null;
+        try {
+            const status = await this.businessStatus();
+            if (status?.profileId === id && typeof status.enabled === 'boolean') return { id: 'staffing', enabled: status.enabled, state: status.state };
+        } catch { /* Only the bound business assistant becomes unavailable. */ }
+        return { id: 'staffing', enabled: false, state: 'unavailable' };
+    }
 
     // Shared with settings/login mutation gates. Reserve synchronously, before SDK/path awaits.
     reserve(action) {
@@ -162,7 +171,10 @@ class PiProfileRegistry {
             current = await this.state();
         }
         const { state, revision } = current;
-        return { version: 1, revision, profiles: state.profiles.filter(profile => profile.trashedAt === undefined),
+        const businessId = state.managedProfiles?.['pivane-staffing:v1'];
+        const business = await this.businessFor(businessId, state);
+        return { version: 1, revision, profiles: state.profiles.filter(profile => profile.trashedAt === undefined)
+            .map(profile => business && profile.id === businessId ? { ...profile, business } : profile),
             trash: state.profiles.filter(profile => profile.trashedAt !== undefined)
                 .sort((a, b) => Date.parse(b.trashedAt) - Date.parse(a.trashedAt))
                 .map(({ id, name, description, avatar, trashedAt }) => ({ id, name, description, avatar: avatar ?? null, trashedAt })),
@@ -266,7 +278,7 @@ class PiProfileRegistry {
             const previous = state.profiles[index];
             if (previous?.trashedAt !== undefined) throw fail('Profile is in trash; restore it before saving', 409);
             const profile = validateProfile(input.profile, previous);
-            if (existingId === state.defaultAssistantId && !profile.enabled) throw Object.assign(new Error('Default assistant must remain enabled'), {
+            if (previous && existingId === state.defaultAssistantId && !profile.enabled) throw Object.assign(new Error('Default assistant must remain enabled'), {
                 status: 409, code: 'DEFAULT_ASSISTANT_PROTECTED'
             });
             // Image references can only retain an asset already owned by this record.
@@ -364,6 +376,8 @@ class PiProfileRegistry {
         const { state } = await this.state();
         const id = requested === undefined ? state.defaults[cwd] ?? null : requested;
         if (id !== null && !state.profiles.some(p => p.id === id && p.enabled)) throw fail('Profile is not available');
+        const business = await this.businessFor(id, state);
+        if (business && !business.enabled) throw Object.assign(new Error('人员调配业务已停用或状态不可用，请在业务功能中核对后启用。'), { status: 409, code: 'STAFFING_UNAVAILABLE' });
         return id;
     }
 
@@ -372,7 +386,8 @@ class PiProfileRegistry {
         if (!binding?.profileId) return null;
         const state = knownState ?? (await this.state()).state;
         const profile = state.profiles.find(p => p.id === binding.profileId);
-        return { id: binding.profileId, name: profile?.name || '', enabled: Boolean(profile?.enabled), available: Boolean(profile?.enabled) };
+        const business = await this.businessFor(binding.profileId, state);
+        return { id: binding.profileId, name: profile?.name || '', enabled: Boolean(profile?.enabled), available: Boolean(profile?.enabled) && (!business || business.enabled), ...(business ? { business } : {}) };
     }
 
     async context(manager, cwd) {

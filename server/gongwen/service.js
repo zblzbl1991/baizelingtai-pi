@@ -7,6 +7,15 @@ const outputs = require('./outputs');
 const { markdown, boundReport } = require('./report');
 const { MAX_SOURCE } = require('./limits');
 const { validateRevision } = require('./revision-input');
+// Stable for a request, readable across downloads, and safe on Windows as well
+// as POSIX. The version suffix also prevents reserved bare device names.
+function deliveryNames(input, id, originalDocument) {
+    const title = input.title || originalDocument?.reference.name.replace(/\.docx$/i, '') || '公文';
+    const clean = [].concat(title).join('').normalize('NFC').replace(/[<>:"/\\|?*\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
+    const stem = [...clean].slice(0, 48).join('').replace(/[. ]+$/, '') || '公文';
+    const base = `${stem}-${id.slice(0, 12)}`;
+    return { documents: originalDocument ? [`${base}-修订.docx`, `${base}-受检原稿.docx`] : [`${base}.docx`], report: `${base}-检查报告.md` };
+}
 class GongwenService {
     constructor(store, { process: generator = new GongwenProcess() } = {}) { this.store = store; this.generator = generator; this.jobs = new Map(); this.closed = false; }
     async generate(context, raw, signal, checkCurrent = () => {}) {
@@ -44,6 +53,8 @@ class GongwenService {
             if (ignore.bytes.toString('utf8') !== '*\n') throw fail('公文目录已有其他 Git 规则，请核对；未覆盖', 409, 'GONGWEN_CHANGED');
             current();
             const requestHash = outputs.digest(JSON.stringify(original));
+            const names = deliveryNames(original, id, originalDocument);
+            const allowedNames = new Set([...names.documents, names.report, '公文.docx', '修订公文.docx', '受检原稿.docx', '检查报告.md']);
             if (fs.existsSync(folder)) {
                 proofs.push(outputs.openDirectory(folder, scope.check));
                 const intent = JSON.parse((await outputs.read(folder, 'intent.json', scope.check)).bytes.toString('utf8'));
@@ -53,8 +64,8 @@ class GongwenService {
                 try { saved = JSON.parse((await outputs.read(folder, 'receipt.json', scope.check)).bytes.toString('utf8')); }
                 catch (error) { if (error.code === 'ENOENT') throw fail('上次公文生成未完整保存，请检查该 requestId；未重放', 409, 'GONGWEN_INCOMPLETE'); throw error; }
                 if (saved.id !== id || saved.requestHash !== requestHash || !Array.isArray(saved.files) || !saved.files.length || saved.files.length > 2
-                    || saved.files.some(file => !['公文.docx', '修订公文.docx', '受检原稿.docx', '检查报告.md'].includes(file.name) || !/^[a-f0-9]{64}$/.test(file.revision))
-                    || new Set(saved.files.map(file => file.name)).size !== saved.files.length || !saved.files.some(file => file.name === '检查报告.md')
+                    || saved.files.some(file => !allowedNames.has(file.name) || !/^[a-f0-9]{64}$/.test(file.revision))
+                    || new Set(saved.files.map(file => file.name)).size !== saved.files.length || !saved.files.some(file => [names.report, '检查报告.md'].includes(file.name))
                     || saved.source?.name !== '草稿源.json'
                     || !Array.isArray(saved.supplements) || ![2, 3].includes(saved.supplements.length)
                     || new Set(saved.supplements.map(file => file.name)).size !== saved.supplements.length
@@ -95,11 +106,11 @@ class GongwenService {
             }
             result.report = boundReport(result.report);
             const files = [];
-            if (result.bytes) files.push(outputs.writeNew(folder, originalDocument ? result.report.originalSnapshot ? '受检原稿.docx' : '修订公文.docx' : '公文.docx', result.bytes, scope.check));
+            if (result.bytes) files.push(outputs.writeNew(folder, names.documents[originalDocument && result.report.originalSnapshot ? 1 : 0], result.bytes, scope.check));
             const revision = result.bytes ? outputs.digest(result.bytes) : id;
             const reportBytes = Buffer.from(markdown(result.report, revision));
             if (reportBytes.length > 256 * 1024) throw fail('公文检查报告超过输出预算', 413, 'GONGWEN_LIMIT');
-            files.push(outputs.writeNew(folder, '检查报告.md', reportBytes, scope.check));
+            files.push(outputs.writeNew(folder, names.report, reportBytes, scope.check));
             const receipt = { version: 1, id, requestHash, report: result.report, source, supplements, files };
             outputs.writeNew(folder, 'receipt.json', Buffer.from(JSON.stringify(receipt)), scope.check);
             signal?.throwIfAborted(); current(); return receipt;

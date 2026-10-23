@@ -19,7 +19,7 @@ assert.match(path.basename(path.dirname(project)),/^pi-onboarding-.+$/);
  try{for(const width of selectBrowserTargets([1440,393,320])){
   const context=await browser.newContext({ locale: 'zh-CN',viewport:{width,height:1000}});const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route(/https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com)\//,r=>r.abort());
-  await page.goto(base,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>!document.querySelector('#pi-project-button').disabled);
+  await page.goto(new URL('#/chat', base).href,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>!document.querySelector('#pi-project-button').disabled);
   const openProjectPicker=async()=>{if(width<=680){await page.locator('#pi-mobile-summary').click()}else await page.locator('#pi-project-button').click()};
   // Existing allowed server cwd may appear as a project, but no browser project is preselected in settings.
   await page.evaluate(()=>localStorage.removeItem('pi.web.cwd'));

@@ -100,6 +100,7 @@ async function run(browser, origin, width, theme) {
         const auth = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
         const setting = await (await fetch(origin + '/api/pi/compliance', { headers: auth })).json();
         assert.equal((await fetch(origin + '/api/pi/compliance/settings', { method: 'PUT', headers: auth, body: JSON.stringify({ requestId: 'other-settings-' + width, expectedRevision: setting.revision, enabled: true }) })).status, 200);
+        await page.locator('#business-compliance-configure').click();
         await page.locator('#compliance-extraction-model').selectOption('fixture/vision'); await page.locator('#compliance-save').click();
         await page.waitForFunction(() => document.querySelector('#compliance-settings-status')?.textContent.includes('已变化'));
         await page.locator('#compliance-save').click();

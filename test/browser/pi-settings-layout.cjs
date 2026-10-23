@@ -43,34 +43,37 @@ async function run(browser, width) {
     await page.goto(base, { waitUntil: 'domcontentloaded' });
     await page.locator('#workspace-settings-toggle').click();
     await page.locator('[data-settings-tab="models"]').click();
-    const assistantToggle = page.locator('#workspace-show-assistant'), cronToggle = page.locator('#workspace-show-cron');
+    const workToggle = page.locator('#workspace-show-workChat'), cronToggle = page.locator('#workspace-show-cron');
     const assistantNav = page.locator('[data-tab="assistant"]'), profilesNav = page.locator('[data-tab="profiles"]'), cronNav = page.locator('[data-tab="cron"]');
-    assert.equal(await assistantToggle.isChecked(), false); assert.equal(await cronToggle.isChecked(), false);
-    assert.equal(await assistantNav.isVisible(), false); assert.equal(await profilesNav.isVisible(), false); assert.equal(await cronNav.isVisible(), false);
-    await assistantToggle.check();
-    assert.equal(await cronToggle.isChecked(), false, 'enabling assistants must not enable scheduled tasks');
+    const workNav = page.locator('[data-work-chat-nav]');
+    assert.equal(await workToggle.isChecked(), false); assert.equal(await cronToggle.isChecked(), false);
+    assert.equal(await workNav.isVisible(), false); assert.equal(await cronNav.isVisible(), false);
+    if (width > 900) { assert.ok(await assistantNav.isVisible()); assert.ok(await profilesNav.isVisible()); }
+    await workToggle.check();
+    assert.equal(await cronToggle.isChecked(), false, 'enabling work chat must not enable scheduled tasks');
     await cronToggle.check();
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await assistantToggle.waitFor();
-    assert.ok(await assistantToggle.isChecked()); assert.ok(await cronToggle.isChecked(), 'explicitly saved choices survive reload');
-    await assistantToggle.uncheck();
-    assert.equal(await assistantNav.isVisible(), false); assert.equal(await profilesNav.isVisible(), false);
-    assert.ok(await cronToggle.isChecked(), 'assistant preference must not affect scheduled tasks');
+    await workToggle.waitFor();
+    assert.ok(await workToggle.isChecked()); assert.ok(await cronToggle.isChecked(), 'explicitly saved choices survive reload');
+    await workToggle.uncheck();
+    assert.equal(await workNav.isVisible(), false);
+    if (width > 900) { assert.ok(await assistantNav.isVisible()); assert.ok(await profilesNav.isVisible()); }
+    assert.ok(await cronToggle.isChecked(), 'work chat preference must not affect scheduled tasks');
     await cronToggle.uncheck();
     assert.equal(await cronNav.isVisible(), false);
     assert.equal(await page.locator('[data-more-tab="cron"]').evaluate(el => getComputedStyle(el).display), 'none');
-    assert.equal(await page.locator('[data-more-tab="profiles"]').evaluate(el => getComputedStyle(el).display), 'none');
+    if (width <= 680) assert.notEqual(await page.locator('[data-more-tab="profiles"]').evaluate(el => getComputedStyle(el).display), 'none');
     // Preferences survive reload without sending writes or opening a session.
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.locator('#workspace-show-cron').waitFor();
-    assert.equal(await assistantToggle.isChecked(), false); assert.equal(await cronToggle.isChecked(), false);
-    assert.equal(await assistantNav.isVisible(), false); assert.equal(await cronNav.isVisible(), false);
+    assert.equal(await workToggle.isChecked(), false); assert.equal(await cronToggle.isChecked(), false);
+    assert.equal(await workNav.isVisible(), false); assert.equal(await cronNav.isVisible(), false);
     // A second tab's saved preference updates this tab without changing its route.
     const peer = await context.newPage();
     await peer.route('**/*', route => route.fulfill({ body: '<!doctype html><title>Storage peer</title>', contentType: 'text/html' }));
     await peer.goto(base);
-    await peer.evaluate(() => localStorage.setItem('pivane.workspace.showAssistant', 'true'));
-    await page.waitForFunction(() => document.getElementById('workspace-show-assistant').checked);
+    await peer.evaluate(() => localStorage.setItem('pivane.workspace.showWorkChat', 'true'));
+    await page.waitForFunction(() => document.getElementById('workspace-show-workChat').checked);
     assert.ok(page.url().includes('#/settings?tab=models')); assert.equal(await cronToggle.isChecked(), false);
     await peer.close();
     await cronToggle.check();

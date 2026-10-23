@@ -12,18 +12,36 @@ async function run(browser, base, width, locale, noProject = false) {
     const page = await ctx.newPage(), errors = [], sent = [], writes = [], mutations = [];
     let memoryAdapterInstalled = false, pptSkill = null, pptNeedsReview = false, bundledCapabilities = false, bundledDesktopEnabled = true, channelState = { component: { installed: false }, accounts: [] }, updates = null;
     let hold = false, release, enabled = true, failResources = false, inspected = false, holdInventory = false, releaseInventory, projectTrusted = false;
+    let staffingEnabled = true, staffingRevision = 1, staffingWrites = 0, loseStaffingResponse = false;
+    const staffingReceipts = new Map();
     const sessions = [{ id: 'original', cwd, name: 'Original', messageCount: 2 }];
     page.on('pageerror', e => errors.push(e.message));
     await page.addInitScript(width => localStorage.setItem('pi.workspace.theme', width === 1440 ? 'light' : width === 393 ? 'mint' : 'dark'), width);
     if (!noProject) await page.addInitScript(cwd => { if (!localStorage.getItem('pi.web.cwd')) { localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem(`pi.web.session:${cwd}`, 'original'); } }, cwd);
     await page.route('**/api/**', async route => {
         const req = route.request(), url = new URL(req.url()), p = url.pathname;
-        if (req.method() !== 'GET') mutations.push(p);
+        // Lifecycle writes have their own counters and receipt checks; discovery
+        // assertions below continue to account for all extension writes.
+        if (req.method() !== 'GET' && p !== '/api/pi/staffing/enable' && p !== '/api/pi/staffing/disable') mutations.push(p);
         if (p === '/api/pi/status') return route.fulfill({ json: { ok: true, version: '1.3.0', extensionAssistant: enabled, nativeResources: true, nativeSettings: true, messageChannels: true, defaultProject: cwd, projectRoots: ['/tmp'], profileMemory: { installed: memoryAdapterInstalled, autoLearn: false } } });
         if (p === '/api/pi/channels') return route.fulfill({ json: { revision: 'c1', bindings: [], jobs: [], peers: [], ...channelState } });
         if (p === '/api/pi/projects') return route.fulfill({ json: { projects: noProject ? [] : [{ cwd, name: 'Fixture', sessionCount: sessions.length }], roots: ['/tmp'] } });
         if (p === '/api/pi/sessions') return route.fulfill({ json: { sessions } });
         if (p === '/api/pi/activity') return route.fulfill({ json: { runtimes: [], replyNotices: [] } });
+        if (p === '/api/pi/staffing/status') return route.fulfill({ json: { enabled: staffingEnabled, initialized: true, state: staffingEnabled ? 'ready' : 'disabled', revision: staffingRevision, profileId: 'staffing-fixture' } });
+        if (p === '/api/pi/staffing/disable' || p === '/api/pi/staffing/enable') {
+            staffingWrites++; const input = req.postDataJSON(); assert.equal(input.expectedRevision, staffingRevision);
+            staffingEnabled = p.endsWith('/enable'); staffingRevision++;
+            const result = { enabled: staffingEnabled, state: staffingEnabled ? 'ready' : 'disabled', revision: staffingRevision };
+            staffingReceipts.set(input.requestId, result);
+            if (loseStaffingResponse) { loseStaffingResponse = false; return route.abort(); }
+            return route.fulfill({ json: result });
+        }
+        if (p.startsWith('/api/pi/staffing/operations/')) {
+            const result = staffingReceipts.get(decodeURIComponent(p.split('/').at(-1)));
+            return route.fulfill({ json: result ? { state: 'completed', result } : { state: 'unknown', noReplay: true } });
+        }
+        if (p === '/api/pi/compliance') return route.fulfill({ json: { enabled: false, revision: 'business-1' } });
         if (p === '/api/pi/settings/mcp') return route.fulfill({ json: { cwd, servers: [], trust: { effective: false } } });
         if (p === '/api/pi/extension-assistant/sessions') {
             assert.equal(req.method(), 'POST'); const body = req.postDataJSON(); writes.push(body);
@@ -78,12 +96,13 @@ async function run(browser, base, width, locale, noProject = false) {
             return reply({});
         });
     });
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     if (!noProject) await page.waitForFunction(() => !document.getElementById('pi-input').disabled);
     else { await page.locator('#pi-project-dialog').waitFor({ state: 'visible' }); await page.locator('#pi-project-dialog-close').click(); }
     await page.locator('#pi-extension-assistant-add').waitFor({ state: 'attached' });
     // Discovery never installs, creates a session, sends a prompt, or loses the composer.
     await page.locator('.extensions-explore').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('.extensions-explore-choices button').filter({ hasText: /在微信继续对话|Continue in WeChat/ }).count(), 0, 'new conversations do not recommend WeChat');
     await page.screenshot({ path: `/tmp/pivane-explore-${locale}-${width}.png` });
     if (!noProject) await page.locator('#pi-input').fill('Discovery draft');
     if (width < 900) {
@@ -93,8 +112,8 @@ async function run(browser, base, width, locale, noProject = false) {
     } else await page.locator('#workspace-extensions-toggle').click();
     await page.locator('.extensions-view').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#extensions-learned').count(), 0, 'learned skills belong to assistant profiles');
-    assert.equal(await page.locator('.extensions-card').count(), 7);
-    assert.equal(await page.locator('#extension-pivane-weixin [data-installation="optional"]').count(), 1, 'messaging connectors use their dedicated optional installation flow');
+    assert.equal(await page.locator('.extensions-card').count(), 6);
+    assert.equal(await page.locator('#extension-pivane-weixin').count(), 0, 'WeChat is hidden from discovery');
     await page.locator('#extension-pi-subagents [data-installation="installed"]').waitFor();
     assert.match(await page.locator('#extension-pi-subagents [data-installation]').textContent(), /白泽灵台/);
     assert.equal(await page.locator('#extension-pi-subagents .extensions-version').textContent(), 'v0.74.0', 'bundled components show their version');
@@ -106,19 +125,16 @@ async function run(browser, base, width, locale, noProject = false) {
     channelState = { component: { installed: true, version: '2.4.10' }, accounts: [{ id: 'bot', userId: 'owner', enabled: true, allowedUsers: ['owner'], connection: 'connected' }] };
     await page.locator('#extensions-refresh').click();
     await page.locator('#extension-pi-web-access .extensions-update').waitFor({ state: 'visible' });
-    await page.locator('#extension-pivane-weixin [data-installation="installed"]').waitFor();
-    assert.equal(await page.locator('#extension-pivane-weixin .extensions-version').textContent(), 'v2.4.10', 'messaging connectors report their own installation');
-    assert.equal(await page.locator('#extension-pivane-weixin .extensions-card-cta').textContent(), locale === 'en' ? 'Manage' : '管理连接');
+    assert.equal(await page.locator('#extension-pivane-weixin').count(), 0, 'connected accounts do not restore the recommendation');
     await page.locator('[data-extension-filter="skill"]').click();
     assert.deepEqual(await page.locator('.extensions-card').evaluateAll(cards => cards.map(c => c.id)), ['extension-guizang-ppt'], 'type filters narrow the catalog');
     await page.locator('[data-extension-filter="all"]').click();
     await page.locator('[data-extension-filter="installed"]').click();
     assert.ok((await page.locator('.extensions-card').evaluateAll(cards => cards.map(c => c.dataset.installation))).every(state => ['installed', 'configured'].includes(state)));
     await page.locator('[data-extension-filter="installed"]').click();
-    assert.equal(await page.locator('.extensions-card').count(), 7, 'pressing an active status filter clears it');
+    assert.equal(await page.locator('.extensions-card').count(), 6, 'pressing an active status filter clears it');
     updates = null; channelState = { component: { installed: false }, accounts: [] };
     await page.locator('#extensions-refresh').click();
-    await page.locator('#extension-pivane-weixin [data-installation="optional"]').waitFor();
     await page.locator('#extension-pi-subagents [data-installation="installed"]').waitFor();
     assert.equal(await page.locator('#extension-pi-hermes-memory [data-installation="configured"]').count(), 1);
     memoryAdapterInstalled = true; await page.locator('#extensions-refresh').click();
@@ -180,6 +196,16 @@ async function run(browser, base, width, locale, noProject = false) {
     assert.equal(new URL(page.url()).hash, '#/extensions?tab=knowledge');
     assert.equal(await page.locator('#extensions-nav [data-extensions-tab="knowledge"]').getAttribute('aria-current'), 'page');
     assert.equal(await page.locator('#pi-input').inputValue(), noProject ? '' : 'Discovery draft');
+    await page.locator('.knowledge-connection-tools > summary').click();
+    await page.getByRole('button', { name: locale === 'en' ? 'Configure WeKnora with AI' : '让助手配置 WeKnora', exact: true }).click();
+    await page.locator('#pi-extension-assistant-dialog').waitFor({ state: 'visible' });
+    const weknoraTemplate = await page.locator('#pi-extension-assistant-need').inputValue();
+    assert.match(weknoraTemplate, /url[:：]\s*xxx/); assert.match(weknoraTemplate, /key[:：]\s*xxx/);
+    assert.equal(await page.locator('#pi-extension-assistant-scope').inputValue(), 'global');
+    await page.getByText(locale === 'en' ? /Replace xxx in url and key/ : /请替换 url 和 key 中的 xxx/).waitFor();
+    assert.equal(mutations.length, 0, 'WeKnora setup only prepares a draft');
+    await page.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR || '/tmp', `weknora-draft-${locale}-${width}.png`) });
+    await page.keyboard.press('Escape');
     await page.locator('#extensions-nav [data-extensions-tab="builtins"]').click();
     await page.locator('#compliance-enabled').waitFor();
     assert.equal(new URL(page.url()).hash, '#/extensions?tab=builtins');
@@ -187,7 +213,63 @@ async function run(browser, base, width, locale, noProject = false) {
     assert.equal(await page.locator('#extensions-staffing-title').textContent(), locale === 'en' ? 'Project staffing' : '项目人员分配');
     assert.equal(await page.locator('.compliance-settings h4').textContent(), locale === 'en' ? 'Contract review' : '合同审查');
     assert.equal(await page.locator('#extensions-open-staffing').isEnabled(), true);
-    assert.equal(await page.locator('[data-settings-tab="builtins"], [data-more-tab="staffing"], #extension-pivane-staffing').count(), 0);
+    await page.waitForFunction(() => document.querySelector('#business-staffing')?.dataset.businessState === 'on');
+    assert.equal(await page.locator('#settings-compliance').getAttribute('data-business-state'), 'off');
+    assert.equal(await page.locator('#business-compliance-config').isVisible(), false, 'configuration starts collapsed');
+    await page.locator('#business-compliance-configure').click();
+    assert.equal(await page.locator('#business-compliance-configure').getAttribute('aria-expanded'), 'true');
+    await page.locator('#compliance-enabled').check();
+    assert.equal(await page.locator('#compliance-save').isVisible(), true, 'a draft change exposes Save');
+    assert.equal(await page.locator('#settings-compliance').getAttribute('data-business-state'), 'off', 'draft enable is not presented as saved');
+    await page.locator('#business-compliance-cancel').click();
+    assert.equal(await page.locator('#compliance-enabled').isChecked(), false);
+    assert.equal(await page.locator('#compliance-save').isVisible(), false);
+    await page.locator('#business-compliance-configure').click();
+    assert.equal(mutations.length, 0, 'configuring and discarding do not write business settings');
+    await page.locator('[data-business-filter="on"]').click();
+    assert.equal(await page.locator('[data-business-feature]:visible').count(), 1);
+    assert.equal(await page.locator('#business-staffing').isVisible(), true);
+    await page.locator('[data-business-filter="off"]').click();
+    assert.equal(await page.locator('#settings-compliance').isVisible(), true);
+    assert.equal(await page.locator('#business-staffing').isVisible(), false);
+    await page.locator('[data-business-filter="all"]').click();
+    await page.locator('#business-search').fill(locale === 'en' ? 'contract' : '合同');
+    assert.equal(await page.locator('[data-business-feature]:visible').count(), 1);
+    await page.locator('#business-search').fill('no-such-business-tool');
+    assert.equal(await page.locator('#business-empty').isVisible(), true);
+    await page.locator('#business-empty button').click();
+    assert.equal(await page.locator('[data-business-feature]:visible').count(), 2);
+    await page.locator('#business-staffing-enabled').click();
+    assert.equal(await page.locator('#business-staffing-confirm').isVisible(), true);
+    assert.equal(staffingWrites, 0, 'a switch click first explains data retention');
+    await page.locator('#business-staffing-confirm button').first().click();
+    assert.equal(staffingWrites, 0, 'cancel does not disable the tool');
+    loseStaffingResponse = true;
+    await page.locator('#business-staffing-enabled').click();
+    await page.locator('#business-staffing-disable-confirm').click();
+    await page.locator('#business-staffing-check').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#business-staffing-enabled').isDisabled(), true, 'an uncertain operation blocks another toggle');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    if (noProject) { await page.locator('#pi-project-dialog').waitFor({ state: 'visible' }); await page.locator('#pi-project-dialog-close').click(); }
+    await page.locator('#business-staffing-check').waitFor({ state: 'visible' });
+    await page.locator('#business-staffing-check').click();
+    await page.waitForFunction(() => !document.getElementById('business-staffing-enabled').disabled);
+    assert.equal(staffingWrites, 1, 'refresh and receipt recovery do not replay the mutation');
+    assert.equal(await page.locator('#business-staffing-enabled').isChecked(), false);
+    assert.equal(await page.locator('[data-staffing-nav]:visible').count(), 0, 'disabled staffing disappears from work navigation');
+    await page.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR || '/tmp', `business-disabled-${locale}-${width}.png`) });
+    await page.locator('#business-staffing-enabled').click();
+    await page.waitForFunction(() => document.querySelector('#business-staffing')?.dataset.businessState === 'on');
+    assert.equal(staffingWrites, 2);
+    if (!noProject) {
+        // The receipt refresh intentionally reloads the page. Restore the independent
+        // composer fixture so the remaining SPA navigation checks keep their original input.
+        await page.evaluate(() => window.PiWorkspaceRoute.navigate('chat'));
+        await page.locator('#pi-input').fill('Discovery draft');
+        await page.evaluate(() => window.PiWorkspaceRoute.navigate('extensions', { tab: 'builtins' }));
+        await page.locator('#compliance-enabled').waitFor();
+    }
+    assert.equal(await page.locator('[data-settings-tab="builtins"], #extension-pivane-staffing').count(), 0, 'business tools have a single extension destination; staffing navigation remains available');
     assert.deepEqual(await page.locator('#settings-builtins').evaluate(root => [...root.querySelectorAll('section, div, button, select')].filter(el => el.getClientRects().length && el.clientWidth && el.scrollWidth > el.clientWidth + 1).map(el => el.id || el.className)), []);
     await page.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR || '/tmp', `business-tools-${locale}-${width}.png`) });
     await page.locator('#extensions-open-staffing').click();
@@ -226,7 +308,9 @@ async function run(browser, base, width, locale, noProject = false) {
     await page.locator('.extensions-card [data-extension-configure]').click();
     await page.locator('#pi-extension-assistant-dialog').waitFor({ state: 'visible' });
     assert.match(await page.locator('#pi-extension-assistant-need').inputValue(), /pi-computer-use/);
-    assert.equal(await page.locator('.pi-extension-examples button').count(), 4);
+    assert.equal(await page.locator('.pi-extension-examples button').count(), 5);
+    await page.locator('.pi-extension-examples button').last().click();
+    assert.equal(await page.locator('#pi-extension-assistant-need').inputValue(), weknoraTemplate);
     await page.locator('.pi-extension-examples button').nth(2).click();
     const updateDraft = await page.locator('#pi-extension-assistant-need').inputValue();
     assert.match(updateDraft, /Packages.*Skills/);
@@ -257,7 +341,7 @@ async function run(browser, base, width, locale, noProject = false) {
     await page.locator('#workspace-settings-close').click();
     if (!noProject) assert.equal(await page.locator('#pi-input').inputValue(), 'Discovery draft');
     await page.locator('.extensions-explore-choices button').first().click();
-    assert.equal(await page.locator('.extensions-card').count(), 7, 'home shortcuts clear stale search');
+    assert.equal(await page.locator('.extensions-card').count(), 6, 'home shortcuts clear stale search');
     await page.locator('#extensions-nav [data-extensions-tab="installed"]').click();
     await page.locator('#native-installed .native-assistant-entry').waitFor({ state: 'visible' });
     await page.locator('#workspace-settings-close').click();
@@ -336,12 +420,13 @@ async function run(browser, base, width, locale, noProject = false) {
         await page.setViewportSize({ width, height: 900 });
         await page.locator('.pi-extension-body').evaluate(e => { e.scrollTop = 0; });
     }
-    await page.locator('#pi-extension-assistant-need').fill('Find a presentation skill; inspect licenses first.');
+    const configurationDraft = weknoraTemplate.replace('xxx', 'https://weknora.example.invalid/api/v1').replace('xxx', 'synthetic-ui-key');
+    await page.locator('#pi-extension-assistant-need').fill(configurationDraft);
     await page.screenshot({ path: `/tmp/pivane-extension-dialog-${locale}-${width}.png` });
     await page.locator('#pi-extension-assistant-create').dblclick();
     await page.locator('#pi-extension-assistant-banner').waitFor({ state: 'visible' });
     assert.equal(writes.length, 1, 'double click creates one session');
-    assert.equal(await input.inputValue(), 'Find a presentation skill; inspect licenses first.');
+    assert.equal(await input.inputValue(), configurationDraft);
     assert.equal(sent.some(c => ['prompt', 'steer', 'follow_up'].includes(c.type)), false);
     assert.equal(await page.locator('.pi-attachment-chip').count(), 0);
     await widths();
@@ -391,7 +476,7 @@ async function run(browser, base, width, locale, noProject = false) {
     await page.waitForFunction(() => document.getElementById('pi-extension-assistant-add')?.hidden === true);
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('workspace:open-settings', { detail: { tab: 'extensions' } })));
     await page.locator('.extensions-card').first().waitFor();
-    assert.equal(await page.locator('.extensions-card').count(), 7);
+    assert.equal(await page.locator('.extensions-card').count(), 6);
     assert.equal(await page.locator('[data-extension-configure]:enabled').count(), 0);
     assert.equal(await page.locator('#extensions-assistant-unavailable').isVisible(), true);
     await page.locator('#extensions-nav [data-extensions-tab="builtins"]').click();

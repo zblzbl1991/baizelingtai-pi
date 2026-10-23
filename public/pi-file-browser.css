@@ -1,6 +1,11 @@
 #pi-file-reader[hidden], #pi-file-explorer[hidden], #pi-files-toolbar button[hidden], .pi-files-heading button[hidden] { display: none !important; }
 #pi-files-toolbar { display: flex; align-items: center; gap: 5px; padding: 7px 10px; min-width: 0; border-bottom: 1px solid var(--line); flex-shrink: 0; }
 .pi-files-modes { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); margin-right: auto; min-width: 0; }
+.pi-files-modes:has(#pi-files-uploads:not([hidden])) { flex-wrap: wrap; }
+#pi-uploads-list[hidden], #pi-upload-picker[hidden] { display: none !important; }
+#pi-upload-picker > summary { cursor: pointer; font-size: .72rem; color: var(--text-muted); padding: 6px 8px; list-style: none; border: 1px solid var(--line); border-radius: 5px; white-space: nowrap; }
+#pi-upload-picker > summary::-webkit-details-marker { display: none; }
+#pi-upload-picker .pi-file-picker-panel { padding: 6px; }
 .pi-files-modes button { border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); padding: 4px 10px; font: inherit; font-size: .75rem; white-space: nowrap; cursor: pointer; transform: none; }
 .pi-files-modes button[aria-pressed="true"] { color: var(--text-main); background: var(--surface-1); box-shadow: 0 1px 3px #0001; }
 .pi-files-icon { display: inline-grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; border: 0; border-radius: 6px; color: var(--text-muted); background: transparent; padding: 0; cursor: pointer; font-size: .8rem; transform: none; }

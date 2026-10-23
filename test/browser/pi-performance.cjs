@@ -70,7 +70,7 @@ async function run(browser, base, width) {
         });
     });
     try {
-        await page.goto(base, { waitUntil: 'networkidle' });
+        await page.goto(new URL('#/chat', base).href, { waitUntil: 'networkidle' });
         const loading = page.locator('.pi-transcript-loading');
         await loading.waitFor();
         assert.equal(await loading.getAttribute('role'), 'status');

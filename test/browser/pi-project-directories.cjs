@@ -58,7 +58,7 @@ async function run(browser, base, width, locale) {
         socket.send(JSON.stringify({ type: 'response', id: command.id, command: command.type, success: true, data }));
     }));
     try {
-        await page.goto(base, { waitUntil: 'load' });
+        await page.goto(new URL('#/chat', base).href, { waitUntil: 'load' });
         await page.locator('#pi-input:not([disabled])').waitFor();
         await page.locator('#pi-input').fill('Preserve this draft');
         const open = async () => {

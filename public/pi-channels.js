@@ -1,4 +1,6 @@
 (() => {
+    // Keep the connector implementation for retesting; pause its UI entry points.
+    const weixinVisible = false;
     const t = (zh, en) => window.PiI18n?.locale === 'en' ? en : zh;
     const el = (tag, text, cls) => { const n = document.createElement(tag); if (text != null) n.textContent = text; if (cls) n.className = cls; return n; };
     const icon = name => { const i = el('i', null, /^fa-(brands|regular|solid)\b/.test(name) ? name : `fa-solid ${name}`); i.setAttribute('aria-hidden', 'true'); return i; };
@@ -64,6 +66,21 @@
         ['/compact', t('压缩上下文', 'Compact the context')], ['/reload', t('重新加载技能与扩展', 'Reload skills and extensions')]
     ];
     let editorId = 0;
+    function createUnavailable() {
+        const root = el('section', null, 'workspace-settings-panel channel-panel'); root.dataset.settingsPanel = 'channels';
+        const header = el('header', null, 'channel-header');
+        const mark = el('span', null, 'channel-header-icon'); mark.append(icon('fa-comments'));
+        const intro = el('div', null, 'channel-intro');
+        intro.append(el('h3', t('消息渠道', 'Messaging channels')));
+        header.append(mark, intro);
+        root.append(header, el('p', t('暂无开放的消息渠道。', 'No messaging channels are currently available.'), 'channel-note'));
+        return {
+            root,
+            open() { root.classList.add('active'); },
+            close() { root.classList.remove('active'); },
+            setTarget() {}
+        };
+    }
     function create(host) {
         const root = el('section', null, 'workspace-settings-panel channel-panel'); root.dataset.settingsPanel = 'channels';
         const header = el('header', null, 'channel-header');
@@ -583,5 +600,5 @@
         }
         return { root, open, close, setTarget };
     }
-    window.PiChannels = { create };
+    window.PiChannels = { create: weixinVisible ? create : createUnavailable, weixinVisible };
 })();

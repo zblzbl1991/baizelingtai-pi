@@ -160,7 +160,7 @@ async function run(browser, viewport, SessionManager) {
         });
     });
     try {
-        await page.goto(base, { waitUntil: 'domcontentloaded' });
+        await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => !document.querySelector('#pi-input').disabled && document.querySelectorAll('.pi-timeline-tick').length === 14);
         await markState(page, 1, true);
         assert.equal(await page.locator('.pi-timeline-tick').count(), await page.locator('#pi-transcript-content > .pi-message.user, #pi-transcript-content > .pi-agent-turn-start').count());

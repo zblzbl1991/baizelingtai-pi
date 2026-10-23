@@ -57,7 +57,7 @@ async function run(browser, base, width, locale) {
    else if(c.type==='get_messages')data={messages:[]};
    socket.send(JSON.stringify({type:'response',id:c.id,command:c.type,success:true,data}));
   }));
-  await page.goto(base,{waitUntil:'domcontentloaded'});
+  await page.goto(new URL('#/chat', base).href,{waitUntil:'domcontentloaded'});
   await page.waitForFunction(()=>!document.getElementById('pi-input').disabled);
  }
  const page=await context.newPage();await configure(page);

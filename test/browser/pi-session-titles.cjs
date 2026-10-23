@@ -83,7 +83,7 @@ async function run(browser, base, width, locale, supported = true, modelSupport 
             ws.send(JSON.stringify({ type: 'response', id: command.id, command: command.type, success: true, data }));
         });
     });
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.getElementById('pi-input').disabled);
     const overflow = async selectors => {
         const metrics = await page.evaluate(selectors => selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(e => e.clientWidth).map(e => ({ selector, width: e.clientWidth, scroll: e.scrollWidth }))), selectors);

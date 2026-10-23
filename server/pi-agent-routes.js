@@ -78,7 +78,7 @@ function createPiAgentGateway(options = {}) {
     const maintenance = options.maintenance || new (require('./pi-maintenance-client').MaintenanceClient)({ managed: false });
     const supervisor = new PiAgentSupervisor({ isSuspended: () => maintenance.locked, onActivity: () => maintenance.touch() });
     const store = new PiSessionStore();
-    const profiles = new (require('./pi-profile-registry').PiProfileRegistry)(store);
+    const profiles = new (require('./pi-profile-registry').PiProfileRegistry)(store, { businessStatus: () => staffing.status() });
     store.profiles = profiles;
     const assistantProjects = new (require('./pi-assistant-project-registry').PiAssistantProjectRegistry)(store, profiles);
     store.projects = assistantProjects;
@@ -209,7 +209,7 @@ function createPiAgentGateway(options = {}) {
     compliance.reports.artifacts = artifacts;
     require('./pi-compliance').mountCompliance(router, compliance);
     notifications.mount(router);
-    require('./pi-extension-assistant').mountExtensionAssistant(router, { store, supervisor, resourceService, settingsService, access });
+    require('./pi-extension-assistant').mountExtensionAssistant(router, { store, supervisor, resourceService, settingsService, mcpSettingsService, access });
     const assistantEnvironment = supervisor.workerEnvironment;
     supervisor.workerEnvironment = ({ cwd, sessionId, sessionPath }) => store.withSessionRead(cwd, sessionId, async (session, read) => {
         if (session.path !== sessionPath) throw new Error('Session path changed before runtime startup');

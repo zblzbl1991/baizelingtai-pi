@@ -51,7 +51,7 @@ async function run(browser, base, width, locale) {
             throw Error('Unexpected command ' + cmd.type);
         });
     });
-    await page.goto(base); await page.locator('#pi-input:not([disabled])').waitFor().catch(async error => { await page.screenshot({ path: '/tmp/pi-selection-startup-failure.png' }); console.error('startup errors', errors); throw error; });
+    await page.goto(new URL('#/chat', base).href); await page.locator('#pi-input:not([disabled])').waitFor().catch(async error => { await page.screenshot({ path: '/tmp/pi-selection-startup-failure.png' }); console.error('startup errors', errors); throw error; });
     const select = async () => {
         await page.locator('#pi-transcript .assistant .pi-markdown p').last().scrollIntoViewIfNeeded();
         await page.waitForTimeout(350);

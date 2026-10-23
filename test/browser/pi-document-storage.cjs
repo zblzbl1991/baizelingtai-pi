@@ -28,7 +28,7 @@ async function run(browser, base, width) {
         if (endpoint === 'status') return route.fulfill({ json: { state: 'deleted', id } });
         throw new Error('Unexpected storage call ' + endpoint);
     });
-    await page.goto(base, { waitUntil: 'load' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'load' });
     await page.evaluate(() => {
         window.currentCwd = '/project'; window.drafts = []; window.deletedIds = [];
         window.manager = PiDocumentStorage.mount({

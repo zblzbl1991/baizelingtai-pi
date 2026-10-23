@@ -9945,6 +9945,7 @@
         ['只能暂停等待发送的消息', 'Only messages waiting to be sent can be paused'],
         ['会话已移除，但排队内容清理未完成，请核对恢复记录', 'The conversation was removed, but queue cleanup is incomplete. Check the recovery records.'],
         ["人员调配","Personnel staffing"],
+        ["调配","Staffing"],
         ["先核对台账，再安排人员。","Review the ledger before assigning people."],
         ["人员调配初始化","Staffing setup"],
         ["人员调配暂时无法读取","Staffing is temporarily unavailable"],
@@ -10509,6 +10510,40 @@
         ['可能已经执行，请先核对会话再追加。', 'This may already have run. Check the conversation before appending.'],
         ['取回与保存说明', 'Recovery and storage details'],
         ['取回仅包含文字；如原消息含图片，请重新添加图片。', 'Only text is recovered. Add any original images again.']
+    );
+    rows.push(
+        ['显示工作对话', 'Show work chat'],
+        ['默认助手，始终启用', 'Default assistant, always enabled'],
+        ['通过首次设置开始', 'Start with setup']
+    );
+    rows.push(
+        ['聊天附件', 'Chat attachments'],
+        ['当前聊天的办公附件', 'Office attachments in this chat'],
+        ['切换附件', 'Switch attachment'],
+        ['未发送草稿', 'Unsent draft'],
+        ['当前聊天和草稿暂无可预览的 Office 附件', 'No Office attachments to preview in this chat or draft'],
+        ['当前聊天引用的附件原件', 'Original attachment referenced in this chat']
+    );
+    rows.push(
+        ['配置 WeKnora', 'Configure WeKnora'],
+        ['检查 MCP 配置', 'Check MCP configuration'],
+        ['请替换 url 和 key 中的 xxx。发送后，Key 会交给所选模型并保存在对话中；如不希望这样，请到 MCP 设置填写。', 'Replace xxx in url and key. Sending shares the key with the selected model and saves it in chat history. Use MCP settings instead if you prefer private input.']
+    );
+    rows.push(
+        ['已交付', 'Delivered'],
+        ['第 {0} 版', 'Version {0}'],
+        ['本轮最新', 'Latest in this turn'],
+        ['规则机检通过', 'Automated rule checks passed'],
+        ['待补充草稿', 'Draft awaiting information'],
+        ['待核对草稿', 'Draft awaiting review'],
+        ['检查未完成', 'Checks incomplete'],
+        ['生成失败', 'Generation failed'],
+        ['成功编辑 / 写入 / 公文交付 · 编辑行数为累计', 'Successful edits / writes / document deliveries · edit line counts are cumulative'],
+        ['暂无文件记录。成功编辑、写入和公文交付会在本轮结束后显示；也可点击回复中的文件链接。', 'No file records yet. Successful edits, writes and official document deliveries appear when the turn finishes; you can also open file links in the reply.']
+    );
+    rows.push(
+        ['配置供应商', 'Configure provider'],
+        ['配置 {0}', 'Configure {0}']
     );
     globalThis.PiI18nCatalog = Object.freeze(rows.map(row => Object.freeze(row)));
 })();

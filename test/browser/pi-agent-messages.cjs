@@ -71,7 +71,7 @@ async function check(browser, base, width, language) {
         if (command.type === 'get_session_stats') return reply({});
         throw new Error(`Unexpected RPC ${command.type}`);
     }));
-    await page.goto(base);
+    await page.goto(new URL('#/chat', base).href);
     await page.locator('.pi-agent-card[data-agent-card="message"]').first().waitFor();
     const zh = language !== 'en';
     const boxes = () => page.evaluate(() => [...document.querySelectorAll('.pi-agent-card, .pi-summary-notice')].map(node => ({ kind: node.dataset.agentCard || 'summary', height: node.getBoundingClientRect().height,

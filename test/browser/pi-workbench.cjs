@@ -22,7 +22,7 @@ async function run(browser, base, viewport, preferences = {}, { touch = viewport
     let socket, streaming = false, progress = null, sequence = 0;
     page.on('pageerror', error => { errors.push(error.message); console.error('pageerror:', error.stack); });
     await page.addInitScript(({ cwd, preferences }) => {
-        localStorage.setItem('pivane.workspace.showAssistant', 'true');
+        localStorage.setItem('pivane.workspace.showWorkChat', 'true');
         localStorage.setItem('pivane.workspace.showCron', 'true');
         localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem(`pi.web.session:${cwd}`, 'empty');
         for (const [key, value] of Object.entries(preferences)) localStorage.setItem(key, String(value));
@@ -53,7 +53,7 @@ async function run(browser, base, viewport, preferences = {}, { touch = viewport
     const emit = event => socket.send(JSON.stringify({ ...event, webRuntimeId: 'fixture', webSequence: ++sequence }));
     // Geometry baselines require the complete stylesheet cascade. A ready
     // input can precede the final workbench CSS on native Windows Chromium.
-    await page.goto(base, { waitUntil: 'load' });
+    await page.goto(base + '/#/chat', { waitUntil: 'load' });
     await page.locator('#pi-input:not([disabled])').waitFor();
     await page.locator('.pi-start-card').first().waitFor();
     const measure = () => page.evaluate(() => {

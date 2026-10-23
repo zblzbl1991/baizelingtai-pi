@@ -68,7 +68,7 @@ async function run(browser, width, legacy = false) {
         histories.get(active.id).push({ role: 'bashExecution', command: job.command, output: job.output, timestamp: Date.now(), excludeFromContext: job.excludeFromContext, cancelled, exitCode: cancelled ? undefined : 0, truncated: job.truncated, fullOutputPath: job.truncated ? '/tmp/pi-bash-fixture.log' : undefined });
         state.busy = false; emitShell({ status: cancelled ? 'cancelled' : 'completed', cancelled, exitCode: cancelled ? undefined : 0, recorded: true, finishedAt: Date.now() });
     };
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
     await page.locator('#pi-input').fill('!printf hello');
     assert.equal(await page.locator('#pi-send-button').getAttribute('aria-label'), '执行 Shell 命令');

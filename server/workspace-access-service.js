@@ -188,7 +188,7 @@ class WorkspaceAccessService extends EventEmitter {
                 if (!this.originAllowed(req)) throw failure('Origin is not allowed', 403);
                 const internal = internalRoutes.get(pathname) === req.method && equal(String(req.headers.authorization || ''), `Bearer ${this.internalToken}`);
                 const assistantPath = pathname.replace(/^\/api\/pi(?=\/)/, '');
-                const assistant = req.method === 'POST' && ['/extension-assistant/inventory', '/extension-assistant/package'].includes(assistantPath)
+                const assistant = req.method === 'POST' && ['/extension-assistant/inventory', '/extension-assistant/package', '/extension-assistant/mcp-inventory', '/extension-assistant/weknora-configure'].includes(assistantPath)
                     && equal(String(req.headers.authorization || ''), `Bearer ${this.extensionAssistantToken}`);
                 const threadPath = pathname.replace(/^\/api\/pi(?=\/)/, '');
                 const thread = (threadPath.startsWith('/staffing/') || req.method === 'POST' && (/^\/agent-threads\/(create|status|models|result)$/.test(threadPath) || /^\/agent-messages\/(threads|send|status)$/.test(threadPath) || threadPath === '/uploads/read' || threadPath === '/compliance/tool'))

@@ -80,7 +80,7 @@ async function run(browser, base, width, language) {
         else if (command.type === 'get_available_thinking_levels') data = { levels: ['off'] };
         ws.send(JSON.stringify({ type: 'response', id: command.id, command: command.type, success: true, data }));
     }));
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.getElementById('pi-input').disabled);
     await page.locator('#pi-input').fill('Unsent update discussion');
     await page.locator('#pi-file-input').setInputFiles({ name: 'update-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('synthetic data') });

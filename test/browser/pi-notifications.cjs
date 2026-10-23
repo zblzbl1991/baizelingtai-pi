@@ -38,7 +38,7 @@ const base = process.env.PI_NOTIFICATION_TEST_URL || 'http://127.0.0.1:3131';
                 if (p.includes('history') || p === '/api/prompts') data = [];
                 await route.fulfill({ json: data });
             });
-            await page.goto(base, { waitUntil: 'domcontentloaded' });
+            await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
             await page.locator('#pi-project-dialog .pi-dialog-close').count().then(async n => { if (n) await page.locator('#pi-project-dialog .pi-dialog-close').click(); });
             await page.evaluate(() => { document.querySelectorAll('dialog[open]').forEach(d => d.close()); document.getElementById('pi-project-dialog')?.classList.add('hidden'); });
             await page.locator('#workspace-settings-toggle').click();

@@ -31,6 +31,7 @@ pivane-artifacts/
 .pivane-gongwen/
 .pivane-office/
 .scratch/
+.playwright-mcp/
 /native/officecli/bin/
 pivane-staffing/
 pivane-compliance/

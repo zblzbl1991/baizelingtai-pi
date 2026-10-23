@@ -193,7 +193,7 @@ async function setup(browser, sdk, { width = 1440, height = 1000, count = 60, en
             setTimeout(run, 70);
         });
     });
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.querySelector('#pi-input').disabled && document.querySelectorAll('.pi-timeline-tick').length >= 4);
     if (enabled) {
         if (indexFailures) await page.locator('.pi-archive-head .pi-archive-link').waitFor();

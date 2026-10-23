@@ -20,6 +20,41 @@ test.after(() => {
     fs.rmSync(projectDir, { recursive: true, force: true });
 });
 
+test('Xingtong preset stays read-only until saved and preserves later model edits', async () => {
+    const modelsPath = path.join(agentDir, 'models.json');
+    const before = fs.existsSync(modelsPath) ? fs.readFileSync(modelsPath, 'utf8') : null;
+    let snapshot = await service.getModelSnapshot();
+    const preset = snapshot.providers.find(item => item.id === 'xingtong');
+    assert.equal(preset.name, '星通');
+    assert.equal(preset.baseUrl, 'http://token.xt.com/v1');
+    assert.equal(preset.modelId, 'deepseek-v4-flash');
+    assert.equal(preset.preset, true);
+    assert.equal(snapshot.models.find(item => item.provider === 'xingtong').available, false);
+    assert.equal(fs.existsSync(modelsPath) ? fs.readFileSync(modelsPath, 'utf8') : null, before);
+    const preferences = snapshot.preferences;
+
+    await service.upsertCustomProvider(preset);
+    snapshot = await service.getModelSnapshot();
+    assert.equal(snapshot.providers.filter(item => item.id === 'xingtong').length, 1);
+    assert.equal(snapshot.providers.find(item => item.id === 'xingtong').name, '星通');
+    assert.equal(snapshot.providers.find(item => item.id === 'xingtong').preset, undefined);
+    assert.ok(snapshot.providers.find(item => item.id === 'xingtong').authMethods.apiKeyLogin);
+    assert.equal(snapshot.customProviders.find(item => item.id === 'xingtong').models[0].id, 'deepseek-v4-flash');
+    assert.deepEqual(snapshot.preferences, preferences, 'saving a preset does not replace the global default');
+    assertPrivateFile(modelsPath);
+    await service.upsertCustomModel('xingtong', { id: 'deepseek-v4-flash', name: 'My Flash', contextWindow: 64000, maxTokens: 4096 });
+    await service.upsertCustomProvider({ ...preset, baseUrl: 'http://127.0.0.1:65530/v1' });
+    snapshot = await service.getModelSnapshot();
+    const model = snapshot.models.find(item => item.provider === 'xingtong');
+    assert.equal(model.name, 'My Flash');
+    assert.equal(model.contextWindow, 64000);
+    await service.deleteCustomModel('xingtong', 'deepseek-v4-flash');
+    await service.upsertCustomProvider(preset);
+    assert.deepEqual((await service.listCustomProviders()).find(item => item.id === 'xingtong').models, [], 'provider edits do not recreate deleted models');
+    await service.deleteCustomProvider('xingtong');
+    assert.equal((await service.getModelSnapshot()).providers.find(item => item.id === 'xingtong').preset, true);
+});
+
 test('manages custom providers and API keys through Pi stores', async () => {
     await service.upsertCustomProvider({
         id: 'web-test-provider',

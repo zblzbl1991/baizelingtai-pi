@@ -260,9 +260,10 @@ function start() {
             <span class="settings-status-dot ${provider.configured ? 'ok' : ''}"></span>
             <div class="settings-row-main">
                 <div class="settings-row-title"><strong>${provider.configured ? translateUi("已配置") : translateUi("尚未连接")}</strong><span class="settings-badge">${custom?.api ? translateUi("自定义配置") : translateUi("内置")}</span></div>
-                <div class="settings-row-meta"><span>${escapeHtml(authSourceLabel(provider))}</span><span>${escapeHtml([methods.apiKey ? 'API Key' : '', methods.oauth ? 'OAuth' : ''].filter(Boolean).join(' · ') || translateUi("使用服务器环境认证"))}</span></div>
+                <div class="settings-row-meta"><span>${escapeHtml(authSourceLabel(provider))}</span><span>${provider.preset ? escapeHtml(provider.baseUrl) : escapeHtml([methods.apiKey ? 'API Key' : '', methods.oauth ? 'OAuth' : ''].filter(Boolean).join(' · ') || translateUi("使用服务器环境认证"))}</span></div>
             </div>
             <div class="settings-row-actions">
+                ${provider.preset ? `<button type="button" data-action="configure">${translateUi("配置供应商")}</button>` : ''}
                 ${methods.apiKeyLogin ? `<button type="button" data-action="key"><i class="fa-solid fa-key"></i> ${translateUi("API Key 配置")}</button>` : ''}
                 ${methods.oauth && state.modelSnapshot.providerLogin ? `<button type="button" data-action="oauth">${escapeHtml(methods.oauthLabel || translateUi("OAuth 登录"))}</button>` : ''}
                 ${provider.storedCredential ? `<button type="button" data-action="logout">${translateUi("移除凭据")}</button>` : ''}
@@ -401,6 +402,10 @@ function start() {
         group.querySelector('.settings-provider-models').innerHTML = visible.map(model => {
             const isDefault = defaults.defaultProvider === model.provider && defaults.defaultModel === model.id;
             const editable = editableIds.has(model.id);
+            if (model.preset) return `<article class="settings-row model-row" data-provider-id="${escapeHtml(model.provider)}" data-model-id="${escapeHtml(model.id)}">
+                <div class="settings-row-main"><div class="settings-row-title"><strong>${escapeHtml(model.name)}</strong></div>
+                <div class="settings-row-meta"><code>${escapeHtml(`${model.provider}/${model.id}`)}</code><span>${translateUi("尚未连接")}</span></div></div>
+            </article>`;
             return `
                 <article class="settings-row model-row" data-provider-id="${escapeHtml(model.provider)}" data-model-id="${escapeHtml(model.id)}">
                     <span class="settings-model-icon"><i class="fa-solid ${model.input.includes('image') ? 'fa-eye' : 'fa-font'}"></i></span>
@@ -697,13 +702,14 @@ function start() {
     }
 
     function openProviderEditor(provider) {
-        const editing = Boolean(provider);
-        openEditor(editing ? translateUi("编辑 {0}", provider.id) : translateUi("新增自定义 Provider"), `
+        const editing = Boolean(provider && !provider.preset);
+        openEditor(provider?.preset ? translateUi("配置 {0}", provider.name) : editing ? translateUi("编辑 {0}", provider.id) : translateUi("新增自定义 Provider"), `
             <form id="settings-provider-form" class="settings-form">
                 <div class="settings-form-grid">
-                    <label><span>Provider ID</span><input name="id" value="${escapeHtml(provider?.id || '')}" ${editing ? 'readonly' : ''} required pattern="[A-Za-z0-9._-]+"></label>
+                    <label><span>Provider ID</span><input name="id" value="${escapeHtml(provider?.id || '')}" ${provider ? 'readonly' : ''} required pattern="[A-Za-z0-9._-]+"></label>
                     <label><span>${translateUi("API 类型")}</span><select name="api"><option value="openai-completions">OpenAI Chat Completions</option><option value="openai-responses">OpenAI Responses</option><option value="anthropic-messages">Anthropic Messages</option><option value="google-generative-ai">Google Generative AI</option></select></label>
                     <label class="wide"><span>Base URL</span><input name="baseUrl" type="url" value="${escapeHtml(provider?.baseUrl || '')}" placeholder="https://api.example.com/v1" required></label>
+                    ${provider?.preset ? `<label class="wide"><span>Model ID</span><input value="${escapeHtml(provider.modelId)}" readonly></label>` : ''}
                     <label class="settings-checkbox-field"><input name="authHeader" type="checkbox" ${provider?.authHeader ? 'checked' : ''}><span>${translateUi("自动添加 Authorization: Bearer")}</span></label>
                 </div>
                 <div class="settings-form-actions"><button type="button" data-editor-cancel>${translateUi("取消")}</button><button class="settings-primary-button" type="submit">${translateUi("保存 Provider")}</button></div>
@@ -994,6 +1000,7 @@ function start() {
         if (providerRow && providerButton) {
             const id = providerRow.dataset.providerId;
             const action = providerButton.dataset.action;
+            if (action === 'configure') openProviderEditor(state.modelSnapshot.providers.find(provider => provider.id === id));
             if (action === 'key') state.modelSnapshot.providerLogin ? openProviderLogin(id, 'api_key') : openApiKeyEditor(id);
             if (action === 'oauth') openProviderLogin(id, 'oauth');
             if (action === 'logout') removeCredential(id, providerButton);

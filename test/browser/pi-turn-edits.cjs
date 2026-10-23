@@ -7,6 +7,17 @@ const cwd = '/srv/turn-edits-fixture';
 const session = { id: 'edits', cwd, name: '编辑记录', messageCount: 20 };
 const other = { ...session, id: 'other', name: '另一个线程' };
 const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['text', 'image'], contextWindow: 128000 };
+const { zip, docxFiles } = require('../document-fixtures.cjs');
+const docx = zip(docxFiles());
+function gongwen(id, deliveryId, status = 'checked') {
+    return [
+        { role: 'assistant', timestamp: time++, content: [{ type: 'toolCall', id, name: 'generate_gongwen', arguments: { requestId: id } }] },
+        { role: 'toolResult', timestamp: time++, toolName: 'generate_gongwen', toolCallId: id, isError: false, details: { pivaneGongwen: { status, delivery: {
+            reference: { version: 1, id: deliveryId, manifestRevision: 'b'.repeat(64) }, title: '公文说明',
+            files: ['公文.docx', '检查报告.md'].map((name, index) => ({ name, size: index ? 24 : docx.length, revision: 'c'.repeat(64), href: `#pi-delivery=${deliveryId}/${index}` }))
+        } } } }
+    ];
+}
 const path = 'src/' + 'very-long-directory/'.repeat(12) + '<img onerror=alert(1)>.js';
 const patch = 'Index: code.js\n--- code.js\n+++ code.js\n@@ -1,2 +1,2 @@\n-old 中文\n+new <img src=x onerror=alert(1)>\n keep\n';
 const reverse = '--- code.js\n+++ code.js\n@@ -1,2 +1,2 @@\n-new <img src=x onerror=alert(1)>\n+old 中文\n keep\n';
@@ -25,7 +36,7 @@ async function run(browser, viewport) {
     const page = await context.newPage();
     // Optional webfonts must not change diff geometry during snapshot/reconnect assertions.
     await page.route(/https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com)\//, route => route.abort());
-    const errors = [], writes = [], commands = [];
+    const errors = [], writes = [], commands = [], deliveryReads = [];
     let socket, sideSocket, busy = false, activeId = session.id, sideStarts = 0, sideCloses = 0, heldState = null, holdState = false;
     const initial = [user('调整界面'), ...edit('a', path), ...edit('b', path, reverse), ...edit('c', 'docs/说明.md'), ...edit('d', 'public/style.css'),
         ...edit('e', 'public/app.js'), ...edit('failed', 'failed.txt', patch, { error: true }), ...edit('write', 'write.txt', patch, { name: 'write' }),
@@ -50,9 +61,19 @@ async function run(browser, viewport) {
         Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => window.__copies.push(text) } });
     }, { cwd, id: session.id });
     await page.route('**/api/**', route => {
-        const request = route.request(), endpoint = new URL(request.url()).pathname;
+        const request = route.request(), url = new URL(request.url()), endpoint = url.pathname;
+        if (endpoint === '/api/pi/office/preview') return route.fulfill({ status: 503, json: { error: 'Synthetic Office preview unavailable', code: 'OFFICE_ENGINE' } });
         if (request.method() !== 'GET') { writes.push(endpoint); return route.fulfill({ json: {} }); }
-        if (endpoint === '/api/pi/status') return route.fulfill({ json: { ok: true, sideChat: true, historySearch: viewport.width !== 320, projectRoots: ['/srv'] } });
+        if (endpoint === '/api/pi/status') return route.fulfill({ json: { ok: true, sideChat: true, fileViewer: true, filePreviews: true, deliverables: true, historySearch: viewport.width !== 320, projectRoots: ['/srv'] } });
+        if (endpoint === '/api/pi/deliverables') {
+            assert.equal(url.searchParams.get('sessionId'), session.id);
+            const id = url.searchParams.get('id'), index = Number(url.searchParams.get('index'));
+            assert.ok(['a'.repeat(64), 'd'.repeat(64)].includes(id)); assert.ok([0, 1].includes(index));
+            deliveryReads.push({ id, index });
+            return route.fulfill({ json: { deliveryId: id, index, source: 'delivery', name: index ? '检查报告.md' : '公文.docx', path: index ? '检查报告.md' : '公文.docx',
+                size: index ? 24 : docx.length, revision: 'c'.repeat(64), createdAt: new Date(0).toISOString(),
+                ...(index ? { kind: 'markdown', encoding: 'utf8', content: '# 检查报告 ' + id[0] } : { kind: 'binary', encoding: 'base64', base64: docx.toString('base64') }) } });
+        }
         if (endpoint === '/api/pi/projects') return route.fulfill({ json: { projects: [{ cwd, name: 'Edits', sessionCount: 2 }], roots: ['/srv'] } });
         if (endpoint === '/api/pi/sessions') return route.fulfill({ json: { sessions: [session, other] } });
         if (endpoint === '/api/pi/activity') return route.fulfill({ json: { runtimes: [], pinnedProjects: [], hiddenProjects: [], replyNotices: [] } });
@@ -84,7 +105,7 @@ async function run(browser, viewport) {
             throw new Error(`Unexpected RPC ${cmd.type}`);
         });
     });
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.querySelectorAll('.pi-turn-edits').length === 2);
     const cards = page.locator('.pi-turn-edits');
     assert.match(await cards.first().textContent(), /4 个文件/);
@@ -228,6 +249,44 @@ async function run(browser, viewport) {
     assert.equal(await page.locator('#pi-changes-diffs .pi-diff-code').textContent(), large);
     assert.match(await cards.last().textContent(), /行数未知/);
     assert.equal(await cards.last().locator('[data-edit-path="bad.txt"] .pi-edit-added, [data-edit-path="bad.txt"] .pi-edit-removed').count(), 0);
+    // Generated documents are native delivery snapshots, distinct from same-name files and versions.
+    const first = gongwen('g1', 'a'.repeat(64), 'needs-review'), second = gongwen('g2', 'd'.repeat(64));
+    const write = [{ role: 'assistant', timestamp: time++, content: [{ type: 'toolCall', id: 'md', name: 'write', arguments: { path: '说明.md', content: '# 正文' } }] },
+        { role: 'toolResult', timestamp: time++, toolCallId: 'md', toolName: 'write', isError: false }];
+    messages = [...messages, user('生成公文和 Markdown'), ...write, ...first, ...second, structuredClone(second[1]), ...gongwen('reuse', 'a'.repeat(64), 'needs-review'), answer()];
+    await refresh(); await page.waitForFunction(() => document.querySelectorAll('.pi-turn-edits').length === 6);
+    const generated = cards.last();
+    assert.match(await generated.textContent(), /5 个文件/);
+    assert.equal(await generated.locator('.pi-edit-count').filter({ hasText: /^已交付$/ }).count(), 4);
+    assert.match(await generated.locator('[data-edit-path="说明.md"]').textContent(), /写入 1 次/);
+    assert.match(await generated.locator('[data-edit-path="公文.docx"]').nth(0).textContent(), /公文说明 · 第 1 版 · 待核对草稿/);
+    assert.match(await generated.locator('[data-edit-path="公文.docx"]').nth(1).textContent(), /公文说明 · 第 2 版 · 规则机检通过 · 本轮最新/);
+    assert.equal(await generated.locator('.pi-edit-owner').filter({ hasText: '本轮最新' }).count(), 2);
+    await generated.locator('.pi-edits-more > summary').click();
+    if (process.env.PIVANE_TEST_SCREENSHOT_DIR) {
+        require('node:fs').mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR, { recursive: true });
+        await generated.screenshot({ path: require('node:path').join(process.env.PIVANE_TEST_SCREENSHOT_DIR, 'gongwen-versions.png') });
+    }
+    await generated.locator('[data-edit-path="公文.docx"]').nth(1).click();
+    await page.waitForFunction(() => document.querySelector('#pi-file-download') && !document.querySelector('#pi-file-download').disabled);
+    assert.deepEqual(deliveryReads.at(-1), { id: 'd'.repeat(64), index: 0 });
+    assert.equal(await page.locator('#pi-file-source option').count(), 1);
+    assert.equal(await page.locator('#pi-file-source option').textContent(), '交付快照');
+    const downloadEvent = page.waitForEvent('download'); await page.locator('#pi-file-download').click();
+    const download = await downloadEvent;
+    assert.equal(download.suggestedFilename(), '公文.docx');
+    assert.deepEqual(require('node:fs').readFileSync(await download.path()), docx);
+    await page.locator('#pi-changes-file-list > summary').click();
+    await page.locator('#pi-changes-files [data-edit-path="检查报告.md"]').nth(1).click();
+    await page.locator('#pi-file-body h1', { hasText: '检查报告 d' }).waitFor();
+    await refresh();
+    assert.deepEqual(JSON.parse(await page.locator('#pi-changes-files [aria-current=true]').getAttribute('data-edit-key')), ['delivery', 'd'.repeat(64), 1]);
+    await checkWidth(page);
+    // The turn-files owner restores card focus through its existing Escape handler.
+    await page.keyboard.press('Escape');
+    assert.equal(await generated.locator('[data-edit-path="公文.docx"]').nth(1).evaluate(n => n === document.activeElement), true,
+        'focus returns to the exact same-name generated version: ' + JSON.stringify(await page.evaluate(() => ({ active: document.activeElement.outerHTML.slice(0, 300),
+            moreOpen: document.querySelector('.pi-turn-edits:last-child .pi-edits-more')?.open }))));
     // Context replacement removes unavailable records, without re-reading current disk content.
     messages = [{ role: 'compactionSummary', summary: '已压缩', timestamp: time++ }, ...edit('orphan', 'orphan.txt'), user('压缩后的问题'), answer()];
     await refresh(); await page.waitForFunction(() => document.querySelectorAll('.pi-turn-edits').length === 0);

@@ -42,7 +42,7 @@ async function run(browser, base, width, locale) {
         }
         await route.fulfill({ status: code, json: data });
     });
-    await page.goto(base, { waitUntil: 'domcontentloaded' }); await page.locator('#pi-project-dialog-close').click();
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' }); await page.locator('#pi-project-dialog-close').click();
     await page.locator('#workspace-settings-toggle').click(); await page.locator('[data-settings-tab="media"]').click();
     assert.equal(await page.locator('#settings-multimodal').isVisible(), false);
     assert.equal(await page.locator('[data-settings-panel="media"] .settings-panel-header p').isVisible(), false);

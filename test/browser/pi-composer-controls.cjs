@@ -95,7 +95,7 @@ async function run(browser, viewport, legacy = false) {
         if (viewport.width < 900) await page.locator('#pi-toggle-sessions').click();
         await page.locator(`[data-session-id="${id}"] .pi-session-main`).click();
     };
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
     assert.equal(await page.locator('#pi-stop-button').isVisible(), true);
     assert.equal(await page.locator('#pi-send-button').isVisible(), false);

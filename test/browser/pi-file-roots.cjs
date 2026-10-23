@@ -68,7 +68,7 @@ async function run(browser, base, width, locale) {
     const dialog = page.locator('#pi-file-roots-dialog');
     const row = p => page.locator(`.pi-file-tree-row[data-path="${p}"]`);
     const checkWidth = async () => assert.deepEqual(await page.evaluate(() => ['body', '#pi-inspector', '#pi-file-roots-dialog', '.pi-file-roots', '.pi-roots-footer'].filter(s => { const n = document.querySelector(s); return n?.clientWidth && n.scrollWidth > n.clientWidth + 1; })), []);
-    await page.goto(base, { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => document.querySelector('#pi-meta-id').textContent === 'one');
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => document.querySelector('#pi-meta-id').textContent === 'one');
     await openInspector(page, 'changes'); await row('README.md').waitFor();
     const initialOpen = commands.filter(c => c.type === 'open_session').length;
     await page.locator('#pi-file-roots-manage').click(); await dialog.getByText('/projects', { exact: true }).last().waitFor();

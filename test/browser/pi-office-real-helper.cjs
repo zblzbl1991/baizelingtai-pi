@@ -6,6 +6,7 @@ const formats = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
 async function instrument(context, fixture) {
     await context.addInitScript(({ cwd, id }) => {
         localStorage.setItem('pi.web.cwd', cwd); localStorage.setItem('pi.web.session:' + cwd, id);
+        localStorage.setItem('pivane.workspace.showWorkChat', 'true');
         const urls = new Map(), workers = new Set(), create = URL.createObjectURL.bind(URL), revoke = URL.revokeObjectURL.bind(URL), NativeWorker = Worker;
         URL.createObjectURL = value => { const url = create(value); urls.set(url, { type: value.type, bytes: value.size }); return url; };
         URL.revokeObjectURL = url => { urls.delete(url); return revoke(url); };
@@ -47,7 +48,8 @@ const documentCard = (page, name) => page.locator('.pi-document-card').filter({ 
 async function runMatrix(browser, fixture, width, matrix, output) {
     const context = await browser.newContext({ viewport: { width, height: width === 1440 ? 1100 : 900 }, locale: width === 1440 ? 'zh-CN' : 'en', acceptDownloads: true, reducedMotion: 'reduce' });
     await instrument(context, fixture);
-    const page = await context.newPage(), errors = [], network = [], actualWorkers = new Set(), responses = [];
+    const page = await context.newPage(), errors = [], network = [], actualWorkers = new Set(), responses = [], failedRequests = [];
+    page.on('requestfailed', request => failedRequests.push({ path: new URL(request.url()).pathname, error: request.failure()?.errorText }));
     page.on('pageerror', error => errors.push(error.message));
     page.on('worker', worker => { actualWorkers.add(worker); worker.on('close', () => actualWorkers.delete(worker)); });
     page.on('request', request => { if (new URL(request.url()).origin !== fixture.origin && !/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//.test(request.url())) network.push(request.url()); });
@@ -70,9 +72,9 @@ async function runMatrix(browser, fixture, width, matrix, output) {
                 if (await page.locator('#pi-close-inspector').isVisible()) await page.locator('#pi-close-inspector').click();
                 await documentCard(page, original.name).getByRole('button', { name: /预览文档|Preview document/, exact: true }).click();
             }
-            const host = source === 'upload' ? '.pi-document-preview-body' : '#pi-file-body'; await ready(page, host, format);
+            const host = '#pi-file-body'; await ready(page, host, format);
             const response = responses.at(-1); assert.equal(response.status, 200); assert.equal(response.request.source.type, source); assert.equal(response.body.source.revision, original.sha256); assert.equal(response.body.source.format, format);
-            const hash = await download(page, source === 'upload' ? page.locator('.pi-document-preview header button').first() : page.locator('#pi-file-download'), original);
+            const hash = await download(page, page.locator('#pi-file-download'), original);
             if (source === 'project') {
                 await page.screenshot({ path: path.join(output, `${width}-${format}.png`) });
                 if (!['xls', 'xlsx'].includes(format)) {
@@ -92,7 +94,7 @@ async function runMatrix(browser, fixture, width, matrix, output) {
             const geometry = await page.locator(host).evaluate(n => ({ actual: n.getBoundingClientRect().width, parent: n.parentElement.getBoundingClientRect().width, viewport: innerWidth, body: document.body.scrollWidth, document: document.documentElement.scrollWidth }));
             assert.ok(geometry.actual <= geometry.parent + 1 && geometry.body <= width + 1 && geometry.document <= width + 1, JSON.stringify(geometry));
             matrix.push({ width, source, format, route: '/api/pi/office/preview', status: response.status, requestedSource: response.request.source, originalSha256: hash, previewKind: response.body.preview.kind, elapsedMs: Date.now() - start, geometry });
-            if (source === 'upload') { await page.keyboard.press('Escape'); await page.locator('.pi-document-preview').waitFor({ state: 'detached' }); }
+            if (source === 'upload') await page.locator('#pi-close-inspector').click();
             assert.equal(await page.locator('#pi-input').inputValue(), 'Retained Office preview draft'); assert.equal(await page.locator('#pi-transcript-content .pi-tool-row').count(), toolCount);
         }
         if (await page.locator('#pi-close-inspector').isVisible()) await page.locator('#pi-close-inspector').click();
@@ -115,9 +117,9 @@ async function runMatrix(browser, fixture, width, matrix, output) {
         await page.locator('.nav-btn[data-tab=chat]').click(); const cycles = [];
         for (let index = 0; index < 20; index++) {
             const format = index % 2 ? 'xlsx' : 'docx';
-            await documentCard(page, 'rich.' + format).getByRole('button', { name: /预览文档|Preview document/, exact: true }).click(); await ready(page, '.pi-document-preview-body', format);
+            await documentCard(page, 'rich.' + format).getByRole('button', { name: /预览文档|Preview document/, exact: true }).click(); await ready(page, '#pi-file-body', format);
             const feedback = await page.evaluate(() => previewFeedback()); assert.ok(feedback.noticeAt > 0 && feedback.durationMs <= 250, JSON.stringify(feedback));
-            await page.keyboard.press('Escape'); await page.locator('.pi-document-preview').waitFor({ state: 'detached' });
+            await page.locator('#pi-close-inspector').click();
             await page.waitForFunction(() => previewResources().workers === 0 && previewResources().urls.every(url => url.type !== 'application/pdf'));
             for (let poll = 0; actualWorkers.size && poll < 100; poll++) await page.waitForTimeout(20);
             assert.equal(actualWorkers.size, 0, 'Actual browser worker close events settle after preview close'); cycles.push({ index, format, feedback, ...await page.evaluate(() => previewResources()) });
@@ -125,7 +127,7 @@ async function runMatrix(browser, fixture, width, matrix, output) {
         assert.equal(await page.locator('#pi-input').inputValue(), 'Retained Office preview draft'); assert.deepEqual(errors, []); assert.deepEqual(network, []); assert.equal(fixture.providerRequests.length, 0);
         const geometry = await page.evaluate(() => ({ width: innerWidth, body: document.body.scrollWidth, document: document.documentElement.scrollWidth })); assert.ok(geometry.document <= width + 1 && geometry.body <= width + 1);
         fs.writeFileSync(path.join(output, `resources-${width}.json`), JSON.stringify({ cycles, errors, network, geometry }, null, 2)); console.log(`${width}: 24 real gateway/native Office combinations and 20 cleanup cycles passed`);
-    } catch (error) { await page.screenshot({ path: path.join(output, `failure-${width}.png`) }); console.error(await page.locator('body').innerText()); throw error; }
+    } catch (error) { await page.screenshot({ path: path.join(output, `failure-${width}.png`) }); console.error(JSON.stringify({ errors, failedRequests })); console.error(await page.locator('body').innerText()); throw error; }
     finally { await context.close(); }
 }
 module.exports = { runMatrix };

@@ -7,7 +7,7 @@ const path = require('node:path');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 
 const publicRoot = process.env.PI_SHELL_PUBLIC_ROOT || path.resolve(__dirname, '../../public');
-const evidence = process.env.PI_SHELL_EVIDENCE || path.join(require('node:os').tmpdir(), 'pivane-assistant-shell-evidence');
+const evidence = process.env.PIVANE_TEST_SCREENSHOT_DIR || process.env.PI_SHELL_EVIDENCE || path.join(require('node:os').tmpdir(), 'pivane-assistant-shell-evidence');
 const cwd = '/fixture/assistant-work';
 const profiles = [
     { id: '11111111-1111-4111-8111-111111111111', name: 'Research', enabled: true, avatar: { kind: 'emoji', value: '✦' } },
@@ -68,6 +68,58 @@ async function assertFooterActions(page, label) {
         Math.abs(bounds.refreshRight - bounds.innerRight) <= 1, `${label}: ${JSON.stringify(bounds)}`);
 }
 
+async function assertAssistantPicker(page, width, theme) {
+    const picker = page.locator('#pi-assistant-profile');
+    const original = await picker.inputValue();
+    await picker.click();
+    const bounds = await picker.evaluate(select => ({
+        open: select.matches(':open'),
+        themed: getComputedStyle(select).appearance === 'base-select',
+        trigger: select.getBoundingClientRect().toJSON(),
+        options: [...select.options].map(option => option.getBoundingClientRect().toJSON())
+    }));
+    assert.ok(bounds.open && bounds.themed, `assistant picker ${width}/${theme}: themed popup opens`);
+    assert.ok(bounds.options.every(option => option.width > 0 && option.width <= bounds.trigger.width &&
+        option.x >= 0 && option.right <= width && option.y >= 0 && option.bottom <= 900), JSON.stringify(bounds));
+    await page.screenshot({ path: path.join(evidence, `shell-assistant-picker-${width}-${theme}.png`) });
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Escape');
+    assert.equal(await picker.inputValue(), original, 'Escape discards the highlighted assistant');
+    assert.equal(await picker.evaluate(select => select.matches(':open')), false);
+    assert.equal(await picker.evaluate(select => document.activeElement === select), true);
+}
+
+async function assertLongAssistantPicker(page) {
+    const picker = page.locator('#pi-assistant-profile');
+    const originalName = await picker.locator('option').first().textContent();
+    try {
+        await picker.evaluate(select => {
+            select.options[0].textContent = '文档写作与资料整理助手'.repeat(6);
+            for (let i = select.options.length; i < 50; i++) select.append(new Option(`Assistant ${i + 1}`, `fixture-${i}`));
+            select.value = select.options[0].value;
+        });
+        assert.match(await picker.locator('selectedcontent').textContent(), /文档写作与资料整理助手/);
+        const closed = await picker.evaluate(select => ({ width: select.clientWidth, scrollWidth: select.scrollWidth,
+            height: select.clientHeight, scrollHeight: select.scrollHeight }));
+        assert.equal(closed.scrollWidth, closed.width, 'long selected names do not push the arrow outside the control');
+        assert.equal(closed.scrollHeight, closed.height, 'long selected names stay on one line');
+        await picker.click();
+        assert.ok(await picker.evaluate(select => parseFloat(getComputedStyle(select, '::picker(select)').height) <= 320), 'long lists have a bounded popup');
+        await page.screenshot({ path: path.join(evidence, 'shell-assistant-picker-long-1440.png') });
+        await page.keyboard.press('End');
+        const last = await picker.locator('option').last().boundingBox();
+        assert.ok(last.y >= 0 && last.y + last.height <= 900, 'keyboard navigation scrolls the last option into view');
+        await page.keyboard.press('Escape');
+        assert.equal(await picker.inputValue(), profiles[0].id, 'browsing a long list does not change the assistant');
+    } finally {
+        await picker.evaluate((select, name) => {
+            select.options[0].textContent = name;
+            [...select.options].slice(2).forEach(option => option.remove());
+            select.value = select.options[0].value;
+        }, originalName);
+    }
+}
+
 async function main() {
     await fs.mkdir(evidence, { recursive: true });
     const server = http.createServer(async (req, res) => {
@@ -89,7 +141,7 @@ async function main() {
             let holdProfile = false, releaseProfile;
             page.on('pageerror', error => errors.push(error.message));
             await page.addInitScript(data => {
-                localStorage.setItem('pivane.workspace.showAssistant', 'true');
+                localStorage.setItem('pivane.workspace.showWorkChat', 'true');
                 localStorage.setItem('pi.web.cwd', data.cwd);
                 if (!localStorage.getItem(`pi.web.session:${data.cwd}`)) localStorage.setItem(`pi.web.session:${data.cwd}`, 'agent-original');
             }, { cwd });
@@ -145,7 +197,7 @@ async function main() {
                     ws.send(JSON.stringify({ type: 'response', id: command.id, command: command.type, success: true, data }));
                 });
             });
-            await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: 'domcontentloaded' });
+            await page.goto(`http://127.0.0.1:${server.address().port}/#/chat`, { waitUntil: 'domcontentloaded' });
             await page.waitForFunction(() => document.querySelector('#pi-input')?.disabled === false);
             await page.locator('#pi-input').fill('Unsent synthetic draft');
             await page.locator('#pi-file-input').setInputFiles({ name: 'fixture.txt', mimeType: 'text/plain', buffer: Buffer.from('Fixture attachment') });
@@ -330,15 +382,20 @@ async function main() {
             assert.ok(shell.body <= width + 1, JSON.stringify(shell));
             if (width >= 1200) { assert.ok(shell.nav === 72, JSON.stringify(shell)); assert.ok(shell.pane >= 232 && shell.pane <= 440, JSON.stringify(shell)); assert.ok(shell.transcript > 300, JSON.stringify(shell)); }
             await page.screenshot({ path: path.join(evidence, `shell-assistant-${width}.png`) });
+            if (width >= 1200) await assertAssistantPicker(page, width, 'daylight');
             if (width === 1440) {
                 for (const theme of ['mint', 'dark']) {
                     await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
                     await page.screenshot({ path: path.join(evidence, `shell-assistant-1440-${theme}.png`) });
+                    await assertAssistantPicker(page, width, theme);
                 }
                 await page.evaluate(() => { document.documentElement.dataset.theme = 'daylight'; });
+                await assertLongAssistantPicker(page);
             }
             if (width >= 1200) {
-                await page.locator('#pi-assistant-profile').selectOption(profiles[1].id);
+                await page.locator('#pi-assistant-profile').click();
+                await page.keyboard.press('ArrowDown');
+                await page.keyboard.press('Enter');
                 await page.waitForFunction(() => document.querySelectorAll('[data-assistant-project-id]').length === 1);
                 assert.equal(await page.locator('[data-assistant-project-id]').first().getAttribute('data-assistant-project-id'), groups[2].id);
                 await page.locator('[data-assistant-project-id] [data-assistant-action="menu"]').click();
@@ -350,6 +407,27 @@ async function main() {
                 assert.equal(await page.locator('#pi-actual-identity').isVisible(), true);
                 assert.match(await page.locator('#pi-composer-identity').innerText(), /Editor/);
                 await page.screenshot({ path: path.join(evidence, `shell-bound-${width}.png`) });
+                profiles[1].business = { id: 'staffing', enabled: false, state: 'disabled' };
+                await page.locator('#pi-input').fill('Keep this draft while business is disabled');
+                await page.evaluate(() => window.dispatchEvent(new Event('workspace:agent-profiles-changed')));
+                await page.waitForFunction(() => document.querySelector('#pi-assistant-profile-status').textContent.includes('disabled'));
+                assert.match(await page.locator('#pi-assistant-profile option:checked').textContent(), /Business disabled/);
+                assert.equal(await page.locator('#pi-new-session').isDisabled(), true);
+                assert.equal(await page.locator('#pi-send-button').isDisabled(), true);
+                assert.equal(await page.locator('#pi-assistant-add-project').isDisabled(), true);
+                assert.equal(await page.locator('[data-session-id="editor-one"]').count() > 0, true, 'business disable retains history navigation');
+                assert.equal(await page.locator('#pi-input').inputValue(), 'Keep this draft while business is disabled');
+                await page.screenshot({ path: path.join(evidence, `shell-business-disabled-${width}.png`) });
+                const stoppedWrites = writes.length;
+                await page.locator('#pi-input').press('Control+Enter');
+                assert.equal(writes.length, stoppedWrites, 'business disable does not create a replacement conversation');
+                assert.equal(rpc.includes('prompt'), false, 'a stopped business assistant cannot send a prompt');
+                profiles[1].business = { id: 'staffing', enabled: true, state: 'ready' };
+                await page.evaluate(() => window.dispatchEvent(new Event('workspace:agent-profiles-changed')));
+                await page.waitForFunction(() => !document.querySelector('#pi-new-session').disabled && !document.querySelector('#pi-send-button').disabled);
+                assert.equal(await page.locator('#pi-input').inputValue(), 'Keep this draft while business is disabled', 're-enable preserves the existing draft');
+                await page.locator('#pi-input').fill('');
+                delete profiles[1].business;
                 holdProfile = true;
                 await page.locator('#pi-assistant-profile').selectOption(profiles[0].id);
                 for (let i = 0; !releaseProfile && i < 100; i++) await page.waitForTimeout(10);

@@ -16,10 +16,14 @@
     function createSettings({ apiFetch, currentCwd }) {
         const root = document.getElementById('settings-compliance'); let epoch = 0, data, busy = false;
         async function open() {
-            const generation = ++epoch; root.replaceChildren(node('p', '正在读取内置能力…', 'settings-help'));
+            const generation = ++epoch; root.replaceChildren(node('p', '正在读取内置能力…', 'business-row settings-help'));
+            root.dataset.businessState = 'unknown'; window.dispatchEvent(new Event('pi:business-state-changed'));
             const results = await Promise.allSettled([apiFetch('/api/pi/compliance'), apiFetch('/api/pi/profiles'), apiFetch('/api/pi/settings/models')]);
             if (generation !== epoch) return;
-            if (results[0].status !== 'fulfilled') { root.replaceChildren(node('p', results[0].reason.message, 'settings-help'), button('刷新状态', '', open)); return; }
+            if (results[0].status !== 'fulfilled') {
+                const retry = node('div', undefined, 'business-row'); retry.append(node('p', results[0].reason.message, 'settings-help'), button('刷新状态', '', open));
+                root.replaceChildren(retry); return;
+            }
             data = results[0].value;
             if (data.pendingSetup?.input && !sessionStorage.getItem('pivane.compliance.settings-operation')) sessionStorage.setItem('pivane.compliance.settings-operation', JSON.stringify(data.pendingSetup.input));
             const profiles = results[1].status === 'fulfilled' ? results[1].value.profiles || [] : [];
@@ -29,10 +33,29 @@
         function render(profiles, models) {
             root.replaceChildren();
             const section = node('section', undefined, 'compliance-settings'), heading = node('h4', globalThis.PiI18n?.locale === 'en' ? 'Contract review' : '合同审查');
+            const caption = (zh, en) => globalThis.PiI18n?.locale === 'en' ? en : zh;
+            root.dataset.businessState = typeof data.enabled === 'boolean' ? (data.enabled ? 'on' : 'off') : 'unknown';
             const readiness = { 'configuration-insufficient': '配置不足', partial: '部分可用', available: '本地条件可用' }[data.availability?.status] || '可用条件待核对';
             const status = node('p', data.status === 'disabling' ? '停用中，等待当前步骤保存' : data.status === 'configuring' ? '配置待核对' : data.enabled ? '已启用，' + readiness : '已停用', 'compliance-status'); status.id = 'compliance-settings-status'; status.setAttribute('role', 'status');
+            status.hidden = !data.enabled && !['disabling', 'configuring'].includes(data.status);
             const form = node('form'), fields = node('fieldset'), enabled = node('input'); enabled.type = 'checkbox'; enabled.id = 'compliance-enabled'; enabled.checked = data.enabled;
-            fields.append(label('启用合规审查', enabled));
+            const row = node('div', undefined, 'business-row'), icon = node('div', undefined, 'business-icon'); icon.setAttribute('aria-hidden', 'true');
+            const glyph = node('i'); glyph.className = 'fa-solid fa-shield-halved'; icon.append(glyph);
+            const copy = node('div', undefined, 'business-copy'), titleRow = node('div', undefined, 'business-title');
+            const badge = node('span', undefined, 'business-state'); badge.textContent = root.dataset.businessState === 'unknown' ? caption('状态待核对', 'Status unknown') : data.enabled ? caption('已启用', 'Enabled') : caption('未启用', 'Disabled');
+            heading.id = 'business-compliance-title'; section.setAttribute('aria-labelledby', heading.id); titleRow.append(heading, badge);
+            const description = node('p', undefined, 'business-description');
+            description.textContent = caption('一个专用助手负责工程资料、四组规则、问题复核与报告。工程项目档案独立保存，可跨聊天继续使用。', 'A dedicated assistant manages engineering documents, four rule groups, issue review and reports. Project records are saved independently and remain available across conversations.');
+            copy.append(titleRow, description);
+            const meta = node('p', undefined, 'business-meta'); meta.textContent = caption('审查与风控　·　工程资料 / 规则审查 / 复核报告', 'Review & risk · Engineering documents / Rules / Reports'); copy.append(meta, status);
+            if (data.enabled && data.availability?.reasons?.length) copy.append(node('p', data.availability.reasons.join('；') + '。', 'business-readiness'));
+            const actions = node('div', undefined, 'business-actions'), config = node('div', undefined, 'business-config'); config.id = 'business-compliance-config';
+            let configOpen = Boolean(data.pendingSetup || data.status === 'configuring' || sessionStorage.getItem('pivane.compliance.settings-operation'));
+            const configure = button('', 'business-compliance-configure', () => { configOpen = !configOpen; updateConfig(); }); configure.className = 'business-configure';
+            const configureLabel = node('span'); configureLabel.textContent = caption('配置', 'Configure'); const chevron = node('i'); chevron.className = 'fa-solid fa-chevron-down'; chevron.setAttribute('aria-hidden', 'true'); configure.append(configureLabel, chevron); configure.setAttribute('aria-controls', config.id);
+            function updateConfig() { config.hidden = !configOpen; configure.setAttribute('aria-expanded', String(configOpen)); }
+            updateConfig();
+            const enabledLabel = label('', enabled); enabledLabel.className = 'business-switch'; const enabledText = node('span', '启用合规审查', 'business-switch-label'); enabledLabel.prepend(enabledText); enabled.setAttribute('role', 'switch');
             const options = node('div', undefined, 'compliance-fields');
             const profile = node('select'); profile.id = 'compliance-profile'; profile.append(new Option(t('创建专用合规助手'), ''));
             for (const item of profiles.filter(item => item.enabled || item.id === data.profileId)) profile.append(new Option(item.name, item.id));
@@ -48,9 +71,19 @@
             options.append(label('专用助手', profile), label('对话模型', main), label('资料识别模型', extraction));
             if (data.profileId) options.append(button('编辑助手名称与行为说明', '', () => window.PiWorkspaceRoute?.navigate('profiles', { profileId: data.profileId })));
             const scan = node('p', data.extractionModel ? '已配置图像模型。启用能力和保存配置不会发起识别。' : '扫描识别未配置。文本资料可继续使用。', 'settings-help');
-            options.append(scan); options.hidden = !enabled.checked; enabled.onchange = () => { options.hidden = !enabled.checked; };
-            fields.append(options); form.append(fields);
-            const save = button('保存设置', 'compliance-save'); save.type = 'submit'; save.classList.add('settings-primary-button'); form.append(save);
+            options.append(scan); options.hidden = !enabled.checked;
+            const configHeading = node('p', undefined, 'business-config-heading'); configHeading.textContent = caption('功能配置', 'Tool settings');
+            const saveActions = node('div', undefined, 'business-save-actions'), pendingHint = node('span'); pendingHint.textContent = caption('更改后需保存设置', 'Save to apply changes');
+            const save = button('保存设置', 'compliance-save'); save.type = 'submit'; save.classList.add('settings-primary-button');
+            const cancel = button('', 'business-compliance-cancel', () => { enabled.checked = Boolean(data.enabled); profile.value = data.profileId || ''; main.value = modelKey(data.mainModel); extraction.value = modelKey(data.extractionModel); options.hidden = !enabled.checked; updateDirty(); }); cancel.textContent = caption('取消更改', 'Discard changes');
+            saveActions.append(pendingHint, cancel, save); config.append(configHeading, options, saveActions);
+            function updateDirty() {
+                const changed = enabled.checked !== Boolean(data.enabled) || profile.value !== (data.profileId || '') || main.value !== modelKey(data.mainModel) || extraction.value !== modelKey(data.extractionModel);
+                const pending = Boolean(sessionStorage.getItem('pivane.compliance.settings-operation'));
+                saveActions.hidden = !changed && !pending; cancel.disabled = pending;
+            }
+            enabled.onchange = () => { options.hidden = !enabled.checked; configOpen = true; updateConfig(); updateDirty(); };
+            options.addEventListener('change', updateDirty); updateDirty();
             const toRef = value => { if (!value) return null; const i = value.indexOf('/'); return { provider: value.slice(0, i), modelId: value.slice(i + 1) }; };
             let resumePending = false;
             form.onsubmit = async event => {
@@ -68,7 +101,7 @@
                         result = await apiFetch('/api/pi/compliance/operations/' + encodeURIComponent(input.requestId));
                         if (result.status === 'pending' && (!result.canResume || !resumePending)) {
                             resumePending = result.canResume === true; save.textContent = t('继续首次配置');
-                            status.textContent = t('原操作已登记。核对原配置后，点击继续首次配置。'); return;
+                            status.hidden = false; status.textContent = t('原操作已登记。核对原配置后，点击继续首次配置。'); return;
                         }
                     }
                     if (!result || result.status === 'pending') result = await send(apiFetch, '/settings', input);
@@ -82,19 +115,18 @@
                             const latest = await apiFetch('/api/pi/compliance');
                             if (generation === epoch) data = latest;
                         }
-                        status.textContent = t(error.status === 404 ? '原操作状态未知。请刷新并核对，系统没有重发请求。' : error.message);
+                        status.hidden = false; status.textContent = t(error.status === 404 ? '原操作状态未知。请刷新并核对，系统没有重发请求。' : error.message);
                     }
-                } finally { busy = false; if (fields.isConnected) fields.disabled = false; if (save.isConnected) save.disabled = false; }
+                } finally { busy = false; if (fields.isConnected) { fields.disabled = false; updateDirty(); } if (save.isConnected) save.disabled = false; }
             };
-            section.append(heading, status);
-            if (data.enabled && data.availability?.reasons?.length) section.append(node('p', data.availability.reasons.join('；') + '。', 'settings-help'));
-            section.append(node('p', '一个专用助手负责工程资料、四组规则、问题复核与报告。工程项目档案独立保存，可跨聊天继续使用。', 'settings-help'), form);
             const start = button('打开合规对话', 'compliance-open-chat', async () => {
                 if (busy) return;
-                const cwd = currentCwd(); if (!cwd) { status.textContent = t('请先选择工作目录。'); return; }
+                const cwd = currentCwd(); if (!cwd) { status.hidden = false; status.textContent = t('请先选择工作目录。'); return; }
                 start.disabled = true; window.dispatchEvent(new CustomEvent('pi:compliance-start', { detail: { cwd,
                     complete: () => { if (start.isConnected) start.disabled = false; } } }));
-            }); start.hidden = !data.enabled; section.append(start); root.append(section);
+            }); start.hidden = !data.enabled;
+            actions.append(configure, start, enabledLabel); row.append(icon, copy, actions); fields.append(row, config); form.append(fields); section.append(form); root.append(section);
+            window.dispatchEvent(new Event('pi:business-state-changed'));
         }
         return { open, close() { epoch++; } };
     }

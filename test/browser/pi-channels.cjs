@@ -13,11 +13,42 @@ const server = http.createServer((req, res) => {
 (async () => {
     await new Promise(r => server.listen(0, '127.0.0.1', r));
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+    let hidden = false;
     try {
         for (const width of selectBrowserTargets([1440, 393, 320])) {
             const page = await browser.newPage({ viewport: { width, height: 900 } }), errors = [];
             page.on('pageerror', e => errors.push(e.message)); page.on('dialog', d => d.accept());
             await page.goto(`http://127.0.0.1:${server.address().port}`);
+            hidden = await page.evaluate(() => PiChannels.weixinVisible === false);
+            if (hidden) {
+                // Retain the connector scenarios below for its eventual return.
+                for (const locale of ['zh', 'en']) {
+                    for (const theme of ['light', 'dark']) {
+                        await page.evaluate(({ locale, theme }) => {
+                            window.PiI18n = { locale }; window.channelCalls = 0;
+                            document.documentElement.style.colorScheme = theme;
+                            document.documentElement.style.setProperty('--text-main', theme === 'dark' ? '#e3e9e5' : '#25312c');
+                            document.documentElement.style.setProperty('--surface-2', theme === 'dark' ? '#101b15' : '#edf4ed');
+                            window.panel = PiChannels.create({ currentCwd: () => '/fixture', apiFetch: async () => { channelCalls++; throw Error('Hidden connector must not fetch'); } });
+                            document.querySelector('main').replaceChildren(panel.root);
+                            panel.setTarget({ cwd: '/fixture', sessionId: 'thread-two' }); panel.open();
+                        }, { locale, theme });
+                        await page.getByRole('heading', { name: locale === 'zh' ? '消息渠道' : 'Messaging channels', exact: true }).waitFor();
+                        assert.equal(await page.locator('.channel-note').textContent(), locale === 'zh' ? '暂无开放的消息渠道。' : 'No messaging channels are currently available.');
+                        assert.equal(await page.locator('.channel-panel button, .channel-panel input, .channel-panel select, .channel-panel canvas').count(), 0);
+                        assert.doesNotMatch(await page.locator('.channel-panel').innerText(), /微信|WeChat|ClawBot/i);
+                        assert.equal(await page.evaluate(() => [...document.querySelectorAll('.channel-panel, .channel-panel *')].some(n => n.getBoundingClientRect().right > innerWidth + 1)), false);
+                        await page.evaluate(() => { panel.close(); panel.setTarget({ cwd: '/other', sessionId: 'late' }); });
+                        assert.equal(await page.locator('.channel-panel').isVisible(), false);
+                        await page.evaluate(() => panel.open());
+                        assert.equal(await page.locator('.channel-panel').isVisible(), true);
+                        assert.equal(await page.evaluate(() => channelCalls), 0, 'hidden UI performs no channel or project requests');
+                    }
+                }
+                assert.deepEqual(errors, []);
+                await page.close();
+                continue;
+            }
             if (width === 393) await page.evaluate(() => { for (const [key, value] of Object.entries({ '--text-main': '#e3e9e5', '--text-muted': '#a8b6ae', '--surface-1': '#18241e', '--surface-2': '#101b15', '--line': '#3b5044', '--accent': '#77c69a' })) document.documentElement.style.setProperty(key, value); });
             await page.evaluate(() => {
                 window.PiI18n = { locale: 'en' }; window.writes = []; window.failure = false;
@@ -174,6 +205,6 @@ const server = http.createServer((req, res) => {
             assert.deepEqual(errors, []);
             await page.close();
         }
-        console.log('Messaging channels: desktop/mobile, optional install, QR, binding, drafts, uncertain writes, late responses and widths passed');
+        console.log(hidden ? 'Messaging channels: hidden connector, Chinese/English, light/dark, reopen, no requests and widths passed; connector interaction scenarios paused' : 'Messaging channels: optional install, QR, binding, drafts, uncertain writes, late responses and widths passed');
     } finally { await browser.close(); server.close(); }
 })().catch(e => { console.error(e); process.exitCode = 1; server.close(); });

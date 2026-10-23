@@ -45,7 +45,7 @@ const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['te
                     data: command.type === 'open_session' ? { session: sessions[1], state, messages: { messages: [] }, models: { models: [model] }, stats: {}, thinkingLevels: { levels: ['off'] }, commands: { commands: [] } } : command.type === 'get_state' ? state : {} }));
             }));
             await page.route(/https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com)\//, route => route.abort());
-            await page.goto(base, { waitUntil: 'domcontentloaded' });
+            await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
             await page.waitForFunction(() => document.querySelector('[data-session-id=initial].active'));
             if (width < 900) await page.locator('#pi-toggle-sessions').click();
             await page.locator('[data-filter=all]').click();

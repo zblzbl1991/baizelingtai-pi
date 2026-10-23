@@ -27,7 +27,7 @@ async function run(browser, base, width, locale) {
  await page.route('**/api/**',async route=>{
   const req=route.request(),url=new URL(req.url());
   assert.equal(req.method(),'GET','card browsing must not write server state');
-  if(url.pathname==='/api/pi/status')return route.fulfill({json:{ok:true,projectRoots:['/srv'],sessionWorkflows:true,sessionTransfer:true,nativeSettings:true}});
+  if(url.pathname==='/api/pi/status')return route.fulfill({json:{ok:true,projectRoots:['/srv'],sessionWorkflows:true,sessionTransfer:true,nativeSettings:true,messageChannels:true}});
   if(url.pathname==='/api/pi/projects')return route.fulfill({json:{projects:[{cwd,name:'Pivane 项目',sessionCount:sessions.length}],roots:['/srv'],pinnedProjects:[],hiddenProjects:[]}});
   if(url.pathname==='/api/pi/sessions')return route.fulfill({json:{sessions}});
   if(url.pathname==='/api/pi/activity')return route.fulfill({status:fresh?200:503,json:{runtimes:[...(retained?[{cwd,sessionId:'named',phase:'idle',busy:false}]:[]),{cwd,sessionId:'running',phase,busy:['running','tool','retrying','compacting'].includes(phase)},{cwd,sessionId:'waiting',phase:'waiting',busy:true},{cwd,sessionId:'error',phase:'error',busy:false}],replyNotices:[{cwd,sessionId:'unread',completionId:'notice',completedAt:'2026-09-19T10:08:00Z'}],pinnedProjects:[],hiddenProjects:[],deferred:{sessions:[{cwd,sessionId:'search',count:1,attention:false}]}}});
@@ -43,7 +43,7 @@ async function run(browser, base, width, locale) {
   else if(command.type==='get_messages')data={messages:[]};
   socket.send(JSON.stringify({type:'response',id:command.id,command:command.type,success:true,data}));
  }));
- await page.goto(base,{waitUntil:'domcontentloaded'});
+ await page.goto(new URL('#/chat', base).href,{waitUntil:'domcontentloaded'});
  await page.waitForFunction(()=>!document.getElementById('pi-input').disabled);
  const drawer=async()=>{if(width<900&&!await page.locator('#pi-session-pane').evaluate(n=>n.classList.contains('open')))await page.locator('#pi-toggle-sessions').click();await page.waitForFunction(()=>document.getElementById('pi-session-pane').getBoundingClientRect().left>=-1)};
  await drawer();
@@ -102,6 +102,7 @@ async function run(browser, base, width, locale) {
  await page.keyboard.press('ArrowLeft');assert.equal(await menu.getByRole('menuitem',{name:more,exact:true}).isVisible(),true);
  await page.keyboard.press('Escape');
  await row('named').locator('[data-action="menu"]').click();
+ assert.equal(await menu.getByRole('menuitem',{name:locale==='zh-CN'?'连接微信…':'Connect to WeChat…',exact:true}).count(),0,'WeChat entry stays hidden even when the backend supports messaging channels');
  assert.equal(await menu.getByRole('menuitem',{name:locale==='zh-CN'?'待发送消息':'Pending messages',exact:true}).count(),0);
  await page.locator('.pi-thread-menu:not(.hidden)').getByRole('menuitem',{name:locale==='zh-CN'?'复制':'Copy',exact:true}).click();
  await page.keyboard.press('Escape');await page.keyboard.press('Escape');

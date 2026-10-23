@@ -42,7 +42,7 @@ const evidence = process.env.PI_CATEGORY_EVIDENCE || '/tmp/pivane-category-manag
             reset();
             const context = await browser.newContext({ viewport: { width, height: 900 }, locale: language, isMobile: width < 900, hasTouch: width < 900 });
             const page = await context.newPage(), errors = [];
-            await page.addInitScript(() => localStorage.setItem('pivane.workspace.showAssistant', 'true'));
+            await page.addInitScript(() => localStorage.setItem('pivane.workspace.showWorkChat', 'true'));
             await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, route => route.abort());
             page.on('pageerror', error => errors.push(error.message));
             await page.route('**/pi-agent-profiles.js', route => route.fulfill({ contentType: 'text/javascript',

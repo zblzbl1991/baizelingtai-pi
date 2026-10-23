@@ -28,7 +28,7 @@ const cwd = fs.realpathSync.native(process.env.PI_SHELL_LIVE_PROJECT || path.joi
             const page = await context.newPage(); pages.push(page);
             page.on('pageerror', error => errors.push(error.message));
             page.on('websocket', socket => socket.on('framesent', event => { try { sent.push(JSON.parse(event.payload)); } catch {} }));
-            await page.goto(base, { waitUntil: 'domcontentloaded' });
+            await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
             await page.waitForFunction(() => !document.querySelector('#pi-input').disabled, null, { timeout: 60000 });
         }
         const [desktop, mobile] = pages;

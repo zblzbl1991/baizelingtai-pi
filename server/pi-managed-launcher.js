@@ -13,7 +13,7 @@ const retention = require('./pi-managed-retention');
 const desktopOwner = require('./pi-desktop-owner');
 
 class ManagedLauncher {
-    constructor({ root, env = process.env, networkEnvironment = env, stage = stagePi, stageApp = stageApplication, backup = backupRoots, forkServer = fork, startupTimeoutMs = 45000, requireShutdownProof = false, onCleanupUnknown = () => {}, onHandoff, programRoot, onDiagnostic = () => {} } = {}) {
+    constructor({ root, env = process.env, networkEnvironment = env, stage = stagePi, stageApp = stageApplication, backup = backupRoots, forkServer = fork, startupTimeoutMs = 45000, requireShutdownProof = false, onCleanupUnknown = () => {}, onUnexpectedExit, onHandoff, programRoot, onDiagnostic = () => {} } = {}) {
         this.root = fs.realpathSync.native(root);
         this.directory = privateDir(path.join(this.root, '.pivane-runtime'));
         this.stateFile = path.join(this.directory, 'state.json');
@@ -32,6 +32,7 @@ class ManagedLauncher {
         this.programRoot = programRoot || path.resolve(__dirname, '..'); this.onHandoff = onHandoff;
         this.launcherVersion = require('../package.json').version;
         this.onDiagnostic = onDiagnostic;
+        this.onUnexpectedExit = onUnexpectedExit;
         this.state = { version: 1, active: null, previous: null, job: null };
         this.serviceOwner = null; this.ownerStateLoaded = false;
     }
@@ -144,7 +145,7 @@ class ManagedLauncher {
     }
     desktopRequest(method, input = {}, { timeoutMs = 15000 } = {}) {
         const child = this.child;
-        if (!['snapshot', 'review', 'execute', 'validate'].includes(method)) return Promise.reject(new Error('Invalid desktop request'));
+        if (!['snapshot', 'review', 'execute', 'validate', 'restart'].includes(method)) return Promise.reject(new Error('Invalid desktop request'));
         if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > (method === 'validate' ? 900000 : 15000)) return Promise.reject(new Error('Invalid private control budget'));
         if (this.closed || !child?.connected) return Promise.reject(Object.assign(new Error('Service control connection is unavailable; outcome is unknown'), { code: 'DESKTOP_TRANSPORT_UNKNOWN' }));
         if (this.desktopPending.size >= 8) return Promise.reject(Object.assign(new Error('A service control request is already pending'), { code: 'DESKTOP_BUSY' }));
@@ -205,13 +206,16 @@ class ManagedLauncher {
             desktopOwner.replaceOwner(this.root, this.state, null, owner); this.serviceOwner = owner;
         }
         return new Promise((resolve, reject) => {
+            const bootStarted = Date.now();
             const child = this.forkServer(path.join(root, 'server.js'), [], {
                 cwd: this.root, execPath: release && portable.supported(root) ? path.join(root, 'runtime/node.exe') : process.execPath, execArgv: [],
                 env: { ...this.env, PI_MANAGED_LAUNCHER: this.nonce, PI_MANAGED_BASE: this.root,
                     ...(this.serviceOwner ? { PIVANE_DESKTOP_SERVICE_GENERATION: this.serviceOwner.serviceGeneration } : {}),
                     PI_CODING_AGENT_DIR: this.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi/agent'),
                     PI_MEDIA_DATA_DIR: this.env.PI_MEDIA_DATA_DIR || this.root },
-                stdio: ['inherit', 'inherit', 'inherit', 'ipc'], windowsHide: true
+                // The HTTP backend uses IPC for control, never terminal input.
+                // Sharing the launcher's stdin can block Windows startup.
+                stdio: ['ignore', 'inherit', 'inherit', 'ipc'], windowsHide: true
             });
             this.child = child; let ready = false, checking = false, expired = false;
             const facts = { requested: false, acknowledged: false, code: null, owner: this.serviceOwner }; this.childFacts.set(child, facts); this.lastChildFacts = facts;
@@ -235,7 +239,11 @@ class ManagedLauncher {
                         try {
                             const url = new URL(message.healthUrl);
                             if (url.protocol !== 'http:' || Number(url.port) !== message.port || url.pathname !== '/api/access/status' || url.username || url.password) throw Error();
-                            const response = await require('node-fetch')(url.href, { redirect: 'error', timeout: 5000, size: 65536 });
+                            // HTTP readiness is part of the same startup deadline.
+                            // SDK initialization may still occupy the child after
+                            // it reports its listening socket over IPC.
+                            const remaining = Math.max(1, this.startupTimeoutMs - (Date.now() - bootStarted));
+                            const response = await require('node-fetch')(url.href, { redirect: 'error', timeout: remaining, size: 65536 });
                             if (!response.ok) throw Error(); await response.json();
                         } catch { clearTimeout(timer); reject(new Error('Service HTTP readiness failed')); return; }
                     }
@@ -275,7 +283,8 @@ class ManagedLauncher {
                 if (!ready) reject(new Error('Service exited before becoming ready'));
                 else if (!this.closed && !this.operation && !facts.requested) {
                     console.error('白泽灵台 child exited; launcher will not replay tasks');
-                    if (this.requireShutdownProof) void this.close().catch(error => this.onCleanupUnknown(error));
+                    if (this.onUnexpectedExit) this.onUnexpectedExit();
+                    else if (this.requireShutdownProof) void this.close().catch(error => this.onCleanupUnknown(error));
                     else void this.close().finally(() => process.exit(code || 1));
                 }
             });

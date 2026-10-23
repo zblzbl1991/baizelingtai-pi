@@ -44,6 +44,20 @@ class DesktopStop {
             ...(this.accepted ? { accepted: true, operationId: this.accepted.operationId } : {}) };
     }
     idle() { const state = this.snapshot(); return state.complete && !state.blockers.length; }
+    // npm start is the explicit developer restart action. This private IPC
+    // reservation checks all the same owners without manufacturing UI consent.
+    restart() {
+        if (this.accepted || this.maintenance.locked || this.maintenance.desktopStopping)
+            throw fail('DESKTOP_ALREADY_STOPPING', '实例正在维护或停机');
+        this.maintenance.desktopStopping = true;
+        try {
+            const state = this.snapshot(true);
+            if (!state.complete || state.blockers.length) throw fail('DESKTOP_BLOCKED', '仍有工作或未知状态，请处理后重新启动');
+            this.accepted = { operationId: randomUUID(), action: 'restart' };
+            this.tickets.clear();
+            return { accepted: true, operationId: this.accepted.operationId };
+        } catch (error) { this.maintenance.desktopStopping = false; throw error; }
+    }
     review(input) {
         if (!['stop', 'exit'].includes(input?.action)) throw fail('DESKTOP_ACTION_INVALID', '停机操作无效');
         const state = this.snapshot();
@@ -85,7 +99,7 @@ function receiveDesktopRequest({ message, maintenance, stop, send }) {
     if (typeof message.id !== 'string' || !message.id || message.id.length > 128) return true;
     const reply = { type: 'desktop-response', nonce: maintenance.nonce, id: message.id };
     try {
-        if (!['snapshot', 'review', 'execute'].includes(message.method) || !message.input || typeof message.input !== 'object' || Array.isArray(message.input))
+        if (!['snapshot', 'review', 'execute', 'restart'].includes(message.method) || !message.input || typeof message.input !== 'object' || Array.isArray(message.input))
             throw fail('DESKTOP_REQUEST_INVALID', '桌面请求无效');
         reply.result = message.method === 'snapshot' ? stop.snapshot() : stop[message.method](message.input);
     } catch (error) {

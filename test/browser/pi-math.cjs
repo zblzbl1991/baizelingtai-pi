@@ -67,7 +67,7 @@ $$
                     ws.send(JSON.stringify({ type: 'response', id: c.id, command: c.type, success: true, data }));
                 });
             });
-            await page.goto(base, { waitUntil: 'domcontentloaded' });
+            await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
             await page.waitForSelector('#pi-transcript-content .katex');
             assert.equal(await page.locator('#pi-transcript-content .katex').count(), 9);
             assert.equal(await page.locator('#pi-transcript-content h1, #pi-transcript-content h2').count(), 0);

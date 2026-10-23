@@ -66,7 +66,7 @@ async function run(browser, base, width, language, theme) {
         });
     });
     await page.route(/https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com)\//, route => route.abort());
-    await page.goto(base);
+    await page.goto(new URL('#/chat', base).href);
     await page.waitForFunction(() => !document.querySelector('#pi-model-select').disabled, null, { timeout: 10000 }).catch(async error => {
         console.error({ errors, calls: calls.map(c => c.type), text: (await page.locator('body').innerText()).slice(-2000) }); throw error;
     });

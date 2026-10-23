@@ -50,7 +50,7 @@ async function check(browser, base, width, language) {
         if (command.type === 'get_session_stats') return reply({});
         throw new Error(`Unexpected RPC ${command.type}`);
     }));
-    await page.goto(base);
+    await page.goto(new URL('#/chat', base).href);
     const card = page.locator('.pi-agent-thread-message');
     await card.waitFor();
     assert.equal(await card.locator('img').count(), 0);

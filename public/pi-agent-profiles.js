@@ -36,6 +36,10 @@
         const learningHealth = new Map(), badges = new Map(), stagedDocuments = new Map();
         const profiles = () => snapshot?.profiles || [];
         const savedProfile = () => profiles().find(p => p.id === selected) || null;
+        const businessBlocked = profile => Boolean(profile?.business && profile.business.enabled !== true);
+        const businessLabel = profile => globalThis.PiI18n?.locale === 'en'
+            ? (profile.business.state === 'unavailable' ? 'Business status unverified' : 'Business disabled')
+            : (profile.business.state === 'unavailable' ? '业务状态待核对' : '业务已停用');
         const cwd = () => currentCwd() || '';
         const active = () => enabled && visible;
         const call = (module, method, ...args) => typeof module?.[method] === 'function' ? module[method](...args) : undefined;
@@ -91,14 +95,14 @@
             const rows = el('div', { class: 'pi-id-list-rows' });
             for (const profile of profiles()) {
                 const health = learningHealth.get(profile.id), count = health?.drafts?.pending;
-                const stateDot = U.dot(healthTone[health?.health?.state] || (profile.enabled ? 'green' : 'off'), health?.health?.state ? t(healthLabel[health.health.state] || '学习当前不可用') : undefined);
+                const stateDot = U.dot(businessBlocked(profile) ? 'off' : healthTone[health?.health?.state] || (profile.enabled ? 'green' : 'off'), health?.health?.state ? t(healthLabel[health.health.state] || '学习当前不可用') : undefined);
                 if (health?.health?.state) stateDot.classList.add('pi-health-dot');
-                const meta = el('span', { class: 'pi-id-row-meta' }, [stateDot, t(profile.enabled ? '已启用' : '已停用')]);
+                const meta = el('span', { class: 'pi-id-row-meta' }, [stateDot, businessBlocked(profile) ? businessLabel(profile) : t(profile.enabled ? '已启用' : '已停用')]);
                 if (health?.health?.state && !['ok', 'off'].includes(health.health.state)) {
                     const healthChip = chip(t(healthShort[health.health.state] || '不可用'), healthTone[health.health.state] || 'amber'); healthChip.title = t(healthLabel[health.health.state] || '学习当前不可用'); meta.append(healthChip);
                 }
                 if (count > 0) meta.append(chip(t('{0} 待审', `${U.number(count)}${health.drafts.capped ? '+' : ''}`), 'amber', { className: 'pi-profile-drafts' }));
-                rows.append(el('button', { type: 'button', class: `pi-id-row pi-profile-row${profile.enabled ? '' : ' is-disabled'}`, dataset: { profileId: profile.id }, 'aria-current': String(selected === profile.id),
+                rows.append(el('button', { type: 'button', class: `pi-id-row pi-profile-row${profile.enabled && !businessBlocked(profile) ? '' : ' is-disabled'}`, dataset: { profileId: profile.id }, 'aria-current': String(selected === profile.id),
                     on: { click: async event => { const drafts = Boolean(event.target.closest('.pi-profile-drafts')); if (await editProfile(profile) && drafts) void openSection('skills', { drafts: true }); } } }, [avatar(profile), el('span', { class: 'pi-id-row-copy' }, [el('span', { class: 'pi-id-row-name', text: profile.name }), el('span', { class: 'pi-id-row-desc', text: profile.description || t('尚未填写描述') }), meta])]));
             }
             list.append(rows, el('p', { class: 'pi-id-help pi-profile-list-empty' }));
@@ -125,13 +129,14 @@
             if (pending > 0) badges.set('skills', pending); else badges.delete('skills');
             const meta = el('div', { class: 'pi-id-header-meta' }, [chip(t(profile.enabled ? '已启用' : '已停用'), profile.enabled ? 'green' : 'off', { icon: profile.enabled ? 'circle-check' : 'circle-pause' })]);
             if (profile.id === snapshot?.defaultAssistantId) meta.append(chip(t('默认助手，始终启用'), 'green'));
+            if (businessBlocked(profile)) meta.append(chip(businessLabel(profile), 'off', { icon: 'circle-pause' }));
             if (health?.state && !['ok', 'off'].includes(health.state)) { const healthChip = chip(t(healthShort[health.state] || '不可用'), healthTone[health.state]); healthChip.title = t(healthLabel[health.state] || '学习当前不可用'); meta.append(healthChip); }
             header.replaceChildren(button({ label: t('返回身份列表'), icon: 'arrow-left', iconOnly: true, variant: 'ghost', className: 'pi-id-back', attrs: { id: 'pi-profile-list-back' }, onClick: () => { listView = true; renderList(); } }), avatar(profile, 'is-lg'),
                 el('div', { class: 'pi-id-header-copy' }, [el('h2', { text: profile.id ? profile.name : t('新建身份') }), el('p', { text: profile.description || t('从名称和协作方式开始') }), profile.id && meta]));
             if (profile.id) {
                 const menuItems = [{ label: t('与 Agent 起草'), icon: 'wand-magic-sparkles', disabled: !enabled || busy(), onSelect: () => void assist() }];
                 if (Array.isArray(snapshot?.trash) && profile.id !== snapshot?.defaultAssistantId) menuItems.push({ label: t('移到回收站'), icon: 'trash-can', tone: 'danger', disabled: !enabled || busy() || Boolean(reconcile), onSelect: () => void trashAction(profile, 'trash') });
-                header.append(el('div', { class: 'pi-id-header-actions' }, [button({ label: t('用此身份对话'), icon: 'comments', variant: 'primary', disabled: !enabled || !profile.enabled || busy(), title: !profile.enabled ? t('请先启用并保存此身份') : undefined, attrs: { 'data-profile-chat': '' }, onClick: () => void chat() }),
+                header.append(el('div', { class: 'pi-id-header-actions' }, [button({ label: t('用此身份对话'), icon: 'comments', variant: 'primary', disabled: !enabled || !profile.enabled || businessBlocked(profile) || busy(), title: businessBlocked(profile) ? businessLabel(profile) : !profile.enabled ? t('请先启用并保存此身份') : undefined, attrs: { 'data-profile-chat': '' }, onClick: () => void chat() }),
                     button({ label: t('与 Agent 起草'), icon: 'wand-magic-sparkles', className: 'pi-id-btn-collapsible', disabled: !enabled || busy(), attrs: { 'data-profile-assist': '' }, onClick: () => void assist() }), U.menu({ label: t('更多操作'), items: menuItems })]));
             }
             header.append(button({ label: t('关闭编辑'), icon: 'xmark', iconOnly: true, variant: 'ghost', attrs: { id: 'pi-profile-editor-close' }, onClick: () => void closeEditor() }));
@@ -194,7 +199,7 @@
         }
         async function chat(projectId) {
             const id = selected;
-            if (!savedProfile()?.enabled || !await guard() || id !== selected) return;
+            if (!savedProfile()?.enabled || businessBlocked(savedProfile()) || !await guard() || id !== selected) return;
             window.PiWorkspaceRoute?.navigate('assistant', { profileId: id, ...(projectId ? { projectId } : {}) });
         }
         function field(label, name, value, attrs = {}, tag = 'input') {
@@ -336,6 +341,9 @@
             const attention = el('div', { class: 'pi-id-attention' });
             const addAttention = (title, text, label, onClick, tone = 'amber', name = 'triangle-exclamation') => attention.append(el('div', { class: 'pi-id-attention-row', dataset: { tone } }, [icon(name), el('div', { class: 'pi-id-attention-copy' }, [el('strong', { text: title }), el('small', { text })]), button({ label, size: 'sm', onClick })]));
             if (!profile.enabled) addAttention(t('此身份已停用'), t('启用后可用于新对话。'), t('前往设定'), () => void openSection('persona'), 'neutral', 'circle-pause');
+            if (businessBlocked(profile)) addAttention(businessLabel(profile), globalThis.PiI18n?.locale === 'en'
+                ? 'Assistant settings and conversation history are retained. Review and enable the business tool before continuing.'
+                : '助手设置与聊天历史保留。请在业务功能中核对并启用后继续使用。', globalThis.PiI18n?.locale === 'en' ? 'Business tools' : '前往业务功能', () => window.PiWorkspaceRoute?.navigate('extensions', { tab: 'builtins' }), 'neutral', 'circle-pause');
             if (health?.state === 'needs-model') {
                 const names = { 'memory-correction': '纠错模型', 'memory-review': '复盘模型', 'memory-extraction': '提炼模型', correction: '纠错模型', review: '复盘模型', extraction: '提炼模型' };
                 const purposes = (health.missingModels || []).map(value => t(names[typeof value === 'string' ? value : value.purpose] || '辅助模型')).join('、');
@@ -364,11 +372,13 @@
             }
             const changes = card({ title: t('最近变化'), icon: 'clock-rotate-left', actions: receipts.length > 6 && receiptLimit === 6 ? [button({ label: t('显示更多'), size: 'sm', variant: 'ghost', onClick: () => { receiptLimit = 30; renderOverview(); } })] : [] }, [!knowledgeData ? notice(t('{0}读取失败：{1}', t('记忆'), overviewData.knowledge.reason?.message || ''), [button({ label: t('重试'), size: 'sm', onClick: () => void loadOverview() })]) : receipts.length ? timeline : empty({ icon: 'clock', title: t('还没有变化记录'), compact: true })]);
             const projectsCard = card({ title: t('关联项目'), icon: 'folder-open', subtitle: t('这些项目中的新对话会使用此身份。') }, [
-                projectsData ? projectRows.length ? el('div', { class: 'pi-id-entries' }, projectRows.map(project => el('div', { class: 'pi-id-entry pi-profile-project' }, [el('div', { class: 'pi-id-entry-main' }, [el('span', { class: 'pi-id-entry-title' }, [icon('folder'), ' ', project.name]), el('span', { class: 'pi-id-entry-meta pi-profile-project-path', title: project.cwd, text: project.cwd }), el('span', { class: 'pi-id-entry-text', text: project.description || '' })]), button({ label: t('在此项目对话'), icon: 'arrow-right', variant: 'quiet', size: 'sm', onClick: () => void chat(project.id) })]))) : empty({ icon: 'folder-open', title: t('没有关联项目'), text: t('在“助手对话”中新建项目并选择此身份。'), compact: true })
+                projectsData ? projectRows.length ? el('div', { class: 'pi-id-entries' }, projectRows.map(project => el('div', { class: 'pi-id-entry pi-profile-project' }, [el('div', { class: 'pi-id-entry-main' }, [el('span', { class: 'pi-id-entry-title' }, [icon('folder'), ' ', project.name]), el('span', { class: 'pi-id-entry-meta pi-profile-project-path', title: project.cwd, text: project.cwd }), el('span', { class: 'pi-id-entry-text', text: project.description || '' })]), button({ label: t('在此项目对话'), icon: 'arrow-right', variant: 'quiet', size: 'sm', disabled: !profile.enabled || businessBlocked(profile), onClick: () => void chat(project.id) })]))) : empty({ icon: 'folder-open', title: t('没有关联项目'), text: t('在“助手对话”中新建项目并选择此身份。'), compact: true })
                     : notice(t('关联项目读取失败：{0}', overviewData.projects.reason?.message || ''), [button({ label: t('重试'), size: 'sm', onClick: () => void loadOverview() })])]);
             projectsCard.dataset.projectsCard = '';
+            const cronCard = card({ title: t('主线程与定时任务'), icon: 'calendar-check', actions: [button({ label: t('管理定时任务'), variant: 'quiet', size: 'sm', onClick: () => window.PiWorkspaceRoute?.navigate('cron', { profileId: selected }) })] }, [el('p', { class: 'pi-id-help', text: t('主线程按需创建，也可以指定已有线程作为定时任务的默认目标。') })]);
+            cronCard.dataset.profileCron = '';
             overviewRoot.replaceChildren(stats, el('div', { class: 'pi-id-grid-2' }, [card({ title: t('需要处理'), icon: 'list-check' }, [attention]), changes]), projectsCard,
-                card({ title: t('主线程与定时任务'), icon: 'calendar-check', actions: [button({ label: t('管理定时任务'), variant: 'quiet', size: 'sm', onClick: () => window.PiWorkspaceRoute?.navigate('cron', { profileId: selected }) })] }, [el('p', { class: 'pi-id-help', text: t('主线程按需创建，也可以指定已有线程作为定时任务的默认目标。') })]));
+                cronCard);
         }
         async function loadLearningHealth() {
             const request = ++healthEpoch;

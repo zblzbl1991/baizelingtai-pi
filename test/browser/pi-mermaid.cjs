@@ -35,7 +35,7 @@ const diagrams = ['flowchart LR\n A[网页] --> B[网关] --> C[Pi 会话]', 'se
                     ws.send(JSON.stringify({ type: 'response', id: c.id, command: c.type, success: true, data }));
                 });
             });
-            await page.goto(base, { waitUntil: 'domcontentloaded' });
+            await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
             await page.waitForFunction(() => document.querySelectorAll('.pi-mermaid[data-state="ready"]').length === 3, null, { timeout: 45000 });
             for (const theme of ['daylight', 'mint', 'dark']) {
                 await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);

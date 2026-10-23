@@ -55,7 +55,7 @@ async function run(browser, viewport) {
         else if (['prompt', 'steer', 'follow_up'].includes(command.type)) throw Error('Must not send model requests');
         socket.send(JSON.stringify({ id: command.id, type: 'response', command: command.type, success: true, data }));
     }));
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.locator('#pi-input:not([disabled])').waitFor();
     const slash = async text => {
         await page.locator('#pi-input').fill(text);

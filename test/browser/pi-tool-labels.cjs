@@ -12,6 +12,8 @@ const calls = [
     { id: 'old', name: 'read', arguments: { path: 'C:\\skills\\legacy\\SKILL.md' } },
     { id: 'package', name: 'render_slides', arguments: {} },
     { id: 'inventory', name: 'extensions_inventory', arguments: {} },
+    { id: 'mcp-inventory', name: 'extensions_mcp_inventory', arguments: {} },
+    { id: 'weknora-cancel', name: 'extensions_weknora_configure', arguments: {} },
     { id: 'cancel', name: 'extensions_package', arguments: { action: 'install', source: 'npm:fixture' } },
     { id: 'codemode', name: 'codemode', arguments: { code: 'return 1' } },
     { id: 'invalid-duration', name: 'codemode', arguments: {} },
@@ -27,6 +29,8 @@ const messages = [
     result('old', 'read', {}, true),
     result('package', 'render_slides', provenance('package', 'render_slides', { source: { origin: 'package', source: 'npm:slide-kit-with-a-long-package-name', path: '/packages/slide-kit/index.ts' } }, true)),
     result('inventory', 'extensions_inventory'),
+    result('mcp-inventory', 'extensions_mcp_inventory'),
+    result('weknora-cancel', 'extensions_weknora_configure', { pivaneMcpConfiguration: { status: 'cancelled' } }),
     result('cancel', 'extensions_package', { pivanePackageOperation: { status: 'cancelled' } }),
     { ...result('codemode', 'codemode'), durationMs: 125 },
     { ...result('invalid-duration', 'codemode'), durationMs: -1 },
@@ -55,7 +59,7 @@ async function run(browser, base, width, locale) {
         if (cmd.type === 'get_state') data = { model, isStreaming: false };
         ws.send(JSON.stringify({ type: 'response', id: cmd.id, command: cmd.type, success: true, data }));
     }); });
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.getElementById('pi-input').disabled);
     await selectMessageView(page, 'full');
     const row = id => page.locator(`.pi-tool-row[data-tool-id="${id}"]`);
@@ -65,6 +69,9 @@ async function run(browser, base, width, locale) {
     assert.match(await row('package').locator('.pi-tool-source').textContent(), /slide-kit/);
     assert.equal(await row('unknown').locator('.pi-tool-source').count(), 0);
     assert.equal(await row('cancel').getAttribute('data-state'), 'cancelled');
+    assert.equal(await row('weknora-cancel').getAttribute('data-state'), 'cancelled');
+    assert.equal(await row('weknora-cancel').locator('summary > strong').textContent(), locale === 'en' ? 'Configure WeKnora' : '配置 WeKnora');
+    assert.equal(await row('mcp-inventory').locator('summary > strong').textContent(), locale === 'en' ? 'Check MCP configuration' : '检查 MCP 配置');
     assert.equal(await row('codemode').locator('.pi-tool-duration').textContent(), '125ms');
     assert.equal(await row('invalid-duration').locator('.pi-tool-duration').count(), 0);
     assert.equal(await row('invalid-args').getAttribute('data-state'), 'error');

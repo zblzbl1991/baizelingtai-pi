@@ -10,4 +10,11 @@ function builtinConfig(id) {
         enabled: false, exposure: 'direct', timeout: 120,
         description: `${preset.title} · 白泽灵台内置 stdio`, env: Object.fromEntries(preset.env.map(key => [key, ''])) };
 }
-module.exports = { presets, builtinConfig };
+function matchesBuiltinConfig(id, config) {
+    const expected = builtinConfig(id);
+    return config?.type === 'stdio' && config.command === expected.command
+        && Array.isArray(config.args) && config.args.length === expected.args.length
+        && config.args.every((arg, index) => arg === expected.args[index])
+        && config.cwd === undefined && config.url === undefined;
+}
+module.exports = { presets, builtinConfig, matchesBuiltinConfig };

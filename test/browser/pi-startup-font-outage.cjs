@@ -51,7 +51,7 @@ const model = { provider: 'fixture', id: 'fixture', name: 'Fixture', input: ['te
                 socket.send(JSON.stringify({ type: 'response', id: command.id, command: command.type, success: true, data }));
             }));
             try {
-                await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 12000 });
+                await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded', timeout: 12000 });
                 await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
                 await page.locator('#pi-input').fill('字体不可达时仍可编辑');
                 assert.equal(await page.locator('#pi-input').inputValue(), '字体不可达时仍可编辑');

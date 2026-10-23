@@ -225,6 +225,11 @@
                 return;
             }
             if (!this.data) return;
+            if (this.file?.upload) {
+                try { if (this.file.isCurrent?.() !== false) await this.file.download(); }
+                catch (error) { this.host.notify(error.message, 'error'); }
+                return;
+            }
             if (this.isOffice()) {
                 const context = this.host.context(), seq = this.sequence;
                 try {
@@ -238,7 +243,7 @@
             }
             this.downloadBytes(this.bytes(), this.data.name);
         }
-        isOffice() { return this.source === 'current' && this.data?.encoding === 'base64' && window.PiOfficeFilePreview?.supports(this.data.name || this.file?.path); }
+        isOffice() { return this.source === 'current' && (this.file?.upload || this.data?.encoding === 'base64') && window.PiOfficeFilePreview?.supports(this.data?.name || this.file?.path); }
         downloadBytes(bytes, name) {
             const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
             const link = document.createElement('a'); link.href = url; link.download = name || this.file.path.split(/[\\/]/).at(-1) || 'download';
@@ -278,7 +283,7 @@
             this.source = file.writes.length ? `write:${file.writes.at(-1).id}` : 'current';
             const picker = $('pi-file-source'); picker.replaceChildren();
             file.writes.forEach((w, i) => picker.append(new Option(translateUi("写入记录 {0}", i + 1), `write:${w.id}`)));
-            picker.append(new Option(file.deliveryId ? translateUi('交付快照') : translateUi("当前文件"), 'current')); picker.value = this.source;
+            picker.append(new Option(file.upload ? translateUi('聊天附件') : file.deliveryId ? translateUi('交付快照') : translateUi("当前文件"), 'current')); picker.value = this.source;
             $('pi-file-tabs').hidden = false; $('pi-file-diff-tab').disabled = !file.hasDiff;
             $('pi-file-path').textContent = file.path; $('pi-file-path').title = file.path;
             const prefix = (file.root || this.host.context().cwd).replace(/\/$/, '') + '/';
@@ -307,10 +312,10 @@
         }
         controls() {
             const kind = this.data?.kind || (/\.(?:md|markdown)$/i.test(this.file?.path || '') ? 'markdown' : 'text');
-            $('pi-file-refresh').hidden = this.source !== 'current'; $('pi-file-refresh').disabled = this.loading || !this.enabled;
+            $('pi-file-refresh').hidden = this.source !== 'current'; $('pi-file-refresh').disabled = this.loading || !(this.file?.upload || this.enabled);
             $('pi-file-copy').disabled = !this.data?.content?.length;
             $('pi-file-preview').hidden = !['markdown', 'html', 'table', 'svg'].includes(kind);
-            this.downloadButton.hidden = !this.previewsEnabled && !this.file?.deliveryId;
+            this.downloadButton.hidden = !this.previewsEnabled && !this.file?.deliveryId && !this.file?.upload;
             this.downloadButton.disabled = !this.data && !(this.source === 'current' && this.downloadTooLarge && this.host.downloads?.enabled);
             this.fullscreenButton.hidden = this.fullscreen.open || kind === 'audio' || kind === 'binary' && !this.isOffice();
             this.fullscreenButton.disabled = !this.data || this.loading;
@@ -318,7 +323,7 @@
             this.runButton.hidden = kind !== 'html' || !this.preview;
             this.runButton.disabled = !this.data; this.runButton.setAttribute('aria-pressed', String(Boolean(this.runHtml)));
             this.runButton.textContent = this.runHtml ? translateUi('停止交互') : translateUi('运行交互');
-            $('pi-file-source').title = this.file?.deliveryId ? translateUi('交付时保存的只读版本，不随源文件变化') : this.source === 'current' ? translateUi("当前磁盘文件快照，点击刷新更新") : translateUi("工具成功写入时的内容记录");
+            $('pi-file-source').title = this.file?.upload ? translateUi('当前聊天引用的附件原件') : this.file?.deliveryId ? translateUi('交付时保存的只读版本，不随源文件变化') : this.source === 'current' ? translateUi("当前磁盘文件快照，点击刷新更新") : translateUi("工具成功写入时的内容记录");
             $('pi-file-preview').disabled = !this.data; $('pi-file-preview').textContent = this.preview ? translateUi("源码") : translateUi("预览");
             $('pi-file-preview').title = this.preview ? translateUi("查看源码") : translateUi("预览");
             $('pi-file-preview').setAttribute('aria-label', $('pi-file-preview').title);
@@ -329,6 +334,11 @@
         async load() {
             if (!this.file || this.mode !== 'full') return;
             this.cancel(); this.releaseUrls(); this.runHtml = false; this.data = null; this.downloadTooLarge = false; $('pi-file-body').replaceChildren();
+            if (this.file.upload) {
+                if (this.file.isCurrent?.() === false) { this.clear(); return; }
+                this.data = { name: this.file.upload.name, revision: this.file.upload.revision, kind: 'binary' };
+                this.status(translateUi('当前聊天引用的附件原件')); this.renderContent(); return;
+            }
             if (!this.file.deliveryId && window.PiFilePolicy.restricted(this.file.path)) { this.status(translateUi("此文件不提供网页预览"), true); this.controls(); return; }
             if (this.source !== 'current') {
                 const write = this.file.writes.find(w => `write:${w.id}` === this.source);
@@ -386,10 +396,11 @@
             if (this.isOffice()) {
                 if (!this.isVisible()) { this.previewSuspended = true; return; }
                 const context = this.host.context(), seq = this.sequence, refresh = this.officeRefresh; this.officeRefresh = false;
-                const source = this.file.deliveryId ? { type: 'delivery', cwd: context.cwd, sessionId: context.sessionId || '', id: this.file.deliveryId, index: this.file.index } : { type: 'project', cwd: this.file.root || context.cwd, path: this.file.path };
+                const source = this.file.upload ? { type: 'upload', cwd: context.cwd, sessionId: context.sessionId || '', id: this.file.upload.id } : this.file.deliveryId ? { type: 'delivery', cwd: context.cwd, sessionId: context.sessionId || '', id: this.file.deliveryId, index: this.file.index } : { type: 'project', cwd: this.file.root || context.cwd, path: this.file.path };
                 this.previewCleanup = window.PiOfficeFilePreview.render(body, { source, name: this.data.name || this.file.path, revision: this.data.revision }, {
                     api: (...args) => this.host.api(...args), state: this.previewState, refresh,
-                    isCurrent: () => seq === this.sequence && context.key === this.host.context().key && context.generation === this.host.context().generation && this.host.context().connected !== false,
+                    isCurrent: () => seq === this.sequence && context.key === this.host.context().key && context.generation === this.host.context().generation && this.host.context().connected !== false && this.file?.isCurrent?.() !== false,
+                    onStale: () => { if (seq === this.sequence && this.file?.upload) { this.clear(); this.host.readerLayoutChanged?.(); } },
                     retry: () => { this.officeRefresh = true; this.current = null; this.load(); },
                     openFullscreen: () => this.openFullscreen(), isFullscreen: () => this.fullscreen.open
                 }); return;

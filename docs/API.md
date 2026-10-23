@@ -81,6 +81,14 @@
 
 受管 `compliance_review` 支持 `prepare/list/get/operation`，内部输入 `operation:"review"`。准备只接受业务字段，实际来源从存活专用 worker 取得；没有 `confirm` 动作。`list` 每页至多五十份方案摘要并返回 `nextOffset`，`get` 按 `proposalId` 读卡，`operation` 按原 `requestId` 查回执。worker 导航凭据不能访问人工确认路由。网络结果未知时查原回执，不自动重发；已提交同参回执可在停用后继续核对，失效卡重新准备。
 
+## 前台开发重启私有通道
+
+`npm start` 和普通 `node server.js` 的前台受管入口显式使用 180000 毫秒子服务就绪预算，覆盖实际子服务初始化与 IPC／HTTP 就绪验证，不再沿用底层启动器的 45000 毫秒默认值。HTTP 健康请求使用这一次启动的剩余预算，不另加独立窗口；就绪消息迟到不能越过总时限。HTTP 子服务使用空标准输入，标准输出／错误继续继承，控制只走 IPC，避免 Windows 父子进程共享标准输入阻塞初始化。系统服务入口保持原默认启动预算；桌面启动预算仍由自身配置管理。预算到期后不重试、不视为空闲，仍等待统一停机证明及实际退出，不能把子服务迟到的监听日志当作成功。
+
+`npm start` 的 `start-managed.cjs` 使用替换模式；普通 `node server.js` 受管入口只发布控制通道，不主动替换。前台入口持有安装锁且服务就绪后，在 `.pivane-runtime/start-control.json` 原子保存受实际 Windows DACL／POSIX 权限保护的 `{version:1,root,port,token}`；root 为 native realpath，port 为随机 loopback 端口，token 每轮随机生成。安装锁本身仍不接受控制命令，托盘和离线维护不发布该通道。
+
+客户端向固定 `127.0.0.1` 发送一行 `{root,token,action:"replace"}`，每次只提交一次。旧入口在 await 前预占互斥，沿 nonce IPC 发送 `desktop-request.method:"restart"`。服务端同步检查全部停机来源并预占派发闸门，不制造浏览器确认票据；未知或有工作时拒绝。接受后先撤销控制记录，再沿统一停机等待当前子服务的 shutdown proof 和实际 exit0，释放安装锁后返回 `{stopped:true,token}`。只有匹配代次的成功响应才允许本次替换继续；新实例仍须取得原安装锁。60 秒等待超时、断连或失败均不重发、不强杀。记录缺失或连接拒绝仅允许尝试正常取锁，不代表旧进程已经安全退出；持久 owner 校验仍有效。不新增 HTTP 停机接口，使用限制见[用户指南](USER_GUIDE.md#首次开始)。
+
 ## 桌面启动私有通道
 
 Windows 托盘以 `scripts/start-desktop.cjs --controlled --generation <UUID>` 创建每轮 runner，使用继承的 stdin/stdout LF JSON 通道，日志走 stderr。所有受控事件带 `generation`，响应回显 `id`；迟到或其他代次无权改变状态。`ready.url` 必须经受管子服务 IPC 和 HTTP 检查。单轮旧 Node 入口仍兼容 `waiting` 与私有 `stop`；受控模式就绪后不允许用 `stop` 绕过最终检查。
@@ -188,8 +196,12 @@ locator 字段沿用各来源接口的含义与检查。`expectedRevision` 可�
 
 复用 POST `/api/pi/sessions/:id/mcp`，仅操作当前已打开的唯一持久 worker，不启动新 worker。请求带 `cwd`、`runtimeId`：
 
-- `action:knowledge-catalog` 返回 `{runtimeId,revision,servers:[{name,searchRequiresBase,operations:{bases,documents,search,read,chunks}}]}`。操作值为实际可调用的原生工具名或 null；只列出原生 MCP 中已识别的 WeKnora 只读工具，不连接服务、不发送模型请求。
-- `action:knowledge-read` 额外要求 `confirmed:true`、`server`、`expectedRevision` 与 `operation`，可带 `kbId`、`documentId`、`query`、`page`、`offset`、`contentOffset`。query 上限 4000 字符，标识上限 512 字符，page 为 1–10000，offset 为 0–1000000，contentOffset 为 0–100000000（Unicode 字符偏移）。服务与工具范围、参数 schema 和原生权限在执行前重新校验，禁止传任意工具名或自由参数。返回 `{runtimeId,revision,server,operation,tool,value}`，value 为服务结构化结果或文本，最大 320 KiB。文档页固定 20 项，搜索最多请求 10 个片段。
+页面在会话恢复／切换后自动读取首屏，打开时运行正忙则等到空闲。目录为空时通过既有 `action:snapshot` 核对原生状态，启动中有界观察；仅在确认已配置所选 WeKnora 为 `disconnected` 时发起一次 `action:reconnect`，成功回执及目录确认后再读首屏。失败、需登录、状态不确定不自动重连，隐藏／禁用工具仍遵守原生权限。单独的 `knowledge-catalog` 仍不连接服务。
+
+- `action:knowledge-catalog` 返回 `{runtimeId,revision,servers:[{name,searchRequiresBase,searchUsesDefaults,operations:{bases,documents,search,read,chunks}}]}`。`searchUsesDefaults` 表示省略范围时使用服务默认值，而非搜索所有知识库。操作值为实际可调用的原生工具名或 null；只列出原生 MCP 中已识别的 WeKnora 只读工具，不连接服务、不发送模型请求。修订包含参数 schema、工具说明与暴露策略，默认设置加载变化也会使旧修订失效。
+- `action:knowledge-read` 额外要求 `confirmed:true`、`server`、`expectedRevision` 与 `operation`，可带 `kbId`、`documentId`、`query`、`page`、`offset`、`contentOffset`。query 上限 4000 字符，标识上限 512 字符，page 为 1–10000，offset 为 0–1000000，contentOffset 为 0–100000000（Unicode 字符偏移）。服务与工具范围、参数 schema 和原生权限在执行前重新校验，禁止传任意工具名或自由参数。返回 `{runtimeId,revision,server,operation,tool,value}`，value 为服务结构化结果或文本，最大 320 KiB。文档页固定 20 项；`kb_id` 形式的内置检索不强塞范围或条数，使用当前 MCP 已加载的默认值，其他端点仍按 schema 适配。
+
+GET `/api/pi/settings/mcp` 的 `capabilities.knowledgeSearchSettings:true` 声明后端已加载检索设置功能；缺失时，前端提示从原入口重启后端并重新检查，不把旧后端误判为自建服务。内置 WeKnora 服务条目额外返回 `knowledgeSettings:{supported:true,valid:true,value:{knowledgeBaseIds,limit,vectorThreshold,keywordThreshold}}`；损坏配置返回 `valid:false,error:MCP_KNOWLEDGE_INVALID_SETTINGS`，不回显原始环境值。自建服务与项目部分覆盖不声明支持。PUT 同一路径支持 `{cwd,scope,expectedRevision,confirmed:true,action:"knowledge",name,knowledgeSettings:{...}}`，仅修改对应范围内已存在的内置 WeKnora。ID 数组最多 10 项且不重复，每项为 1–200 位字母、数字、下划线或连字符；条数为 1–20 的整数，两种阈值为 0–1 的有限数值。沿用 MCP 私密原子保存、共享互斥、信任与修订校验；返回 `requiresRuntimeRestart:true`，不启动或重载 worker。无效参数为 `MCP_KNOWLEDGE_INVALID_SETTINGS`，目标不支持为 `MCP_KNOWLEDGE_UNSUPPORTED`。
 
 两类请求沿用 MCP 管理互斥槽、维护投影与 no-store；读取期间不能并发运行聊天或重载。通过 Pi `runToolCall` 与原生会话 hooks 校验和执行实际 MCP 定义，不新建连接或写聊天记录；结果仅供本次页面读取。超时／断线不释放原生占用，不自动重试。`MCP_KNOWLEDGE_CHANGED` 表示工具目录变化，`MCP_KNOWLEDGE_UNAVAILABLE` 表示操作不可用，`MCP_KNOWLEDGE_INPUT_REQUIRED` 表示缺少参数，`MCP_KNOWLEDGE_READ_FAILED` 为安全的失败摘要；原始认证／传输错误不回显。操作与兼容性见[知识库](KNOWLEDGE_BASE.md)。
 
@@ -206,6 +218,8 @@ locator 字段沿用各来源接口的含义与检查。`expectedRevision` 可�
 内置资源 `pivane-gongwen` 在持久受管 RPC 会话注册 `generate_gongwen`，没有独立 HTTP 生成接口。输入为结构化 JSON：必填 `requestId/kind/title/body`；kind 为 `notice|report|request|letter|minutes|rules|enterprise`，正文构件为 `paragraph {text}`、`heading {level:1..4,text}`、`table {head,rows,widths?,caption?,numeric?}`。数字列为 `{column:1-based,kind:money|integer|decimal|percent,complete?:boolean}`。其他字段覆盖 `recipient/unit/date/redhead/agency/docNo/signers/copyNo/secret/urgency/preprinted/mark/issue/attendees/copyTo/issuer/printDate/note/sealed/attachments/missing`，精确范围由工具 schema 给出；未知字段和文件路径／代码输入拒绝。
 
 结果 details 的 `pivaneGongwen` 包含 `version/status/label/machineChecks/rendering/format/missing/errors/hints/styles/faults/rounds/truncated/totals/source/reused/delivery`。status 为 `checked|needs-input|needs-review|unchecked|failed`；machineChecks 为 `passed|failed|incomplete`，rendering 当前始终为 `not-verified`。正常与有效草稿交付 DOCX 和 Markdown 报告；没有经过结构验证的字节时只交付报告。`source` 为当前项目私有草稿源路径，`delivery` 沿用原生交付清单和 `#pi-delivery=` 链接，下载接口及当前分支资格不变。
+
+新交付文件名由安全标题（最多 48 个 Unicode 码点）和 `version` 的前 12 位组成：`<标题>-<版本>.docx`、`<标题>-<版本>-检查报告.md`；已有稿修订／检查使用 `-修订.docx`／`-受检原稿.docx`。名称只是展示与下载元数据，客户端须读取实际 `delivery.files`，继续按交付 ID 和 index 访问。旧回执保留原名与原路径，通过同样的身份／字节校验后复用，不改写既有清单。
 
 `format` 含 `standard:"GB/T 9704—2012"`、`scope:"normative"|"reference"`、`status:"passed"|"failed"|"incomplete"`、`properties:{status}`、`checks/total/truncated`、`fontAvailability` 和 `preview:{status:"not-verified"}`。每个 checks 项含 `id/status/location/expected/actual/reason?`，status 为 `pass|fail|incomplete|not-applicable`，location 指向部件、节、段落、run 或样式。最多产生 200 条展示记录，报告共享 80 KiB 问题预算可进一步节选，字符串最多 240 字符；total 保留实际检查数。`fontAvailability` 含 `status:"available"|"missing"|"unknown"`、`fonts:[{requested,status}]` 及可选 evidence；本机探测与文档声明、实际软件显示分别核验。属性错误进入 errors，必要解析缺口进入 faults，字体缺失／未知进入 hints。单纯未运行 Word/WPS 不使 machineChecks 失败；字体不可用或 reference 范围不能得出综合版式 passed。结构范围限于有界 XML、样式引用和已实现关键属性，见[公文边界](GONGWEN.md#电子版式与预览)。
 
@@ -289,7 +303,11 @@ DOC／XLS／PPT 扩展为原件上传、预览和下载格式，容器与内部�
 
 ### 可选助手档案
 
-首次 `GET /profiles` 在注册表没有任何助手记录（含回收站）时，通过现有设置互斥、注册表锁与 CAS 原子保存初始助手“小白”，并返回保存后的修订。初始助手启用身份、记忆和已学习技能，关闭后台学习，SOUL 为空；不设置项目默认身份或修改会话归属。并发读取复用同一次初始化，既有助手、停用或回收站记录阻止补建；维护或停机不允许初始化，保存结果不确定时返回原有 503，后续须重新读取核对。
+受管人员调配身份在 `GET /profiles` 的对应记录及会话的 `agentProfile` 中增加只读 `business:{id:"staffing",enabled,state}`。它来自人员调配账本和稳定受管绑定，不按助手名称匹配，不写入身份设置或身份修订。状态读取失败仅对该身份投影 `enabled:false,state:"unavailable"`，其他身份照常可用。`enabled` 身份偏好与 `business.enabled` 分别管理；业务不可用时禁止用该身份新建会话，历史仍可读取。现有会话的 `available` 同时反映业务状态；实际工具和模型续传仍使用原调配资源与 epoch 校验。
+
+`GET /profiles` 确保注册表存在 `defaultAssistantId`，通过现有设置互斥、注册表锁与 CAS 原子保存默认助手“小白”，并返回保存后的修订及 `defaultAssistantId`。默认助手启用身份、记忆和已学习技能，关闭后台学习，SOUL 为空；不设置项目默认身份或修改会话归属。没有绑定时创建新记录，不按名称认领已有身份；达到 50 个上限时报错。默认绑定必须指向已启用且不在回收站的有效身份；注册表损坏或无效绑定拒绝读取，不静默修复。并发读取复用初始化；维护或停机不允许初始化，保存结果不确定时返回原有 503，后续须重新读取核对。
+
+对默认助手提交 `PUT /profiles` 且 `enabled:false`，或 `POST /profiles/:id/trash`，返回 409 / `DEFAULT_ASSISTANT_PROTECTED`，不改变修订；改名和其他能力设置仍允许。`defaultAssistantId` 由服务管理，不能通过档案保存参数改变。网页 `#/setup` 复用模型偏好、档案、项目与新建会话接口；进度仅保存在浏览器，无 setup 写入端点，不修改既有会话身份。
 
 `GET /status.agentProfiles=true` 表示可选助手档案接口可用。`GET /profiles?cwd` 返回 `profiles`（不含回收站身份）、按移入时间从新到旧的 `trash:[{id,name,description,avatar,trashedAt}]`、注册表修订、`profileRevisions`（含回收站的所有档案ID到自身修订的映射）和所选项目默认身份；`PUT /profiles` 接受 `{expectedRevision,profile}` 创建或更新档案，回收站身份拒绝更新（409），须先恢复；`PUT /profiles/default` 接受 `{cwd,profileId,expectedRevision}`，`profileId:null` 清除项目默认身份，仅接受已启用且不在回收站的身份。现有 `POST /sessions` 的可选 `profileId` 省略时使用项目默认，显式 null 创建无档案线程。
 
@@ -571,7 +589,9 @@ Body: `{ "cwd": "/workspace/demo" }`。先经过 token/Origin/realpath 根检查
 
 ### 扩展助手会话
 
-`/status.extensionAssistant=true` 时，`POST /extension-assistant/sessions` 接受 `{cwd,scope,language,returnSessionId?}`，创建独立原生会话并返回 `assistant` 元数据，不提交模型消息。`POST /extension-assistant/inventory` 和 `/extension-assistant/package` 为已打开的助手提供固定安装范围的配置读取与包操作，分别接受 `{cwd,sessionId}` 和附加的 `{action,source,expectedRevision,confirmed:true}`。包操作复用原生配置互斥、trust 和修订检查；独立进程凭据只授权这两个管理端点，不能用于其他 API，媒体规划凭据不能用于扩展管理。请求/响应、确认、取消、身份恢复和限制见[扩展助手契约](NATIVE_SETTINGS.md#扩展助手接口与持久化)。
+`/status.extensionAssistant=true` 时，`POST /extension-assistant/sessions` 接受 `{cwd,scope,language,returnSessionId?}`，创建独立原生会话并返回 `assistant` 元数据，不提交模型消息。`POST /extension-assistant/inventory` 和 `/extension-assistant/package` 为已打开的助手提供固定安装范围的配置读取与包操作，分别接受 `{cwd,sessionId}` 和附加的 `{action,source,expectedRevision,confirmed:true}`。包操作复用原生配置互斥、trust 和修订检查；独立进程凭据只授权这两个端点及下述两个 MCP 管理端点，不能用于其他 API，媒体规划凭据不能用于扩展管理。请求/响应、确认、取消、身份恢复和限制见[扩展助手契约](NATIVE_SETTINGS.md#扩展助手接口与持久化)。
+
+`POST /extension-assistant/mcp-inventory` 接受 `{cwd,sessionId}`，返回助手固定范围的脱敏 MCP 快照、revision 以及 `weknoraOtherScope:'global'|'project'|null`。`POST /extension-assistant/weknora-configure` 接受 `{cwd,sessionId,baseUrl,apiKey,expectedRevision,confirmed:true}`，不允许调用方指定 scope、command 或其他字段。只创建或更新 `pivane-weknora` 内置 stdio 配置并启用；成功返回 `{ok:true,server:'pivane-weknora',scope,enabled:true,requiresRuntimeRestart:true,connectionStatus:'not_checked'}`，不返回 URL、Key 或私密文件内容，不连接或重载 worker。参数无效返回 400（`MCP_WEKNORA_INVALID_URL`、`MCP_WEKNORA_INVALID_CREDENTIALS`），同名服务并非内置配置或另一范围已有同名配置返回 409（`MCP_WEKNORA_BUILTIN_CONFLICT`、`MCP_WEKNORA_SCOPE_CONFLICT`）；沿用 `MCP_CHANGED`、`MCP_BUSY`、`MCP_PROJECT_UNTRUSTED` 等 MCP 保存错误。请求中断不等于取消，不自动重放。
 
 `/status.sessionClassification=true` 启用助手会话分类变更。GET `/sessions/:id/classification?cwd=...` 返回 `{session,projectId,revision,projectsRevision,projects}`：revision 为当前归属的原生 entry ID／null，projects 仅含同档案、同真实 cwd 的未归档分类。PUT 同路径接受 `{cwd,projectId,expectedRevision,expectedProjectsRevision}`，projectId 可为 null（未分类）；拒绝未知字段、无档案／起草／扩展助手会话、跨目录／跨身份／归档目标和冲突标记。保存在共享设置与 Supervisor editing 互斥下执行，会话、标题与后台任务不空闲或有关联侧聊时返回 409（忙碌 code=SESSION_BUSY），归属／分类注册表修订变化返回 409。成功 `{session,changed}`，同目标为无写入；原生历史和 ID 保留，只追加分类变更。打开该线程的 WS 收到 `{type:'gateway_session_classified',session}` 后关闭码 1012，重连加载新分类指令；页面保留草稿／附件，不抢占已切换线程。不确定结果不能自动重放，重新 GET 核对。
 
@@ -1059,6 +1079,8 @@ Provider body：
 ```
 
 支持的 models.json API：`openai-completions`、`openai-responses`、`anthropic-messages`、`google-generative-ai`。
+
+模型设置目录包含未保存的“星通”预设：`providers` 条目的 `preset:true` 表示仅供设置页展示，附带 `baseUrl`、`api`、`authHeader` 与 `modelId`；对应模型标记 `preset:true, available:false`，不属于会话可用目录。读取不会写入原生配置。首次通过 `/custom-providers` 保存 `id:"xingtong"` 时，在同一次原子保存中创建模型 `deepseek-v4-flash`，能力及限制沿用原生默认值；已有该 Provider 时保留模型列表与其他字段，不重新添加已删除的模型。全局默认模型仍通过独立的偏好接口设置。
 
 模型 body 支持 `id`、`name`、`reasoning`、`imageInput`、`contextWindow`、`maxTokens`、可选 `api` 和 `thinkingLevelMap`。基本编辑字段 `name`、`reasoning`、转换后的 `input`、`contextWindow`、`maxTokens` 同时写入该模型的基础 `models` 定义与 `modelOverrides`，以 Pi 原生用户覆盖优先级在扩展定义之后生效；其余字段不复制到覆盖层。`customProviders.models` 读取这五项已有覆盖，避免编辑器显示基础旧值。删除模型同时清除这五项覆盖，保留该模型及其他模型的剩余覆盖。旧配置不自动迁移，重新保存建立覆盖。响应沿用 `requiresRuntimeRestart:true`；已选择模型通过空闲 reload 或重新打开运行实例加载。Model ID 最多 500 字符，允许 `/`、`:`、`@` 等供应商标识但拒绝空白/控制字符；作为模型标识，不是路径。Provider base URL 只允许 HTTP(S)，拒绝 userinfo/query/fragment。写入保留未知字段，建立 0600 backup 后原子替换。删除内置 Provider 的本地覆盖仅删配置，保留其原生凭据。
 

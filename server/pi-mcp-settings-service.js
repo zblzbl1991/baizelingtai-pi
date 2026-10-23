@@ -11,7 +11,8 @@ const { getSdk } = require('./pi-session-store');
 const record = value => !!value && typeof value === 'object' && !Array.isArray(value);
 const httpConfig = config => typeof config.url === 'string' && [undefined, 'http', 'streamable-http'].includes(config.type);
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
-const { presets, builtinConfig } = require('./pi-builtin-mcp');
+const { presets, builtinConfig, matchesBuiltinConfig } = require('./pi-builtin-mcp');
+const knowledgeSearch = require('./pi-knowledge-search-settings');
 const fail = (code, status = 400) => Object.assign(new Error(code), { code, statusCode: status });
 const controlKeys = new Set(['type', 'enabled', 'exposure', 'timeout', 'toolExposure', 'description']);
 const privateKeys = new Set(['command', 'args', 'cwd', 'url', 'env', 'headers', 'oauth']);
@@ -143,17 +144,49 @@ class PiMcpSettingsService {
             const valid = override ? state.configs.get(`${index}:${name}`) || 'invalid override' : validate(name, config);
             if (conflicts.has(`${index}:${name}`)) return { name, scope, valid: false, transport: 'unknown', config: {}, secretFields: {}, error: 'MCP_NAMESPACE_CONFLICT' };
             if (typeof valid === 'string' || config.auth !== undefined && (scope !== 'global' || !httpConfig(valid))) return { name, scope, valid: false, transport: 'unknown', config: {}, secretFields: {}, error: 'MCP_INVALID_SERVER' };
-            return { name, scope, valid: true, ...(override ? { override: true } : {}), enabled: valid.enabled !== false, exposure: valid.exposure || 'codemode', timeout: valid.timeout ?? 60, transport: typeof valid.url === 'string' && valid.type !== 'stdio' ? 'http' : 'stdio', ...editable({ ...config, ...(valid.exposure && (!override || own(config, 'exposure')) ? { exposure: valid.exposure } : {}), ...(valid.toolExposure && (!override || own(config, 'toolExposure')) ? { toolExposure: valid.toolExposure } : {}) }) };
+            let knowledgeSettings;
+            if (!override && matchesBuiltinConfig('weknora', valid)) {
+                try { knowledgeSettings = { supported: true, valid: true, value: knowledgeSearch.read(config.env?.[knowledgeSearch.ENV_KEY]) }; }
+                catch { knowledgeSettings = { supported: true, valid: false, error: 'MCP_KNOWLEDGE_INVALID_SETTINGS' }; }
+            }
+            return { name, scope, valid: true, ...(knowledgeSettings ? { knowledgeSettings } : {}), ...(override ? { override: true } : {}), enabled: valid.enabled !== false, exposure: valid.exposure || 'codemode', timeout: valid.timeout ?? 60, transport: typeof valid.url === 'string' && valid.type !== 'stdio' ? 'http' : 'stdio', ...editable({ ...config, ...(valid.exposure && (!override || own(config, 'exposure')) ? { exposure: valid.exposure } : {}), ...(valid.toolExposure && (!override || own(config, 'toolExposure')) ? { toolExposure: valid.toolExposure } : {}) }) };
         });
         const global = ctx.data[0].autoEnableCodemode ?? null, project = ctx.data[1].autoEnableCodemode ?? null;
-        return { cwd: ctx.cwd, scope, revision: ctx.revision, trust: ctx.trust, autoEnableCodemode: { global, project, value: (ctx.trust.effective ? project : null) ?? global ?? true }, servers, builtinPresets: presets, capabilities: { native: true, runtimeManagement: true } };
+        return { cwd: ctx.cwd, scope, revision: ctx.revision, trust: ctx.trust, autoEnableCodemode: { global, project, value: (ctx.trust.effective ? project : null) ?? global ?? true }, servers, builtinPresets: presets, capabilities: { native: true, runtimeManagement: true, knowledgeSearchSettings: true } };
+    }
+    // A bounded conversational operation. Never accepts a command, arbitrary env,
+    // server name or a replacement for a differently configured MCP server.
+    async configureWeKnora(input) {
+        if (!record(input) || Object.keys(input).some(key => !['cwd', 'scope', 'expectedRevision', 'confirmed', 'baseUrl', 'apiKey'].includes(key))
+            || input.confirmed !== true || !['global', 'project'].includes(input.scope)) throw fail('MCP_CONFIRMATION_REQUIRED');
+        if (typeof input.baseUrl !== 'string' || input.baseUrl.length > 2048 || /[\s\u0000-\u001f\u007f]/.test(input.baseUrl)) throw fail('MCP_WEKNORA_INVALID_URL');
+        if (typeof input.apiKey !== 'string' || !input.apiKey.trim() || input.apiKey.length > 8192
+            || /^xxx$/i.test(input.apiKey.trim()) || /[\u0000-\u001f\u007f]/.test(input.apiKey) || input.apiKey.trimStart().startsWith('!') || input.apiKey.includes('${')) throw fail('MCP_WEKNORA_INVALID_CREDENTIALS');
+        let url;
+        try { url = new URL(input.baseUrl); } catch { throw fail('MCP_WEKNORA_INVALID_URL'); }
+        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash
+            || input.baseUrl.includes('${')) throw fail('MCP_WEKNORA_INVALID_URL');
+        const ctx = await this.context(input.cwd), index = input.scope === 'global' ? 0 : 1;
+        if (ctx.revision !== input.expectedRevision) throw fail('MCP_CHANGED', 409);
+        const name = 'pivane-weknora', previous = ctx.data[index].mcpServers?.[name];
+        // Do not shadow another scope or silently rewire an unrelated same-name server.
+        if (own(ctx.data[1 - index].mcpServers || {}, name)) throw fail('MCP_WEKNORA_SCOPE_CONFLICT', 409);
+        if (previous !== undefined && !matchesBuiltinConfig('weknora', previous)) throw fail('MCP_WEKNORA_BUILTIN_CONFLICT', 409);
+        const env = { WEKNORA_BASE_URL: { op: 'replace', value: url.href.replace(/\/+$/, '') }, WEKNORA_API_KEY: { op: 'replace', value: input.apiKey } };
+        const change = previous === undefined
+            ? { action: 'upsert', config: { ...Object.fromEntries(Object.entries(builtinConfig('weknora')).map(([key, value]) => [key, privateKeys.has(key) ? { op: 'replace', value } : value])), enabled: true, env } }
+            : { action: 'patch', patch: { enabled: true, env } };
+        // save rechecks every revision input under the shared mutation reservation.
+        await this.save({ cwd: ctx.cwd, scope: input.scope, expectedRevision: input.expectedRevision, confirmed: true, name, ...change });
+        return { ok: true, server: name, scope: input.scope, enabled: true, requiresRuntimeRestart: true, connectionStatus: 'not_checked' };
     }
     async save(input) {
         if (this.busy || this.native?.busy) throw fail('MCP_BUSY', 409);
         this.busy = true; // Reserve before the first await, including SDK loading.
         if (this.native) this.native.busy = true;
         try {
-            if (!record(input) || Object.keys(input).some(key => !['cwd', 'scope', 'expectedRevision', 'confirmed', 'action', 'builtin', 'name', 'config', 'patch', 'autoEnableCodemode'].includes(key)) || input.confirmed !== true || !['global', 'project'].includes(input.scope) || !['upsert', 'remove', 'patch', 'preferences', 'builtin'].includes(input.action)) throw fail('MCP_CONFIRMATION_REQUIRED');
+            if (!record(input) || Object.keys(input).some(key => !['cwd', 'scope', 'expectedRevision', 'confirmed', 'action', 'builtin', 'name', 'config', 'patch', 'autoEnableCodemode', 'knowledgeSettings'].includes(key)) || input.confirmed !== true || !['global', 'project'].includes(input.scope) || !['upsert', 'remove', 'patch', 'preferences', 'builtin', 'knowledge'].includes(input.action)) throw fail('MCP_CONFIRMATION_REQUIRED');
+            if (input.action !== 'knowledge' && own(input, 'knowledgeSettings')) throw fail('MCP_INVALID_EDIT');
             const ctx = await this.context(input.cwd), { validateMcpServerConfig: validate, mcpNamespace } = await nativeApi();
             if (ctx.revision !== input.expectedRevision) throw fail('MCP_CHANGED', 409);
             if (input.scope === 'project' && !ctx.trust.effective) throw fail('MCP_PROJECT_UNTRUSTED', 403);
@@ -176,7 +209,11 @@ class PiMcpSettingsService {
                 else {
                     const previous = own(data.mcpServers, input.name) ? data.mcpServers[input.name] : {};
                     if (!record(previous) || input.action === 'patch' && !own(data.mcpServers, input.name)) throw fail('MCP_SERVER_NOT_FOUND');
-                    const edits = input.action === 'patch' ? input.patch : input.config;
+                    let edits = input.action === 'patch' ? input.patch : input.config;
+                    if (input.action === 'knowledge') {
+                        if (['config', 'patch', 'builtin', 'autoEnableCodemode'].some(key => own(input, key)) || !matchesBuiltinConfig('weknora', previous)) throw fail('MCP_KNOWLEDGE_UNSUPPORTED');
+                        edits = { env: { [knowledgeSearch.ENV_KEY]: { op: 'replace', value: knowledgeSearch.serialize(input.knowledgeSettings, previous.env?.[knowledgeSearch.ENV_KEY]) } } };
+                    }
                     const next = applyConfig(previous, edits);
                     const afterData = [...ctx.data];
                     afterData[index] = { ...data, mcpServers: { ...data.mcpServers, [input.name]: next } };

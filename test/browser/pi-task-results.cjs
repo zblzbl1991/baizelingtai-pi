@@ -50,7 +50,7 @@ async function check(browser, base, width, language) {
         if (cmd.type === 'get_session_stats') return reply({});
         throw new Error(`Unexpected RPC: ${cmd.type}`);
     }));
-    await page.goto(base);
+    await page.goto(new URL('#/chat', base).href);
     await page.locator('#pi-input').fill('Unsent draft');
     await page.locator('#pi-file-input').setInputFiles({ name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.from('Synthetic attachment') });
     const transcriptResult = page.locator('#pi-transcript-content .pi-agent-thread-message').filter({ has: page.locator('strong', { hasText: language === 'en' ? 'Agent task result' : 'Agent 任务结果' }) });
@@ -171,7 +171,7 @@ async function checkList(browser, base, width, language) {
         throw new Error(`Unexpected RPC: ${cmd.type}`);
     }));
     await page.addInitScript(() => localStorage.setItem('pi.web.transcriptMode', 'compact'));
-    await page.goto(base);
+    await page.goto(new URL('#/chat', base).href);
     await page.waitForFunction(() => document.querySelectorAll('.pi-task-result').length === 3);
     assert.ok((await page.locator('#pi-task-results > summary').textContent()).includes(language === 'en' ? '2 unread · 1 active' : '2 未读 · 1 进行中'));
     const card = page.locator('.pi-agent-card[data-agent-card="result"]');

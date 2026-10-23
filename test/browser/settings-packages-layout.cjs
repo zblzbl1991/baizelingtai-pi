@@ -51,7 +51,7 @@ async function run(browser, width, locale, theme) {
         return route.fulfill({ json: path.includes('history') ? [] : {} });
     });
     await page.routeWebSocket('**/api/pi/ws', () => { throw Error('Settings must not open a session'); });
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.locator('#workspace-settings-toggle').click();
     await page.locator('[data-settings-tab="models"]').click();
     await page.locator('#settings-session-titles:visible').waitFor();

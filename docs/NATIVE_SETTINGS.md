@@ -29,6 +29,8 @@
 
 扩展中心包含“发现”“已安装”“原生 MCP”“知识库”“业务功能”和“消息渠道”。“业务功能”集中提供项目人员分配入口与合同审查配置；旧 `#/settings?tab=builtins` 转到 `#/extensions?tab=builtins`。消息渠道使用独立的可选组件安装与连接管理服务，扫码、账号和线程绑定见[微信与消息渠道](MESSAGE_CHANNELS.md)，不通过 Pi Package 工厂加载。已安装按资源类型筛选，行内启停，菜单更新／移除／恢复继承；安装核对来源、范围、信任、修订及代码执行确认。确认后固定当时的项目与来源，提交期间锁定控件，迟到响应不能改变范围或重复提交。旧 `#/extensions?tab=packages|skills` 归一化到 `#/extensions?tab=installed&type=…`。已学习技能在助手身份页管理，具体操作见[用户指南](USER_GUIDE.md#扩展精选与已安装资源)。
 
+业务功能采用统一列表，按已保存的真实启用状态筛选，并可搜索名称和用途；读取失败显示“状态待核对”。人员调配沿用独立页面的启用和初始台账核对流程。合同审查的“配置”在行内展开，开关与模型修改后显示保存操作，可取消尚未提交的更改；未完成的配置操作仍通过原回执核对，不会因界面重排而重复提交。状态标记和筛选在保存成功后更新，停用保留已有资料。列表超过四项时显示业务分类筛选；当前仅展示实际实现的两项功能。
+
 发现目录使用随包双语元数据，不自动抓取外部内容。只读核对原生资源清单，通过 npm 包身份或已知 GitHub 来源精确匹配，不用显示名或目录名猜测。Pi 原生 MCP 的 `builtin:mcp` 标记只表示资源配置，连接和授权状态单独核对，见[MCP](MCP.md)。
 
 清单包含已安装、已登记但文件未就绪、在所选可见范围未安装，以及无法确认的状态。精选 PPT 为 guizang-ppt，原作者技能名与包名为 `guizang-ppt-skill`，主要生成网页演示文稿，不保证可编辑 PPTX。当前包由独立内置资源登记包加载，无需 SkillHub 安装；额外来源仍是独立技能而非 Pi npm 包，安装方式见[SkillHub 接入](#skillhub-技能来源)。服务端只对原生资源目录中已发现的全局／可信项目候选 `SKILL.md` 作有界读取；核对 frontmatter.name、SkillHub CLI 生成的 `.skillhub/metadata.json` 的 registry、namespace、slug、version、schemaVersion 和 SKILL.md 文件哈希后，在 `featuredSkills` 返回 `id:guizang-ppt`、范围与启用状态。同名文件缺少来源记录、记录不符或文件变化时用 `featuredSkillNeedsReview` 标记；旧 `ppt-master` 声明识别仍保留 API 兼容，不替换或删除其文件。元数据与哈希仅用于本地目录显示，不证明完整包、上游代码、依赖或当前会话已加载，必要时仍由助手核对。
@@ -57,7 +59,9 @@
 
 Pi 包操作使用 `extensions_inventory` 和 `extensions_package`：读取真实配置与修订，展示来源、范围和计划供用户确认，复用设置页的原生安装/更新/移除服务。项目安装仍要求信任；配置冲突或结果不确定时应先刷新核对，不自动重放。独立技能文件和系统依赖由已启用的常规工具在用户授权后配置，未提供统一依赖事务或一键回滚。许可检查、来源审查和这些常规工具操作由 Agent 指引约束，不是工具沙箱。
 
-安装文件、依赖就绪和任务验证分别报告。设置页刷新可查看配置清单；当前已打开的会话需在空闲后显式重新加载资源，不能只凭安装成功认定已加载。凭据通过对应配置/授权入口录入，不发送到聊天里。自动搜索和配置效果取决于所选模型、已启用工具及网络，不保证任意第三方包都能自动安装。
+“配置 WeKnora”示例与知识库页的“让助手配置 WeKnora”生成 URL / Key 草稿。发送后使用 `extensions_mcp_inventory`、`extensions_weknora_configure` 配置已内置的桥接程序，复用 MCP 设置服务的私密保存、信任、互斥与修订检查；不安装额外 MCP。详情与凭据进入对话的说明见[知识库配置](KNOWLEDGE_BASE.md#让助手配置内置-weknora)。
+
+安装文件、依赖就绪和任务验证分别报告。设置页刷新可查看配置清单；当前已打开的会话需在空闲后显式重新加载资源，不能只凭安装成功认定已加载。模型等凭据通过对应配置/授权入口录入；WeKnora 对话配置允许用户明确提供 URL 和 Key，其保存范围与聊天留存见上述说明。自动搜索和配置效果取决于所选模型、已启用工具及网络，不保证任意第三方包都能自动安装。
 
 ### 扩展助手接口与持久化
 
@@ -68,10 +72,12 @@ Pi 包操作使用 `extensions_inventory` 和 `extensions_package`：读取真�
 | POST | `/api/pi/extension-assistant/sessions` | `{cwd,scope:'global'或'project',language:'zh-CN'或'en',returnSessionId?:string或null}`；拒绝未知字段，验证项目和返回会话，201 返回原生 session 与 assistant 元数据，不调用模型 |
 | POST | `/api/pi/extension-assistant/inventory` | `{cwd,sessionId}`；只服务已打开的扩展助手，返回其固定范围的原生资源快照与 revision |
 | POST | `/api/pi/extension-assistant/package` | `{cwd,sessionId,action,source,expectedRevision,confirmed:true}`；范围取自原生助手身份，不由调用方覆盖；复用原生包服务的预算、锁、信任与冲突检查 |
+| POST | `/api/pi/extension-assistant/mcp-inventory` | `{cwd,sessionId}`；固定范围的脱敏 MCP 快照与 revision，`weknoraOtherScope` 为另一范围存在同名配置时的范围，否则 null；不连接 |
+| POST | `/api/pi/extension-assistant/weknora-configure` | `{cwd,sessionId,baseUrl,apiKey,expectedRevision,confirmed:true}`；只创建或更新内置 WeKnora，范围取自助手身份；拒绝未知字段 |
 
 原生 `pivane-extension-assistant` custom entry（兼容旧 `pi5-extension-assistant`） 保存版本、当前 sessionId、安装范围、界面语言和可选返回会话 ID，不保存第二份对话。身份绑定 sessionId，分叉或导入新身份不会因复制旧 marker 自动成为助手。Web 打开会话快照的 `session.assistant` 返回身份元数据；恢复、压缩或资源重载后，扩展按该身份重新加载工具，并在每轮开始追加助手指引，不改全局 SYSTEM/APPEND_SYSTEM 文件。
 
-管理工具使用独立的进程凭据，只授权 inventory/package 两个 POST 端点，禁止重定向；媒体规划凭据的范围不变。REST 仍检查 Origin、实例访问验证及实际会话/worker，返回 no-store。该凭据不进入模型提示、工具结果或 JSONL。它不隔离同一系统用户下的恶意扩展。包确认通过原有 RPC UI；取消不提交，请求中断不表示服务端取消。包写入计入 `nativeSettingsBusy`，不另开同会话 worker。
+管理工具使用独立的进程凭据，只授权 inventory/package/mcp-inventory/weknora-configure 四个 POST 端点，禁止重定向；媒体规划凭据的范围不变。REST 仍检查 Origin、实例访问验证及实际会话/worker，返回 no-store。该进程凭据不进入模型提示、工具结果或 JSONL，它不同于用户选择在对话中提供的 WeKnora Key。它不隔离同一系统用户下的恶意扩展。包与 WeKnora 确认通过原有 RPC UI；取消不提交，请求中断不表示服务端取消。写入复用原生设置互斥，不另开同会话 worker。
 
 ## 执行记录中的技能与扩展来源
 

@@ -369,7 +369,7 @@ async function runChat(browser, base, width, locale) {
             saved: { id: 'profile-one', name: 'Research', enabled: true, available: true }, loadedProfileId: 'profile-one', loadedConfirmed: true, matchesSavedProfile: true } });
         return reply(ws, cmd, {});
     }));
-    await page.goto(base);
+    await page.goto(new URL('#/chat', base).href);
     await page.locator('#pi-input:not([disabled])').waitFor();
     const zh = locale.startsWith('zh');
     const say = (source, english) => zh ? source : english;

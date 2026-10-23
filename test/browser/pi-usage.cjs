@@ -44,7 +44,7 @@ function fixture(query) {
                 return route.fulfill({ json: {} });
             });
             await page.routeWebSocket('**/api/pi/ws', () => { throw new Error('No runtime should be opened'); });
-            await page.goto(base, { waitUntil: 'domcontentloaded' });
+            await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
             await page.locator('#workspace-settings-toggle').click();
             assert.equal(calls.length, 0);
             await page.locator('[data-settings-tab="usage"]').click();

@@ -56,7 +56,7 @@ async function run(browser, base, width, language) {
         const data = cmd.type === 'open_session' ? { session: cmd.sessionId === 'other' ? other : session, state, messages: { messages: [] }, stats: {}, models: { models: [model] }, thinkingLevels: { levels: ['off'] }, commands: { commands: [] } } : cmd.type === 'get_messages' ? { messages: [] } : cmd.type === 'get_state' ? state : {};
         ws.send(JSON.stringify({ type: 'response', id: cmd.id, command: cmd.type, success: true, data }));
     }));
-    await page.goto(base, { waitUntil: 'domcontentloaded' }); await page.locator('[data-session-id="files"]').waitFor({ state: 'attached' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' }); await page.locator('[data-session-id="files"]').waitFor({ state: 'attached' });
     await openInspector(page, 'changes');
     const row = relative => page.locator('.pi-file-tree-row').and(page.locator(`[data-path="${relative}"]`));
     await row('README.md').waitFor();

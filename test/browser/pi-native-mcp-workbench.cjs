@@ -37,7 +37,7 @@ async function run(browser, base, width, locale) {
         if (cmd.type === 'get_state') return reply({ sessionId: session.id, model, isStreaming: false, webShell: { runtimeId: 'runtime', revision: 1, busy: false } });
         return reply({});
     }); });
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.PiNativeRuntime?.currentSession?.()?.runtimeId));
     assert.equal(await page.evaluate(() => PiNativeRuntime.currentSession().runtimeId), 'runtime');
     await page.evaluate(() => PiWorkspaceRoute.navigate('extensions', { tab: 'mcp' }));

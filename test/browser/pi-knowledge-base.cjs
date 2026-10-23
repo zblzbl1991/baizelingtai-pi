@@ -16,16 +16,20 @@ const server = http.createServer((req, res) => {
             page.on('pageerror', error => errors.push(error.message));
             await page.goto(`http://127.0.0.1:${server.address().port}`);
             await page.evaluate(() => {
-                window.PiI18n = { locale: 'en' }; window.calls = []; window.selected = null; window.revision = 'a'.repeat(64); window.drafts = []; window.blockDraft = false;
+                window.PiI18n = { locale: 'en' }; window.calls = []; window.selected = null; window.revision = 'a'.repeat(64); window.drafts = []; window.blockDraft = false; window.routes = [];
+                window.PiWorkspaceRoute = { navigate: (...args) => window.routes.push(args) };
                 window.PiChatNavigation = { openSession: async input => { if (window.blockDraft) throw Error('retained draft'); window.drafts.push(input); } };
                 const ops = { bases: 'mcp__weknora__list_knowledge_bases', documents: 'mcp__weknora__list_documents', search: 'mcp__weknora__search_knowledge', read: 'mcp__weknora__read_document', chunks: 'mcp__weknora__list_chunks' };
                 const host = { currentCwd: () => '/fixture/project', currentSession: () => window.selected, apiFetch: async (url, options) => {
                     const input = options && JSON.parse(options.body); window.calls.push(input || url);
                     if (!input) return { servers: url.includes('scope=global') ? [{ name: 'weknora', enabled: true, valid: true }] : [{ name: 'untrusted-only', enabled: true, valid: true }], trust: { effective: false } };
-                    if (window.failRead && input.action === 'knowledge-read') throw { data: { code: 'MCP_KNOWLEDGE_READ_FAILED' }, message: 'private-transport-secret' };
-                    if (input.action === 'knowledge-catalog') return { revision: window.revision, servers: [{ name: 'weknora', searchRequiresBase: !!window.bridge, operations: { ...ops, ...(window.bridge ? { chunks: null } : {}) } }] };
-                    if (input.action === 'reconnect') return { servers: [{ name: 'weknora', state: 'connected' }] };
+                    if ((window.failRead || input.operation === 'search' && input.kbId === window.failScope) && input.action === 'knowledge-read') throw { data: { code: 'MCP_KNOWLEDGE_READ_FAILED' }, message: 'private-transport-secret' };
+                    if (input.action === 'knowledge-catalog') return { revision: window.revision, servers: window.disconnected ? [] : [{ name: 'weknora', searchRequiresBase: !!window.bridge, operations: { ...ops, ...(window.bridge ? { chunks: null } : {}) } }, { name: 'weknora-secondary', operations: ops }] };
+                    if (input.action === 'snapshot') return { outcome: 'completed', servers: ['weknora', 'weknora-secondary'].map(name => ({ name, state: window.disconnected ? 'disconnected' : 'connected' })) };
+                    if (input.action === 'reconnect') { if (window.unknownConnect) return { outcome: 'unknown', servers: [{ name: input.server, state: 'connected' }] }; window.disconnected = false; return { outcome: 'completed', servers: [{ name: input.server, state: 'connected' }] }; }
                     if (window.holdRead) await new Promise(resolve => { window.releaseRead = resolve; });
+                    if (window.manyBases && input.operation === 'bases') return { value: { knowledge_bases: Array.from({ length: 12 }, (_, index) => ({ id: `many-${index}`, name: `Knowledge base ${index + 1}` })) } };
+                    if (input.server === 'weknora-secondary') return { value: { knowledge_bases: [{ id: 'kb-other', name: '其他服务资料' }] } };
                     if (window.bridge) return { value: input.operation === 'bases' ? { knowledge_bases: [{ id: input.page === 2 ? 'kb-2' : 'kb-1', name: input.page === 2 ? '第二知识库' : '第一知识库' }], next_page: input.page === 2 ? null : 2 }
                         : input.operation === 'documents' ? { documents: [{ id: 'doc-1', title: '分页原文' }], page: input.page, next_page: input.page === 2 ? null : 2, total: 1 }
                             : input.operation === 'read' ? { document: { title: '分页原文' }, page: input.page || 1, page_size: 20, next_page: input.page === 2 ? null : 2,
@@ -45,12 +49,17 @@ const server = http.createServer((req, res) => {
             assert.equal(await page.evaluate(() => calls.filter(c => typeof c === 'object').length), 0);
             assert.equal(await page.getByRole('button', { name: 'Connect selected server', exact: true }).isDisabled(), true);
             assert.equal(await page.getByRole('option', { name: 'untrusted-only' }).count(), 0);
-            await page.evaluate(() => { window.selected = { cwd: '/fixture/project', id: 'session-1', runtimeId: 'runtime-1' }; });
-            await page.getByRole('button', { name: 'Refresh configuration and tools' }).click();
-            await page.getByRole('status').filter({ hasText: 'Tools are ready' }).waitFor();
-            assert.equal(await page.evaluate(() => calls.filter(c => c.action === 'knowledge-read').length), 0);
-            await page.getByRole('button', { name: 'Load knowledge bases' }).click();
-            await page.getByRole('combobox', { name: 'Select knowledge base' }).selectOption('kb-1');
+            assert.equal(await page.getByRole('button', { name: 'Ask in chat', exact: true }).count(), 0);
+            assert.equal(await page.getByRole('searchbox', { name: 'Question or keywords', exact: true }).count(), 0);
+            await page.getByRole('button', { name: 'Go to assistant', exact: true }).click();
+            assert.deepEqual(await page.evaluate(() => routes), [['assistant']]);
+            assert.deepEqual(await page.evaluate(() => drafts), []);
+            assert.equal(await page.evaluate(() => calls.filter(c => typeof c === 'object').length), 0, 'assistant navigation does not require a worker or knowledge connection');
+            await page.evaluate(() => { window.selected = { cwd: '/fixture/project', id: 'session-1', runtimeId: 'runtime-1' }; window.dispatchEvent(new CustomEvent('workspace:native-runtime-changed')); });
+            await page.locator('.knowledge-connection-tools').evaluate(el => { el.open = true; });
+            await page.getByRole('status').filter({ hasText: 'knowledge bases loaded' }).waitFor({ timeout: 2500 });
+            assert.equal(await page.evaluate(() => calls.filter(c => c.operation === 'bases').length), 1, 'opening a connected service loads the list once');
+            await page.getByRole('checkbox', { name: /工程资料|第一知识库/ }).check();
             await page.getByRole('button', { name: 'Browse documents' }).click();
             await page.getByRole('heading', { name: '工程规程', exact: true }).waitFor();
             await page.getByRole('button', { name: 'Next page', exact: true }).click();
@@ -61,7 +70,9 @@ const server = http.createServer((req, res) => {
             assert.equal(await page.locator('.knowledge-detail img').count(), 0);
             await page.getByRole('button', { name: 'Read next section' }).click();
             await page.waitForFunction(() => calls.filter(c => c.operation === 'read').at(-1).offset === 20);
-            await page.getByRole('searchbox', { name: 'Question or keywords', exact: true }).fill('验收要求');
+            await page.getByRole('searchbox', { name: 'Search keywords', exact: true }).fill('验收要求');
+            await page.getByRole('button', { name: 'Go to assistant', exact: true }).click();
+            assert.deepEqual(await page.evaluate(() => drafts), [], 'search keywords are not turned into a question draft');
             await page.getByRole('button', { name: 'Search knowledge base', exact: true }).click();
             await page.getByRole('heading', { name: '<script>Title</script>', exact: true }).waitFor();
             assert.equal(await page.locator('.knowledge-results script, .knowledge-results img').count(), 0);
@@ -72,8 +83,10 @@ const server = http.createServer((req, res) => {
             }
             await page.getByRole('button', { name: 'Cite in chat' }).click();
             assert.match(await page.evaluate(() => drafts[0].draft), /doc-1/); assert.match(await page.evaluate(() => drafts[0].draft), /验收要求/);
+            assert.match(await page.evaluate(() => drafts[0].draft), /Search keywords: 验收要求/);
+            assert.doesNotMatch(await page.evaluate(() => drafts[0].draft), /My question:/);
             await page.evaluate(() => { window.blockDraft = true; });
-            await page.getByRole('button', { name: 'Ask in chat' }).click();
+            await page.getByRole('button', { name: 'Cite in chat' }).click();
             await page.getByRole('status').filter({ hasText: 'No chat draft was inserted' }).waitFor(); assert.equal(await page.evaluate(() => drafts.length), 1);
             await page.evaluate(() => { window.failRead = true; });
             await page.getByRole('button', { name: 'Search knowledge base', exact: true }).click();
@@ -84,23 +97,22 @@ const server = http.createServer((req, res) => {
             await page.evaluate(() => { window.panel.close(); window.releaseRead(); });
             assert.equal(await page.locator('.knowledge-results').innerText(), '');
             await page.evaluate(() => { window.holdRead = false; window.panel.open(); });
-            await page.getByRole('status').filter({ hasText: 'Tools are ready' }).waitFor();
-            await page.getByRole('button', { name: 'Load knowledge bases' }).click();
-            await page.getByRole('combobox', { name: 'Select knowledge base' }).selectOption('kb-1');
-            await page.getByRole('searchbox', { name: 'Question or keywords', exact: true }).fill('验收要求');
+            await page.getByRole('status').filter({ hasText: 'knowledge bases loaded' }).waitFor();
+            await page.getByRole('checkbox', { name: /工程资料|第一知识库/ }).check();
+            await page.getByRole('searchbox', { name: 'Search keywords', exact: true }).fill('验收要求');
             await page.evaluate(() => { window.selected = { cwd: '/fixture/project', id: 'session-2', runtimeId: 'runtime-2' }; });
             const prior = await page.evaluate(() => calls.length);
             await page.getByRole('button', { name: 'Search knowledge base', exact: true }).click();
             assert.equal(await page.evaluate(() => calls.length), prior, 'stale session may not receive a read');
             await page.evaluate(() => { window.bridge = true; });
+            await page.locator('.knowledge-connection-tools').evaluate(el => { el.open = true; });
             await page.getByRole('button', { name: 'Refresh configuration and tools' }).click();
-            await page.getByRole('status').filter({ hasText: 'Tools are ready' }).waitFor();
+            await page.getByRole('status').filter({ hasText: 'knowledge bases loaded' }).waitFor();
             assert.equal(await page.getByRole('button', { name: 'Search knowledge base', exact: true }).isDisabled(), true);
-            await page.getByRole('button', { name: 'Load knowledge bases' }).click();
-            await page.getByRole('combobox', { name: 'Select knowledge base' }).selectOption('kb-1');
+            await page.getByRole('checkbox', { name: /工程资料|第一知识库/ }).check();
             await page.getByRole('button', { name: 'More knowledge bases' }).click();
-            await page.getByRole('option', { name: '第二知识库' }).waitFor({ state: 'attached' });
-            assert.equal(await page.getByRole('combobox', { name: 'Select knowledge base' }).inputValue(), 'kb-1');
+            await page.getByRole('checkbox', { name: '第二知识库', exact: true }).waitFor();
+            assert.equal(await page.getByRole('checkbox', { name: '第一知识库', exact: true }).isChecked(), true);
             assert.equal(await page.getByRole('button', { name: 'More knowledge bases' }).isHidden(), true);
             await page.getByRole('button', { name: 'Browse documents' }).click();
             assert.equal(await page.getByRole('button', { name: 'Next page', exact: true }).isEnabled(), true);
@@ -117,12 +129,116 @@ const server = http.createServer((req, res) => {
             assert.equal(await page.getByRole('button', { name: 'Next source page' }).count(), 0);
             await page.getByRole('button', { name: 'Previous source page' }).click();
             await page.getByText('完整乙段', { exact: true }).waitFor();
+            // Name filtering never silently removes an already selected scope.
+            const filter = page.getByRole('searchbox', { name: 'Filter knowledge bases', exact: true });
+            await filter.fill('第二');
+            assert.equal(await page.getByRole('checkbox', { name: '第一知识库', exact: true }).count(), 0);
+            await page.getByRole('checkbox', { name: '第二知识库', exact: true }).check();
+            await filter.fill('');
+            assert.equal(await page.getByRole('checkbox', { name: '第一知识库', exact: true }).isChecked(), true);
+            assert.equal(await page.getByRole('button', { name: 'Browse documents', exact: true }).isDisabled(), true);
+            const searchCount = await page.evaluate(() => calls.filter(c => c.operation === 'search').length);
+            await page.getByRole('button', { name: 'Search knowledge base', exact: true }).click();
+            await page.getByRole('status').filter({ hasText: 'items returned' }).waitFor();
+            assert.deepEqual(await page.evaluate(count => calls.filter(c => c.operation === 'search').slice(count).map(c => c.kbId), searchCount), ['kb-1', 'kb-2']);
+            await page.evaluate(() => { window.failScope = 'kb-2'; });
+            const beforeFailure = await page.evaluate(() => calls.filter(c => c.operation === 'search').length);
+            await page.getByRole('button', { name: 'Search knowledge base', exact: true }).click();
+            await page.getByRole('status').filter({ hasText: 'will not retry automatically' }).waitFor();
+            assert.deepEqual(await page.evaluate(count => calls.filter(c => c.operation === 'search').slice(count).map(c => c.kbId), beforeFailure), ['kb-1', 'kb-2']);
+            assert.equal(await page.locator('.knowledge-result').count(), 0, 'a failed combined search does not present a partial batch as complete');
+            await page.evaluate(() => { window.failScope = null; });
+            // Closing during the first multi-base call cannot dispatch the next.
+            await page.evaluate(() => { window.holdRead = true; delete window.releaseRead; });
+            const beforeClose = await page.evaluate(() => calls.filter(c => c.operation === 'search').length);
+            await page.getByRole('button', { name: 'Search knowledge base', exact: true }).click();
+            await page.waitForFunction(() => !!window.releaseRead);
+            assert.equal(await page.getByRole('checkbox', { name: '第二知识库', exact: true }).isDisabled(), true);
+            await page.evaluate(() => { window.panel.close(); window.releaseRead(); });
+            await page.waitForTimeout(80);
+            assert.equal(await page.evaluate(() => calls.filter(c => c.operation === 'search').length), beforeClose + 1);
+            assert.equal(await page.locator('.knowledge-results').innerText(), '');
+            // A failed automatic list read stops, rather than becoming a retry loop.
+            await page.evaluate(() => { window.holdRead = false; window.failRead = true; window.panel.open(); });
+            await page.getByRole('status').filter({ hasText: 'will not retry automatically' }).waitFor();
+            const failedCount = await page.evaluate(() => calls.length);
+            await page.waitForTimeout(80);
+            assert.equal(await page.evaluate(() => calls.length), failedCount);
+            // A known disconnected WeKnora connects once and loads automatically.
+            const beforeConnect = await page.evaluate(() => calls.filter(c => c.operation === 'bases').length);
+            await page.evaluate(() => { window.failRead = false; window.disconnected = true; });
+            await page.getByRole('button', { name: 'Refresh configuration and tools' }).click();
+            await page.getByRole('checkbox', { name: '第一知识库', exact: true }).waitFor();
+            assert.equal(await page.evaluate(() => calls.filter(c => c.operation === 'bases').length), beforeConnect + 1);
+            assert.equal(await page.evaluate(() => calls.filter(c => c.action === 'reconnect').length), 1);
+            await page.getByRole('combobox', { name: 'Knowledge MCP server', exact: true }).selectOption('weknora-secondary');
+            await page.getByRole('checkbox', { name: '其他服务资料', exact: true }).waitFor();
+            assert.equal(await page.getByRole('checkbox', { name: '第一知识库', exact: true }).count(), 0);
+            assert.equal(await page.evaluate(() => calls.filter(c => c.operation === 'bases').at(-1).server), 'weknora-secondary');
+            await page.evaluate(() => { window.manyBases = true; });
+            await page.getByRole('button', { name: 'Refresh list', exact: true }).click();
+            await page.getByRole('checkbox', { name: 'Knowledge base 12', exact: true }).waitFor();
+            for (let index = 1; index <= 10; index++) await page.getByRole('checkbox', { name: `Knowledge base ${index}`, exact: true }).check();
+            assert.equal(await page.getByRole('checkbox', { name: 'Knowledge base 11', exact: true }).isDisabled(), true);
+            assert.equal(await page.getByRole('checkbox', { name: 'Knowledge base 10', exact: true }).evaluate(el => document.activeElement === el), true, 'selection retains keyboard focus');
+            await page.getByRole('button', { name: 'Clear selection', exact: true }).click();
+            assert.equal(await page.getByRole('checkbox', { name: 'Knowledge base 11', exact: true }).isEnabled(), true);
+            assert.equal(await page.getByRole('button', { name: 'All knowledge bases', exact: true }).getAttribute('aria-pressed'), 'true');
             for (const theme of ['', 'dark']) {
                 await page.evaluate(theme => document.body.className = theme, theme);
                 assert.ok(await page.evaluate(() => [...document.querySelectorAll('.knowledge-base button,.knowledge-base input,.knowledge-base select')].filter(n => n.getClientRects().length).every(n => n.getBoundingClientRect().right <= innerWidth + 1)));
             }
             assert.deepEqual(errors, []);
             if (process.env.PIVANE_TEST_SCREENSHOT_DIR) { fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, `knowledge-${width}.png`), fullPage: true }); }
+            // Opening while a restored session is working waits for actual idle,
+            // without dispatching a read that would fail or replaying a failure.
+            await page.evaluate(() => {
+                panel.close(); window.runtimeState = { generation: 1, busy: true };
+                window.PiNativeRuntime = { context: () => window.runtimeState };
+                panel.open();
+            });
+            await page.getByRole('status').filter({ hasText: 'load when it becomes idle' }).waitFor();
+            const beforeIdle = await page.evaluate(() => calls.filter(c => typeof c === 'object').length);
+            await page.evaluate(() => { runtimeState.busy = false; window.dispatchEvent(new CustomEvent('workspace:native-runtime-changed')); });
+            await page.getByRole('checkbox', { name: 'Knowledge base 1', exact: true }).waitFor();
+            assert.equal(await page.evaluate(() => calls.filter(c => typeof c === 'object').length), beforeIdle + 2, 'idle triggers one catalog and one list read');
+            const stableCount = await page.evaluate(() => calls.length);
+            await page.evaluate(() => { for (let i = 0; i < 5; i++) window.dispatchEvent(new CustomEvent('workspace:native-runtime-changed')); });
+            await page.waitForTimeout(80);
+            assert.equal(await page.evaluate(() => calls.length), stableCount, 'duplicate readiness notifications do not reload');
+            // Context changes during a read invalidate its response, but keep its
+            // native slot until completion before loading the new context.
+            await page.evaluate(() => { window.holdRead = true; delete window.releaseRead; });
+            await page.getByRole('button', { name: 'Refresh list', exact: true }).click();
+            await page.waitForFunction(() => !!window.releaseRead);
+            const inFlightCount = await page.evaluate(() => calls.length);
+            await page.evaluate(() => { window.selected = { ...selected, id: 'session-2', runtimeId: 'runtime-2' }; runtimeState.generation++; window.dispatchEvent(new CustomEvent('workspace:native-runtime-changed')); });
+            await page.waitForTimeout(80);
+            assert.equal(await page.evaluate(() => calls.length), inFlightCount, 'switching context does not overlap a pending native read');
+            await page.evaluate(() => { window.holdRead = false; window.releaseRead(); });
+            await page.getByRole('status').filter({ hasText: 'knowledge bases loaded' }).waitFor();
+            assert.equal(await page.evaluate(() => calls.filter(c => c.operation === 'bases').at(-1).runtimeId), 'runtime-2');
+            // An uncertain native connection cannot be inferred successful from
+            // its status row and is not replayed on notifications or refresh.
+            const beforeUncertainConnect = await page.evaluate(() => calls.filter(c => c.action === 'reconnect').length);
+            await page.evaluate(() => { window.disconnected = true; window.unknownConnect = true; runtimeState.generation++; window.dispatchEvent(new CustomEvent('workspace:native-runtime-changed')); });
+            await page.getByRole('status').filter({ hasText: 'No WeKnora read tools' }).waitFor();
+            const uncertainCalls = await page.evaluate(() => calls.filter(c => c.action === 'reconnect').length);
+            assert.equal(uncertainCalls, beforeUncertainConnect + 1, 'the uncertainty scenario reaches one actual connection attempt');
+            const uncertainReads = await page.evaluate(() => calls.filter(c => c.operation === 'bases').length);
+            await page.getByRole('button', { name: 'Refresh configuration and tools' }).click();
+            await page.getByRole('status').filter({ hasText: 'No WeKnora read tools' }).waitFor();
+            assert.equal(await page.evaluate(() => calls.filter(c => c.action === 'reconnect').length), uncertainCalls);
+            assert.equal(await page.evaluate(() => calls.filter(c => c.operation === 'bases').length), uncertainReads);
+            await page.evaluate(() => { window.unknownConnect = false; });
+            await page.getByRole('button', { name: 'Connect selected server', exact: true }).click();
+            await page.getByRole('status').filter({ hasText: 'knowledge bases loaded' }).waitFor();
+            assert.equal(await page.evaluate(() => calls.filter(c => c.action === 'reconnect').length), uncertainCalls + 1, 'explicit connection can recover after an uncertain automatic attempt');
+            await page.evaluate(() => { panel.close(); runtimeState.generation++; window.dispatchEvent(new CustomEvent('workspace:native-runtime-changed')); });
+            const closedCalls = await page.evaluate(() => calls.length);
+            await page.waitForTimeout(80);
+            assert.equal(await page.evaluate(() => calls.length), closedCalls);
+            assert.deepEqual(errors, []);
             await page.close(); console.log(`knowledge base ${width}: PASS`);
         }
     } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

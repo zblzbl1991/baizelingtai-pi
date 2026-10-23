@@ -78,7 +78,7 @@ async function run(browser, viewport) {
             }));
         }
     }
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.querySelector('.pi-turn-edits'));
     const windowsLinks = await page.evaluate(() => {
         const target = window.PiFileViewer.linkTarget;
@@ -142,7 +142,7 @@ async function run(browser, viewport) {
     assert.equal(await page.locator('#pi-inspector').evaluate(n => n.classList.contains('open')), true);
     await page.locator('#pi-changes-file-list > summary').click();
     await page.locator('#pi-changes-round').waitFor({ state: 'visible' });
-    await checkPopup(page, '.pi-file-picker-panel');
+    await checkPopup(page, '#pi-changes-file-list .pi-file-picker-panel');
     assert.equal(await page.locator('#pi-file-body').evaluate(n => n.clientHeight), geometry.clientHeight, 'navigation overlays rather than shrinks the reader');
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#pi-changes-file-list').evaluate(n => n.open), false);

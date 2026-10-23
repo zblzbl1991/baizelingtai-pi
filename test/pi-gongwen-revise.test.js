@@ -72,7 +72,7 @@ test('revision versions preserve original identity, reuse complete requests and 
     const context = { cwd, sessionId: 'synthetic-revision' }, source = { reference, bytes };
     try {
         const saved = await service.revise(context, request({ layout: false }), source);
-        assert.equal(saved.files[0].name, '修订公文.docx'); assert.equal((await service.revise(context, request({ layout: false }), source)).reused, true);
+        assert.equal(saved.files[0].name, `培训通知-${saved.id.slice(0, 12)}-修订.docx`); assert.equal((await service.revise(context, request({ layout: false }), source)).reused, true);
         await assert.rejects(service.revise(context, request({ layout: true }), source), { code: 'GONGWEN_CONFLICT' });
         const originalOutput = fs.readFileSync(saved.files[0].path);
         const newVersion = await service.revise(context, request({ requestId: 'next', layout: false }), source);

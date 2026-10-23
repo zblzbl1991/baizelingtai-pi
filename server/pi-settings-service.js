@@ -12,6 +12,10 @@ const THINKING_MAP_KEYS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', '
 // These editor fields are user choices. Native modelOverrides apply after both
 // models.json definitions and extension registrations, including on reload.
 const CUSTOM_MODEL_OVERRIDE_FIELDS = ['name', 'reasoning', 'input', 'contextWindow', 'maxTokens'];
+const PROVIDER_PRESETS = [{
+    id: 'xingtong', name: '星通', baseUrl: 'http://token.xt.com/v1',
+    api: 'openai-completions', authHeader: true, modelId: 'deepseek-v4-flash'
+}];
 
 function cleanModelId(value) {
     if (typeof value !== 'string' || !value.trim() || value.length > 500 || /[\u0000-\u0020\u007f]/.test(value) || ['__proto__', 'prototype', 'constructor'].includes(value)) throw new Error('Invalid model ID');
@@ -168,7 +172,7 @@ class PiSettingsService {
             const status = runtime.getProviderAuthStatus(provider.id);
             return {
                 id: provider.id,
-                name: provider.name || provider.id,
+                name: PROVIDER_PRESETS.find(preset => preset.id === provider.id)?.name || provider.name || provider.id,
                 configured: Boolean(status.configured),
                 authSource: status.source || null,
                 authLabel: status.label || null,
@@ -186,6 +190,15 @@ class PiSettingsService {
             };
         });
 
+        const customProviders = await this.listCustomProviders();
+        // Unconfigured presets are a settings-only preview. Reading the catalog
+        // must not write models.json or make a model available to sessions.
+        for (const preset of PROVIDER_PRESETS) {
+            if (providers.some(provider => provider.id === preset.id) || customProviders.some(provider => provider.id === preset.id)) continue;
+            providers.push({ ...preset, preset: true, configured: false, authMethods: {}, modelCount: 1 });
+            models.push({ provider: preset.id, id: preset.modelId, name: preset.modelId,
+                preset: true, available: false, input: ['text'], reasoning: false });
+        }
         const { SettingsManager, getAgentDir } = await getSdk();
         const settings = SettingsManager.create(this.cwdFallback, getAgentDir());
         return {
@@ -207,7 +220,7 @@ class PiSettingsService {
                 sessionTitles: this.workspacePreferencesService.getSessionTitles(),
                 mediaAgent: this.workspacePreferencesService.getMediaAgent()
             },
-            customProviders: await this.listCustomProviders()
+            customProviders
         };
     }
 
@@ -432,6 +445,7 @@ class PiSettingsService {
         const baseUrl = cleanUrl(input.baseUrl, true);
         const { modelsPath } = await this.paths();
         const data = this.readModelsFile(modelsPath);
+        const isNew = !Object.hasOwn(data.providers, id);
         const current = data.providers[id] && typeof data.providers[id] === 'object' ? data.providers[id] : {};
         data.providers[id] = {
             ...current,
@@ -440,6 +454,10 @@ class PiSettingsService {
             authHeader: Boolean(input.authHeader),
             models: Array.isArray(current.models) ? current.models : []
         };
+        const preset = PROVIDER_PRESETS.find(item => item.id === id);
+        if (preset && isNew) {
+            data.providers[id].models.push({ id: preset.modelId });
+        }
         await this.writeModelsFile(data);
         return { ok: true, providerId: id, requiresRuntimeRestart: true };
     }

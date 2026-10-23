@@ -90,7 +90,7 @@ async function run(browser, viewport, theme) {
         assert.deepEqual(bad, []);
         assert.equal(await page.locator('#pi-input').isEnabled(), true);
     };
-    await page.goto(base, { waitUntil: 'domcontentloaded' }); await page.locator('.pi-message-tts').waitFor();
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' }); await page.locator('.pi-message-tts').waitFor();
     assert.equal(await page.locator('.pi-message-tts').count(), 1, 'only the final reply');
     let release; holdExecute = new Promise(resolve => { release = resolve; });
     await speaker(); await waitText('正在生成'); await waitExecutions(1);

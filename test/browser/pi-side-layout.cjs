@@ -63,7 +63,7 @@ async function run(browser, base, viewport, locale, preferred = 336, navExpanded
             ws.send(JSON.stringify({ type: 'response', id: cmd.id, command: cmd.type, success: true, data }));
         });
     });
-    await page.goto(base, { waitUntil: 'load' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'load' });
     await page.locator('#pi-input:not([disabled])').waitFor();
     await page.locator('#pi-input').fill('Main draft stays here');
     await openInspector(page, 'side');

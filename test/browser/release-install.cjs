@@ -36,7 +36,7 @@ async function get(url) { const response = await fetch(base + url); assert.equal
             const errors=[]; page.on('pageerror',e=>errors.push(e.message));
             // External decoration is irrelevant to this onboarding test; all application API/WS are real.
             await page.route(/https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com|cdnjs\.cloudflare\.com)\//,r=>r.abort());
-            await page.goto(base,{waitUntil:'domcontentloaded'});
+            await page.goto(new URL('#/chat', base).href,{waitUntil:'domcontentloaded'});
             const iconFonts=await page.evaluate(async()=>{
                 const fonts=await document.fonts.load('900 16px "Font Awesome 6 Free"', '\uf013');
                 return fonts.map(font=>({family:font.family,status:font.status}));

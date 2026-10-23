@@ -15,7 +15,7 @@ async function run(browser, base, width, locale) {
     if (!browserTargetEnabled(width)) return;
     const context = await browser.newContext({ locale, viewport: { width, height: width < 900 ? 852 : 1000 }, isMobile: width < 900, hasTouch: width < 900, acceptDownloads: true });
     const page = await context.newPage(), errors = [], uploads = [], prompts = [], saved = new Map(), threads = sessions.map(session => ({ ...session }));
-    let active = 'a', reject = false, held, hold = false, loseResponse = false; const messages = { a: [], b: [] };
+    let active = 'a', reject = false, held, hold = false, loseResponse = false, previewHeld, holdPreview = false; const messages = { a: [], b: [] }, previewRequests = [];
     const textOf = message => typeof message.content === 'string' ? message.content : message.content.filter(block => block.type === 'text').map(block => block.text).join('');
     page.on('pageerror', e => errors.push(e.message));
     await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, r => r.abort());
@@ -37,13 +37,17 @@ async function run(browser, base, width, locale) {
         if (endpoint === '/api/pi/office/preview') {
             const { source } = req.postDataJSON(), found = uploads.find(item => item.reference.id === source.id);
             assert.equal(source.type, 'upload'); assert.equal(source.sessionId, active); assert.ok(found);
-            return json({ source: found.reference, preview: { kind: 'workbook', encoding: 'base64', base64: found.bytes.toString('base64'), size: found.bytes.length }, warnings: [] });
+            previewRequests.push(req.postDataJSON());
+            const respond = () => json({ source: found.reference, preview: { kind: 'workbook', encoding: 'base64', base64: found.bytes.toString('base64'), size: found.bytes.length }, warnings: [] });
+            if (holdPreview) { previewHeld = respond; return; } return respond();
         }
         if (endpoint === '/api/pi/uploads') {
             const found = uploads.find(item => item.reference.id === url.searchParams.get('id')); assert.ok(found); assert.equal(url.searchParams.get('sessionId'), active);
             return route.fulfill({ body: found.bytes, contentType: 'application/octet-stream' });
         }
-        if (endpoint === '/api/pi/status') return json({ ok: true, documentUploads: true, sessionWorkflows: true, projectRoots: ['/projects'] });
+        if (endpoint === '/api/pi/status') return json({ ok: true, documentUploads: true, sessionWorkflows: true, fileViewer: true, fileBrowser: true, filePreviews: true, deliverables: true, projectRoots: ['/projects'] });
+        if (endpoint === '/api/pi/files/list') return json({ entries: [{ path: 'README.md', name: 'README.md', kind: 'file' }] });
+        if (endpoint === '/api/pi/deliverables') return json({ items: [] });
         if (endpoint === '/api/pi/projects') return json({ projects: [{ cwd, name: 'Office fixture', sessionCount: threads.length }], roots: ['/projects'] });
         if (endpoint === '/api/pi/sessions') return json({ sessions: threads });
         if (endpoint === '/api/pi/activity') return json({ runtimes: [], pinnedProjects: [], hiddenProjects: [], replyNotices: [] });
@@ -74,7 +78,7 @@ async function run(browser, base, width, locale) {
         }
         throw new Error('Unexpected RPC: ' + cmd.type);
     }));
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     const input = page.locator('#pi-input'), chips = page.locator('#pi-attachments .pi-attachment-chip');
     await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
     const count = n => page.waitForFunction(n => document.querySelectorAll('#pi-attachments .pi-attachment-chip').length === n && document.querySelector('#pi-attachments').getAttribute('aria-busy') === 'false', n);
@@ -111,15 +115,43 @@ async function run(browser, base, width, locale) {
     const legacy = fs.readFileSync(path.join(root, 'test/fixtures/office/preview.xls'));
     await select([{ name: 'legacy.xls', buffer: legacy, mimeType: 'application/octet-stream' }]); await count(1);
     assert.match(await chips.innerText(), locale === 'en' ? /Preview and download only/ : /仅预览和下载/);
-    await page.locator('[data-preview-attachment]').first().click(); await page.locator('.pi-document-preview td[data-address=A1]').waitFor();
-    const legacyDownloadEvent = page.waitForEvent('download'); await page.locator('.pi-document-preview header button').first().click();
+    await page.locator('[data-preview-attachment]').first().click(); await page.locator('#pi-file-body td[data-address=A1]').waitFor();
+    assert.equal(await page.locator('.pi-document-preview').count(), 0, 'main draft reuses the sidebar, not a second reader');
+    assert.deepEqual(await page.locator('.pi-files-modes > button').allTextContents(), locale === 'en' ? ['Browse', 'Files this turn', 'Deliverables', 'Chat attachments'] : ['浏览', '本轮文件', '交付物', '聊天附件']);
+    const legacyDownloadEvent = page.waitForEvent('download'); await page.locator('#pi-file-download').click();
     const legacyDownload = await legacyDownloadEvent; assert.deepEqual(fs.readFileSync(await legacyDownload.path()), legacy);
-    await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('.pi-document-preview[open]'));
+    await page.locator('#pi-file-body td[data-address=A1]').click();
+    const selected = await page.locator('.pi-office-table-selection').innerText();
+    await page.locator('#pi-file-fullscreen').click(); await page.locator('#pi-file-fullscreen-dialog[open]').waitFor();
+    await page.keyboard.press('Escape'); assert.equal(await page.locator('.pi-office-table-selection').innerText(), selected);
+    await page.locator('#pi-close-inspector').click();
+    await page.locator('#pi-tool-changes').click(); await page.locator('#pi-file-body td[data-address=A1]').waitFor();
+    assert.equal(await page.locator('#pi-files-uploads').getAttribute('aria-pressed'), 'true');
     assert.equal(await input.inputValue(), 'retain old draft'); await count(1); await clear();
+    await page.waitForFunction(() => !document.querySelector('#pi-file-body .pi-office-file-preview'));
+    // All three existing modes still work alongside the appended attachment mode.
+    await page.locator('#pi-files-project').click(); await page.locator('.pi-file-tree-row[data-path="README.md"]').waitFor();
+    assert.equal(await page.locator('#pi-files-history').isVisible(), false, 'turn-files tab stays hidden until a native turn-files card opens it');
+    await page.locator('#pi-files-deliveries').click(); await page.locator('#pi-deliveries-list').waitFor();
+    assert.equal(await page.locator('#pi-files-deliveries').getAttribute('aria-pressed'), 'true');
+    await page.locator('#pi-files-uploads').click(); await page.locator('#pi-uploads-list .pi-delivery-card').first().waitFor();
+    await page.locator('#pi-close-inspector').click();
+    // An aborted conversion must never populate the new thread, even if HTTP completes late.
+    await select([{ name: 'late.xls', buffer: legacy, mimeType: 'application/octet-stream' }]); await count(1);
+    holdPreview = true; await page.locator('[data-preview-attachment]').first().click();
+    await page.waitForFunction(() => document.querySelector('#pi-file-body .pi-office-file-preview'));
+    while (!previewHeld) await page.waitForTimeout(10);
+    await switchTo('b'); holdPreview = false; await previewHeld(); await page.waitForTimeout(150);
+    assert.equal(await page.locator('#pi-file-body td').count(), 0); assert.equal(await page.locator('#pi-upload-picker .pi-file-tree-row').count(), 0);
+    await switchTo('a'); await clear(); await page.locator('#pi-close-inspector').click();
     // Scheduled-message editor uses the same raw upload and reference payload.
     await page.locator('#pi-composer-add-button').click(); await page.locator('#pi-schedule-button').click();
-    await page.locator('#pi-workflow-files').setInputFiles({ name: 'scheduled.pptx', mimeType: 'application/octet-stream', buffer: samples[2].buffer });
+    await page.locator('#pi-workflow-files').setInputFiles({ name: 'scheduled.xlsx', mimeType: 'application/octet-stream', buffer: require('../office-workbook-fixtures.cjs').workbook() });
     await page.waitForFunction(() => document.querySelector('#pi-workflow-documents .pi-document-card') && !document.querySelector('#pi-workflow-submit').disabled);
+    await page.locator('#pi-workflow-documents').getByRole('button', { name: locale === 'en' ? 'Preview document' : '预览文档', exact: true }).click();
+    await page.locator('.pi-document-preview td[data-address=A1]').waitFor();
+    await page.keyboard.press('Escape'); await page.locator('.pi-document-preview').waitFor({ state: 'detached' });
+    assert.equal(await page.locator('#pi-workflow-dialog').evaluate(n => n.open), true, 'scheduled editor keeps its own preview and remains open');
     await page.locator('#pi-workflow-close').click();
     await select([{ ...samples[0], name: 'long-name-'.repeat(16) + '.docx' }]); await count(1);
     const beforeForkUploads = uploads.length, beforeForkPrompts = prompts.length;
@@ -134,16 +166,18 @@ async function run(browser, base, width, locale) {
     assert.equal(uploads.length, beforeForkUploads, 'fork reuses original references without uploading');
     assert.equal(prompts.length, beforeForkPrompts, 'opening a fork never sends its draft');
     await page.locator('[data-preview-attachment]').first().click();
-    await page.locator('.pi-document-preview[open]').waitFor();
-    const forkDownloadEvent = page.waitForEvent('download'); await page.locator('.pi-document-preview header button').first().click();
+    await page.locator('#pi-file-viewer:not([hidden])').waitFor();
+    const forkDownloadEvent = page.waitForEvent('download'); await page.locator('#pi-file-download').click();
     const forkDownload = await forkDownloadEvent; assert.deepEqual(fs.readFileSync(await forkDownload.path()), samples[0].buffer);
-    await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('.pi-document-preview[open]'));
+    await page.locator('#pi-close-inspector').click();
     await page.locator('[data-remove-attachment]').last().click(); await count(4);
     await input.press('Enter'); await count(0);
     assert.equal((prompts.at(-1).message.match(/<pivane_document /g) || []).length, 4, 'removal changes the next message');
     assert.equal(await page.locator('.user .pi-document-card').count(), 4);
     await switchTo('a'); await count(1);
     assert.equal(await input.inputValue(), 'retain old draft', 'source draft and its existing attachment survive');
+    assert.ok(previewRequests.length >= 3);
+    assert.deepEqual(await page.locator('#pi-files-toolbar').evaluate(n => ({ overflow: n.scrollWidth > n.clientWidth + 1 })), { overflow: false });
     await page.screenshot({ path: `/tmp/pi-document-uploads-${width}-${locale}.png` });
     assert.equal(await page.evaluate(() => document.body.scrollWidth > document.body.clientWidth), false);
     assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.pi-document-card, .pi-attachment-chip')].filter(n => n.clientWidth && n.scrollWidth > n.clientWidth + 1).map(n => n.className)), []);

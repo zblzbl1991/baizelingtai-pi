@@ -15,6 +15,8 @@
             if (badge.hidden) return;
             const profile = session.ephemeral ? null : loadedProfile && Object.hasOwn(loadedProfile, 'saved') ? loadedProfile.saved : session.agentProfile;
             const name = profile ? (profile.name || t('未知身份')) : t('无身份');
+            const businessStopped = Boolean(profile?.business && profile.business.enabled !== true);
+            const businessLabel = globalThis.PiI18n?.locale === 'en' ? 'Business disabled or unavailable' : '业务已停用或不可用';
             badge.textContent = profile ? `${t('身份')}: ${name}${profile.available === false || profile.enabled === false ? ` · ${t('不可用')}` : ''}` : t('无身份');
             const loaded = connected && loadedProfile?.loadedConfirmed === true;
             const comparable = loaded && (!profile || typeof loadedProfile.savedProfileRevision === 'string' && typeof loadedProfile.loadedProfileRevision === 'string');
@@ -25,6 +27,7 @@
             const detail = !comparable ? t('运行中的身份尚未核对') : matches ? t('运行中设置与已保存设置一致') : t('运行中使用：{0}；已保存设置需重新打开线程后生效', loadedName);
             badge.title = profile ? `${t('会话保存的身份')}: ${name} · ${profile.available === false || profile.enabled === false ? `${t('当前身份不可用；不会自动改用其他身份')} · ` : ''}${detail}` : t('此线程没有身份绑定；不会使用身份记忆');
             $('pi-meta-profile').textContent = `${profile ? `${t('会话保存的身份')}: ${name}${profile.available === false || profile.enabled === false ? ` · ${t('不可用')}` : ''}` : t('无身份（不使用身份记忆）')} · ${detail}`;
+            if (businessStopped) { badge.textContent += ` · ${businessLabel}`; badge.title += ` · ${businessLabel}`; $('pi-meta-profile').textContent += ` · ${businessLabel}`; }
         }
         function invalidateLoaded() {
             loadedProfile = null;

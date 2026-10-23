@@ -166,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
         assistantRevision: null,
         assistantEpoch: 0,
         navigationEpoch: 0,
-        routeKey: location.hash || '#/chat',
+        routeKey: location.hash || '#/assistant',
         creatingSession: false,
         deletedSessions: new Set(),
         projects: [],
@@ -407,7 +407,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const documentAttachments = new window.PiDocumentAttachments({
         context: () => ({ cwd: state.cwd, session: state.session, connected: state.connected, generation: state.socketGeneration }),
-        api: apiFetch, toast, fetchBytes: url => (window.WorkspaceAccess?.fetch || fetch)(url, { headers: apiHeaders() })
+        api: apiFetch, toast, fetchBytes: url => (window.WorkspaceAccess?.fetch || fetch)(url, { headers: apiHeaders() }),
+        openPreview: (reference, options) => filesPanel.openUpload(reference, options), closeFilePreview: () => filesPanel.closeUploadPreview()
     });
     const documentStorageOpen = document.createElement('button');
     documentStorageOpen.id = 'pi-document-storage-open'; documentStorageOpen.type = 'button'; documentStorageOpen.hidden = true;
@@ -508,7 +509,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const filesPanel = new window.PiFilesPanel({
         showPane: mode => sideChat.showPane(mode), copy: copyTextToClipboard, notify: toast,
-        api: apiFetch, context: () => ({ cwd: state.cwd, sessionId: state.session?.id || null, connected: state.connected, key: JSON.stringify([state.cwd, state.session?.id]), generation: state.socketGeneration })
+        api: apiFetch, downloadUpload: reference => documentAttachments.download(reference), context: () => ({ cwd: state.cwd, sessionId: state.session?.id || null, connected: state.connected, key: JSON.stringify([state.cwd, state.session?.id]), generation: state.socketGeneration })
     });
     const deliveryCards = window.PiDeliveryCards.create({ context: filesPanel.host.context, downloads: filesPanel.downloads, api: apiFetch,
         open: target => filesPanel.openDelivery(target), notify: toast });
@@ -793,6 +794,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const label = loading.querySelector('[data-loading-label]');
             if (label) label.textContent = text;
         }
+        notifyNativeRuntime();
+    }
+
+    function notifyNativeRuntime() {
+        const runtime = window.PiNativeRuntime;
+        if (!runtime) return;
+        const key = JSON.stringify([runtime.currentSession(), runtime.context()]);
+        if (notifyNativeRuntime.key === key) return;
+        notifyNativeRuntime.key = key;
+        window.dispatchEvent(new CustomEvent('workspace:native-runtime-changed'));
     }
 
     // One projection for the footer: related work does not lock the main composer.
@@ -946,7 +957,7 @@ document.addEventListener('DOMContentLoaded', () => {
             historyView.setCapabilities(status);
             filesPanel.viewer.setEnabled(status.fileViewer === true);
             filesPanel.setEnabled(status.fileBrowser === true);
-            filesPanel.setCapabilities({ previews: status.filePreviews === true, deliverables: status.deliverables === true, roots: status.fileRoots === true, downloads: status.fileDownloads === true, limits: status.fileLimits });
+            filesPanel.setCapabilities({ previews: status.filePreviews === true, deliverables: status.deliverables === true, roots: status.fileRoots === true, downloads: status.fileDownloads === true, limits: status.fileLimits, uploads: status.documentUploads === true });
             composer.setEnabled(status.composerTools === true);
             state.composerTools = status.composerTools === true;
             voice?.setEnabled(status.transcription === true);
@@ -980,9 +991,11 @@ document.addEventListener('DOMContentLoaded', () => {
             sideChat.setEnabled(status.sideChat === true, status.sideChatContext === true, status.sideChatRetention === true, status.sideChatTools === true, status.sideChatModels === true, status.sideChatLifecycle === true);
             window.PiReplyTts.setEnabled(status.replyTts === true);
             elements.tokenDialog.classList.add('hidden');
+            await setup.boot(status);
+            const restoreWorkChat = !['assistant', 'setup'].includes(window.PiWorkspaceRoute?.current().tab);
             // Assistant projects do not depend on scanning every native project.
             const initialParams = window.PiWorkspaceRoute?.current().params;
-            const initialAssistant = state.assistantMode ? refreshAssistant({ profileId: initialParams?.get('profileId'),
+            const initialAssistant = window.PiWorkspaceRoute?.current().tab === 'assistant' ? refreshAssistant({ profileId: initialParams?.get('profileId'),
                 projectId: initialParams?.get('projectId'), sessionId: initialParams?.get('sessionId') }) : null;
             const initialAssistantEpoch = state.assistantEpoch;
             if (initialAssistant) setConnection('idle', translateUi('选择会话开始工作'));
@@ -993,7 +1006,7 @@ document.addEventListener('DOMContentLoaded', () => {
             void discovery.catch(() => {}); // The fallback below still observes failures.
             let restored = false;
             const savedProject = localStorage.getItem('pi.web.cwd');
-            if (!state.assistantMode && transfer.movesEnabled && initialParams?.get('cwd') && initialParams?.get('sessionId')) {
+            if (restoreWorkChat && !state.assistantMode && transfer.movesEnabled && initialParams?.get('cwd') && initialParams?.get('sessionId')) {
                 const result = await apiFetch('/api/pi/sessions/' + encodeURIComponent(initialParams.get('sessionId')) + '/resolve?cwd=' + encodeURIComponent(initialParams.get('cwd')));
                 if (selectionEpoch === state.projectSelectionEpoch && !state.assistantMode) {
                     await selectProject(result.session.cwd);
@@ -1001,7 +1014,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     restored = true;
                 }
             }
-            if (!restored && !state.assistantMode && state.projectIdentity && savedProject) {
+            if (!restored && restoreWorkChat && !state.assistantMode && state.projectIdentity && savedProject) {
                 const preferenceRevision = state.projectPreferenceRevision;
                 try {
                     const [resolved, activity] = await Promise.all([
@@ -1019,7 +1032,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 } catch { /* Missing validation falls back to the authoritative project list. */ }
             }
-            if (!restored && !state.assistantMode) {
+            if (!restored && restoreWorkChat && !state.assistantMode) {
                 await discovery;
                 if (selectionEpoch === state.projectSelectionEpoch && !state.assistantMode) {
                     const preferred = state.projectAliases.get(savedProject) || savedProject;
@@ -1031,7 +1044,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             state.activityEnabled = true;
             void refreshActivity();
-            if (state.assistantMode) {
+            if (state.assistantMode && window.PiWorkspaceRoute?.current().tab === 'assistant') {
                 if (initialAssistant) {
                     await initialAssistant;
                     void discovery.then(() => loadAssistantUnclassified(initialAssistantEpoch, state.assistantProfileId)).catch(() => {});
@@ -1576,7 +1589,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } finally {
             if (selectionEpoch === state.projectSelectionEpoch) { state.pendingRestore = false; settleTranscriptPlaceholder(); }
-            elements.newSession.disabled = state.assistantMode && !state.assistantGroups.some(group => group.id === state.assistantProjectId && !group.unclassified && !group.archived);
+            elements.newSession.disabled = state.assistantMode && (businessBlocked(state.assistantProfileId) || !state.assistantGroups.some(group => group.id === state.assistantProjectId && !group.unclassified && !group.archived));
         }
     }
 
@@ -1662,6 +1675,19 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.sessionList.append(message);
     }
 
+    function profileBusiness(profileId) {
+        if (!profileId) return null;
+        return state.profileInventory.find(profile => profile.id === profileId)?.business
+            || (state.session?.agentProfile?.id === profileId ? state.session.agentProfile.business : null);
+    }
+    const businessBlocked = profileId => Boolean(profileBusiness(profileId) && profileBusiness(profileId).enabled !== true);
+    const businessStoppedLabel = profileId => globalThis.PiI18n?.locale === 'en'
+        ? (profileBusiness(profileId)?.state === 'unavailable' ? 'Business status unverified' : 'Business disabled')
+        : (profileBusiness(profileId)?.state === 'unavailable' ? '业务状态待核对' : '业务已停用');
+    const businessStoppedMessage = () => globalThis.PiI18n?.locale === 'en'
+        ? 'This business tool is disabled or unavailable. History is retained; enable it in Business tools before continuing.'
+        : '所属业务已停用或状态不可用，历史记录保留。请在“业务功能”中核对并启用后继续。';
+
     function refreshAssistant(requested = {}) {
         const pending = loadAssistant(requested), epoch = state.assistantEpoch;
         void pending.catch(error => { if (state.assistantMode && state.assistantEpoch === epoch) { state.assistantListLoading = false; showAssistantError(error); } });
@@ -1678,10 +1704,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (profiles?.version !== 1 || !Array.isArray(profiles.profiles)) throw new Error(translateUi('助手身份数据不可用'));
         state.assistantProfiles = profiles.profiles.filter(profile => profile.enabled);
         state.profileInventory = profiles.profiles;
+        setStreaming(state.streaming);
         const selector = $('pi-assistant-profile');
-        selector.replaceChildren();
+        // Keep the native customizable select's button when refreshing its options.
+        selector.querySelectorAll('option').forEach(option => option.remove());
         for (const profile of state.assistantProfiles) {
-            const option = document.createElement('option'); option.value = profile.id; option.textContent = profile.name; selector.append(option);
+            const option = document.createElement('option'); option.value = profile.id; option.textContent = profile.name + (businessBlocked(profile.id) ? ` · ${businessStoppedLabel(profile.id)}` : ''); selector.append(option);
         }
         // A requested or currently shown identity never silently becomes another one; only a choice
         // remembered from an earlier visit falls back to the first available identity.
@@ -1689,7 +1717,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const stored = localStorage.getItem('pi.web.assistantProfile');
         const remembered = state.assistantProfiles.some(profile => profile.id === stored) ? stored : null;
         const chosen = preferred ? state.assistantProfiles.find(profile => profile.id === preferred)?.id || null
-            : remembered || state.assistantProfiles[0]?.id || null;
+            : remembered || state.assistantProfiles.find(profile => profile.id === profiles.defaultAssistantId)?.id || state.assistantProfiles[0]?.id || null;
         state.assistantMissingProfileId = preferred && !chosen ? preferred : null;
         state.assistantProfileId = chosen;
         selector.value = chosen || '';
@@ -1702,8 +1730,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('pi-assistant-manage-profiles').querySelector('span').textContent = translateUi(profiles.profiles.length ? '管理助手身份' : '添加助手身份');
         const profile = state.assistantProfiles.find(item => item.id === chosen);
         $('pi-assistant-avatar').replaceWith(Object.assign(window.PiAssistantProjects.avatar(profile), { id: 'pi-assistant-avatar' }));
-        $('pi-assistant-add-project').disabled = !chosen || !state.assistantSupported;
-        elements.newSession.disabled = !chosen || !state.assistantSupported;
+        $('pi-assistant-add-project').disabled = !chosen || !state.assistantSupported || businessBlocked(chosen);
+        elements.newSession.disabled = !chosen || !state.assistantSupported || businessBlocked(chosen);
         if (!chosen || !state.assistantSupported) {
             state.assistantGroups = []; state.assistantSessions = new Map(); state.assistantProjectId = null;
             state.assistantListLoading = false;
@@ -1760,7 +1788,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.PiWorkspaceRoute?.current().tab === 'assistant' && !requested.sessionId) {
             window.PiWorkspaceRoute.navigate('assistant', { profileId: chosen, projectId: state.assistantProjectId }, true);
         }
-        status.textContent = '';
+        status.textContent = businessBlocked(chosen) ? businessStoppedMessage() : '';
         syncActualIdentity();
         void complianceChat?.update();
         renderAssistantSessions();
@@ -1824,8 +1852,14 @@ document.addEventListener('DOMContentLoaded', () => {
             + (archived.length ? `<details class="pi-archive-group pi-archived-projects" data-archive-kind="assistant-projects" ${state.assistantArchivedOpen || query ? 'open' : ''}><summary>${translateUi('已归档项目（{0}）', archived.length)}</summary>${window.PiAssistantProjects.renderGroups(archived, sessions, state.assistantProjectId, renderSessionItem, options)}</details>` : '')
             || (state.assistantListLoading && !query && window.PiSkeleton?.html('projects', { rows: 3, label: translateUi('正在读取项目') }))
             || `<div class="pi-list-state">${translateUi(query ? '没有匹配的项目或线程' : '还没有助手项目')}</div>`;
+        if (!query && !state.assistantListLoading && !groups.length) {
+            const start = document.createElement('button'); start.type = 'button'; start.className = 'settings-secondary-button';
+            start.dataset.setupEmpty = ''; start.textContent = translateUi('通过首次设置开始');
+            start.addEventListener('click', () => window.PiWorkspaceRoute.navigate('setup'));
+            elements.sessionList.append(start);
+        }
         elements.sessionCount.textContent = state.assistantListLoading && !state.assistantGroups.length ? '' : translateUi('{0} 个项目', state.assistantGroups.length);
-        elements.newSession.disabled = !state.assistantGroups.some(group => group.id === state.assistantProjectId && !group.unclassified && !group.archived);
+        elements.newSession.disabled = businessBlocked(state.assistantProfileId) || !state.assistantGroups.some(group => group.id === state.assistantProjectId && !group.unclassified && !group.archived);
         renderActivityBadges();
         restoreSessionListAnchor(anchor);
     }
@@ -2261,6 +2295,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function createSession() {
+        if (state.assistantMode && businessBlocked(state.assistantProfileId)) return toast(businessStoppedMessage(), 'info');
         if (state.creatingSession) return;
         if (state.assistantMode && !state.assistantGroups.some(group => group.id === state.assistantProjectId && !group.unclassified && !group.archived)) return;
         if (!state.cwd) return openProjectDialog();
@@ -2297,7 +2332,7 @@ document.addEventListener('DOMContentLoaded', () => {
             toast(error.message, 'error');
         } finally {
             state.creatingSession = false;
-            elements.newSession.disabled = state.assistantMode && !state.assistantGroups.some(group => group.id === state.assistantProjectId && !group.unclassified && !group.archived);
+            elements.newSession.disabled = state.assistantMode && (businessBlocked(state.assistantProfileId) || !state.assistantGroups.some(group => group.id === state.assistantProjectId && !group.unclassified && !group.archived));
         }
     }
 
@@ -2712,6 +2747,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderThinkingLevels();
         state.messageAnchors = snapshot.messages?.webAnchors || null;
         renderMessages(snapshot.messages?.messages || []);
+        filesPanel.setDraftUploads(state.attachmentFiles);
         chatKnowledge?.update();
         taskProgress.apply(snapshot.messages?.webProgress);
         restoreLive(snapshot.messages?.webLive);
@@ -3211,6 +3247,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderMessages(messages) {
+        filesPanel.setMessageUploads(messages);
         const context = JSON.stringify([state.cwd, state.session?.id]);
         const previous = state.renderedTranscript?.context === context ? state.renderedTranscript.records : [];
         const finalReplies = finalReplyIndices(messages, state.streaming);
@@ -3763,6 +3800,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (message?.role === 'user') {
+            filesPanel.addMessageUploads(message);
             const key = JSON.stringify([message.role, message.timestamp, '']);
             const duplicate = [...elements.transcript.querySelectorAll(`[data-message-key="${CSS.escape(key)}"]`)].some(element => JSON.stringify(element._piUserMessage?.content) === JSON.stringify(message.content));
             if (duplicate) return;
@@ -4059,6 +4097,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!profile) continue;
             const source = state.profileInventory.find(item => item.id === profile.id) || profile;
             node.append(window.PiAssistantProjects.avatar(source), document.createTextNode(source.name || profile.name || translateUi('身份不可用')));
+            if (businessBlocked(profile.id)) node.append(document.createTextNode(` · ${businessStoppedLabel(profile.id)}`));
             node.title = $('pi-session-profile').title || profile.name || '';
         }
     }
@@ -4096,7 +4135,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.deliveryMode.disabled = !state.connected || compacting || stopping || state.resourceRequested;
         composer.syncDelivery();
         elements.input.closest('.pi-composer').dataset.running = String(state.connected && busy);
-        elements.sendButton.disabled = !state.connected || compacting;
+        elements.sendButton.disabled = !state.connected || compacting || businessBlocked(state.session?.agentProfile?.id);
         elements.compactButton.disabled = !state.connected || busy || state.pendingUi.size > 0;
         elements.autoCompact.disabled = !state.connected || state.shellBusy;
         elements.autoRetry.disabled = !state.connected || state.shellBusy;
@@ -4105,6 +4144,8 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.thinkingSelect.disabled = busy || !state.connected || state.thinkingLevels.length <= 1;
         modelSpeed.setBlocked(busy || !state.connected || state.pendingUi.size > 0);
         elements.composerStatus.textContent = !state.connected ? translateUi("未打开会话") : state.shellBusy ? translateUi("Shell 正在执行，可继续编辑草稿；停止请使用命令卡片") : state.treeBusy ? translateUi("正在切换对话位置，请在历史页查看进度或取消") : state.resourceRequested ? translateUi("正在重新加载原生资源") : stopping ? translateUi("正在停止 / 取回，请等待确认") : compacting ? '' : streaming ? (elements.deliveryMode.value === 'follow_up' ? translateUi("运行中 · 新消息在任务完成后送达") : translateUi("运行中 · 新消息在本轮工具后送达")) : '';
+        if (businessBlocked(state.session?.agentProfile?.id)) elements.composerStatus.textContent = businessStoppedLabel(state.session.agentProfile.id)
+            + (globalThis.PiI18n?.locale === 'en' ? ' · History and draft retained' : '，历史与草稿已保留');
         historyView.sync();
         archive?.sync();
         timeline?.sync();
@@ -4114,6 +4155,7 @@ document.addEventListener('DOMContentLoaded', () => {
         syncMobileHeader();
         if (state.recoveryNotice) renderRecoveryNotice();
         autoResizeInput();
+        notifyNativeRuntime();
     }
 
     const recoveryNotice = document.createElement('section'); recoveryNotice.className = 'pi-recovery-notice'; recoveryNotice.hidden = true;
@@ -4333,6 +4375,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function sendMessage() {
+        if (businessBlocked(state.session?.agentProfile?.id)) return toast(businessStoppedMessage(), 'info');
         const key = state.composerSessionKey;
         if (state.shellBusy && elements.input.value.trim() !== '/quit') return toast(translateUi("Shell 正在执行，请等待命令结束后发送；/quit 可退出运行实例"), 'info');
         if (nativeControls.value?.stopping || state.controlRequested) return toast(translateUi("正在停止或取回队列，请等待状态确认"), 'info');
@@ -4468,7 +4511,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.sendButton.title = shellInput ? translateUi("执行 Shell 命令") : state.streaming ? elements.deliveryMode.value === 'follow_up' ? translateUi("发送后续消息") : translateUi("发送引导消息") : translateUi("发送");
         elements.sendButton.setAttribute('aria-label', elements.sendButton.title);
         elements.sendButton.querySelector('i').className = shellInput ? 'fa-solid fa-terminal' : 'fa-solid fa-arrow-up';
-        elements.sendButton.disabled = Boolean(state.modelRefreshOp) || state.treeBusy || !state.connected || (state.shellBusy && elements.input.value.trim() !== '/quit') || (shellInput && (state.streaming || state.pendingUi.size > 0)) || state.resourceRequested || nativeControls.value?.stopping || state.controlRequested || state.compacting || state.compactRequested || pending || submitting || (!elements.input.value.trim() && !state.attachmentFiles.length);
+        elements.sendButton.disabled = businessBlocked(state.session?.agentProfile?.id) || Boolean(state.modelRefreshOp) || state.treeBusy || !state.connected || (state.shellBusy && elements.input.value.trim() !== '/quit') || (shellInput && (state.streaming || state.pendingUi.size > 0)) || state.resourceRequested || nativeControls.value?.stopping || state.controlRequested || state.compacting || state.compactRequested || pending || submitting || (!elements.input.value.trim() && !state.attachmentFiles.length);
         elements.attachButton.disabled = !state.connected || submitting;
         for (const button of [documentStorageOpen, documentStorageSettings]) button.disabled = !state.documentStorageSupported || !state.cwd;
         cronAddButton.disabled = !state.connected || !state.session || Boolean(state.session.ephemeral);
@@ -4515,6 +4558,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderAttachments() {
+        filesPanel.setDraftUploads(state.attachmentFiles);
         elements.attachments.classList.toggle('hidden', !state.attachmentFiles.some(file => file.kind !== 'quote'));
         mainQuotes.replaceChildren();
         elements.attachments.innerHTML = state.attachmentFiles.filter(file => file.kind !== 'quote').map(file => `
@@ -4797,7 +4841,7 @@ document.addEventListener('DOMContentLoaded', () => {
             items = [
                 ...(historyItems.length ? [{ label: translateUi('历史与记录'), icon: 'fa-clock-rotate-left', children: historyItems }] : []),
                 ...(current ? [command(translateUi("消息显示…"), 'fa-eye', openMessageViewSetting)] : []),
-                ...(state.messageChannels ? [command(translateUi('连接微信…'), 'fa-comments', () => {
+                ...(state.messageChannels && window.PiChannels?.weixinVisible === true ? [command(translateUi('连接微信…'), 'fa-comments', () => {
                     window.dispatchEvent(new CustomEvent('workspace:open-settings', { detail: { tab: 'channels', channelTarget: { cwd, sessionId: session.id } } }));
                 }, { disabled: session.ephemeral })] : []),
                 command(translateUi("重命名"), 'fa-pen', () => renameCurrent(session, cwd), { disabled: session.ephemeral }),
@@ -4874,15 +4918,16 @@ document.addEventListener('DOMContentLoaded', () => {
             try { await refreshAssistant(); }
             catch { toast(translateUi('分类已删除，请刷新列表查看'), 'info'); }
         } });
+    const setup = window.PiSetup.create({ apiFetch });
     function showAssistantMenu(target, group) {
         const cwd = group.cwd;
-        const command = (label, icon, run) => ({ label, icon, run: () => Promise.resolve().then(run).catch(error => toast(error.message, 'error')) });
+        const command = (label, icon, run, options = {}) => ({ label, icon, ...options, run: () => Promise.resolve().then(run).catch(error => toast(error.message, 'error')) });
         threadMenu.open(target, [
             ...(!group.unclassified && !group.archived ? [command(translateUi('新聊天'), 'fa-plus', async () => {
                 state.assistantProjectId = group.id;
                 if (cwd !== state.cwd) await selectProject(cwd);
                 await createSession();
-            })] : []),
+            }, { disabled: businessBlocked(state.assistantProfileId) })] : []),
             ...(!group.unclassified ? [command(translateUi('编辑项目'), 'fa-pen', () => projectEditor.open(group, state.assistantRevision))] : []),
             command(translateUi('临时会话（不保存）'), 'fa-bolt', () => createEphemeralSession(cwd))
         ]);
@@ -5030,7 +5075,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('workspace:agent-profiles-changed', () => {
         if (state.assistantMode) refreshAssistant();
         else void apiFetch('/api/pi/profiles').then(data => {
-            if (Array.isArray(data?.profiles)) { state.profileInventory = data.profiles; syncActualIdentity(); }
+            if (Array.isArray(data?.profiles)) { state.profileInventory = data.profiles; syncActualIdentity(); setStreaming(state.streaming); }
         }).catch(() => {});
     });
     function clearConversationForWorkspaceSwitch() {
@@ -5047,7 +5092,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('workspace:tabchanged', event => {
         const { tab, params } = event.detail;
-        const routeKey = location.hash || '#/chat';
+        const routeKey = location.hash || '#/assistant';
         const previousTab = /^#\/([^?]+)/.exec(state.routeKey || '')?.[1];
         if (routeKey !== state.routeKey) { state.routeKey = routeKey; state.navigationEpoch++; }
         if (tab !== 'chat' && tab !== 'assistant') { state.assistantEpoch++; return; }

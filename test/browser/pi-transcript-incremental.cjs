@@ -74,7 +74,7 @@ async function run(browser, base, width) {
         await page.waitForTimeout(200);
     };
     try {
-        await page.goto(base, { waitUntil: 'networkidle' });
+        await page.goto(new URL('#/chat', base).href, { waitUntil: 'networkidle' });
         await page.waitForFunction(() => document.querySelectorAll('.pi-message.user').length === 100);
         assert.equal(await page.locator('.pi-message.user').count(), 100);
         assert.equal(await page.locator('.pi-tool-detail').count(), 0, 'closed historical tools do not allocate output, images or diff DOM');

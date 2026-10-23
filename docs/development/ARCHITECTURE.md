@@ -68,7 +68,9 @@ Pi 0.87 的 `context_edit` 只改变模型上下文。主聊天快照从唯一 w
 
 ## 辅助工作与扩展
 
-WeKnora 知识库页面经既有 MCP 管理槽调用 `pi-knowledge-runtime`，后者只在同一受管 Session 上登记可丢弃的进程内入口。目录来自原生可调用工具与 MCP 来源，操作固定为只读白名单；执行通过公开 `runToolCall`、`wrapRegisteredTool` 和会话自身工具 hooks，保留 schema／权限／结果检查。注册随 Session dispose 释放，资源重载时重读新目录。页面操作不发送模型请求、不建立原生消息或另一份知识存储；聊天检索通过已有安全草稿入口转入普通原生对话。见[知识库](../KNOWLEDGE_BASE.md)。
+WeKnora 知识库页面经既有 MCP 管理槽调用 `pi-knowledge-runtime`，后者只在同一受管 Session 上登记可丢弃的进程内入口。目录来自原生可调用工具与 MCP 来源，操作固定为只读白名单；执行通过公开 `runToolCall`、`wrapRegisteredTool` 和会话自身工具 hooks，保留 schema／权限／结果检查。注册随 Session dispose 释放，资源重载时重读新目录。`pi-chat` 发布去重的 `workspace:native-runtime-changed` 状态通知，知识库页面据此在会话恢复、切换及首次等待空闲后加载首屏；缺少工具时有界观察原生状态，只对确认未连接的所选 WeKnora 自动连接一次，失败／不确定不重放，不另建客户端或 worker。页面操作不发送模型请求、不建立原生消息或另一份知识存储；聊天检索通过已有安全草稿入口转入普通原生对话。见[知识库](../KNOWLEDGE_BASE.md)。
+
+内置 WeKnora 的默认范围、召回条数和阈值由 `pi-knowledge-search-settings` 统一校验，通过原生 MCP 配置服务保存在该条目的私密环境字段中；DTO 只投影已知的非秘密参数，未知字段保留。stdio 宿主在启动时读取一次，省略参数的实际工具调用才使用默认值，多库批次共用一个执行占用并在失败／取消后停止。保存不重载现有连接；页面临时范围与保存的助手默认值分开，第三方 MCP 不套用内置策略，也不将默认范围冒充权限白名单。
 
 Pi 1.2.0 原生 MCP/Codemode 经 `pi-native-mcp.mjs` 和受管 ResourceLoader 显式装配，官方扩展拥有连接、OAuth、调用、工具发现与清理。旧适配器在资源解析前过滤。`pi-subagent-native-loader.mjs` 仅对经过版本与哈希核对的 vendor MCP resolver 做精确 import 映射，不改上游字节；旧 host alias 与 Codemode 输出适配已移除。`pi-codemode-policy.mjs` 为官方 Codemode execute 提供每次新建的冻结模型注册表外观，保留目录与分类，只拒绝未经过媒体确认的图像生成入口；主／子工厂均装配此边界。输出限制、文本与图片顺序、截断、私有完整输出文件、取消、store 与用量由 Pi 官方 executor／sandbox 拥有。父会话注册的原生工具名称通过有界、无凭据的进程环境快照交给 detached runner，并绑定 cwd 与当前服务器配置 hash；显式主线程白名单在 MCP 注册时隐藏未授权工具，子会话工具 gate 和原生注册过滤同时防止 Codemode 绕过授权，不继承名单外间接 MCP 工具的默认行为。取消结算的 `agent_settled.aborted` 不触发成功通知或任务成功回执。快照是可丢弃的授权输入，不是会话事实或工具结果副本；缺失／变化均失败关闭。侧聊与媒体规划不加载该能力，迁移只在显式停机入口执行。见[原生 MCP](../MCP.md)和[依赖与上游适配](DEPENDENCIES.md)。
 
@@ -217,7 +219,7 @@ POSIX 私密权限和目录刷盘、Windows 受保护 DACL 和写透替换分别
 
 内置第三方能力由 `pi-bundled-capabilities` 定义接入，`vendor/manifest.json` 保存上游原始文件与哈希。父会话通过 `pi-managed-runtime` 的公开 SDK/RPC 入口加载，`pi-bundled-resources` 在原生包解析前生成内存视图，`pi-bundled-loader` 在执行扩展前过滤重复来源。子 Agent 的版本审查 factory 接口只替换子会话的资源加载器，任务生命周期继续由上游与 Supervisor 管理；记忆仍通过档案适配，只改变 bundle 来源。安装、旧路径兼容和维护步骤见[内置能力包](../BUNDLED_CAPABILITIES.md)。
 
-普通 node server.js 和 npm start 经独立受管启动器；direct 模式用于明确的独立开发实例。当前设置页检查版本并提供独立 Agent 提示词；内网 Windows 便携版另提供一键更新，复用一次性 application 票据与受管启动器，其他入口保留只读行为。启动器持有安装目录锁，通过私有 IPC 和服务代次处理维护请求，正常停机等待全部登记的 RPC 进程实际退出。SIGINT/SIGTERM 监听在清理结束前保持注册；重复信号不重复清理。
+普通 node server.js 和 npm start 经独立受管启动器；direct 模式用于明确的独立开发实例。前台入口在安装锁内发布独立的本机私有重启通道，`npm start` 可替换同目录支持此协议的前台实例；同步复核全部停机来源并关闭派发准入，等待 shutdown proof 和实际退出后交接。该通道不控制托盘、离线维护或未知端口占用者，详见[私有协议](../API.md#前台开发重启私有通道)。当前设置页检查版本并提供独立 Agent 提示词；内网 Windows 便携版另提供一键更新，复用一次性 application 票据与受管启动器，其他入口保留只读行为。启动器持有安装目录锁，通过私有 IPC 和服务代次处理维护请求，正常停机等待全部登记的 RPC 进程实际退出。SIGINT/SIGTERM 监听在清理结束前保持注册；重复信号不重复清理。
 
 `pi-installation-lock` 统一拥有受管启动、备份恢复与离线会话迁移的安装级互斥。Windows 使用规范安装目录 SHA256 命名的机器级独占管道，不依赖 TCP 端口；其他系统保留原来的确定性 loopback 端口锁。内核持有锁的生命周期，连接到管道不能提交任何控制命令。ManagedLauncher 在 await 前预占启动／关闭状态，关闭等待在途锁分配，并在子服务实际退出后释放锁。旧 Windows TCP 锁与新管道锁属于不同协议，升级必须停旧版并使用匹配版本的运行与维护脚本，不能混用。
 

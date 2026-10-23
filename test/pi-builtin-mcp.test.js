@@ -17,12 +17,12 @@ async function fixture(t, handle) {
     api.listen(0, '127.0.0.1'); await once(api, 'listening');
     const clients = [], base = `http://127.0.0.1:${api.address().port}`;
     t.after(async () => { for (const client of clients) await client.close(); for (const socket of sockets) socket.destroy(); await new Promise(resolve => api.close(resolve)); fs.rmSync(root, { recursive: true, force: true }); });
-    const connect = async (kind, directory = cwd) => {
+    const connect = async (kind, directory = cwd, extraEnv = {}) => {
         const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
         const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js');
         const client = new Client({ name: 'synthetic-test', version: '1' });
         const transport = new StdioClientTransport({ command: process.execPath, args: [host, kind], cwd: directory, stderr: 'pipe',
-            env: { PI_CODING_AGENT_DIR: agent, PI_PROJECT_ROOTS: root, PI_OFFLINE: '1', OCR_BASE_URL: base, OCR_API_KEY: 'synthetic-ocr-key', WEKNORA_BASE_URL: base + '/api/v1', WEKNORA_API_KEY: 'synthetic-weknora-key' } });
+            env: { PI_CODING_AGENT_DIR: agent, PI_PROJECT_ROOTS: root, PI_OFFLINE: '1', OCR_BASE_URL: base, OCR_API_KEY: 'synthetic-ocr-key', WEKNORA_BASE_URL: base + '/api/v1', WEKNORA_API_KEY: 'synthetic-weknora-key', ...extraEnv } });
         let stderr = ''; transport.stderr.on('data', chunk => { stderr += chunk; });
         await client.connect(transport); clients.push(client);
         return { client, call: (name, args = {}, options) => client.callTool({ name, arguments: args }, undefined, options), stderr: () => stderr };
@@ -116,10 +116,40 @@ for (const kind of ['ocr', 'weknora']) test(`${kind} stdio cancellation closes t
     let received, closed;
     const started = new Promise(resolve => { received = resolve; }), disconnected = new Promise(resolve => { closed = resolve; });
     const f = await fixture(t, async (req, res) => { received(); res.on('close', closed); });
-    const c = await f.connect(kind), controller = new AbortController();
+    const extraEnv = kind === 'weknora' ? { WEKNORA_SEARCH_SETTINGS: JSON.stringify({ knowledgeBaseIds: ['kb-1', 'kb-2'] }) } : {};
+    const c = await f.connect(kind, f.cwd, extraEnv), controller = new AbortController();
     const input = path.join(f.cwd, 'cancel.pdf'); fs.writeFileSync(input, '%PDF-synthetic');
-    const pending = c.call(kind === 'ocr' ? 'ocr_parse_document' : 'weknora_health_check', kind === 'ocr' ? { file_path: input } : {}, { signal: controller.signal });
+    const pending = c.call(kind === 'ocr' ? 'ocr_parse_document' : 'search_knowledge', kind === 'ocr' ? { file_path: input } : { query: '取消组合检索' }, { signal: controller.signal });
     await started; controller.abort(); await assert.rejects(pending);
     await Promise.race([disconnected, new Promise((_, reject) => { const timer = setTimeout(() => reject(Error('HTTP request remained active after MCP cancellation')), 3000); timer.unref(); })]);
     assert.equal(f.calls.length, 1);
+});
+
+test('WeKnora applies persisted multi-base defaults in real MCP calls and explicit arguments override only that call', { timeout: 60000 }, async t => {
+    const { ENV_KEY } = require('../server/pi-knowledge-search-settings');
+    const f = await fixture(t, async (req, res) => json(res, { success: true, data: [{ knowledge_id: 'doc-1', content: '甲😀'.repeat(7000) }] }));
+    const settings = { knowledgeBaseIds: ['kb-1', 'kb-2'], limit: 7, vectorThreshold: 0.8, keywordThreshold: 0.6 };
+    const c = await f.connect('weknora', f.cwd, { [ENV_KEY]: JSON.stringify(settings) });
+    const tool = (await c.client.listTools()).tools.find(tool => tool.name === 'search_knowledge');
+    assert.ok(!tool.inputSchema.required.includes('kb_id'));
+    const result = (await c.call('search_knowledge', { query: '验收' })).structuredContent;
+    assert.deepEqual(result.kb_ids, ['kb-1', 'kb-2']); assert.deepEqual(result.results.map(item => item.search_scope_id), ['kb-1', 'kb-2']);
+    assert.ok(result.results.every(item => Array.from(item.content).length <= 6000 && item.content_truncated));
+    assert.deepEqual(f.calls.map(call => new URL(call.url, 'http://fixture').pathname), ['/api/v1/knowledge-bases/kb-1/hybrid-search', '/api/v1/knowledge-bases/kb-2/hybrid-search']);
+    for (const call of f.calls) assert.deepEqual(JSON.parse(call.raw), { query_text: '验收', match_count: 7, vector_threshold: 0.8, keyword_threshold: 0.6 });
+    await c.call('search_knowledge', { kb_id: 'kb-explicit', query: '验收', limit: 2, vector_threshold: 0.2 });
+    assert.deepEqual(JSON.parse(f.calls.at(-1).raw), { query_text: '验收', match_count: 2, vector_threshold: 0.2, keyword_threshold: 0.6 });
+    assert.ok(f.calls.at(-1).url.includes('kb-explicit'));
+    await c.call('search_knowledge', { query: '验收' });
+    assert.equal(JSON.parse(f.calls.at(-1).raw).match_count, 7);
+    assert.equal(c.stderr(), '');
+});
+
+test('WeKnora stops a default multi-base search after failure without dispatching later bases', { timeout: 60000 }, async t => {
+    const { ENV_KEY } = require('../server/pi-knowledge-search-settings');
+    const f = await fixture(t, async (req, res) => res.writeHead(403).end('synthetic-private-error'));
+    const c = await f.connect('weknora', f.cwd, { [ENV_KEY]: JSON.stringify({ knowledgeBaseIds: ['kb-1', 'kb-2'] }) });
+    const result = await c.call('search_knowledge', { query: '验收' });
+    assert.equal(result.isError, true); assert.equal(f.calls.length, 1);
+    assert.doesNotMatch(JSON.stringify(result), /synthetic-private-error/);
 });

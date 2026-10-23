@@ -74,9 +74,36 @@ async function run(browser, base, width, language) {
         else if (command.type === 'get_available_thinking_levels') data = { levels: ['off'] };
         ws.send(JSON.stringify({ type: 'response', id: command.id, command: command.type, success: true, data }));
     }); });
-    await navigationCheck(() => page.goto(base, { waitUntil: 'domcontentloaded' }));
+    await navigationCheck(() => page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' }));
     await page.waitForFunction(() => !document.getElementById('pi-input').disabled);
     const english = language.startsWith('en');
+    for (const [theme, chinese, translated, chineseHint, translatedHint] of [
+        ['oat', '燕麦', 'Oat', '温润舒适', 'Warm and cozy'],
+        ['graphite', '石墨', 'Graphite', '极简中性', 'Minimal and neutral']
+    ]) {
+        const option = page.locator(`#workspace-theme-menu [data-theme="${theme}"]`);
+        assert.equal(await option.locator('strong').textContent(), english ? translated : chinese);
+        assert.equal(await option.locator('small').textContent(), english ? translatedHint : chineseHint);
+        assert.equal(await page.locator(`[data-appearance-theme="${theme}"] > span:last-child`).textContent(), english ? translated : chinese);
+        if (width >= 900) {
+            await page.locator('#workspace-theme-toggle').click();
+            const bounds = await option.evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth }));
+            assert.ok(bounds.width > 0 && bounds.scroll <= bounds.width + 1, `${theme} menu option overflows: ${JSON.stringify(bounds)}`);
+            await option.click();
+            assert.equal(await page.locator('html').getAttribute('data-theme'), theme);
+            assert.equal(await option.getAttribute('aria-checked'), 'true');
+            assert.equal(await page.locator(`[data-appearance-theme="${theme}"]`).getAttribute('aria-pressed'), 'true');
+            assert.equal(await page.evaluate(() => localStorage.getItem('pi.workspace.theme')), theme);
+        }
+    }
+    if (width >= 900) {
+        await page.locator('#workspace-theme-toggle').click();
+        if (process.env.PIVANE_TEST_SCREENSHOT_DIR) {
+            fs.mkdirSync(process.env.PIVANE_TEST_SCREENSHOT_DIR, { recursive: true });
+            await page.screenshot({ path: path.join(process.env.PIVANE_TEST_SCREENSHOT_DIR, `themes-${language}-${width}.png`) });
+        }
+        await page.locator('#workspace-theme-menu [data-theme="system"]').click();
+    }
     assert.equal(await page.locator('html').getAttribute('lang'), english ? 'en' : 'zh-CN');
     assert.equal(await page.title(), '白泽灵台');
     assert.equal(await page.locator('.logo-brand h2').textContent(), '白泽灵台');

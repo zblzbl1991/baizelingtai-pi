@@ -57,7 +57,7 @@ async function run(browser, viewport, SessionManager) {
             throw Error('Unexpected RPC ' + cmd.type);
         });
     });
-    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.goto(new URL('#/chat', base).href, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !document.querySelector('#pi-input').disabled);
     await page.locator('#pi-input').fill('Keep the main draft');
     const original = JSON.stringify(sm.getEntries()), leaf = sm.getLeafId();

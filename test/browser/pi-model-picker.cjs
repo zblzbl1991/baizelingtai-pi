@@ -65,7 +65,7 @@ async function check(browser, base, width, language, theme) {
         });
     });
     await page.route(/https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com)\//, route => route.abort());
-    await page.goto(base);
+    await page.goto(new URL('#/chat', base).href);
     const button = page.locator('#pi-model-select'), dialog = page.locator('#pi-model-dialog'), search = page.locator('.pi-model-search');
     const openPicker = async () => {
         if (width <= 680) {

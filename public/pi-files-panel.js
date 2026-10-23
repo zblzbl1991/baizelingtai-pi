@@ -24,8 +24,16 @@
             this.deliveriesButton.addEventListener('click', () => this.openDeliveries());
             this.deliveriesList = node('section', 'pi-deliveries-list'); this.deliveriesList.id = 'pi-deliveries-list'; this.deliveriesList.hidden = true;
             this.deliveriesList.setAttribute('aria-label', translateUi('当前分支交付物')); $('pi-file-explorer').before(this.deliveriesList);
+            this.messageUploads = new Map(); this.draftUploads = new Map(); this.uploads = new Map();
+            this.uploadsButton = node('button', '', translateUi('聊天附件')); this.uploadsButton.id = 'pi-files-uploads'; this.uploadsButton.type = 'button'; this.uploadsButton.hidden = true;
+            this.uploadsButton.addEventListener('click', () => this.openUploads());
+            this.uploadsList = node('section', 'pi-deliveries-list'); this.uploadsList.id = 'pi-uploads-list'; this.uploadsList.hidden = true;
+            this.uploadsList.setAttribute('aria-label', translateUi('当前聊天的办公附件')); $('pi-file-explorer').before(this.uploadsList);
+            this.uploadPicker = node('details', ''); this.uploadPicker.id = 'pi-upload-picker'; this.uploadPicker.hidden = true;
+            this.uploadPicker.append(node('summary', '', translateUi('切换附件')), node('div', 'pi-file-picker-panel'));
+            document.querySelector('.pi-files-heading').append(this.uploadPicker);
             this.openSequence = 0;
-            const modes = node('div', 'pi-files-modes'); modes.append(this.projectButton, this.historyButton, this.deliveriesButton);
+            const modes = node('div', 'pi-files-modes'); modes.append(this.projectButton, this.historyButton, this.deliveriesButton, this.uploadsButton);
             this.browseButton = button(translateUi("浏览项目文件"), 'folder-tree', () => this.openProject(!this.browsing)); this.browseButton.id = 'pi-files-browse';
             this.expandButton = button(translateUi("展开阅读"), 'expand', () => {
                 $('pi-inspector').classList.toggle('files-expanded'); this.sync();
@@ -53,7 +61,7 @@
             $('pi-inspector').addEventListener('keydown', event => {
                 if (event.key !== 'Escape' || event.isComposing || event.defaultPrevented || !$('pi-inspector').classList.contains('show-changes') || document.querySelector('dialog[open]')) return;
                 event.preventDefault(); event.stopPropagation();
-                const menu = ['pi-file-info', 'pi-changes-file-list'].map($).find(el => el.open);
+                const menu = ['pi-file-info', 'pi-changes-file-list', 'pi-upload-picker'].map($).find(el => el.open);
                 if (menu) { menu.open = false; menu.querySelector('summary').focus(); }
                 else if (this.browsing && this.viewer.file) { this.browsing = false; this.sync(); this.browseButton.focus(); }
                 else if ($('pi-inspector').classList.contains('files-expanded')) { $('pi-inspector').classList.remove('files-expanded'); this.sync(); this.expandButton.focus(); }
@@ -91,12 +99,75 @@
             else this.openProject(true);
         }
         setEnabled(value) { this.enabled = value; this.sync(); }
-        setCapabilities({ previews, deliverables, roots, downloads, limits }) {
+        setCapabilities({ previews, deliverables, roots, downloads, limits, uploads }) {
             this.downloads.enabled = Boolean(downloads);
             this.downloads.maxBytes = Number.isSafeInteger(limits?.downloadBytes) && limits.downloadBytes > 0 ? limits.downloadBytes : null;
             this.roots.setEnabled(Boolean(roots));
             this.viewer.previewsEnabled = Boolean(previews); this.deliverablesEnabled = Boolean(deliverables);
             this.viewer.deliverablesEnabled = Boolean(deliverables); this.deliveriesButton.hidden = !deliverables; this.sync();
+            this.uploadsButton.hidden = !uploads;
+        }
+        // Only reference metadata is projected here; native messages and the composer own the sources.
+        recordUploadMessage(message) {
+            if (message?.role !== 'user') return;
+            const text = typeof message.content === 'string' ? message.content : (Array.isArray(message.content) ? message.content : []).filter(block => block.type === 'text').map(block => block.text).join('\n');
+            for (const part of window.PiDocumentReferences.split(text)) if (part.reference && window.PiOfficeFilePreview.supports(part.reference.name)) this.messageUploads.set(part.reference.id, part.reference);
+        }
+        setMessageUploads(messages) {
+            this.messageUploads.clear();
+            for (const message of messages) this.recordUploadMessage(message);
+            this.refreshUploads();
+        }
+        addMessageUploads(message) { this.recordUploadMessage(message); this.refreshUploads(); }
+        setDraftUploads(files) {
+            this.draftUploads = new Map(files.filter(file => file.kind === 'document' && window.PiDocumentReferences.valid(file.reference) && window.PiOfficeFilePreview.supports(file.reference.name)).map(file => [file.reference.id, file.reference]));
+            this.refreshUploads();
+        }
+        refreshUploads() {
+            this.uploads = new Map([...this.messageUploads, ...this.draftUploads]);
+            const selected = this.viewer.file?.upload;
+            if (selected && !this.uploadCurrent(selected)) this.viewer.clear();
+            const signature = JSON.stringify([...this.uploads.values()].map(ref => [ref, this.messageUploads.has(ref.id)]));
+            if (signature !== this.uploadSignature) {
+                this.uploadSignature = signature;
+                this.uploadsList.replaceChildren(); this.uploadPicker.lastElementChild.replaceChildren();
+                for (const reference of this.uploads.values()) {
+                    const draft = !this.messageUploads.has(reference.id);
+                    const card = node('button', 'pi-delivery-card'); card.type = 'button';
+                    card.append(icon('file-lines'), node('strong', '', reference.name), node('span', '', `${translateUi(draft ? '未发送草稿' : '聊天附件')} · ${reference.format.toUpperCase()} · ${Math.ceil(reference.size / 1024)} KiB`));
+                    card.addEventListener('click', () => this.openUpload(reference)); this.uploadsList.append(card);
+                    const item = node('button', 'pi-file-tree-row'); item.type = 'button'; item.append(node('span', 'pi-tree-name', reference.name)); item.title = reference.name;
+                    item.addEventListener('click', () => this.openUpload(reference)); this.uploadPicker.lastElementChild.append(item);
+                }
+                if (!this.uploads.size) this.uploadsList.append(node('p', 'pi-file-large-note', translateUi('当前聊天和草稿暂无可预览的 Office 附件')));
+            }
+            this.sync();
+        }
+        uploadCurrent(reference) { const saved = this.uploads.get(reference.id); return Boolean(saved && window.PiDocumentReferences.marker(saved) === window.PiDocumentReferences.marker(reference)); }
+        closeUploadPreview() {
+            if (this.viewer.file?.upload) this.viewer.clear();
+            this.messageUploads.clear(); this.draftUploads.clear(); this.refreshUploads();
+        }
+        openUploads() {
+            this.viewer.closeFullscreen(false); this.cancelOpen(); this.rememberContext(); this.viewer.clear();
+            if (this.history) this.history.active = false;
+            this.mode = 'uploads'; this.browsing = false;
+            this.host.showPane('changes'); this.sync();
+        }
+        openUpload(reference, options = {}) {
+            if (this.uploadsButton.hidden || !window.PiDocumentReferences.valid(reference) || !window.PiOfficeFilePreview.supports(reference.name)) return;
+            if (!this.uploadCurrent(reference)) {
+                // A rendered compressed-history card may be outside the current transcript projection.
+                if (!options.isCurrent?.()) return;
+            }
+            this.cancelOpen(); this.rememberContext();
+            if (this.history) this.history.active = false;
+            this.mode = 'uploads'; this.browsing = false; this.returnLink = document.activeElement; this.uploadPicker.open = false;
+            const context = this.host.context();
+            $('pi-changes-diffs').replaceChildren(); $('pi-changes-empty').hidden = true; $('pi-changes-content').hidden = false; $('pi-changes-file-list').hidden = true;
+            this.viewer.setFile({ path: reference.name, upload: reference, identity: `upload:${JSON.stringify([context.cwd, context.sessionId, reference.id, reference.revision])}`, hasDiff: false, writes: [],
+                isCurrent: () => this.uploadCurrent(reference) || Boolean(options.isCurrent?.()), download: () => this.host.downloadUpload(reference) });
+            this.host.showPane('changes'); this.sync(); $('pi-changes-title').focus({ preventScroll: true });
         }
         cancelOpen() { this.openSequence++; this.openController?.abort(); this.openController = null; }
         sameContext(context, sequence) { const now = this.host.context(); return sequence === this.openSequence && context.key === now.key && context.generation === now.generation; }
@@ -173,6 +244,8 @@
         reset() {
             this.downloads.reset();
             this.cancelOpen(); this.paneContext = null; this.deliveriesList.replaceChildren();
+            this.messageUploads.clear(); this.draftUploads.clear(); this.uploads.clear(); this.uploadSignature = null;
+            this.uploadsList.replaceChildren(); this.uploadPicker.lastElementChild.replaceChildren(); this.uploadPicker.open = false;
             this.viewer.clear(); this.roots.reset(); this.browser.reset(); this.mode = 'project'; this.browsing = true; this.returnLink = null;
             $('pi-changes-content').hidden = true;
             for (const id of ['pi-changes-diffs', 'pi-changes-files', 'pi-changes-round', 'pi-file-source']) $(id).replaceChildren();
@@ -212,7 +285,7 @@
             this.viewer.closeFullscreen(false);
             this.cancelOpen(); this.rememberContext();
             this.viewer.rememberPosition(); this.viewer.stopInteractive();
-            if (this.viewer.file?.deliveryId) this.viewer.clear();
+            if (this.viewer.file?.deliveryId || this.viewer.file?.upload) this.viewer.clear();
             this.mode = 'project'; this.browsing = browse || !this.viewer.file; if (this.history) this.history.active = false;
             this.host.showPane('changes'); this.sync();
             if (this.browsing) this.loadBrowser();
@@ -229,6 +302,11 @@
         }
         selected(file) {
             this.rememberContext(); this.breadcrumb.replaceChildren();
+            if (file.upload) {
+                this.breadcrumb.append(button(translateUi('聊天附件'), 'paperclip', () => this.openUploads()), icon('chevron-right'), node('span', 'pi-breadcrumb-current', file.path));
+                this.breadcrumb.title = file.path; $('pi-changes').classList.add('file-current-only'); this.locate.hidden = this.copyPath.hidden = true; return;
+            }
+            this.copyPath.hidden = false;
             if (file.deliveryId) {
                 this.breadcrumb.append(button(translateUi('交付物'), 'box', () => this.openDeliveries()), icon('chevron-right'), node('span', 'pi-breadcrumb-current', file.path));
                 this.breadcrumb.title = translateUi('交付快照'); $('pi-changes').classList.add('file-current-only'); this.locate.hidden = true; return;
@@ -262,16 +340,19 @@
             $('pi-changes').classList.toggle('files-has-file', hasFile);
             $('pi-file-explorer').hidden = this.mode !== 'project' || !this.browsing;
             this.deliveriesList.hidden = this.mode !== 'deliveries';
-            $('pi-file-reader').hidden = !this.viewer.fullscreen.open && (this.mode === 'deliveries' || this.mode === 'project' && this.browsing && (!this.wide || !hasFile));
+            this.uploadsList.hidden = this.mode !== 'uploads' || hasFile;
+            this.uploadPicker.hidden = this.mode !== 'uploads' || !this.viewer.file?.upload;
+            $('pi-file-reader').hidden = !this.viewer.fullscreen.open && (this.mode === 'deliveries' || this.mode === 'uploads' && !hasFile || this.mode === 'project' && this.browsing && (!this.wide || !hasFile));
             this.deliveriesButton.setAttribute('aria-pressed', String(['deliveries', 'delivery'].includes(this.mode)));
             this.projectButton.setAttribute('aria-pressed', String(this.mode === 'project'));
             this.historyButton.setAttribute('aria-pressed', String(this.mode === 'history'));
             // Each reply already ends with its own turn-files card; this tab only labels a record opened from one.
             this.historyButton.hidden = this.enabled && this.mode !== 'history';
+            this.uploadsButton.setAttribute('aria-pressed', String(this.mode === 'uploads'));
             this.browseButton.setAttribute('aria-pressed', String(this.mode === 'project' && this.browsing));
             this.expandButton.setAttribute('aria-pressed', String($('pi-inspector').classList.contains('files-expanded')));
             this.expandButton.title = this.expandButton.ariaLabel = $('pi-inspector').classList.contains('files-expanded') ? translateUi("收起阅读区") : translateUi("展开阅读");
-            this.locate.hidden = !this.enabled || Boolean(this.viewer.file?.deliveryId || this.viewer.file?.singleFile); this.browseButton.hidden = !this.enabled;
+            this.locate.hidden = !this.enabled || Boolean(this.viewer.file?.deliveryId || this.viewer.file?.singleFile || this.viewer.file?.upload); this.browseButton.hidden = !this.enabled;
         }
     }
     window.PiFilesPanel = PiFilesPanel;
