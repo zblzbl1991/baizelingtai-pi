@@ -102,6 +102,9 @@ test('authenticated optional channel connects, binds and delivers once through t
         assert.equal(service.db.value.jobs.length, 0);
         hold = new Promise(resolve => { releaseModel = resolve; });
         service.receive('bot-one', { msgs: [incoming('2'), incoming('2')], get_updates_buf: 'cursor-2' }); service.pump();
+        // Join startup of the actual queued turn before the bounded model-observation wait.
+        // Native worker readiness has its own timeout and may exceed this polling window.
+        await gateway.supervisor.getWorker({ cwd, sessionPath: session.path, sessionId: session.id });
         await wait(() => calls.length === 1);
         const worker = gateway.supervisor.getActiveWorker(session.path);
         assert.ok(worker.channelRun); assert.ok(worker.lifecycle().blockers.includes('message-channel'));
